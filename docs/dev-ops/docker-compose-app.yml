@@ -1,19 +1,43 @@
-# /usr/local/bin/docker-compose -f /docs/dev-ops/environment/environment-docker-compose-2.4.yml up -d
-version: '3.8'
-# docker-compose -f docker-compose-app.yml up -d
-# 你需要修改system为你自身系统的仓库名
+# 命令执行 docker-compose -f docker-compose-app.yml up -d
+
 services:
-  ai-agent-station:
-    image: system/ai-agent-station:1.0
-    container_name: ai-agent-station
-    restart: on-failure
+  mcp-server-csdn-app:
+    image: ccr.ccs.tencentyun.com/ethangotit/mcp-server-csdn-app:1.3
+    container_name: mcp-server-csdn-app
+    restart: always
     ports:
-      - "8091:8091"
-    environment:
-      - TZ=PRC
-      - SERVER_PORT=8091
+      - "8101:8101"
     volumes:
       - ./log:/data/log
+    environment:
+      - TZ=PRC
+      - SERVER_PORT=8101
+      - CSDN_API_CATEGORIES=Java场景面试宝典
+      - CSDN_API_COOKIE=uuid_tt_dd=10_6124411240-1742395352997-272008; fid=20_45025860833-1742395356370-044408; UN=EthanGotIt; _ga=GA1.1.1303042772.1745045398; _ga_7W1N0GEY1P=GS2.1.s1746968272$o3$g1$t1746970534$j60$l0$h0; c_dl_prid=1745404775624_690749; c_dl_rid=1747293626824_175596; c_dl_fref=https://blog.csdn.net/hltt3838/article/details/118531085; c_dl_fpage=/download/ALexander_Monster/13188356; c_dl_um=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7EPaidSort-1-133185649-blog-118531085.235%5Ev43%5Epc_blog_bottom_relevance_base8; loginbox_strategy=%7B%22taskId%22%3A317%2C%22abCheckTime%22%3A1764070412245%2C%22version%22%3A%22ExpA%22%2C%22nickName%22%3A%22EthanGotIt%22%2C%22blog-threeH-dialog-expa%22%3A1763707154027%7D; UserName=EthanGotIt; UserInfo=2fc2a95ddb2a43b0ac91cde2b2c80940; UserToken=2fc2a95ddb2a43b0ac91cde2b2c80940; UserNick=EthanGotIt; AU=92C; BT=1764070476315; p_uid=U010000; tfstk=gCtsQpc_P5V6RxTR5ikUPzhl8Gjjavozh-6vEKEaHGI9Hi9vns5Nus8CGKdRuZpqItdBHCONun90ctpviAfqI2JMIijxabSj4dvGHvcy2XSxHpIVhgOwgH9MIi2nabor4dmfa4QcMidAvwBAeiBYXICLp6XcH5BYXv9dt6ETBZQO9WBPnRe9MiHBp6XADsdADv9dttIAMjPSO9016dMkQx_hhnfJB6ZYc8X1W_nlOoEvAONPwd38DoKCCNtBRAaa-N8vEaxwhmZhbLTdvTJifksJBTONTQn8AMpepI7k-jqPbBtfPH7THPpBc1_JXwwjELIAHIQX-bZPCG8CPhTinWp9a1TRjKyS_p_WRaXdJ-aObUJymaKtf7fFrtONTQn8AMQA4bqPNiH8lJ_uc91rdva0oSsJPjkOs7cVW9Xe4vMQ1rbOK91rdva0oNBhLakId5ac.; c_ab_test=1; csdn_newcert_EthanGotIt=1; __gads=ID=9ead576acec34abd:T=1757305688:RT=1764070653:S=ALNI_MaQKn1IitdrRFKtyFHiNWDDvn4KCQ; __gpi=UID=0000119284f1b249:T=1757305688:RT=1764070653:S=ALNI_MbkobEBp1FNIUd6KeSGrlpangb93A; __eoi=ID=585df8d7fac5c68e:T=1757305688:RT=1764070653:S=AA-AfjZFcxLyTmwRBx6wSUj0Sjpn; _clck=1xr599%5E2%5Eg1b%5E0%5E1904; FCCDCF=%5Bnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C%5B%5B32%2C%22%5B%5C%22b00dd029-5620-4cdd-b71c-dcc723281963%5C%22%2C%5B1763126681%2C702000000%5D%5D%22%5D%5D%5D; FCNEC=%5B%5B%22AKsRol8vTUXpxoHIf2pWXMK60hBrHoRcdZY-dYmyhACOzekj_z2p8Leo4h9EXcitpmwMjRNI9CxlA1x15oFL5jE46xXiFknWzX7VYi7qD6CmMUQMg0ZohjsY1jozyzkZWvxsy2ORejBcyxBnmQrlrrlcEV24HMtmhA%3D%3D%22%5D%5D; _clsk=1gu6x52%5E1764078054765%5E3%5E0%5Ej.clarity.ms%2Fcollect; dc_session_id=10_1764160546203.777003; c_first_ref=www.bing.com; c_first_page=https%3A//bbs.csdn.net/forums/creator; c_dsid=11_1764160548672.512769; c_segment=8; Hm_lvt_6bcd52f51e9b3dce32bec4a3997715ac=1763629097,1763707154,1764070412,1764160550; HMACCOUNT=BBC11825E2D800A7; dc_sid=0a2c0368560a350682672ba7d4ff59d2; vip_auto_popup=1; SESSION=b8d51d93-0bec-4c22-bd02-0721cf96964d; creative_popup=%7B%22arrowIcon%22%3A%22https%3A//i-operation.csdnimg.cn/images/ce16e44ad48a4f019e83ef26a48123cc.png%22%2C%22img%22%3A%22https%3A//i-operation.csdnimg.cn/images/4172809553fd4c84a67e7c244f203a3d.png%22%2C%22imgStyle%22%3A%22height%3A%2088px%3B%22%2C%22darkCfg%22%3A%7B%7D%2C%22role%22%3A%22write%22%2C%22report%22%3A%7B%22spm%22%3A%223001.11121%22%2C%22extra%22%3A%22%22%7D%2C%22style%22%3A%22%22%2C%22arrowIconStyle%22%3A%22%22%2C%22url%22%3A%22https%3A//mall.csdn.net/vip%3Futm_source%3D251111_vip_blogtopbanner%22%2C%22newTab%22%3Afalse%2C%22userName%22%3A%22EthanGotIt%22%7D; creative_btn_mp=1; c_pref=https%3A//mp.csdn.net/mp_blog/creation/success/155283269; c_ref=https%3A//mp.csdn.net/; c_page_id=default; Hm_lpvt_6bcd52f51e9b3dce32bec4a3997715ac=1764160617; log_Id_pv=7; log_Id_view=63; log_Id_click=11; dc_tos=t6c32b
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - my-network
+
+  mcp-server-weixin-app:
+    image: ccr.ccs.tencentyun.com/ethangotit/mcp-server-weixin-app:1.3
+    container_name: mcp-server-weixin-app
+    restart: always
+    ports:
+      - "8102:8102"
+    volumes:
+      - ./log:/data/log
+    environment:
+      - TZ=PRC
+      - SERVER_PORT=8102
+      - WEIXIN_API_ORIGINAL_ID=gh_6154002e86d6
+      - WEIXIN_API_APPID=wx4f06d2ec0f3ff83c
+      - WEIXIN_API_SECRET=2d0fa6119a88ae186d8b7e033382ca4e
+      - WEIXIN_API_TEMPLATE_ID=FDfKOlK8-cYMsKufKND_qupJ757c2HLxoi26WyUm4_Q
+      - WEIXIN_API_TOUSER=oMj3z7CkkH2TtXjQFxg0YX7-tVow
     logging:
       driver: "json-file"
       options:

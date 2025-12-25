@@ -1,7 +1,14 @@
-# 命令执行 docker-compose -f docker-compose-environment-aliyun.yml up -d
-# docker 代理和使用文档；https://bugstack.cn/md/road-map/docker.html
-version: '3.9'
+# 命令执行 docker-compose -f docker-compose-environment.yml up -d
 services:
+  ollama:
+    image: ollama/ollama:0.12.10
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    networks:
+      - my-network
+
   mysql:
     image: mysql:8.0.32
     container_name: mysql
@@ -24,13 +31,12 @@ services:
     networks:
       - my-network
 
-  # phpmyadmin https://hub.docker.com/_/phpmyadmin
   phpmyadmin:
     image: phpmyadmin:5.2.1
     container_name: phpmyadmin
     hostname: phpmyadmin
     ports:
-      - 8899:80
+      - "8899:80"
     environment:
       - PMA_HOST=mysql
       - PMA_PORT=3306
@@ -41,7 +47,6 @@ services:
     networks:
       - my-network
 
-  # Redis
   redis:
     image: redis:6.2
     container_name: redis
@@ -49,26 +54,25 @@ services:
     hostname: redis
     privileged: true
     ports:
-      - 16379:6379
+      - "16379:6379"
     volumes:
-      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
     command: redis-server /usr/local/etc/redis/redis.conf
-    networks:
-      - my-network
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
+    networks:
+      - my-network
 
-  # RedisAdmin https://github.com/joeferner/redis-commander
   redis-admin:
-    image: spryker/redis-commander:0.8.0
+    image: rediscommander/redis-commander:latest
     container_name: redis-admin
     hostname: redis-commander
     restart: always
     ports:
-      - 8081:8081
+      - "8081:8081"
     environment:
       - REDIS_HOSTS=local:redis:6379
       - HTTP_USER=admin
@@ -76,12 +80,53 @@ services:
       - LANG=C.UTF-8
       - LANGUAGE=C.UTF-8
       - LC_ALL=C.UTF-8
-    networks:
-      - my-network
     depends_on:
       redis:
         condition: service_healthy
+    networks:
+      - my-network
+
+  vector_db:
+    image: pgvector/pgvector:pg16
+    container_name: vector_db
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=ai-rag-knowledge
+    volumes:
+      - ./pgvector/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - pgvector_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d spring_ai"]
+      interval: 5s
+      timeout: 20s
+      retries: 10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - my-network
+
+  pgAdmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgAdmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: postgres@example.com
+      PGADMIN_DEFAULT_PASSWORD: postgres
+    ports:
+      - "8080:80"
+    networks:
+      - my-network
 
 networks:
   my-network:
     driver: bridge
+
+volumes:
+  pgvector_data:

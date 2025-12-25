@@ -8,18 +8,18 @@
         <result column="update_time" property="updateTime"/>
     </resultMap>
 
-    <insert id="insert" parameterType="cn.ethan.ai.infrastructure.persistent.po.A">
-        INSERT INTO table(a,b,c) VALUES(#{a}, #{b}, #{c})
-    </insert>
+<!--    <insert id="insert" parameterType="cn.ethan.ai.infrastructure.persistent.po.A">-->
+<!--        INSERT INTO table(a,b,c) VALUES(#{a}, #{b}, #{c})-->
+<!--    </insert>-->
 
-    <update id="update" parameterType="cn.ethan.ai.infrastructure.persistent.po.A">
-        UPDATE table SET a = #{a} WHERE b = #{b}
-    </update>
+<!--    <update id="update" parameterType="cn.ethan.ai.infrastructure.persistent.po.A">-->
+<!--        UPDATE table SET a = #{a} WHERE b = #{b}-->
+<!--    </update>-->
 
-    <select id="queryEmployeeByEmployNumber" parameterType="java.lang.String" resultMap="CaseMap">
-        SELECT a, b, c
-        FROM table
-        WHERE a = #{a}
-    </select>
+<!--    <select id="queryEmployeeByEmployNumber" parameterType="java.lang.String" resultMap="CaseMap">-->
+<!--        SELECT a, b, c-->
+<!--        FROM table-->
+<!--        WHERE a = #{a}-->
+<!--    </select>-->
 
 </mapper>
