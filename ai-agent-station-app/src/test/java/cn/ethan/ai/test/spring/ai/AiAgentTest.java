@@ -61,7 +61,7 @@ public class AiAgentTest {
         chatModel = OpenAiChatModel.builder()
                 .openAiApi(openAiApi)
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3-max")
+                        .model("qwen3-max-preview")
                         .toolCallbacks(new SyncMcpToolCallbackProvider(stdioMcpClient(), sseMcpClient01(), sseMcpClient02()).getToolCallbacks())
                         .build())
                 .build();
@@ -78,7 +78,7 @@ public class AiAgentTest {
                         	 3. 获取发送到 CSDN 文章的 URL 地址。
                         	 4. 微信公众号消息通知，平台：CSDN、主题：为文章标题、描述：为文章简述、跳转地址：从发布文章到CSDN获取 URL 地址
                         """)
-//                .defaultToolCallbacks(new SyncMcpToolCallbackProvider(stdioMcpClient(), sseMcpClient01(), sseMcpClient02()).getToolCallbacks())
+                .defaultToolCallbacks(new SyncMcpToolCallbackProvider(stdioMcpClient(), sseMcpClient01(), sseMcpClient02()).getToolCallbacks())
                 .defaultAdvisors(
                         PromptChatMemoryAdvisor.builder(
                                 MessageWindowChatMemory.builder()
@@ -221,7 +221,7 @@ public class AiAgentTest {
                                 .build())
                 )
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3-max")
+                        .model("qwen3-max-preview")
                         .build())
                 .build();
 
@@ -246,9 +246,9 @@ public class AiAgentTest {
                         	 1. 分析用户输入的内容，生成技术文章。
                         	 2. 提取，文章标题（需要含带技术点）、文章内容、文章标签（多个用英文逗号隔开）、文章简述（100字）将以上内容发布文章到CSDN
                         	 3. 获取发送到 CSDN 文章的 URL 地址。
-                        	 4. 微信公众号消息通知，平台：CSDN、主题：为文章标题、描述：为文章简述、跳转地址：为发布文章到CSDN获取 URL地址 CSDN文章链接 https 开头的地址。
+                        	 4. 发布微信公众号消息通知，平台：CSDN、主题：为文章标题、描述：为文章简述、跳转地址：为发布文章到CSDN获取 URL地址 CSDN文章链接 https 开头的地址。
                         """)
-//                .defaultTools(new SyncMcpToolCallbackProvider(sseMcpClient01(), sseMcpClient02()))
+//                .defaultToolCallbacks(new SyncMcpToolCallbackProvider(sseMcpClient01(), sseMcpClient02()))
                 .defaultAdvisors(
                         PromptChatMemoryAdvisor.builder(
                                 MessageWindowChatMemory.builder()
@@ -258,7 +258,7 @@ public class AiAgentTest {
                         new SimpleLoggerAdvisor()
                 )
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3-max")
+                        .model("qwen3-max-preview")
                         .build())
                 .build();
 

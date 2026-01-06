@@ -33,7 +33,7 @@ public class AiAgentConfig {
     @Bean("vectorStore")
     public PgVectorStore pgVectorStore(@Value("${spring.ai.openai.base-url}") String baseUrl,
                                        @Value("${spring.ai.openai.api-key}") String apiKey,
-                                       JdbcTemplate jdbcTemplate) {
+                                       @Qualifier("pgVectorJdbcTemplate") JdbcTemplate jdbcTemplate) {
 
         OpenAiApi openAiApi = OpenAiApi.builder()
                 .baseUrl(baseUrl)
