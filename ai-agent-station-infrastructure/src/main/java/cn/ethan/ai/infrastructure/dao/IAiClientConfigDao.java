@@ -2,6 +2,7 @@ package cn.ethan.ai.infrastructure.dao;
 
 import cn.ethan.ai.infrastructure.dao.po.AiClientConfig;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
@@ -78,7 +79,7 @@ public interface IAiClientConfigDao {
      * @param targetId 目标ID
      * @return AI客户端配置对象列表
      */
-    List<AiClientConfig> queryByTargetTypeAndId(String targetType, String targetId);
+    List<AiClientConfig> queryByTargetTypeAndId(@Param("targetType") String targetType, @Param("targetId") String targetId);
 
     /**
      * 查询启用状态的AI客户端配置

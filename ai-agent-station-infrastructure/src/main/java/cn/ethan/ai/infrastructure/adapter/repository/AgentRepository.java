@@ -5,16 +5,15 @@ import cn.ethan.ai.domain.agent.model.valobj.*;
 import cn.ethan.ai.infrastructure.dao.*;
 import cn.ethan.ai.infrastructure.dao.po.*;
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 
 import java.util.*;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
-import static cn.ethan.ai.domain.agent.model.valobj.AiAgentEnumVO.AI_CLIENT;
-import static cn.ethan.ai.domain.agent.model.valobj.AiAgentEnumVO.AI_CLIENT_MODEL;
+import static cn.ethan.ai.domain.agent.model.valobj.AiAgentEnumVO.*;
 
 /**
  * AiAgent 仓储服务
@@ -62,7 +61,7 @@ public class AgentRepository implements IAgentRepository {
             return List.of();
         }
 
-        Set<String> modelIds = getModelIdsByClientIds(clientIdList);
+        Set<String> modelIds = queryModelIdsByClientIds(clientIdList);
         return queryAiClientApiVOListByModelIds(new ArrayList<>(modelIds));
     }
 
@@ -72,8 +71,24 @@ public class AgentRepository implements IAgentRepository {
             return List.of();
         }
 
-        Set<String> modelIds = getModelIdsByClientIds(clientIdList);
-        return queryAiClientModelVOByModelIds(new ArrayList<>(modelIds));
+        Map<String, AiClientModelVO> modelVOMap = new LinkedHashMap<>();
+        Set<String> modelIds = queryModelIdsByClientIds(clientIdList);
+
+        for (String modelId : modelIds) {
+            AiClientModel model = aiClientModelDao.queryByModelId(modelId);
+            if (model != null && model.getStatus() == 1) {
+                AiClientModelVO modelVO = AiClientModelVO.builder()
+                        .modelId(model.getModelId())
+                        .apiId(model.getApiId())
+                        .modelName(model.getModelName())
+                        .modelType(model.getModelType())
+                        .build();
+                modelVO.setToolMcpIds(queryToolMcpIdsByModelId(modelId));
+                modelVOMap.putIfAbsent(modelId, modelVO);
+            }
+        }
+
+        return new ArrayList<>(modelVOMap.values());
     }
 
     @Override
@@ -82,28 +97,31 @@ public class AgentRepository implements IAgentRepository {
             return List.of();
         }
 
-        Map<String, AiClientToolMcpVO> result = new LinkedHashMap<>();
+        Map<String, AiClientToolMcpVO> mcpVOMap = new LinkedHashMap<>();
+        Set<String> modelIds = queryModelIdsByClientIds(clientIdList);
 
-        for (String clientId : clientIdList) {
-            List<AiClientConfig> configs = queryValidConfigsByClientId(clientId, "tool_mcp");
-            for (AiClientConfig config : configs) {
-                result.computeIfAbsent(config.getTargetId(), mcpId -> {
-                    AiClientToolMcp toolMcp = aiClientToolMcpDao.queryByMcpId(mcpId);
-                    if (toolMcp != null && toolMcp.getStatus() == 1) {
-                        return AiClientToolMcpVO.builder()
-                                .mcpId(toolMcp.getMcpId())
-                                .mcpName(toolMcp.getMcpName())
-                                .transportType(toolMcp.getTransportType())
-                                .transportConfig(toolMcp.getTransportConfig())
-                                .requestTimeout(toolMcp.getRequestTimeout())
-                                .build();
-                    }
-                    return null;
-                });
+        for (String modelId : modelIds) {
+            for (String mcpId : queryToolMcpIdsByModelId(modelId)) {
+                if (mcpVOMap.containsKey(mcpId)) {
+                    continue;
+                }
+
+                AiClientToolMcp toolMcp = aiClientToolMcpDao.queryByMcpId(mcpId);
+                if (toolMcp != null && toolMcp.getStatus() == 1) {
+                    AiClientToolMcpVO mcpVO = AiClientToolMcpVO.builder()
+                            .mcpId(toolMcp.getMcpId())
+                            .mcpName(toolMcp.getMcpName())
+                            .transportType(toolMcp.getTransportType())
+                            .transportConfig(toolMcp.getTransportConfig())
+                            .requestTimeout(toolMcp.getRequestTimeout())
+                            .build();
+                    parseTransportConfig(mcpVO, toolMcp.getTransportType(), toolMcp.getTransportConfig());
+                    mcpVOMap.put(mcpId, mcpVO);
+                }
             }
         }
 
-        return result.values().stream().filter(Objects::nonNull).collect(Collectors.toList());
+        return new ArrayList<>(mcpVOMap.values());
     }
 
     @Override
@@ -112,27 +130,33 @@ public class AgentRepository implements IAgentRepository {
             return List.of();
         }
 
-        Map<String, AiClientSystemPromptVO> result = new LinkedHashMap<>();
+        Map<String, AiClientSystemPromptVO> promptVOMap = new LinkedHashMap<>();
 
         for (String clientId : clientIdList) {
-            List<AiClientConfig> configs = queryValidConfigsByClientId(clientId, "prompt");
+            List<AiClientConfig> configs = aiClientConfigDao.queryBySourceTypeAndId(AI_CLIENT.getCode(), clientId);
             for (AiClientConfig config : configs) {
-                result.computeIfAbsent(config.getTargetId(), promptId -> {
-                    AiClientSystemPrompt systemPrompt = aiClientSystemPromptDao.queryByPromptId(promptId);
-                    if (systemPrompt != null && systemPrompt.getStatus() == 1) {
-                        return AiClientSystemPromptVO.builder()
-                                .promptId(systemPrompt.getPromptId())
-                                .promptName(systemPrompt.getPromptName())
-                                .promptContent(systemPrompt.getPromptContent())
-                                .description(systemPrompt.getDescription())
-                                .build();
-                    }
-                    return null;
-                });
+                if (!"prompt".equals(config.getTargetType()) || config.getStatus() != 1) {
+                    continue;
+                }
+
+                String promptId = config.getTargetId();
+                if (promptVOMap.containsKey(promptId)) {
+                    continue;
+                }
+
+                AiClientSystemPrompt systemPrompt = aiClientSystemPromptDao.queryByPromptId(promptId);
+                if (systemPrompt != null && systemPrompt.getStatus() == 1) {
+                    promptVOMap.put(promptId, AiClientSystemPromptVO.builder()
+                            .promptId(systemPrompt.getPromptId())
+                            .promptName(systemPrompt.getPromptName())
+                            .promptContent(systemPrompt.getPromptContent())
+                            .description(systemPrompt.getDescription())
+                            .build());
+                }
             }
         }
 
-        return result.values().stream().filter(Objects::nonNull).collect(Collectors.toList());
+        return new ArrayList<>(promptVOMap.values());
     }
 
     @Override
@@ -141,139 +165,43 @@ public class AgentRepository implements IAgentRepository {
             return List.of();
         }
 
-        Map<String, AiClientAdvisorVO> result = new LinkedHashMap<>();
+        Map<String, AiClientAdvisorVO> advisorVOMap = new LinkedHashMap<>();
 
         for (String clientId : clientIdList) {
-            List<AiClientConfig> configs = queryValidConfigsByClientId(clientId, "advisor");
+            List<AiClientConfig> configs = aiClientConfigDao.queryBySourceTypeAndId(AI_CLIENT.getCode(), clientId);
             for (AiClientConfig config : configs) {
-                result.computeIfAbsent(config.getTargetId(), advisorId -> {
-                    AiClientAdvisor advisor = aiClientAdvisorDao.queryByAdvisorId(advisorId);
-                    if (advisor != null && advisor.getStatus() == 1) {
-                        return buildAiClientAdvisorVO(advisor);
-                    }
-                    return null;
-                });
-            }
-        }
-
-        return result.values().stream().filter(Objects::nonNull).collect(Collectors.toList());
-    }
-
-    @Override
-    public List<AiClientVO> queryAiClientVOByClientIds(List<String> clientIdList) {
-        if (isEmpty(clientIdList)) {
-            return List.of();
-        }
-
-        List<AiClientVO> result = new ArrayList<>();
-        Set<String> processedClientIds = new HashSet<>();
-
-        for (String clientId : clientIdList) {
-            if (processedClientIds.contains(clientId)) {
-                continue;
-            }
-            processedClientIds.add(clientId);
-
-            AiClient aiClient = aiClientDao.queryByClientId(clientId);
-            if (aiClient == null || aiClient.getStatus() != 1) {
-                continue;
-            }
-
-            result.add(buildAiClientVO(aiClient));
-        }
-
-        return result;
-    }
-
-    @Override
-    public List<AiClientApiVO> queryAiClientApiVOListByModelIds(List<String> modelIdList) {
-        if (isEmpty(modelIdList)) {
-            return List.of();
-        }
-
-        Map<String, AiClientApiVO> result = new LinkedHashMap<>();
-
-        for (String modelId : modelIdList) {
-            AiClientModel model = aiClientModelDao.queryByModelId(modelId);
-            if (model == null || model.getStatus() != 1) {
-                continue;
-            }
-
-            result.computeIfAbsent(model.getApiId(), apiId -> {
-                AiClientApi apiConfig = aiClientApiDao.queryByApiId(apiId);
-                if (apiConfig != null && apiConfig.getStatus() == 1) {
-                    return AiClientApiVO.builder()
-                            .apiId(apiConfig.getApiId())
-                            .baseUrl(apiConfig.getBaseUrl())
-                            .apiKey(apiConfig.getApiKey())
-                            .completionsPath(apiConfig.getCompletionsPath())
-                            .embeddingsPath(apiConfig.getEmbeddingsPath())
-                            .build();
+                if (config.getStatus() != 1 || !"advisor".equals(config.getTargetType())) {
+                    continue;
                 }
-                return null;
-            });
-        }
 
-        return result.values().stream().filter(Objects::nonNull).collect(Collectors.toList());
-    }
+                String advisorId = config.getTargetId();
+                if (advisorVOMap.containsKey(advisorId)) {
+                    continue;
+                }
 
-    @Override
-    public List<AiClientModelVO> queryAiClientModelVOByModelIds(List<String> modelIdList) {
-        if (isEmpty(modelIdList)) {
-            return List.of();
-        }
+                AiClientAdvisor advisor = aiClientAdvisorDao.queryByAdvisorId(advisorId);
+                if (advisor == null || advisor.getStatus() != 1) {
+                    continue;
+                }
 
-        Map<String, AiClientModelVO> result = new LinkedHashMap<>();
-
-        for (String modelId : modelIdList) {
-            AiClientModel model = aiClientModelDao.queryByModelId(modelId);
-            if (model != null && model.getStatus() == 1) {
-                result.putIfAbsent(model.getModelId(), AiClientModelVO.builder()
-                        .modelId(model.getModelId())
-                        .apiId(model.getApiId())
-                        .modelName(model.getModelName())
-                        .modelType(model.getModelType())
-                        .build());
+                advisorVOMap.put(advisorId, buildAdvisorVO(advisor));
             }
         }
 
-        return new ArrayList<>(result.values());
+        return new ArrayList<>(advisorVOMap.values());
     }
 
-    private boolean isEmpty(List<?> list) {
-        return list == null || list.isEmpty();
-    }
-
-    private List<AiClientConfig> queryValidConfigsByClientId(String clientId, String targetType) {
-        List<AiClientConfig> configs = aiClientConfigDao.queryBySourceTypeAndId(AI_CLIENT.getCode(), clientId);
-        return configs.stream()
-                .filter(config -> config.getStatus() == 1 && targetType.equals(config.getTargetType()))
-                .collect(Collectors.toList());
-    }
-
-    private Set<String> getModelIdsByClientIds(List<String> clientIdList) {
-        Set<String> modelIds = new HashSet<>();
-        for (String clientId : clientIdList) {
-            List<AiClientConfig> configs = queryValidConfigsByClientId(clientId, AI_CLIENT_MODEL.getCode());
-            configs.stream()
-                    .map(AiClientConfig::getTargetId)
-                    .filter(Objects::nonNull)
-                    .forEach(modelIds::add);
-        }
-        return modelIds;
-    }
-
-    private AiClientAdvisorVO buildAiClientAdvisorVO(AiClientAdvisor advisor) {
+    private AiClientAdvisorVO buildAdvisorVO(AiClientAdvisor advisor) {
         AiClientAdvisorVO.ChatMemory chatMemory = null;
         AiClientAdvisorVO.RagAnswer ragAnswer = null;
 
         String extParam = advisor.getExtParam();
         if (extParam != null && !extParam.trim().isEmpty()) {
             try {
-                if ("RagAnswer".equals(advisor.getAdvisorType())) {
-                    ragAnswer = JSON.parseObject(extParam, AiClientAdvisorVO.RagAnswer.class);
-                } else if ("ChatMemory".equals(advisor.getAdvisorType())) {
+                if ("ChatMemory".equals(advisor.getAdvisorType())) {
                     chatMemory = JSON.parseObject(extParam, AiClientAdvisorVO.ChatMemory.class);
+                } else if ("RagAnswer".equals(advisor.getAdvisorType())) {
+                    ragAnswer = JSON.parseObject(extParam, AiClientAdvisorVO.RagAnswer.class);
                 }
             } catch (Exception ignored) {
             }
@@ -289,8 +217,33 @@ public class AgentRepository implements IAgentRepository {
                 .build();
     }
 
-    private AiClientVO buildAiClientVO(AiClient aiClient) {
-        List<AiClientConfig> configs = aiClientConfigDao.queryBySourceTypeAndId("client", aiClient.getClientId());
+    @Override
+    public List<AiClientVO> queryAiClientVOByClientIds(List<String> clientIdList) {
+        if (isEmpty(clientIdList)) {
+            return List.of();
+        }
+
+        List<AiClientVO> result = new ArrayList<>();
+        Set<String> processedIds = new HashSet<>();
+
+        for (String clientId : clientIdList) {
+            if (!processedIds.add(clientId)) {
+                continue;
+            }
+
+            AiClient aiClient = aiClientDao.queryByClientId(clientId);
+            if (aiClient == null || aiClient.getStatus() != 1) {
+                continue;
+            }
+
+            result.add(buildClientVO(clientId, aiClient));
+        }
+
+        return result;
+    }
+
+    private AiClientVO buildClientVO(String clientId, AiClient aiClient) {
+        List<AiClientConfig> configs = aiClientConfigDao.queryBySourceTypeAndId(AI_CLIENT.getCode(), clientId);
 
         String modelId = null;
         List<String> promptIdList = new ArrayList<>();
@@ -318,6 +271,115 @@ public class AgentRepository implements IAgentRepository {
                 .mcpIdList(mcpIdList)
                 .advisorIdList(advisorIdList)
                 .build();
+    }
+
+    @Override
+    public List<AiClientApiVO> queryAiClientApiVOListByModelIds(List<String> modelIdList) {
+        if (isEmpty(modelIdList)) {
+            return List.of();
+        }
+
+        Map<String, AiClientApiVO> apiVOMap = new LinkedHashMap<>();
+
+        for (String modelId : modelIdList) {
+            AiClientModel model = aiClientModelDao.queryByModelId(modelId);
+            if (model == null || model.getStatus() != 1) {
+                continue;
+            }
+
+            AiClientApi apiConfig = aiClientApiDao.queryByApiId(model.getApiId());
+            if (apiConfig != null && apiConfig.getStatus() == 1) {
+                apiVOMap.putIfAbsent(apiConfig.getApiId(),
+                        AiClientApiVO.builder()
+                                .apiId(apiConfig.getApiId())
+                                .baseUrl(apiConfig.getBaseUrl())
+                                .apiKey(apiConfig.getApiKey())
+                                .completionsPath(apiConfig.getCompletionsPath())
+                                .embeddingsPath(apiConfig.getEmbeddingsPath())
+                                .build());
+            }
+        }
+
+        return new ArrayList<>(apiVOMap.values());
+    }
+
+    @Override
+    public List<AiClientModelVO> queryAiClientModelVOByModelIds(List<String> modelIdList) {
+        if (isEmpty(modelIdList)) {
+            return List.of();
+        }
+
+        Map<String, AiClientModelVO> modelVOMap = new LinkedHashMap<>();
+
+        for (String modelId : modelIdList) {
+            AiClientModel model = aiClientModelDao.queryByModelId(modelId);
+            if (model != null && model.getStatus() == 1) {
+                modelVOMap.putIfAbsent(modelId,
+                        AiClientModelVO.builder()
+                                .modelId(model.getModelId())
+                                .apiId(model.getApiId())
+                                .modelName(model.getModelName())
+                                .modelType(model.getModelType())
+                                .build());
+            }
+        }
+
+        return new ArrayList<>(modelVOMap.values());
+    }
+
+    /**
+     * 判断列表是否为空
+     */
+    private boolean isEmpty(List<?> list) {
+        return list == null || list.isEmpty();
+    }
+
+    /**
+     * 通过clientId查询关联的model id列表
+     */
+    private Set<String> queryModelIdsByClientIds(List<String> clientIdList) {
+        Set<String> modelIds = new HashSet<>();
+        for (String clientId : clientIdList) {
+            List<AiClientConfig> configs = aiClientConfigDao.queryBySourceTypeAndId(AI_CLIENT.getCode(), clientId);
+            configs.stream()
+                    .filter(c -> AI_CLIENT_MODEL.getCode().equals(c.getTargetType()) && c.getStatus() == 1)
+                    .map(AiClientConfig::getTargetId)
+                    .forEach(modelIds::add);
+        }
+
+        return modelIds;
+    }
+
+    /**
+     * 通过modelId查询关联的tool_mcp id列表
+     */
+    private List<String> queryToolMcpIdsByModelId(String modelId) {
+        List<AiClientConfig> configs = aiClientConfigDao.queryBySourceTypeAndId(AI_CLIENT_MODEL.getCode(), modelId);
+
+        return configs.stream()
+                .filter(c -> AI_CLIENT_TOOL_MCP.getCode().equals(c.getTargetType()) && c.getStatus() == 1)
+                .map(AiClientConfig::getTargetId)
+                .toList();
+    }
+
+    /**
+     * 解析MCP传输配置(sse/stdio)
+     */
+    private void parseTransportConfig(AiClientToolMcpVO mcpVO, String transportType, String transportConfig) {
+        try {
+            if ("sse".equals(transportType)) {
+                ObjectMapper objectMapper = new ObjectMapper();
+                mcpVO.setTransportConfigSse(objectMapper.readValue(transportConfig, AiClientToolMcpVO.TransportConfigSse.class));
+            } else if ("stdio".equals(transportType)) {
+                Map<String, Object> jsonMap = JSON.parseObject(transportConfig, new TypeReference<Map<String, Object>>() {});
+                String firstKey = jsonMap.keySet().iterator().next();
+                Object innerConfig = jsonMap.get(firstKey);
+                AiClientToolMcpVO.TransportConfigStdio transportConfigStdio = JSON.parseObject(JSON.toJSONString(innerConfig), AiClientToolMcpVO.TransportConfigStdio.class);
+                mcpVO.setTransportConfigStdio(transportConfigStdio);
+            }
+        } catch (Exception e) {
+            log.error("解析传输配置失败: {}", e.getMessage(), e);
+        }
     }
 
 }

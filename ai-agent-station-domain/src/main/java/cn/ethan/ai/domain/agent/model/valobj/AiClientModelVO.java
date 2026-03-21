@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  * 聊天模型配置，值对象
  */
@@ -33,5 +35,10 @@ public class AiClientModelVO {
      * 模型类型：openai、deepseek、claude
      */
     private String modelType;
+
+    /**
+     * 工具 mcp ids
+     */
+    private List<String> toolMcpIds;
 
 }

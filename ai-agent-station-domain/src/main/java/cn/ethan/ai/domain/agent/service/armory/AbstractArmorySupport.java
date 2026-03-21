@@ -7,6 +7,7 @@ import cn.ethan.wrench.design.framework.tree.AbstractMultiThreadStrategyRouter;
 import jakarta.annotation.Resource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
@@ -35,12 +36,19 @@ public abstract class AbstractArmorySupport extends AbstractMultiThreadStrategyR
     @Override
     protected void multiThread(ArmoryCommandEntity requestParameter, DefaultArmoryStrategyFactory.DynamicContext dynamicContext) throws ExecutionException, InterruptedException, TimeoutException {}
 
+    protected String beanName(String id) {
+        return null;
+    }
+
+    protected String dataName() {
+        return null;
+    }
+
     /**
      * 通用的Bean注册方法
      *
-     * @param beanName  Bean名称
-     * @param beanClass Bean类型
-     * @param <T>       Bean类型
+     * @param <T>      Bean类型
+     * @param beanName Bean名称
      */
     protected synchronized <T> void registerBean(String beanName, Class<T> beanClass, T beanInstance) {
         DefaultListableBeanFactory beanFactory = (DefaultListableBeanFactory) applicationContext.getAutowireCapableBeanFactory();

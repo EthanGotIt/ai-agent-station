@@ -66,15 +66,9 @@ public class AiClientToolMcpVO {
     @AllArgsConstructor
     @NoArgsConstructor
     public static class TransportConfigStdio {
-
-        private Map<String, Stdio> stdio;
-
-        @Data
-        public static class Stdio {
-            private String command;
-            private List<String> args;
-            private Map<String, String> env;
-        }
+        private String command;
+        private List<String> args;
+        private Map<String, String> env;
     }
 
 }
