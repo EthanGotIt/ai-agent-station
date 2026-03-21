@@ -24,7 +24,7 @@ public class AiClientToolMcpDaoTest {
     public void test_insert() {
         AiClientToolMcp aiClientToolMcp = AiClientToolMcp.builder()
                 .mcpId("test_5006")
-                .mcpName("测试MCP工具")
+                .mcpName("Test MCP")
                 .transportType("sse")
                 .transportConfig("{\"baseUri\":\"http://localhost:8080\",\"sseEndpoint\":\"/sse\"}")
                 .requestTimeout(180)
@@ -42,7 +42,7 @@ public class AiClientToolMcpDaoTest {
         AiClientToolMcp aiClientToolMcp = AiClientToolMcp.builder()
                 .id(1L)
                 .mcpId("test_5006")
-                .mcpName("更新后的测试MCP工具")
+                .mcpName("Test MCP")
                 .transportType("stdio")
                 .transportConfig("{\"command\":\"npx\",\"args\":[\"-y\",\"test-mcp\"]}")
                 .requestTimeout(300)
@@ -58,7 +58,7 @@ public class AiClientToolMcpDaoTest {
     public void test_updateByMcpId() {
         AiClientToolMcp aiClientToolMcp = AiClientToolMcp.builder()
                 .mcpId("5001")
-                .mcpName("根据MCP ID更新的工具")
+                .mcpName("Test MCP")
                 .transportType("sse")
                 .transportConfig("{\"baseUri\":\"http://updated.example.com\",\"sseEndpoint\":\"/sse\"}")
                 .requestTimeout(240)

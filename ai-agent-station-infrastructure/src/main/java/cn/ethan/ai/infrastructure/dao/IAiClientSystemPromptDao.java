@@ -5,9 +5,6 @@ import org.apache.ibatis.annotations.Mapper;
 
 import java.util.List;
 
-/**
- * 系统提示词配置表 DAO
- */
 @Mapper
 public interface IAiClientSystemPromptDao {
 
