@@ -25,6 +25,7 @@ public class ThreadPoolConfig {
             case "CallerRunsPolicy" -> new ThreadPoolExecutor.CallerRunsPolicy();
             default -> new ThreadPoolExecutor.AbortPolicy();
         };
+
         // 创建线程池
         return new ThreadPoolExecutor(properties.getCorePoolSize(),
                 properties.getMaxPoolSize(),

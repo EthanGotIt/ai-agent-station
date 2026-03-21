@@ -11,7 +11,6 @@ thread:
         block-queue-size: 5000
         policy: CallerRunsPolicy
 
-# 数据库配置；启动时配置数据库资源信息
 spring:
   datasource:
     mysql:
@@ -19,22 +18,17 @@ spring:
       password: 123456
       url: jdbc:mysql://127.0.0.1:3306/ai-agent-station?useUnicode=true&characterEncoding=utf8&autoReconnect=true&zeroDateTimeBehavior=convertToNull&serverTimezone=Asia/Shanghai&useSSL=true
       driver-class-name: com.mysql.cj.jdbc.Driver
-      type: com.zaxxer.hikari.HikariDataSource
       hikari:
-        pool-name: Retail_HikariCP
         minimum-idle: 15
-        idle-timeout: 180000
+        idle-timeout: 30000
         maximum-pool-size: 25
-        auto-commit: true
         max-lifetime: 1800000
         connection-timeout: 30000
-        connection-test-query: SELECT 1
     pgvector:
       username: postgres
       password: postgres
-      url: jdbc:postgresql://106.52.3.218:5432/ai-rag-knowledge
+      url: jdbc:postgresql://106.52.3.218:5432/ai-agent-station
       driver-class-name: org.postgresql.Driver
-      type: com.zaxxer.hikari.HikariDataSource
       hikari:
         maximum-pool-size: 5
         minimum-idle: 2
@@ -45,7 +39,6 @@ spring:
       base-url: https://dashscope.aliyuncs.com/compatible-mode/
       api-key: sk-0ec8457a16644d5ca60a3468b20463e2
 
-# 日志
 logging:
   level:
     root: info
