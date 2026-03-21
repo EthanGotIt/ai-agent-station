@@ -1,5 +1,8 @@
 package cn.ethan.ai.domain.agent.service.armory.factory;
 
+import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
+import cn.ethan.ai.domain.agent.service.armory.RootNode;
+import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import lombok.*;
 import org.springframework.stereotype.Service;
 
@@ -11,6 +14,16 @@ import java.util.Map;
  */
 @Service
 public class DefaultArmoryStrategyFactory {
+
+    private final RootNode rootNode;
+
+    public DefaultArmoryStrategyFactory(RootNode rootNode) {
+        this.rootNode = rootNode;
+    }
+
+    public StrategyHandler<ArmoryCommandEntity, DynamicContext, String> armoryStrategyHandler(){
+        return rootNode;
+    }
 
     @EqualsAndHashCode(callSuper = true)
     @Data

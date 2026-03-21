@@ -56,13 +56,15 @@ public class AiAgentTest {
         OpenAiApi openAiApi = OpenAiApi.builder()
                 .baseUrl("https://dashscope.aliyuncs.com/compatible-mode/")
                 .apiKey("sk-0ec8457a16644d5ca60a3468b20463e2")
+                .completionsPath("v1/chat/completions")
+                .embeddingsPath("v1/embeddings")
                 .build();
 
         chatModel = OpenAiChatModel.builder()
                 .openAiApi(openAiApi)
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3-max-preview")
-                        .toolCallbacks(new SyncMcpToolCallbackProvider(stdioMcpClient(), sseMcpClient01(), sseMcpClient02()).getToolCallbacks())
+                        .model("qwen3.5-plus")
+                        .toolCallbacks(new SyncMcpToolCallbackProvider(stdioMcpClient()).getToolCallbacks())
                         .build())
                 .build();
 
@@ -78,7 +80,7 @@ public class AiAgentTest {
                         	 3. 获取发送到 CSDN 文章的 URL 地址。
                         	 4. 微信公众号消息通知，平台：CSDN、主题：为文章标题、描述：为文章简述、跳转地址：从发布文章到CSDN获取 URL 地址
                         """)
-                .defaultToolCallbacks(new SyncMcpToolCallbackProvider(stdioMcpClient(), sseMcpClient01(), sseMcpClient02()).getToolCallbacks())
+                .defaultToolCallbacks(new SyncMcpToolCallbackProvider(stdioMcpClient()).getToolCallbacks())
                 .defaultAdvisors(
                         PromptChatMemoryAdvisor.builder(
                                 MessageWindowChatMemory.builder()
@@ -87,46 +89,18 @@ public class AiAgentTest {
                         ).build(),
                         new RagAnswerAdvisor(vectorStore, SearchRequest.builder()
                                 .topK(5)
-                                .filterExpression("knowledge == 'text' || knowledge == 'article-prompt-words'")
+                                .filterExpression("knowledge == 'article-prompt-words'")
                                 .build()),
                         SimpleLoggerAdvisor.builder().build())
                 .build();
     }
 
     @Test
-    public void test_call_stream() throws InterruptedException {
-        CountDownLatch countDownLatch = new CountDownLatch(1);
-
+    public void test_chat_model_call() {
         Prompt prompt = Prompt.builder()
                 .messages(new UserMessage(
                         """
-                                有哪些工具可以使用?
-                                """))
-                .build();
-
-        Flux<ChatResponse> stream = chatModel.stream(prompt);
-
-        stream.subscribe(
-                chatResponse -> {
-                    AssistantMessage output = chatResponse.getResult().getOutput();
-                    log.info("测试结果: {}", JSON.toJSONString(output));
-                },
-                Throwable::printStackTrace,
-                () -> {
-                    countDownLatch.countDown();
-                    System.out.println("Stream completed");
-                }
-        );
-
-        countDownLatch.await();
-    }
-
-    @Test
-    public void test_call_01() {
-        Prompt prompt = Prompt.builder()
-                .messages(new UserMessage(
-                        """
-                                有哪些工具可以使用?
+                                你有哪些工具可以使用?
                                 """))
                 .build();
 
@@ -136,13 +110,30 @@ public class AiAgentTest {
     }
 
     @Test
-    public void test_call_02() {
-        String userInput = "王大瓜今年几岁?";
-        System.out.println("\n>>> QUESTION: " + userInput);
-        System.out.println("\n>>> ASSISTANT: " + chatClient
-                .prompt(userInput)
-                .system(s -> s.param("current_date", LocalDate.now().toString()))
-                .call().content());
+    public void test_chat_model_stream() throws InterruptedException {
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+
+        Prompt prompt = Prompt.builder()
+                .messages(new UserMessage(
+                        """
+                                你有哪些工具可以使用?
+                                """))
+                .build();
+        Flux<ChatResponse> stream = chatModel.stream(prompt);
+
+        stream.subscribe(
+                chatResponse -> {
+                    AssistantMessage output = chatResponse.getResult().getOutput();
+                    log.info("测试结果(steam): {}", JSON.toJSONString(output));
+                },
+                Throwable::printStackTrace,
+                () -> {
+                    countDownLatch.countDown();
+                    System.out.println("Stream completed");
+                }
+        );
+
+        countDownLatch.await();
     }
 
     @Test
@@ -221,16 +212,16 @@ public class AiAgentTest {
                                 .build())
                 )
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3-max-preview")
+                        .model("qwen3.5-plus")
                         .build())
                 .build();
 
         String content = chatClient01
-                .prompt("帮我生成一篇文章")
+                .prompt("生成一篇文章")
 
                 .system(s -> s.param("current_date", LocalDate.now().toString()))
                 .advisors(a -> a
-                        .param(CHAT_MEMORY_CONVERSATION_ID_KEY, "chatId-101")
+                        .param(CHAT_MEMORY_CONVERSATION_ID_KEY, "chatId-100")
                         .param(CHAT_MEMORY_RETRIEVE_SIZE_KEY, 100))
                 .call().content();
 
@@ -246,9 +237,9 @@ public class AiAgentTest {
                         	 1. 分析用户输入的内容，生成技术文章。
                         	 2. 提取，文章标题（需要含带技术点）、文章内容、文章标签（多个用英文逗号隔开）、文章简述（100字）将以上内容发布文章到CSDN
                         	 3. 获取发送到 CSDN 文章的 URL 地址。
-                        	 4. 发布微信公众号消息通知，平台：CSDN、主题：为文章标题、描述：为文章简述、跳转地址：为发布文章到CSDN获取 URL地址 CSDN文章链接 https 开头的地址。
+                        	 4. 微信公众号消息通知，平台：CSDN、主题：为文章标题、描述：为文章简述、跳转地址：为发布文章到CSDN获取 URL地址 CSDN文章链接 https 开头的地址。
                         """)
-//                .defaultToolCallbacks(new SyncMcpToolCallbackProvider(sseMcpClient01(), sseMcpClient02()))
+                .defaultTools(new SyncMcpToolCallbackProvider(sseMcpClient01(), sseMcpClient02()))
                 .defaultAdvisors(
                         PromptChatMemoryAdvisor.builder(
                                 MessageWindowChatMemory.builder()
@@ -258,26 +249,25 @@ public class AiAgentTest {
                         new SimpleLoggerAdvisor()
                 )
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3-max-preview")
+                        .model("qwen3.5-plus")
                         .build())
                 .build();
 
-        String userInput = "帮我生成一篇文章，要求如下 \r\n" + content;
+        String userInput = "生成一篇文章，要求如下 \r\n" + content;
         System.out.println("\n>>> QUESTION: " + userInput);
         System.out.println("\n>>> ASSISTANT: " + chatClient02
                 .prompt(userInput)
                 .system(s -> s.param("current_date", LocalDate.now().toString()))
                 .advisors(a -> a
-                        .param(CHAT_MEMORY_CONVERSATION_ID_KEY, "chatId-101")
+                        .param(CHAT_MEMORY_CONVERSATION_ID_KEY, "chatId-100")
                         .param(CHAT_MEMORY_RETRIEVE_SIZE_KEY, 100))
                 .call().content());
     }
 
     public McpSyncClient stdioMcpClient() {
-        // based on
-        // https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem
-        var stdioParams = ServerParameters.builder("cmd")
-                .args("/c", "npx", "-y", "@modelcontextprotocol/server-filesystem", "D:\\Claude CLI", "D:\\Claude CLI")
+
+        var stdioParams = ServerParameters.builder("npx.cmd")
+                .args("-y", "@modelcontextprotocol/server-filesystem", "C:/Users/23260/Desktop", "D:/FileSystemMcp")
                 .build();
 
         var mcpClient = McpClient.sync(new StdioClientTransport(stdioParams))
@@ -293,7 +283,7 @@ public class AiAgentTest {
 
     public McpSyncClient sseMcpClient01() {
 
-        HttpClientSseClientTransport sseClientTransport = HttpClientSseClientTransport.builder("http://106.52.3.218:8101").sseEndpoint("/sse").build();
+        HttpClientSseClientTransport sseClientTransport = HttpClientSseClientTransport.builder("http://192.168.1.108:8101").build();
 
         McpSyncClient mcpSyncClient = McpClient.sync(sseClientTransport).requestTimeout(Duration.ofMinutes(180)).build();
 
@@ -305,7 +295,7 @@ public class AiAgentTest {
 
     public McpSyncClient sseMcpClient02() {
 
-        HttpClientSseClientTransport sseClientTransport = HttpClientSseClientTransport.builder("http://106.52.3.218:8102").sseEndpoint("/sse").build();
+        HttpClientSseClientTransport sseClientTransport = HttpClientSseClientTransport.builder("http://192.168.1.108:8102").build();
 
         McpSyncClient mcpSyncClient = McpClient.sync(sseClientTransport).requestTimeout(Duration.ofMinutes(180)).build();
 

@@ -18,7 +18,7 @@ import java.util.concurrent.ThreadPoolExecutor;
  * 以客户端对话模型，加载数据策略
  */
 @Slf4j
-@Service
+@Service("aiClientModelLoadDataStrategy")
 public class AiClientModelLoadDataStrategy implements ILoadDataStrategy {
 
     @Resource

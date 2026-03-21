@@ -8,7 +8,6 @@ import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -44,7 +43,7 @@ public class AiAgentConfig {
                         openAiApi,
                         MetadataMode.EMBED,
                         OpenAiEmbeddingOptions.builder()
-                                .model("text-embedding-v4")
+                                .model("tongyi-embedding-vision-plus")
                                 .dimensions(1536)
                                 .build()))
                 .vectorTableName("vector_store_openai")

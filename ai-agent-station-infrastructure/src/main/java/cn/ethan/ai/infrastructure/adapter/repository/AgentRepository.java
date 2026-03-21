@@ -270,10 +270,10 @@ public class AgentRepository implements IAgentRepository {
         String extParam = advisor.getExtParam();
         if (extParam != null && !extParam.trim().isEmpty()) {
             try {
-                if ("ChatMemory".equals(advisor.getAdvisorType())) {
-                    chatMemory = JSON.parseObject(extParam, AiClientAdvisorVO.ChatMemory.class);
-                } else if ("RagAnswer".equals(advisor.getAdvisorType())) {
+                if ("RagAnswer".equals(advisor.getAdvisorType())) {
                     ragAnswer = JSON.parseObject(extParam, AiClientAdvisorVO.RagAnswer.class);
+                } else if ("ChatMemory".equals(advisor.getAdvisorType())) {
+                    chatMemory = JSON.parseObject(extParam, AiClientAdvisorVO.ChatMemory.class);
                 }
             } catch (Exception ignored) {
             }
