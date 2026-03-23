@@ -125,9 +125,9 @@ public class AgentRepository implements IAgentRepository {
     }
 
     @Override
-    public List<AiClientSystemPromptVO> queryAiClientSystemPromptVOByClientIds(List<String> clientIdList) {
+    public Map<String, AiClientSystemPromptVO> queryAiClientSystemPromptVOByClientIds(List<String> clientIdList) {
         if (isEmpty(clientIdList)) {
-            return List.of();
+            return Map.of();
         }
 
         Map<String, AiClientSystemPromptVO> promptVOMap = new LinkedHashMap<>();
@@ -156,7 +156,7 @@ public class AgentRepository implements IAgentRepository {
             }
         }
 
-        return new ArrayList<>(promptVOMap.values());
+        return promptVOMap;
     }
 
     @Override
