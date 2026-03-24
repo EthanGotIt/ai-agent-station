@@ -5,6 +5,7 @@ import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.client.transport.StdioClientTransport;
+import io.modelcontextprotocol.json.McpJsonMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Before;
@@ -27,10 +28,6 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * 结合于拼团项目，使用了 ELK 做的结合使用。
- * 如果没有学习拼团项目，可以独立部署ELK验证；https://bugstack.cn/md/road-map/elk.html
- */
 @Slf4j
 @RunWith(SpringRunner.class)
 @SpringBootTest
@@ -57,8 +54,11 @@ public class AiAgentMCPESTest {
         chatModel = OpenAiChatModel.builder()
                 .openAiApi(openAiApi)
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3-max-preview")
-                        .toolCallbacks(new SyncMcpToolCallbackProvider(stdioMcpClientElasticsearch()).getToolCallbacks())
+                        .model("qwen3.5-plus")
+                        .toolCallbacks(SyncMcpToolCallbackProvider.builder()
+                                .mcpClients(stdioMcpClientElasticsearch())
+                                .build()
+                                .getToolCallbacks())
                         .build())
                 .build();
     }
@@ -82,7 +82,7 @@ public class AiAgentMCPESTest {
         Prompt prompt = Prompt.builder()
                 .messages(new UserMessage(
                         """ 
-                                查询xfg01日志，DSL 语句；
+                                查询liergou01日志，DSL 语句；
                                 {
                                   `index`: `group-buy-market-log-2025.06.08`,
                                   `queryBody`: {
@@ -109,22 +109,18 @@ public class AiAgentMCPESTest {
         log.info("测试结果(call):{}", JSON.toJSONString(chatResponse));
     }
 
-    /**
-     * https://sai.baidu.com/server/Elasticsearch%2520MCP%2520Server/awesimon?id=02d6b7e9091355b91fed045b9c80dede
-     * https://github.com/elastic/mcp-server-elasticsearch
-     */
     public McpSyncClient stdioMcpClientElasticsearch() {
 
         Map<String, String> env = new HashMap<>();
         env.put("ES_URL","http://127.0.0.1:9200");
         env.put("ES_API_KEY","none");
 
-        var stdioParams = ServerParameters.builder("npx")
+        var stdioParams = ServerParameters.builder("npx.cmd")
                 .args("-y", "@elastic/mcp-server-elasticsearch")
                 .env(env)
                 .build();
 
-        var mcpClient = McpClient.sync(new StdioClientTransport(stdioParams))
+        var mcpClient = McpClient.sync(new StdioClientTransport(stdioParams, McpJsonMapper.getDefault()))
                 .requestTimeout(Duration.ofSeconds(100)).build();
 
         var init = mcpClient.initialize();

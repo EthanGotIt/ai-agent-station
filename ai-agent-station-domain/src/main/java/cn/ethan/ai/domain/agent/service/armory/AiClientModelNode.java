@@ -1,7 +1,7 @@
 package cn.ethan.ai.domain.agent.service.armory;
 
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
-import cn.ethan.ai.domain.agent.model.valobj.AiAgentEnumVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientModelVO;
 import cn.ethan.ai.domain.agent.service.armory.factory.DefaultArmoryStrategyFactory;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
@@ -60,7 +60,10 @@ public class AiClientModelNode extends AbstractArmorySupport {
                     .defaultOptions(
                             OpenAiChatOptions.builder()
                                     .model(modelVO.getModelName())
-                                    .toolCallbacks(new SyncMcpToolCallbackProvider(mcpSyncClients).getToolCallbacks())
+                                    .toolCallbacks(SyncMcpToolCallbackProvider.builder()
+                                            .mcpClients(mcpSyncClients)
+                                            .build()
+                                            .getToolCallbacks())
                                     .build())
                     .build();
 

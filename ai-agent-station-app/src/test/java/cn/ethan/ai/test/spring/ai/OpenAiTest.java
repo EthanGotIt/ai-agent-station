@@ -64,7 +64,7 @@ public class OpenAiTest {
         ChatResponse response = openAiChatModel.call(new Prompt(
                 "1+1",
                 OpenAiChatOptions.builder()
-                        .model("qwen3-max")
+                        .model("qwen3.5-plus")
                         .build()));
 
         log.info("测试结果(call):{}", JSON.toJSONString(response));
@@ -83,7 +83,7 @@ public class OpenAiTest {
         ChatResponse response = openAiChatModel.call(new Prompt(
                 userMessage,
                 OpenAiChatOptions.builder()
-                        .model("qwen3-max")
+                        .model("qwen3.5-plus")
                         .build()));
 
         log.info("测试结果(images):{}", JSON.toJSONString(response));
@@ -96,7 +96,7 @@ public class OpenAiTest {
         Flux<ChatResponse> stream = openAiChatModel.stream(new Prompt(
                 "1+1",
                 OpenAiChatOptions.builder()
-                        .model("qwen3-max")
+                        .model("qwen3.5-plus")
                         .build()));
 
         stream.subscribe(
@@ -134,7 +134,7 @@ public class OpenAiTest {
 
     @Test
     public void chat() {
-        String message = "王大瓜今年几岁";
+        String message = "王大瓜今年几岁？";
 
         String SYSTEM_PROMPT = """
                 Use the information from the DOCUMENTS section to provide accurate answers but act as if you knew this information innately.
@@ -163,7 +163,7 @@ public class OpenAiTest {
         ChatResponse chatResponse = openAiChatModel.call(new Prompt(
                 messages,
                 OpenAiChatOptions.builder()
-                        .model("qwen3-max")
+                        .model("qwen3.5-plus")
                         .build()));
 
         log.info("测试结果:{}", JSON.toJSONString(chatResponse));

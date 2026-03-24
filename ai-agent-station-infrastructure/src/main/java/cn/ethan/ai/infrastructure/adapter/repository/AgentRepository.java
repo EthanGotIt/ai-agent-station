@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.*;
 
-import static cn.ethan.ai.domain.agent.model.valobj.AiAgentEnumVO.*;
+import static cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO.*;
 
 /**
  * AiAgent 仓储服务
@@ -327,6 +327,35 @@ public class AgentRepository implements IAgentRepository {
         return new ArrayList<>(modelVOMap.values());
     }
 
+    @Override
+    public Map<String, AiAgentClientFlowConfigVO> queryAiAgentClientFlowConfig(String aiAgentId) {
+        if (aiAgentId == null || aiAgentId.trim().isEmpty()) {
+            return Map.of();
+        }
+
+        try {
+            List<AiAgentFlowConfig> flowConfigs = aiAgentFlowConfigDao.queryByAgentId(aiAgentId);
+            if (isEmpty(flowConfigs)) {
+                return Map.of();
+            }
+
+            Map<String, AiAgentClientFlowConfigVO> result = new LinkedHashMap<>();
+            for (AiAgentFlowConfig config : flowConfigs) {
+                result.putIfAbsent(config.getClientType(),
+                        AiAgentClientFlowConfigVO.builder()
+                                .clientId(config.getClientId())
+                                .clientName(config.getClientName())
+                                .clientType(config.getClientType())
+                                .sequence(config.getSequence())
+                                .build());
+            }
+            return result;
+        } catch (Exception e) {
+            log.error("Query ai agent client flow config failed, aiAgentId: {}", aiAgentId, e);
+            return Map.of();
+        }
+    }
+
     /**
      * 判断列表是否为空
      */
@@ -363,19 +392,22 @@ public class AgentRepository implements IAgentRepository {
     }
 
     /**
-     * 解析MCP传输配置(sse/stdio)
+     * 解析MCP传输配置(stdio/sse/streamable_http)
      */
     private void parseTransportConfig(AiClientToolMcpVO mcpVO, String transportType, String transportConfig) {
         try {
-            if ("sse".equals(transportType)) {
-                ObjectMapper objectMapper = new ObjectMapper();
-                mcpVO.setTransportConfigSse(objectMapper.readValue(transportConfig, AiClientToolMcpVO.TransportConfigSse.class));
-            } else if ("stdio".equals(transportType)) {
+            if ("stdio".equals(transportType)) {
                 Map<String, Object> jsonMap = JSON.parseObject(transportConfig, new TypeReference<Map<String, Object>>() {});
                 String firstKey = jsonMap.keySet().iterator().next();
                 Object innerConfig = jsonMap.get(firstKey);
                 AiClientToolMcpVO.TransportConfigStdio transportConfigStdio = JSON.parseObject(JSON.toJSONString(innerConfig), AiClientToolMcpVO.TransportConfigStdio.class);
                 mcpVO.setTransportConfigStdio(transportConfigStdio);
+            } else if ("sse".equals(transportType)) {
+                ObjectMapper objectMapper = new ObjectMapper();
+                mcpVO.setTransportConfigSse(objectMapper.readValue(transportConfig, AiClientToolMcpVO.TransportConfigSse.class));
+            } else if ("streamable_http".equals(transportType)) {
+                ObjectMapper objectMapper = new ObjectMapper();
+                mcpVO.setTransportConfigStreamableHttp(objectMapper.readValue(transportConfig, AiClientToolMcpVO.TransportConfigStreamableHttp.class));
             }
         } catch (Exception e) {
             log.error("解析传输配置失败: {}", e.getMessage(), e);

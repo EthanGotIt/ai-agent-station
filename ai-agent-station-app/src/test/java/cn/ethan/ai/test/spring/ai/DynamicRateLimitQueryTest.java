@@ -4,6 +4,7 @@ import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.client.transport.StdioClientTransport;
+import io.modelcontextprotocol.json.McpJsonMapper;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -30,10 +31,6 @@ import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * 结合于拼团项目，使用了 ELK 做的结合使用。
- * 如果没有学习拼团项目，可以独立部署ELK验证；https://bugstack.cn/md/road-map/elk.html
- */
 @Slf4j
 @RunWith(SpringRunner.class)
 @SpringBootTest
@@ -54,8 +51,11 @@ public class DynamicRateLimitQueryTest {
         chatModel = OpenAiChatModel.builder()
                 .openAiApi(openAiApi)
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3-max-preview")
-                        .toolCallbacks(new SyncMcpToolCallbackProvider(stdioMcpClientElasticsearch()).getToolCallbacks())
+                        .model("qwen3.5-plus")
+                        .toolCallbacks(SyncMcpToolCallbackProvider.builder()
+                                .mcpClients(stdioMcpClientElasticsearch())
+                                .build()
+                                .getToolCallbacks())
                         .build())
                 .build();
     }
@@ -65,12 +65,12 @@ public class DynamicRateLimitQueryTest {
         env.put("ES_URL", "http://127.0.0.1:9200");
         env.put("ES_API_KEY", "none");
 
-        var stdioParams = ServerParameters.builder("npx")
+        var stdioParams = ServerParameters.builder("npx.cmd")
                 .args("-y", "@elastic/mcp-server-elasticsearch")
                 .env(env)
                 .build();
 
-        var mcpClient = McpClient.sync(new StdioClientTransport(stdioParams))
+        var mcpClient = McpClient.sync(new StdioClientTransport(stdioParams, McpJsonMapper.getDefault()))
                 .requestTimeout(Duration.ofSeconds(100)).build();
 
         var init = mcpClient.initialize();
@@ -83,7 +83,7 @@ public class DynamicRateLimitQueryTest {
      */
     @Test
     public void queryRateLimitedUsersDynamic() {
-        String userQuery = "查询哪个用户被限流了";
+        String userQuery = "查询哪个用户被限流";
         
         // 创建进度监听器
         Consumer<String> progressListener = progress -> {

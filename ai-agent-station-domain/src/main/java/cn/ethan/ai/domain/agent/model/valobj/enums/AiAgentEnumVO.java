@@ -1,4 +1,4 @@
-package cn.ethan.ai.domain.agent.model.valobj;
+package cn.ethan.ai.domain.agent.model.valobj.enums;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;

@@ -1,7 +1,7 @@
 package cn.ethan.ai.domain.agent.service.armory;
 
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
-import cn.ethan.ai.domain.agent.model.valobj.AiAgentEnumVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientSystemPromptVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientVO;
 import cn.ethan.ai.domain.agent.service.armory.factory.DefaultArmoryStrategyFactory;
@@ -69,7 +69,9 @@ public class AiClientNode extends AbstractArmorySupport {
             // 5. 构建对话客户端
             ChatClient chatClient = ChatClient.builder(chatModel)
                     .defaultSystem(defaultSystem.toString())
-                    .defaultToolCallbacks(new SyncMcpToolCallbackProvider(mcpSyncClients.toArray(new McpSyncClient[]{})))
+                    .defaultToolCallbacks(SyncMcpToolCallbackProvider.builder()
+                            .mcpClients(mcpSyncClients)
+                            .build())
                     .defaultAdvisors(advisorArray)
                     .build();
 

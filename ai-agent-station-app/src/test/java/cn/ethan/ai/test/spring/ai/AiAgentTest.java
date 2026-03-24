@@ -7,6 +7,7 @@ import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientSseClientTransport;
 import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.client.transport.StdioClientTransport;
+import io.modelcontextprotocol.json.McpJsonMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Before;
@@ -64,7 +65,10 @@ public class AiAgentTest {
                 .openAiApi(openAiApi)
                 .defaultOptions(OpenAiChatOptions.builder()
                         .model("qwen3.5-plus")
-                        .toolCallbacks(new SyncMcpToolCallbackProvider(stdioMcpClient()).getToolCallbacks())
+                        .toolCallbacks(SyncMcpToolCallbackProvider.builder()
+                                .mcpClients(stdioMcpClient())
+                                .build()
+                                .getToolCallbacks())
                         .build())
                 .build();
 
@@ -80,7 +84,10 @@ public class AiAgentTest {
                         	 3. 获取发送到 CSDN 文章的 URL 地址。
                         	 4. 微信公众号消息通知，平台：CSDN、主题：为文章标题、描述：为文章简述、跳转地址：从发布文章到CSDN获取 URL 地址
                         """)
-                .defaultToolCallbacks(new SyncMcpToolCallbackProvider(stdioMcpClient()).getToolCallbacks())
+                .defaultToolCallbacks(SyncMcpToolCallbackProvider.builder()
+                        .mcpClients(stdioMcpClient())
+                        .build()
+                        .getToolCallbacks())
                 .defaultAdvisors(
                         PromptChatMemoryAdvisor.builder(
                                 MessageWindowChatMemory.builder()
@@ -239,7 +246,9 @@ public class AiAgentTest {
                         	 3. 获取发送到 CSDN 文章的 URL 地址。
                         	 4. 微信公众号消息通知，平台：CSDN、主题：为文章标题、描述：为文章简述、跳转地址：为发布文章到CSDN获取 URL地址 CSDN文章链接 https 开头的地址。
                         """)
-                .defaultTools(new SyncMcpToolCallbackProvider(sseMcpClient01(), sseMcpClient02()))
+                .defaultTools(SyncMcpToolCallbackProvider.builder()
+                        .mcpClients(sseMcpClient01(), sseMcpClient02())
+                        .build())
                 .defaultAdvisors(
                         PromptChatMemoryAdvisor.builder(
                                 MessageWindowChatMemory.builder()
@@ -270,7 +279,7 @@ public class AiAgentTest {
                 .args("-y", "@modelcontextprotocol/server-filesystem", "C:/Users/23260/Desktop", "D:/FileSystemMcp")
                 .build();
 
-        var mcpClient = McpClient.sync(new StdioClientTransport(stdioParams))
+        var mcpClient = McpClient.sync(new StdioClientTransport(stdioParams, McpJsonMapper.getDefault()))
                 .requestTimeout(Duration.ofSeconds(10)).build();
 
         var init = mcpClient.initialize();

@@ -1,5 +1,6 @@
 package cn.ethan.ai.domain.agent.model.valobj;
 
+import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

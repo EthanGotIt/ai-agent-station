@@ -1,5 +1,6 @@
-package cn.ethan.ai.domain.agent.model.valobj;
+package cn.ethan.ai.domain.agent.model.valobj.enums;
 
+import cn.ethan.ai.domain.agent.model.valobj.AiClientAdvisorVO;
 import cn.ethan.ai.domain.agent.service.armory.factory.element.RagAnswerAdvisor;
 import lombok.AllArgsConstructor;
 import lombok.Getter;

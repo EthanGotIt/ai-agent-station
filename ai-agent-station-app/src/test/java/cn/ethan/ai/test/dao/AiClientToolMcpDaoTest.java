@@ -25,8 +25,8 @@ public class AiClientToolMcpDaoTest {
         AiClientToolMcp aiClientToolMcp = AiClientToolMcp.builder()
                 .mcpId("test_5006")
                 .mcpName("Test MCP")
-                .transportType("sse")
-                .transportConfig("{\"baseUri\":\"http://localhost:8080\",\"sseEndpoint\":\"/sse\"}")
+                .transportType("streamable_http")
+                .transportConfig("{\"baseUri\":\"http://localhost:8080\",\"endpoint\":\"/mcp\",\"headers\":{\"Authorization\":\"Bearer test-token\"}}")
                 .requestTimeout(180)
                 .status(1)
                 .createTime(LocalDateTime.now())
@@ -110,9 +110,9 @@ public class AiClientToolMcpDaoTest {
 
     @Test
     public void test_queryByTransportType() {
-        List<AiClientToolMcp> aiClientToolMcpList = aiClientToolMcpDao.queryByTransportType("sse");
+        List<AiClientToolMcp> aiClientToolMcpList = aiClientToolMcpDao.queryByTransportType("streamable_http");
         log.info("根据传输类型查询结果数量: {}", aiClientToolMcpList.size());
-        aiClientToolMcpList.forEach(mcp -> log.info("SSE类型MCP工具配置: {}", mcp));
+        aiClientToolMcpList.forEach(mcp -> log.info("Streamable HTTP类型MCP工具配置: {}", mcp));
     }
 
     @Test
