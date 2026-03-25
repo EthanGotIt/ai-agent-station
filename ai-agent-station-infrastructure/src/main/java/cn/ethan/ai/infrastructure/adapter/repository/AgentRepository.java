@@ -347,6 +347,7 @@ public class AgentRepository implements IAgentRepository {
                                 .clientName(config.getClientName())
                                 .clientType(config.getClientType())
                                 .sequence(config.getSequence())
+                                .stepPrompt(config.getStepPrompt())
                                 .build());
             }
             return result;

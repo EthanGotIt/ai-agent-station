@@ -3,210 +3,209 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 智能体 - By Ethan</title>
-    
-    <!-- 引入必要的脚本和样式 -->
+    <title>AI Auto Agent - By Ethan</title>
     <script src="./js/3.4.17.js"></script>
     <script src="./js/marked.min.js"></script>
     <script src="./js/purify.min.js"></script>
     <script src="./js/highlight.min.js"></script>
     <link rel="stylesheet" href="./css/github.min.css">
+    <link rel="stylesheet" href="./css/css2.css">
     <link rel="stylesheet" href="./css/main.css">
-    
-    <!-- Tailwind 配置 -->
     <script>
         tailwind.config = {
             theme: {
                 extend: {
                     fontFamily: {
-                        sans: ['PingFang SC', 'Microsoft YaHei', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                        sans: ['Inter', 'sans-serif'],
                     },
                     colors: {
                         primary: {
-                            50: '#f0fdfa',
-                            100: '#ccfbf1',
-                            200: '#99f6e4',
-                            300: '#5eead4',
-                            400: '#2dd4bf',
-                            500: '#14b8a6', // 主色调：优雅的青色
-                            600: '#0d9488',
-                            700: '#0f766e',
-                            800: '#115e59',
-                            900: '#134e4a',
-                        },
-                        dark: {
-                            bg: '#1a1b1e',
-                            panel: '#25262b',
-                            border: '#373a40'
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            200: '#bae6fd',
+                            300: '#7dd3fc',
+                            400: '#38bdf8',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                            900: '#0c4a6e',
                         }
-                    },
-                    boxShadow: {
-                        'soft': '0 4px 20px -2px rgba(0, 0, 0, 0.05)',
-                        'glow': '0 0 15px rgba(20, 184, 166, 0.3)',
                     }
                 }
             }
         }
     </script>
 </head>
-<body class="h-screen bg-[#f8f9fa] font-sans text-gray-800 overflow-hidden flex">
-
-    <!-- 左侧边栏 (响应式隐藏) -->
-    <aside class="w-72 bg-white border-r border-gray-100 flex flex-col hidden md:flex z-20 shadow-soft">
-        <!-- Logo 区域 -->
-        <div class="h-16 flex items-center px-6 border-b border-gray-50">
-            <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-primary-400 to-primary-600 flex items-center justify-center shadow-glow mr-3">
-                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                </svg>
+<body class="h-screen flex flex-col bg-gray-50 font-sans">
+<!-- Top Navigation -->
+<nav class="border-b bg-white px-4 py-3 flex items-center gap-3 shadow-sm sticky top-0 z-30">
+    <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
+                <span class="text-white font-bold text-sm">🤖</span>
             </div>
-            <span class="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-800 to-gray-600">AI Agent</span>
-            <span class="ml-2 text-xs font-medium text-gray-400 border border-gray-200 rounded px-1.5 py-0.5">Ethan</span>
+            <h1 class="text-xl font-bold text-gray-800">Auto AI Agent By Ethan</h1>
         </div>
+    </div>
 
-        <!-- 新建对话按钮 -->
+    <div class="flex-1 flex items-center justify-center">
+        <div class="flex items-center gap-3 text-gray-600">
+            <span class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
+            <span class="font-medium">全自动智能对话助手 - 实时流式交互体验</span>
+            <span class="text-xl">🐏</span>
+        </div>
+    </div>
+
+    <div class="flex items-center gap-2">
+        <button id="newChatBtn" class="flex items-center gap-1 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors duration-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            新建对话
+        </button>
+
+        <button id="clearAllChatsBtn" class="flex items-center gap-1 px-3 py-2 text-sm font-medium text-red-600 bg-white border border-red-300 rounded-lg hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors duration-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            清空对话
+        </button>
+    </div>
+</nav>
+
+<div class="flex-1 flex overflow-hidden">
+    <!-- 侧边栏 -->
+    <aside id="sidebar" class="w-64 bg-white border-r overflow-y-auto transition-all duration-300 ease-in-out shadow-sm custom-scrollbar">
         <div class="p-4">
-            <button id="newChatBtn" class="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary-50 hover:bg-primary-100 text-primary-600 rounded-xl transition-all duration-200 font-medium text-sm">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+            <h2 class="font-bold mb-3 text-lg text-gray-800 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                 </svg>
-                开启新对话
-            </button>
-        </div>
-
-        <!-- 历史记录列表 -->
-        <div class="flex-1 overflow-y-auto custom-scrollbar px-3">
-            <div class="text-xs font-semibold text-gray-400 mb-3 px-3 uppercase tracking-wider">最近对话</div>
-            <ul id="chatList" class="space-y-1">
-                <li class="text-sm text-gray-400 text-center py-8" id="emptyHistory">
-                    <div class="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-2">
-                        <svg class="w-5 h-5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
-                        </svg>
-                    </div>
-                    暂无历史记录
-                </li>
+                对话历史
+            </h2>
+            <ul id="chatList" class="space-y-2">
+                <!-- 对话历史列表 -->
             </ul>
-        </div>
-
-        <!-- 底部设置/清理 -->
-        <div class="p-4 border-t border-gray-50">
-            <button id="clearAllChatsBtn" class="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                </svg>
-                清空所有对话
-            </button>
         </div>
     </aside>
 
-    <!-- 主体内容区 -->
-    <main class="flex-1 flex flex-col relative bg-white md:rounded-l-3xl md:my-2 md:mr-2 shadow-soft border border-gray-100 overflow-hidden">
-        
-        <!-- 移动端顶部导航 -->
-        <header class="h-14 flex md:hidden items-center px-4 border-b border-gray-100 bg-white/80 backdrop-blur-md sticky top-0 z-30">
-            <div class="font-bold text-gray-800 flex items-center gap-2">
-                <div class="w-6 h-6 rounded-md bg-primary-500 flex items-center justify-center">
-                    <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col overflow-hidden bg-gray-50">
+        <!-- 双面板内容区域 -->
+        <div class="flex-1 flex overflow-hidden">
+            <!-- 左侧思考过程面板 -->
+            <div class="w-1/2 flex flex-col border-r border-gray-200 bg-white panel-shell">
+                <div class="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center gap-2 panel-heading">
+                    <span class="text-lg">🧠</span>
+                    <div class="flex-1 min-w-0">
+                        <h3 class="font-semibold text-gray-800">AI思考执行过程</h3>
+                        <p class="panel-subtitle">展示分析、执行、监督等实时步骤</p>
+                    </div>
                 </div>
-                AI Agent
-            </div>
-        </header>
-
-        <!-- 核心聊天区域 -->
-        <div class="flex-1 overflow-y-auto custom-scrollbar relative scroll-smooth" id="chatContainer">
-            
-            <!-- 欢迎页 (无对话时显示) -->
-            <div id="welcomeScreen" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center transition-opacity duration-300">
-                <div class="w-20 h-20 bg-gradient-to-br from-primary-100 to-primary-50 rounded-3xl flex items-center justify-center mb-6 shadow-sm border border-primary-100">
-                    <svg class="w-10 h-10 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
-                    </svg>
-                </div>
-                <h2 class="text-2xl font-bold text-gray-800 mb-2">我是 Ethan 的全自动智能体</h2>
-                <p class="text-gray-500 max-w-md mb-8">我可以自主分析问题、拆解任务、编写代码并验证结果。告诉我你想做什么？</p>
-                
-                <!-- 快捷问题 -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-2xl">
-                    <button onclick="setInputValue('检索Ethan的相关项目，列出一份学习计划')" class="text-left p-4 rounded-2xl border border-gray-100 hover:border-primary-300 hover:shadow-md bg-white transition-all group">
-                        <div class="font-medium text-gray-700 group-hover:text-primary-600 mb-1">📚 制定学习计划</div>
-                        <div class="text-xs text-gray-400">检索项目并规划学习路线</div>
-                    </button>
-                    <button onclick="setInputValue('根据当前北京互联网程序员加班情况，收入，公司文化等，列出一份大学生推荐入职单位。')" class="text-left p-4 rounded-2xl border border-gray-100 hover:border-primary-300 hover:shadow-md bg-white transition-all group">
-                        <div class="font-medium text-gray-700 group-hover:text-primary-600 mb-1">💼 职场分析推荐</div>
-                        <div class="text-xs text-gray-400">分析行业现状并推荐公司</div>
-                    </button>
-                    <button onclick="setInputValue('写一个 Python 脚本，批量重命名当前文件夹下的图片')" class="text-left p-4 rounded-2xl border border-gray-100 hover:border-primary-300 hover:shadow-md bg-white transition-all group">
-                        <div class="font-medium text-gray-700 group-hover:text-primary-600 mb-1">💻 编写实用脚本</div>
-                        <div class="text-xs text-gray-400">生成自动化处理代码</div>
-                    </button>
-                    <button onclick="setInputValue('解释一下什么是 DDD (领域驱动设计) 架构？')" class="text-left p-4 rounded-2xl border border-gray-100 hover:border-primary-300 hover:shadow-md bg-white transition-all group">
-                        <div class="font-medium text-gray-700 group-hover:text-primary-600 mb-1">🏗️ 架构概念解析</div>
-                        <div class="text-xs text-gray-400">深入浅出讲解技术概念</div>
-                    </button>
+                <div id="thinkingMessages" class="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                    <div class="flex items-start gap-3">
+                        <div class="w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center flex-shrink-0">
+                            <span class="text-white text-sm font-semibold">AI</span>
+                        </div>
+                        <div class="flex-1 bg-primary-50 rounded-lg p-3">
+                            <div class="text-sm text-primary-800">
+                                <strong>AI助手:</strong> 您好！我是Auto AI Agent智能对话助手，请在右侧输入您的问题，我将在这里展示思考和执行过程。
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- 消息流展示区 (默认隐藏，发送消息后显示) -->
-            <div id="messagesArea" class="hidden flex-col pb-6">
-                <!-- 消息将动态插入到这里 -->
+            <!-- 右侧结果面板 -->
+            <div class="w-1/2 flex flex-col bg-white panel-shell result-panel">
+                <div class="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center gap-3 panel-heading result-panel-heading">
+                    <span class="text-lg">📋</span>
+                    <div class="flex-1 min-w-0">
+                        <h3 class="font-semibold text-gray-800">最终执行结果</h3>
+                        <p class="panel-subtitle">聚合最终结论、执行产出和完成状态</p>
+                    </div>
+                    <span id="resultStatus" class="result-status-chip">等待结果</span>
+                    <button id="copyResultBtn" type="button" class="result-copy-btn" disabled>复制结果</button>
+                </div>
+                <div id="resultMessages" class="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar result-panel-body">
+                    <div id="resultEmptyState" class="result-empty-state">
+                        <div class="result-empty-icon">✨</div>
+                        <div class="result-empty-title">结果区已就绪</div>
+                        <div class="result-empty-text">执行完成后，这里会优先展示最终结论、执行结果和总结内容，方便直接复制与复核。</div>
+                    </div>
+                </div>
             </div>
-            
         </div>
 
-        <!-- 底部控制与输入区 -->
-        <div class="p-4 md:p-6 bg-white border-t border-gray-50 shrink-0">
-            
-            <!-- 参数配置区 (可折叠或紧凑展示) -->
-            <div class="flex items-center justify-between mb-3 text-xs">
-                <div class="flex items-center gap-3 text-gray-500">
-                    <div class="flex items-center gap-1.5 bg-gray-50 px-2.5 py-1.5 rounded-md border border-gray-100">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                        <select id="aiAgentSelect" class="bg-transparent outline-none cursor-pointer">
-                            <option value="3">Auto Agent - 全自动</option>
-                        </select>
-                    </div>
-                    <div class="flex items-center gap-1.5 bg-gray-50 px-2.5 py-1.5 rounded-md border border-gray-100">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                        <select id="maxStepSelect" class="bg-transparent outline-none cursor-pointer">
-                            <option value="1">最多 1 步</option>
-                            <option value="3">最多 3 步</option>
-                            <option value="5" selected>最多 5 步</option>
-                            <option value="10">最多 10 步</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <!-- 状态指示 -->
-                <div id="loading" class="hidden flex items-center gap-2 text-primary-500 font-medium">
-                    <span class="relative flex h-2.5 w-2.5">
-                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-400 opacity-75"></span>
-                      <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary-500"></span>
-                    </span>
-                    Agent 正在思考执行...
+        <!-- 底部输入区域 -->
+        <div class="border-t border-gray-200 bg-white p-4">
+            <!-- 加载状态 -->
+            <div id="loading" class="hidden text-center py-2 text-primary-600">
+                <div class="flex items-center justify-center gap-2">
+                    <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span class="font-medium">AI正在思考中，请稍候...</span>
                 </div>
             </div>
 
-            <!-- 主输入框 -->
-            <div class="relative bg-white rounded-2xl border border-gray-200 shadow-sm focus-within:ring-4 focus-within:ring-primary-50 focus-within:border-primary-400 transition-all">
-                <textarea id="messageInput" rows="1" placeholder="给 Agent 发送指令... (Shift + Enter 换行)" maxlength="2000"
-                          class="w-full py-4 pl-5 pr-14 bg-transparent border-none outline-none resize-none custom-scrollbar text-sm md:text-base max-h-[200px]"></textarea>
-                
+            <!-- 控制面板 -->
+            <div class="mb-4 flex flex-wrap items-center gap-4 p-3 bg-gray-50 rounded-lg">
+                <div class="flex items-center gap-2">
+                    <label for="aiAgentSelect" class="text-sm font-medium text-gray-700">智能体类型</label>
+                    <select id="aiAgentSelect" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-300 focus:border-primary-500 outline-none transition-all duration-200">
+                        <option value="3">Auto Agent - By GLM-5</option>
+                        <option value="4">Auto Agent - By Kimi-K2.5</option>
+                    </select>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <label for="maxStepSelect" class="text-sm font-medium text-gray-700">最大执行步数</label>
+                    <select id="maxStepSelect" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-300 focus:border-primary-500 outline-none transition-all duration-200">
+                        <option value="1">1步</option>
+                        <option value="2">2步</option>
+                        <option value="3" selected>3步</option>
+                        <option value="5">5步</option>
+                    </select>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <label for="exampleSelect" class="text-sm font-medium text-gray-700">提问案例</label>
+                    <select id="exampleSelect" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-300 focus:border-primary-500 outline-none transition-all duration-200">
+                        <option value="">请选择提问案例...</option>
+                        <option value="1 + 1 = ?">案例1；1 + 1 = ?</option>
+                        <option value="通过ES查询被限流的用户，给出被限流用户列表">案例2；通过ES查询被限流的用户，给出被限流用户列表</option>
+                        <option value="通过浏览器检索小傅哥的相关项目，列出一份学习计划">案例3；通过浏览器检索小傅哥的相关项目，列出一份学习计划</option>
+                        <option value="根据当前北京互联网程序员加班情况、收入、公司文化等，列出一份大学生推荐入职单位">案例4；根据当前北京互联网程序员加班情况、收入、公司文化等，列出一份大学生推荐入职单位</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- 输入框和发送按钮 -->
+            <div class="flex gap-3">
+                <input type="text" id="messageInput" placeholder="请输入您的问题..." maxlength="1000"
+                       class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-300 focus:border-primary-500 outline-none transition-all duration-200 text-gray-700 placeholder-gray-400">
                 <button id="sendBtn" onclick="sendMessage()"
-                        class="absolute right-3 bottom-3 p-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"></path>
+                        class="px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors duration-200 font-medium flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                     </svg>
+                    发送
                 </button>
             </div>
-            
-            <div class="mt-2 text-center text-[10px] text-gray-400 flex items-center justify-center gap-4">
-                <span>AI Agent Station</span>
-                <span>Session: <span id="sessionId" class="font-mono"></span></span>
+
+            <!-- 会话状态 -->
+            <div class="mt-3 text-center">
+                <div class="text-xs text-gray-500">
+                    会话ID: <span id="sessionId" class="font-mono"></span>
+                </div>
             </div>
         </div>
-    </main>
+    </div>
+</div>
 
-    <script src="./js/main.js"></script>
+<script src="./js/main.js"></script>
 </body>
 </html>

@@ -9,20 +9,23 @@
         <result column="client_name" property="clientName"/>
         <result column="client_type" property="clientType"/>
         <result column="sequence" property="sequence"/>
+        <result column="step_prompt" property="stepPrompt"/>
         <result column="create_time" property="createTime"/>
     </resultMap>
 
     <insert id="insert" parameterType="cn.ethan.ai.infrastructure.dao.po.AiAgentFlowConfig" useGeneratedKeys="true"
             keyProperty="id">
-        INSERT INTO ai_agent_flow_config (agent_id, client_id, client_name, client_type, sequence, create_time)
-        VALUES (#{agentId}, #{clientId}, #{clientName}, #{clientType}, #{sequence}, #{createTime})
+        INSERT INTO ai_agent_flow_config (agent_id, client_id, client_name, client_type, sequence, step_prompt,
+                                          create_time)
+        VALUES (#{agentId}, #{clientId}, #{clientName}, #{clientType}, #{sequence}, #{stepPrompt}, #{createTime})
     </insert>
 
     <update id="updateById" parameterType="cn.ethan.ai.infrastructure.dao.po.AiAgentFlowConfig">
         UPDATE ai_agent_flow_config
-        SET agent_id  = #{agentId},
-            client_id = #{clientId},
-            sequence  = #{sequence}
+        SET agent_id    = #{agentId},
+            client_id   = #{clientId},
+            sequence    = #{sequence},
+            step_prompt = #{stepPrompt}
         WHERE id = #{id}
     </update>
 
@@ -39,34 +42,69 @@
     </delete>
 
     <select id="queryById" parameterType="java.lang.String" resultMap="AiAgentFlowConfigMap">
-        SELECT id, agent_id, client_id, client_name, client_type, sequence, create_time
+        SELECT id,
+               agent_id,
+               client_id,
+               client_name,
+               client_type,
+               sequence,
+               step_prompt,
+               create_time
         FROM ai_agent_flow_config
         WHERE id = #{id}
     </select>
 
     <select id="queryByAgentId" parameterType="java.lang.String" resultMap="AiAgentFlowConfigMap">
-        SELECT id, agent_id, client_id, client_name, client_type, sequence, create_time
+        SELECT id,
+               agent_id,
+               client_id,
+               client_name,
+               client_type,
+               sequence,
+               step_prompt,
+               create_time
         FROM ai_agent_flow_config
         WHERE agent_id = #{agentId}
         ORDER BY sequence
     </select>
 
     <select id="queryByClientId" parameterType="java.lang.String" resultMap="AiAgentFlowConfigMap">
-        SELECT id, agent_id, client_id, client_name, client_type, sequence, create_time
+        SELECT id,
+               agent_id,
+               client_id,
+               client_name,
+               client_type,
+               sequence,
+               step_prompt,
+               create_time
         FROM ai_agent_flow_config
         WHERE client_id = #{clientId}
         ORDER BY sequence
     </select>
 
     <select id="queryByAgentIdAndClientId" resultMap="AiAgentFlowConfigMap">
-        SELECT id, agent_id, client_id, client_name, client_type, sequence, create_time
+        SELECT id,
+               agent_id,
+               client_id,
+               client_name,
+               client_type,
+               sequence,
+               step_prompt,
+               create_time
         FROM ai_agent_flow_config
         WHERE agent_id = #{agentId}
           AND client_id = #{clientId}
     </select>
 
     <select id="queryAll" resultMap="AiAgentFlowConfigMap">
-        SELECT id, agent_id, client_id, client_name, client_type, sequence, create_time
+        SELECT id,
+               agent_id,
+               client_id,
+               client_name,
+               client_type,
+               sequence,
+               step_prompt,
+               create_time
         FROM ai_agent_flow_config
         ORDER BY agent_id, sequence
     </select>
