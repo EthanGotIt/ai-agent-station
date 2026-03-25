@@ -135,7 +135,8 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
                         .build();
                 var init_streamable = mcpSyncClient.initialize();
 
-                log.info("Tool Streamable HTTP MCP Initialized {}", init_streamable);
+                log.info("Tool Streamable HTTP MCP Initialized, mcpId:{}, baseUri:{}, endpoint:{}, result:{}",
+                        aiClientToolMcpVO.getMcpId(), parsedStreamableAddress.baseUri(), parsedStreamableAddress.endpoint(), init_streamable);
                 return mcpSyncClient;
             }
         }

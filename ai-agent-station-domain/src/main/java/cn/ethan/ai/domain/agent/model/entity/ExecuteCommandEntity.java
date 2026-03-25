@@ -22,4 +22,6 @@ public class ExecuteCommandEntity {
 
     private Integer maxStep;
 
+    private String streamProtocol;
+
 }

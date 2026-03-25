@@ -2,6 +2,7 @@ package cn.ethan.ai.domain.agent.service.execute.auto.step.factory;
 
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AiAgentClientFlowConfigVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.StreamTransportTypeEnumVO;
 import cn.ethan.ai.domain.agent.service.execute.auto.step.RootNode;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import lombok.*;
@@ -44,6 +45,8 @@ public class DefaultAutoAgentExecuteStrategyFactory {
         private String currentTask;
 
         boolean isCompleted = false;
+
+        private StreamTransportTypeEnumVO streamProtocol = StreamTransportTypeEnumVO.SSE;
 
         private Map<String, AiAgentClientFlowConfigVO> aiAgentClientFlowConfigVOMap;
 

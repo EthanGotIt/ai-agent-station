@@ -78,7 +78,7 @@ public class AiClientNode extends AbstractArmorySupport {
             registerBean(beanName(aiClientVO.getClientId()), ChatClient.class, chatClient);
         }
 
-        return router(requestParameter, dynamicContext);
+        return String.format("已完成客户端自动装配，clientCount=%d，clientIds=%s", aiClientList.size(), requestParameter.getCommandIdList());
     }
 
     @Override
