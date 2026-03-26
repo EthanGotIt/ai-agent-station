@@ -5,6 +5,7 @@ import cn.ethan.ai.api.dto.AutoAgentRequestDTO;
 import cn.ethan.ai.domain.agent.model.entity.AutoAgentExecuteResultEntity;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.enums.StreamTransportTypeEnumVO;
+import cn.ethan.ai.domain.agent.service.IAgentDispatchService;
 import cn.ethan.ai.domain.agent.service.execute.IExecuteStrategy;
 import com.alibaba.fastjson.JSON;
 import jakarta.annotation.Resource;
@@ -30,6 +31,9 @@ public class AiAgentController implements IAiAgentService {
     @Resource
     private ThreadPoolExecutor threadPoolExecutor;
 
+    @Resource
+    private IAgentDispatchService agentDispatchService;
+
     @RequestMapping(value = "auto_agent", method = RequestMethod.POST)
     public ResponseBodyEmitter autoAgent(@RequestBody AutoAgentRequestDTO request, HttpServletResponse response) {
         log.info("AutoAgent流式执行请求开始，请求信息：{}", JSON.toJSONString(request));
@@ -49,26 +53,8 @@ public class AiAgentController implements IAiAgentService {
                     .maxStep(request.getMaxStep())
                     .streamProtocol(StreamTransportTypeEnumVO.STREAMABLE_HTTP.getCode())
                     .build();
-            
-            threadPoolExecutor.execute(() -> {
-                try {
-                    autoAgentExecuteStrategy.execute(executeCommandEntity, emitter);
-                } catch (Exception e) {
-                    log.error("AutoAgent执行异常：{}", e.getMessage(), e);
-                    try {
-                        AutoAgentExecuteResultEntity errorResult = AutoAgentExecuteResultEntity.createErrorResult("执行异常：" + e.getMessage(), request.getSessionId());
-                        emitter.send(encodeStreamResult(errorResult, StreamTransportTypeEnumVO.STREAMABLE_HTTP));
-                    } catch (Exception ex) {
-                        log.error("发送异常信息失败：{}", ex.getMessage(), ex);
-                    }
-                } finally {
-                    try {
-                        emitter.complete();
-                    } catch (Exception e) {
-                        log.error("完成流式输出失败：{}", e.getMessage(), e);
-                    }
-                }
-            });
+
+            agentDispatchService.dispatch(executeCommandEntity, emitter);
             
             return emitter;
 

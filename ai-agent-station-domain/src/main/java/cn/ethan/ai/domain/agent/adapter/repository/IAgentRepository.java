@@ -28,4 +28,6 @@ public interface IAgentRepository {
 
     Map<String, AiAgentClientFlowConfigVO> queryAiAgentClientFlowConfig(String aiAgentId);
 
+    AiAgentVO queryAiAgentByAgentId(String aiAgentId);
+
 }

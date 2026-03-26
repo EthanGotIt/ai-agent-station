@@ -14,7 +14,7 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter
  * 配置过程处理
  */
 @Slf4j
-@Service
+@Service("flowAgentExecuteStrategy")
 public class FlowAgentExecuteStrategy implements IExecuteStrategy {
 
     @Resource

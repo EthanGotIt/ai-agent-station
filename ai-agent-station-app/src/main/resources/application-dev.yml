@@ -43,7 +43,7 @@ spring:
           model: text-embedding-v4
     agent:
       auto-config:
-        enabled: false
+        enabled: true
         client-ids: 2101,2102,2103
 #        client-ids: 3101,3102,3103,3104,4101,4102,4103,4104,5101,5102,5103,5104
 

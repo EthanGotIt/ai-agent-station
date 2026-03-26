@@ -1,22 +1,18 @@
-package cn.ethan.ai.infrastructure.dao.po;
+package cn.ethan.ai.domain.agent.model.valobj;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
-
+/**
+ * AI智能体配置值对象
+ */
 @Data
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class AiAgent {
-
-    /**
-     * 主键ID
-     */
-    private Long id;
+public class AiAgentVO {
 
     /**
      * 智能体ID
@@ -47,15 +43,5 @@ public class AiAgent {
      * 状态(0:禁用,1:启用)
      */
     private Integer status;
-
-    /**
-     * 创建时间
-     */
-    private LocalDateTime createTime;
-
-    /**
-     * 更新时间
-     */
-    private LocalDateTime updateTime;
 
 }
