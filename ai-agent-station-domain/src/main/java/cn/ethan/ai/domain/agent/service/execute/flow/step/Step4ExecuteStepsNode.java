@@ -1,0 +1,204 @@
+package cn.ethan.ai.domain.agent.service.execute.flow.step;
+
+import cn.ethan.ai.domain.agent.model.entity.AutoAgentExecuteResultEntity;
+import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
+import cn.ethan.ai.domain.agent.model.valobj.AiAgentClientFlowConfigVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.AiClientTypeEnumVO;
+import cn.ethan.ai.domain.agent.service.execute.flow.step.factory.DefaultFlowAgentExecuteStrategyFactory;
+import cn.ethan.wrench.design.framework.tree.StrategyHandler;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * 第四步：按顺序执行规划步骤节点
+ */
+@Slf4j
+@Service
+public class Step4ExecuteStepsNode extends AbstractExecuteSupport {
+
+    @Override
+    public String doApply(ExecuteCommandEntity request, DefaultFlowAgentExecuteStrategyFactory.DynamicContext dynamicContext) {
+        log.info("开始执行第四步：按顺序执行规划步骤");
+
+        try {
+            AiAgentClientFlowConfigVO aiAgentClientFlowConfigVO = dynamicContext.getAiAgentClientFlowConfigVOMap().get(AiClientTypeEnumVO.EXECUTOR_CLIENT.getCode());
+            ChatClient executorChatClient = getChatClientByClientId(aiAgentClientFlowConfigVO.getClientId());
+            Map<String, String> stepsMap = dynamicContext.getValue("stepsMap");
+            
+            if (stepsMap == null || stepsMap.isEmpty()) {
+                return "步骤映射为空，无法执行";
+            }
+            
+            executeStepsInOrder(executorChatClient, stepsMap, dynamicContext);
+
+            AutoAgentExecuteResultEntity result = AutoAgentExecuteResultEntity.createExecutionResult(
+                    dynamicContext.getStep(),
+                    "已完成所有规划步骤的执行",
+                    request.getSessionId()
+            );
+            sendStreamResult(dynamicContext, result);
+
+            dynamicContext.setStep(dynamicContext.getStep() + 1);
+            dynamicContext.setCompleted(true);
+            sendCompleteResult(dynamicContext, request.getSessionId());
+            
+            log.info("第四步执行完成：所有规划步骤已执行");
+
+            return "所有规划步骤执行完成";
+        } catch (Exception e) {
+            log.error("第四步执行失败", e);
+            return "执行步骤失败: " + e.getMessage();
+        }
+    }
+
+    @Override
+    public StrategyHandler<ExecuteCommandEntity, DefaultFlowAgentExecuteStrategyFactory.DynamicContext, String> get(ExecuteCommandEntity request, DefaultFlowAgentExecuteStrategyFactory.DynamicContext dynamicContext) {
+        return defaultStrategyHandler;
+    }
+    
+    /**
+     * 按顺序执行规划步骤
+     */
+    private void executeStepsInOrder(ChatClient executorChatClient, Map<String, String> stepsMap, DefaultFlowAgentExecuteStrategyFactory.DynamicContext dynamicContext) {
+        if (stepsMap == null || stepsMap.isEmpty()) {
+            log.warn("步骤映射为空，无法执行");
+            return;
+        }
+
+        List<Integer> stepNumbers = new ArrayList<>();
+        for (String stepKey : stepsMap.keySet()) {
+            try {
+                Pattern numberPattern = Pattern.compile("第(\\d+)步");
+                Matcher matcher = numberPattern.matcher(stepKey);
+                if (matcher.find()) {
+                    stepNumbers.add(Integer.parseInt(matcher.group(1)));
+                }
+            } catch (NumberFormatException e) {
+                log.warn("无法解析步骤编号: {}", stepKey);
+            }
+        }
+
+        stepNumbers.sort(Integer::compareTo);
+        for (Integer stepNumber : stepNumbers) {
+            String stepKey = "第" + stepNumber + "步";
+            String stepContent = null;
+
+            for (Map.Entry<String, String> entry : stepsMap.entrySet()) {
+                if (entry.getKey().startsWith(stepKey)) {
+                    stepContent = entry.getValue();
+                    break;
+                }
+            }
+
+            if (stepContent != null) {
+                executeStep(executorChatClient, stepNumber, stepKey, stepContent, dynamicContext);
+            } else {
+                log.warn("未找到步骤内容: {}", stepKey);
+            }
+        }
+    }
+    
+    /**
+     * 执行单个步骤
+     */
+    private void executeStep(ChatClient executorChatClient, Integer stepNumber, String stepKey, String stepContent, DefaultFlowAgentExecuteStrategyFactory.DynamicContext dynamicContext) {
+        log.info("\n--- 开始执行 {} ---", stepKey);
+        log.info("步骤内容: {}", stepContent.substring(0, Math.min(200, stepContent.length())) + "...");
+
+        try {
+            dynamicContext.setValue("currentStep", stepNumber);
+            dynamicContext.setValue("currentStepKey", stepKey);
+            dynamicContext.setValue("currentStepContent", stepContent);
+
+            String executionResult = executorChatClient.prompt()
+                    .user(buildStepExecutionPrompt(stepContent, dynamicContext))
+                    .call()
+                    .content();
+
+            assert executionResult != null;
+            log.info("步骤 {} 执行结果: {}", stepNumber, executionResult.substring(0, Math.min(150, executionResult.length())) + "...");
+
+            dynamicContext.setValue("step" + stepNumber + "Result", executionResult);
+            
+            AutoAgentExecuteResultEntity stepResult = AutoAgentExecuteResultEntity.createExecutionResult(
+                    stepNumber,
+                    stepKey + " 执行完成: " + executionResult.substring(0, Math.min(500, executionResult.length())),
+                    (String) dynamicContext.getValue("sessionId")
+            );
+            sendStreamResult(dynamicContext, stepResult);
+
+            Thread.sleep(1000);
+
+        } catch (Exception e) {
+            log.error("执行步骤 {} 时发生错误: {}", stepNumber, e.getMessage());
+            dynamicContext.setValue("step" + stepNumber + "Error", e.getMessage());
+
+            handleStepExecutionError(stepNumber, stepKey, e, dynamicContext);
+        }
+
+        log.info("--- 完成执行 {} ---", stepKey);
+    }
+    
+    /**
+     * 处理步骤执行错误
+     */
+    private void handleStepExecutionError(Integer stepNumber, String stepKey, Exception e, DefaultFlowAgentExecuteStrategyFactory.DynamicContext dynamicContext) {
+        log.warn("步骤 {} 执行失败，尝试恢复策略", stepNumber);
+
+        Map<String, Integer> errorStats = dynamicContext.getValue("stepErrorStats");
+        if (errorStats == null) {
+            errorStats = new HashMap<>();
+            dynamicContext.setValue("stepErrorStats", errorStats);
+        }
+        errorStats.put("step" + stepNumber, errorStats.getOrDefault("step" + stepNumber, 0) + 1);
+
+        if (e.getMessage() != null && (e.getMessage().contains("timeout") || e.getMessage().contains("connection"))) {
+            log.info("检测到网络错误，将在后续重试机制中处理");
+        }
+
+        dynamicContext.setValue("step" + stepNumber + "Status", "FAILED_WITH_ERROR");
+        
+        try {
+            AutoAgentExecuteResultEntity errorResult = AutoAgentExecuteResultEntity.createExecutionResult(
+                    stepNumber,
+                    stepKey + " 执行失败: " + e.getMessage(),
+                    dynamicContext.getValue("sessionId")
+            );
+            sendStreamResult(dynamicContext, errorResult);
+        } catch (Exception streamException) {
+            log.error("发送错误流式结果失败", streamException);
+        }
+    }
+    
+    /**
+     * 构建步骤执行提示词
+     */
+    private String buildStepExecutionPrompt(String stepContent, DefaultFlowAgentExecuteStrategyFactory.DynamicContext dynamicContext) {
+        return "你是一个智能执行助手，需要执行以下步骤:\n\n" +
+                "**步骤内容:**\n" +
+                stepContent + "\n\n" +
+                "**用户原始请求:**\n" +
+                dynamicContext.getCurrentTask() + "\n\n" +
+                "**执行要求:**\n" +
+                "1. 仔细分析步骤内容，理解需要执行的具体任务\n" +
+                "2. 如果涉及MCP工具调用，请使用相应的工具\n" +
+                "3. 提供详细的执行过程和结果\n" +
+                "4. 如果遇到问题，请说明具体的错误信息\n" +
+                "5. **重要**: 执行完成后，必须在回复末尾明确输出执行结果，格式如下:\n" +
+                "   ```\n" +
+                "   === 执行结果 ===\n" +
+                "   状态: [成功/失败]\n" +
+                "   结果描述: [具体的执行结果描述]\n" +
+                "   输出数据: [如果有具体的输出数据，请在此列出]\n" +
+                "   ```\n\n" +
+                "请开始执行这个步骤，并严格按照要求提供详细的执行报告和结果输出。";
+    }
+}

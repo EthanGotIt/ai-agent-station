@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @Configuration
@@ -30,10 +31,12 @@ public class AiAgentConfig {
      * <p>
      * SELECT * FROM vector_store_openai
      */
-    @Bean("pgVectorStore")
+    @Bean("vectorStore")
+    @Primary
     @ConditionalOnBean(name = "pgVectorJdbcTemplate")
     public PgVectorStore pgVectorStore(@Value("${spring.ai.openai.base-url}") String baseUrl,
                                        @Value("${spring.ai.openai.api-key}") String apiKey,
+                                       @Value("${spring.ai.openai.embedding.options.model:tongyi-embedding-vision-plus}") String embeddingModel,
                                        @Qualifier("pgVectorJdbcTemplate") JdbcTemplate jdbcTemplate) {
 
         OpenAiApi openAiApi = OpenAiApi.builder()
@@ -45,7 +48,7 @@ public class AiAgentConfig {
                         openAiApi,
                         MetadataMode.EMBED,
                         OpenAiEmbeddingOptions.builder()
-                                .model("tongyi-embedding-vision-plus")
+                                .model(embeddingModel)
                                 .dimensions(1536)
                                 .build()))
                 .vectorTableName("vector_store_openai")

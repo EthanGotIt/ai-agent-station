@@ -38,10 +38,14 @@ spring:
     openai:
       base-url: https://dashscope.aliyuncs.com/compatible-mode/
       api-key: sk-0ec8457a16644d5ca60a3468b20463e2
+      embedding:
+        options:
+          model: text-embedding-v4
     agent:
       auto-config:
-        enabled: true
-        client-ids: 3101,3102,3103,3104,4101,4102,4103,4104,5101,5102,5103,5104
+        enabled: false
+        client-ids: 2101,2102,2103
+#        client-ids: 3101,3102,3103,3104,4101,4102,4103,4104,5101,5102,5103,5104
 
 logging:
   level:

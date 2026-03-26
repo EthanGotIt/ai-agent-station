@@ -55,7 +55,6 @@ public class AiAgentAutoConfiguration implements ApplicationListener<Application
             // 解析客户端ID列表（支持逗号分隔的字符串）
             List<String> commandIdList;
             if (clientIds.size() == 1 && clientIds.get(0).contains(Constants.SPLIT)) {
-                // 处理逗号分隔的字符串
                 commandIdList = Arrays.stream(clientIds.get(0).split(Constants.SPLIT))
                         .map(String::trim)
                         .filter(id -> !id.isEmpty())

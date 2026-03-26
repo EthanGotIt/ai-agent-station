@@ -40,7 +40,7 @@ public class AgentTest {
         String apply = armoryStrategyHandler.apply(
                 ArmoryCommandEntity.builder()
                         .commandType(AiAgentEnumVO.AI_CLIENT.getCode())
-                        .commandIdList(List.of("3001"))
+                        .commandIdList(List.of("2101"))
                         .build(),
                 new DefaultArmoryStrategyFactory.DynamicContext());
 
@@ -57,11 +57,11 @@ public class AgentTest {
         String apply = armoryStrategyHandler.apply(
                 ArmoryCommandEntity.builder()
                         .commandType(AiAgentEnumVO.AI_CLIENT.getCode())
-                        .commandIdList(List.of("3001"))
+                        .commandIdList(List.of("3101"))
                         .build(),
                 new DefaultArmoryStrategyFactory.DynamicContext());
 
-        OpenAiChatModel openAiChatModel = (OpenAiChatModel) applicationContext.getBean(AiAgentEnumVO.AI_CLIENT_MODEL.getBeanName("2001"));
+        OpenAiChatModel openAiChatModel = (OpenAiChatModel) applicationContext.getBean(AiAgentEnumVO.AI_CLIENT_MODEL.getBeanName("3001"));
 
         log.info("模型构建:{}", openAiChatModel);
 
@@ -85,11 +85,11 @@ public class AgentTest {
         String apply = armoryStrategyHandler.apply(
                 ArmoryCommandEntity.builder()
                         .commandType(AiAgentEnumVO.AI_CLIENT.getCode())
-                        .commandIdList(List.of("3001"))
+                        .commandIdList(List.of("2101"))
                         .build(),
                 new DefaultArmoryStrategyFactory.DynamicContext());
 
-        ChatClient chatClient = (ChatClient) applicationContext.getBean(AiAgentEnumVO.AI_CLIENT.getBeanName("3001"));
+        ChatClient chatClient = (ChatClient) applicationContext.getBean(AiAgentEnumVO.AI_CLIENT.getBeanName("2101"));
         log.info("客户端构建:{}", chatClient);
 
         String content = chatClient.prompt(Prompt.builder()

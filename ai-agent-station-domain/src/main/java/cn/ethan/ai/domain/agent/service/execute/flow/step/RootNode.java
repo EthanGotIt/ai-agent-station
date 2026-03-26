@@ -1,8 +1,8 @@
-package cn.ethan.ai.domain.agent.service.execute.auto.step;
+package cn.ethan.ai.domain.agent.service.execute.flow.step;
 
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AiAgentClientFlowConfigVO;
-import cn.ethan.ai.domain.agent.service.execute.auto.step.factory.DefaultAutoAgentExecuteStrategyFactory;
+import cn.ethan.ai.domain.agent.service.execute.flow.step.factory.DefaultFlowAgentExecuteStrategyFactory;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -11,35 +11,31 @@ import org.springframework.stereotype.Service;
 import java.util.Map;
 
 /**
- * 执行根节点
+ * 流程执行根节点
  */
 @Slf4j
-@Service("executeRootNode")
+@Service("flowRootNode")
 public class RootNode extends AbstractExecuteSupport {
 
     @Resource
-    private Step1AnalyzerNode step1AnalyzerNode;
+    private Step1McpToolsAnalysisNode step1McpToolsAnalysisNode;
 
     @Override
-    protected String doApply(ExecuteCommandEntity requestParameter, DefaultAutoAgentExecuteStrategyFactory.DynamicContext dynamicContext) throws Exception {
+    protected String doApply(ExecuteCommandEntity requestParameter, DefaultFlowAgentExecuteStrategyFactory.DynamicContext dynamicContext) throws Exception {
 
         Map<String, AiAgentClientFlowConfigVO> aiAgentClientFlowConfigVOMap = repository.queryAiAgentClientFlowConfig(requestParameter.getAiAgentId());
 
-        // 客户端对话组
         dynamicContext.setAiAgentClientFlowConfigVOMap(aiAgentClientFlowConfigVOMap);
-        // 上下文信息
         dynamicContext.setExecutionHistory(new StringBuilder());
-        // 当前任务信息
         dynamicContext.setCurrentTask(requestParameter.getMessage());
-        // 最大任务步骤
-        dynamicContext.setMaxStep(requestParameter.getMaxStep());
+        dynamicContext.setMaxStep(requestParameter.getMaxStep() != null ? requestParameter.getMaxStep() : dynamicContext.getMaxStep());
 
         return router(requestParameter, dynamicContext);
     }
 
     @Override
-    public StrategyHandler<ExecuteCommandEntity, DefaultAutoAgentExecuteStrategyFactory.DynamicContext, String> get(ExecuteCommandEntity requestParameter, DefaultAutoAgentExecuteStrategyFactory.DynamicContext dynamicContext) throws Exception {
-        return step1AnalyzerNode;
+    public StrategyHandler<ExecuteCommandEntity, DefaultFlowAgentExecuteStrategyFactory.DynamicContext, String> get(ExecuteCommandEntity requestParameter, DefaultFlowAgentExecuteStrategyFactory.DynamicContext dynamicContext) throws Exception {
+        return step1McpToolsAnalysisNode;
     }
 
 }
