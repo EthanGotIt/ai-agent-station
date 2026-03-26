@@ -12,7 +12,6 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -38,7 +37,6 @@ public class RagAnswerAdvisor implements BaseAdvisor {
         this.userTextAdvise = "\nContext information is below, surrounded by ---------------------\n\n---------------------\n{question_answer_context}\n---------------------\n\nGiven the context and provided history information and not prior knowledge,\nreply to the user comment. If the answer is not in the context, inform\nthe user that you can't answer the question.\n";
     }
 
-
     @Override
     public @NonNull ChatClientRequest before(@NonNull ChatClientRequest chatClientRequest, @NonNull AdvisorChain advisorChain) {
         HashMap<String, Object> context = new HashMap<>(chatClientRequest.context());
@@ -46,9 +44,9 @@ public class RagAnswerAdvisor implements BaseAdvisor {
         String userText = chatClientRequest.prompt().getUserMessage().getText();
         String advisedUserText = userText + System.lineSeparator() + this.userTextAdvise;
 
-        String query = (new PromptTemplate(userText)).render();
+//        String query = (new PromptTemplate(userText)).render();
 
-        SearchRequest searchRequestToUse = SearchRequest.from(this.searchRequest).query(query).filterExpression(this.doGetFilterExpression(context)).build();
+        SearchRequest searchRequestToUse = SearchRequest.from(this.searchRequest).query(userText).filterExpression(this.doGetFilterExpression(context)).build();
         List<Document> documents = this.vectorStore.similaritySearch(searchRequestToUse);
         context.put("qa_retrieved_documents", documents);
 
@@ -63,7 +61,7 @@ public class RagAnswerAdvisor implements BaseAdvisor {
     }
 
     @Override
-    public ChatClientResponse after(ChatClientResponse chatClientResponse, @NonNull AdvisorChain advisorChain) {
+    public @NonNull ChatClientResponse after(ChatClientResponse chatClientResponse, @NonNull AdvisorChain advisorChain) {
         assert chatClientResponse.chatResponse() != null;
         ChatResponse.Builder chatResponseBuilder = ChatResponse.builder().from(chatClientResponse.chatResponse());
         chatResponseBuilder.metadata("qa_retrieved_documents", chatClientResponse.context().get("qa_retrieved_documents"));
@@ -76,7 +74,7 @@ public class RagAnswerAdvisor implements BaseAdvisor {
     }
 
     @Override
-    public ChatClientResponse adviseCall(@NonNull ChatClientRequest chatClientRequest, CallAdvisorChain callAdvisorChain) {
+    public @NonNull ChatClientResponse adviseCall(@NonNull ChatClientRequest chatClientRequest, CallAdvisorChain callAdvisorChain) {
         ChatClientResponse chatClientResponse = callAdvisorChain.nextCall(this.before(chatClientRequest, callAdvisorChain));
         return this.after(chatClientResponse, callAdvisorChain);
     }

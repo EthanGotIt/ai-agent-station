@@ -40,7 +40,7 @@ public class FlowAgentMCPTest {
                 .defaultOptions(OpenAiChatOptions.builder()
                         .model("qwen3.5-plus")
                         .toolCallbacks(SyncMcpToolCallbackProvider.builder()
-                                .mcpClients(stdioMcpClientElasticsearch())
+                                .mcpClients(stdioMcpClient_Grafana())
                                 .build()
                                 .getToolCallbacks())
                         .build())
@@ -69,5 +69,33 @@ public class FlowAgentMCPTest {
 
         return mcpClient;
 
+    }
+
+    public McpSyncClient stdioMcpClient_Grafana() {
+        Map<String, String> env = new HashMap<>();
+        env.put("GRAFANA_URL", "http://127.0.0.1:9200");
+        env.put("GRAFANA_API_KEY", "glsa_IObTIVBoma3KsCmse8V9iNRDeZrV1L99_cab3b0b0");
+
+        var stdioParams = ServerParameters.builder("docker")
+                .args("run",
+                        "--rm",
+                        "-i",
+                        "-e",
+                        "GRAFANA_URL",
+                        "-e",
+                        "GRAFANA_API_KEY",
+                        "mcp/grafana",
+                        "-t",
+                        "stdio")
+                .env(env)
+                .build();
+
+        var mcpClient = McpClient.sync(new StdioClientTransport(stdioParams, McpJsonMapper.getDefault()))
+                .requestTimeout(Duration.ofSeconds(100)).build();
+
+        var init = mcpClient.initialize();
+        log.info("Stdio MCP Initialized: {}", init);
+
+        return mcpClient;
     }
 }
