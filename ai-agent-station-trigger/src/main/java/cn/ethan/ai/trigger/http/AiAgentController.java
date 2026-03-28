@@ -44,7 +44,8 @@ public class AiAgentController implements IAiAgentService {
             response.setHeader("Cache-Control", "no-cache, no-transform");
             response.setHeader("Connection", "keep-alive");
 
-            ResponseBodyEmitter emitter = new ResponseBodyEmitter(Long.MAX_VALUE);
+            // 给流式响应设置合理超时，避免客户端断开后连接/线程长期占用
+            ResponseBodyEmitter emitter = new ResponseBodyEmitter(10 * 60 * 1000L);
             
             ExecuteCommandEntity executeCommandEntity = ExecuteCommandEntity.builder()
                     .aiAgentId(request.getAiAgentId())
@@ -63,7 +64,7 @@ public class AiAgentController implements IAiAgentService {
             ResponseBodyEmitter errorEmitter = new ResponseBodyEmitter();
             try {
                 AutoAgentExecuteResultEntity errorResult = AutoAgentExecuteResultEntity.createErrorResult("请求处理异常：" + e.getMessage(), request.getSessionId());
-                errorEmitter.send(encodeStreamResult(errorResult, StreamTransportTypeEnumVO.STREAMABLE_HTTP));
+                errorEmitter.send(encodeStreamResult(errorResult));
                 errorEmitter.complete();
             } catch (Exception ex) {
                 log.error("发送错误信息失败：{}", ex.getMessage(), ex);
@@ -72,12 +73,9 @@ public class AiAgentController implements IAiAgentService {
         }
     }
 
-    private String encodeStreamResult(AutoAgentExecuteResultEntity result, StreamTransportTypeEnumVO protocol) {
+    private String encodeStreamResult(AutoAgentExecuteResultEntity result) {
         String json = JSON.toJSONString(result);
-        if (protocol == StreamTransportTypeEnumVO.STREAMABLE_HTTP) {
-            return json + "\n";
-        }
-        return "data: " + json + "\n\n";
+        return json + "\n";
     }
 
 }

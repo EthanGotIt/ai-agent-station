@@ -27,7 +27,7 @@ public class Step1McpToolsAnalysisNode extends AbstractExecuteSupport {
 
         AiAgentClientFlowConfigVO aiAgentClientFlowConfigVO = dynamicContext.getAiAgentClientFlowConfigVOMap().get(AiClientTypeEnumVO.TOOL_MCP_CLIENT.getCode());
 
-        ChatClient mcpToolsChatClient = getChatClientByClientId(aiAgentClientFlowConfigVO.getClientId());
+        ChatClient mcpToolsChatClient = getChatClientByClientId(dynamicContext, aiAgentClientFlowConfigVO.getClientId());
         
         String mcpAnalysisPrompt = String.format(
                 """

@@ -35,7 +35,7 @@ public class Step1AnalyzerNode extends AbstractExecuteSupport {
         );
 
         // 获取对话客户端
-        ChatClient chatClient = getChatClientByClientId(aiAgentClientFlowConfigVO.getClientId());
+        ChatClient chatClient = getChatClientByClientId(dynamicContext, aiAgentClientFlowConfigVO.getClientId());
 
         String analysisResult = chatClient
                 .prompt(analysisPrompt)

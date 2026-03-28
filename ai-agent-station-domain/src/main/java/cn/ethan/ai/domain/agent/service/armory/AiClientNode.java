@@ -2,6 +2,7 @@ package cn.ethan.ai.domain.agent.service.armory;
 
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.DynamicContextObjectKeyEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientSystemPromptVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientVO;
 import cn.ethan.ai.domain.agent.service.armory.factory.DefaultArmoryStrategyFactory;
@@ -16,6 +17,7 @@ import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -38,6 +40,20 @@ public class AiClientNode extends AbstractArmorySupport {
 
         Map<String, AiClientSystemPromptVO> systemPromptMap = dynamicContext.getValue(AiAgentEnumVO.AI_CLIENT_SYSTEM_PROMPT.getDataName());
 
+        Map<String, org.springframework.ai.openai.OpenAiChatModel> modelObjectMap =
+                dynamicContext.getValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_MODEL_OBJECT_MAP_KEY.getCode());
+        Map<String, McpSyncClient> mcpObjectMap =
+                dynamicContext.getValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_TOOL_MCP_OBJECT_MAP_KEY.getCode());
+        Map<String, Advisor> advisorObjectMap =
+                dynamicContext.getValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_ADVISOR_OBJECT_MAP_KEY.getCode());
+        Map<String, ChatClient> chatClientObjectMap =
+                dynamicContext.getValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_CHAT_CLIENT_OBJECT_MAP_KEY.getCode());
+
+        if (chatClientObjectMap == null) {
+            chatClientObjectMap = new HashMap<>();
+            dynamicContext.setValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_CHAT_CLIENT_OBJECT_MAP_KEY.getCode(), chatClientObjectMap);
+        }
+
         for (AiClientVO aiClientVO : aiClientList) {
             // 1. 预设话术
             StringBuilder defaultSystem = new StringBuilder("Ai 智能体 \r\n");
@@ -48,20 +64,33 @@ public class AiClientNode extends AbstractArmorySupport {
             }
 
             // 2. 对话模型
-            OpenAiChatModel chatModel = getBean(aiClientVO.getModelBeanName());
+            if (modelObjectMap == null) {
+                throw new RuntimeException("ai_client_model_object_map is null");
+            }
+            OpenAiChatModel chatModel = modelObjectMap.get(aiClientVO.getModelId());
 
             // 3. MCP 服务
             List<McpSyncClient> mcpSyncClients = new ArrayList<>();
-            List<String> mcpBeanNameList = aiClientVO.getMcpBeanNameList();
-            for (String mcpBeanName : mcpBeanNameList) {
-                mcpSyncClients.add(getBean(mcpBeanName));
+            for (String mcpId : aiClientVO.getMcpIdList()) {
+                if (mcpObjectMap == null) {
+                    continue;
+                }
+                McpSyncClient mcpSyncClient = mcpObjectMap.get(mcpId);
+                if (mcpSyncClient != null) {
+                    mcpSyncClients.add(mcpSyncClient);
+                }
             }
 
             // 4. advisor 顾问角色
             List<Advisor> advisors = new ArrayList<>();
-            List<String> advisorBeanNameList = aiClientVO.getAdvisorBeanNameList();
-            for (String advisorBeanName : advisorBeanNameList) {
-                advisors.add(getBean(advisorBeanName));
+            for (String advisorId : aiClientVO.getAdvisorIdList()) {
+                if (advisorObjectMap == null) {
+                    continue;
+                }
+                Advisor advisor = advisorObjectMap.get(advisorId);
+                if (advisor != null) {
+                    advisors.add(advisor);
+                }
             }
 
             Advisor[] advisorArray = advisors.toArray(new Advisor[]{});
@@ -75,6 +104,9 @@ public class AiClientNode extends AbstractArmorySupport {
                     .defaultAdvisors(advisorArray)
                     .build();
 
+            chatClientObjectMap.put(aiClientVO.getClientId(), chatClient);
+
+            // 向 Spring 容器注册：执行阶段通过 beanName 获取 ChatClient
             registerBean(beanName(aiClientVO.getClientId()), ChatClient.class, chatClient);
         }
 

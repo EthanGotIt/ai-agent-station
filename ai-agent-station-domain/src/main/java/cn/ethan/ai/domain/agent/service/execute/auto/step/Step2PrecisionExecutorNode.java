@@ -34,7 +34,7 @@ public class Step2PrecisionExecutorNode extends AbstractExecuteSupport{
         String executionPrompt = String.format(aiAgentClientFlowConfigVO.getStepPrompt(), requestParameter.getMessage(), analysisResult);
 
         // 获取对话客户端
-        ChatClient chatClient = getChatClientByClientId(aiAgentClientFlowConfigVO.getClientId());
+        ChatClient chatClient = getChatClientByClientId(dynamicContext, aiAgentClientFlowConfigVO.getClientId());
 
         String executionResult = chatClient
                 .prompt(executionPrompt)

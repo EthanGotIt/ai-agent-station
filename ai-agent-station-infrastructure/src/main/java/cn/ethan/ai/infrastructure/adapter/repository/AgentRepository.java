@@ -4,8 +4,7 @@ import cn.ethan.ai.domain.agent.adapter.repository.IAgentRepository;
 import cn.ethan.ai.domain.agent.model.valobj.*;
 import cn.ethan.ai.infrastructure.dao.*;
 import cn.ethan.ai.infrastructure.dao.po.*;
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -29,9 +28,6 @@ public class AgentRepository implements IAgentRepository {
     private IAiAgentFlowConfigDao aiAgentFlowConfigDao;
 
     @Resource
-    private IAiAgentTaskScheduleDao aiAgentTaskScheduleDao;
-
-    @Resource
     private IAiClientAdvisorDao aiClientAdvisorDao;
 
     @Resource
@@ -45,9 +41,6 @@ public class AgentRepository implements IAgentRepository {
 
     @Resource
     private IAiClientModelDao aiClientModelDao;
-
-    @Resource
-    private IAiClientRagOrderDao aiClientRagOrderDao;
 
     @Resource
     private IAiClientSystemPromptDao aiClientSystemPromptDao;
@@ -131,28 +124,24 @@ public class AgentRepository implements IAgentRepository {
         }
 
         Map<String, AiClientSystemPromptVO> promptVOMap = new LinkedHashMap<>();
+        List<AiClientConfig> configs = aiClientConfigDao.queryBySourceTypeAndIds(AI_CLIENT.getCode(), clientIdList);
+        Set<String> promptIdSet = new LinkedHashSet<>();
+        for (AiClientConfig config : configs) {
+            if (!"prompt".equals(config.getTargetType()) || config.getStatus() != 1) {
+                continue;
+            }
+            promptIdSet.add(config.getTargetId());
+        }
 
-        for (String clientId : clientIdList) {
-            List<AiClientConfig> configs = aiClientConfigDao.queryBySourceTypeAndId(AI_CLIENT.getCode(), clientId);
-            for (AiClientConfig config : configs) {
-                if (!"prompt".equals(config.getTargetType()) || config.getStatus() != 1) {
-                    continue;
-                }
-
-                String promptId = config.getTargetId();
-                if (promptVOMap.containsKey(promptId)) {
-                    continue;
-                }
-
-                AiClientSystemPrompt systemPrompt = aiClientSystemPromptDao.queryByPromptId(promptId);
-                if (systemPrompt != null && systemPrompt.getStatus() == 1) {
-                    promptVOMap.put(promptId, AiClientSystemPromptVO.builder()
-                            .promptId(systemPrompt.getPromptId())
-                            .promptName(systemPrompt.getPromptName())
-                            .promptContent(systemPrompt.getPromptContent())
-                            .description(systemPrompt.getDescription())
-                            .build());
-                }
+        for (String promptId : promptIdSet) {
+            AiClientSystemPrompt systemPrompt = aiClientSystemPromptDao.queryByPromptId(promptId);
+            if (systemPrompt != null && systemPrompt.getStatus() == 1) {
+                promptVOMap.put(promptId, AiClientSystemPromptVO.builder()
+                        .promptId(systemPrompt.getPromptId())
+                        .promptName(systemPrompt.getPromptName())
+                        .promptContent(systemPrompt.getPromptContent())
+                        .description(systemPrompt.getDescription())
+                        .build());
             }
         }
 
@@ -166,26 +155,21 @@ public class AgentRepository implements IAgentRepository {
         }
 
         Map<String, AiClientAdvisorVO> advisorVOMap = new LinkedHashMap<>();
-
-        for (String clientId : clientIdList) {
-            List<AiClientConfig> configs = aiClientConfigDao.queryBySourceTypeAndId(AI_CLIENT.getCode(), clientId);
-            for (AiClientConfig config : configs) {
-                if (config.getStatus() != 1 || !"advisor".equals(config.getTargetType())) {
-                    continue;
-                }
-
-                String advisorId = config.getTargetId();
-                if (advisorVOMap.containsKey(advisorId)) {
-                    continue;
-                }
-
-                AiClientAdvisor advisor = aiClientAdvisorDao.queryByAdvisorId(advisorId);
-                if (advisor == null || advisor.getStatus() != 1) {
-                    continue;
-                }
-
-                advisorVOMap.put(advisorId, buildAdvisorVO(advisor));
+        List<AiClientConfig> configs = aiClientConfigDao.queryBySourceTypeAndIds(AI_CLIENT.getCode(), clientIdList);
+        Set<String> advisorIdSet = new LinkedHashSet<>();
+        for (AiClientConfig config : configs) {
+            if (config.getStatus() != 1 || !"advisor".equals(config.getTargetType())) {
+                continue;
             }
+            advisorIdSet.add(config.getTargetId());
+        }
+
+        for (String advisorId : advisorIdSet) {
+            AiClientAdvisor advisor = aiClientAdvisorDao.queryByAdvisorId(advisorId);
+            if (advisor == null || advisor.getStatus() != 1) {
+                continue;
+            }
+            advisorVOMap.put(advisorId, buildAdvisorVO(advisor));
         }
 
         return new ArrayList<>(advisorVOMap.values());
@@ -199,9 +183,9 @@ public class AgentRepository implements IAgentRepository {
         if (extParam != null && !extParam.trim().isEmpty()) {
             try {
                 if ("ChatMemory".equals(advisor.getAdvisorType())) {
-                    chatMemory = JSON.parseObject(extParam, AiClientAdvisorVO.ChatMemory.class);
+                    chatMemory = new ObjectMapper().readValue(extParam, AiClientAdvisorVO.ChatMemory.class);
                 } else if ("RagAnswer".equals(advisor.getAdvisorType())) {
-                    ragAnswer = JSON.parseObject(extParam, AiClientAdvisorVO.RagAnswer.class);
+                    ragAnswer = new ObjectMapper().readValue(extParam, AiClientAdvisorVO.RagAnswer.class);
                 }
             } catch (Exception ignored) {
             }
@@ -360,6 +344,9 @@ public class AgentRepository implements IAgentRepository {
     @Override
     public AiAgentVO queryAiAgentByAgentId(String aiAgentId) {
         AiAgent aiAgent = aiAgentDao.queryByAgentId(aiAgentId);
+        if (aiAgent == null) {
+            return null;
+        }
 
         return AiAgentVO.builder()
                 .agentId(aiAgent.getAgentId())
@@ -369,6 +356,26 @@ public class AgentRepository implements IAgentRepository {
                 .strategy(aiAgent.getStrategy())
                 .status(aiAgent.getStatus())
                 .build();
+    }
+
+    @Override
+    public List<AiAgentClientFlowConfigVO> queryAiAgentClientsByAgentId(String aiAgentId) {
+        List<AiAgentClientFlowConfigVO> aiAgentClientFlowConfigVOS = new ArrayList<>();
+
+        List<AiAgentFlowConfig> flowConfigs = aiAgentFlowConfigDao.queryByAgentId(aiAgentId);
+        for (AiAgentFlowConfig flowConfig : flowConfigs) {
+            AiAgentClientFlowConfigVO configVO = AiAgentClientFlowConfigVO.builder()
+                    .clientId(flowConfig.getClientId())
+                    .clientName(flowConfig.getClientName())
+                    .clientType(flowConfig.getClientType())
+                    .sequence(flowConfig.getSequence())
+                    .stepPrompt(flowConfig.getStepPrompt())
+                    .build();
+
+            aiAgentClientFlowConfigVOS.add(configVO);
+        }
+
+        return aiAgentClientFlowConfigVOS;
     }
 
     /**
@@ -383,13 +390,11 @@ public class AgentRepository implements IAgentRepository {
      */
     private Set<String> queryModelIdsByClientIds(List<String> clientIdList) {
         Set<String> modelIds = new HashSet<>();
-        for (String clientId : clientIdList) {
-            List<AiClientConfig> configs = aiClientConfigDao.queryBySourceTypeAndId(AI_CLIENT.getCode(), clientId);
-            configs.stream()
-                    .filter(c -> AI_CLIENT_MODEL.getCode().equals(c.getTargetType()) && c.getStatus() == 1)
-                    .map(AiClientConfig::getTargetId)
-                    .forEach(modelIds::add);
-        }
+        List<AiClientConfig> configs = aiClientConfigDao.queryBySourceTypeAndIds(AI_CLIENT.getCode(), clientIdList);
+        configs.stream()
+                .filter(c -> AI_CLIENT_MODEL.getCode().equals(c.getTargetType()) && c.getStatus() == 1)
+                .map(AiClientConfig::getTargetId)
+                .forEach(modelIds::add);
 
         return modelIds;
     }
@@ -407,25 +412,23 @@ public class AgentRepository implements IAgentRepository {
     }
 
     /**
-     * 解析MCP传输配置(stdio/sse/streamable_http)
+     * 解析MCP传输配置(stdio/streamable_http)
      */
     private void parseTransportConfig(AiClientToolMcpVO mcpVO, String transportType, String transportConfig) {
         try {
+            ObjectMapper objectMapper = new ObjectMapper();
             if ("stdio".equals(transportType)) {
-                Map<String, Object> jsonMap = JSON.parseObject(transportConfig, new TypeReference<Map<String, Object>>() {});
-                String firstKey = jsonMap.keySet().iterator().next();
-                Object innerConfig = jsonMap.get(firstKey);
-                AiClientToolMcpVO.TransportConfigStdio transportConfigStdio = JSON.parseObject(JSON.toJSONString(innerConfig), AiClientToolMcpVO.TransportConfigStdio.class);
+                JsonNode rootNode = objectMapper.readTree(transportConfig);
+                JsonNode stdioNode = rootNode.has("command")
+                        ? rootNode
+                        : (rootNode.size() == 1 ? rootNode.elements().next() : rootNode);
+                AiClientToolMcpVO.TransportConfigStdio transportConfigStdio = objectMapper.convertValue(stdioNode, AiClientToolMcpVO.TransportConfigStdio.class);
                 mcpVO.setTransportConfigStdio(transportConfigStdio);
-            } else if ("sse".equals(transportType)) {
-                ObjectMapper objectMapper = new ObjectMapper();
-                mcpVO.setTransportConfigSse(objectMapper.readValue(transportConfig, AiClientToolMcpVO.TransportConfigSse.class));
             } else if ("streamable_http".equals(transportType)) {
-                ObjectMapper objectMapper = new ObjectMapper();
                 mcpVO.setTransportConfigStreamableHttp(objectMapper.readValue(transportConfig, AiClientToolMcpVO.TransportConfigStreamableHttp.class));
             }
         } catch (Exception e) {
-            log.error("解析传输配置失败: {}", e.getMessage(), e);
+            throw new RuntimeException("解析传输配置失败, mcpId:" + mcpVO.getMcpId() + ", transportType:" + transportType, e);
         }
     }
 

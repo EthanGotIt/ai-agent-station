@@ -28,12 +28,12 @@ public class AiClientToolMcpVO {
     private String mcpName;
 
     /**
-     * 传输类型(stdio/sse/streamable_http)
+     * 传输类型(stdio/streamable_http)
      */
     private String transportType;
 
     /**
-     * 传输配置(stdio/sse/streamable_http)
+     * 传输配置(stdio/streamable_http)
      */
     private String transportConfig;
 
@@ -46,11 +46,6 @@ public class AiClientToolMcpVO {
      * 传输配置 - stdio
      */
     private TransportConfigStdio transportConfigStdio;
-
-    /**
-     * 传输配置 - sse
-     */
-    private TransportConfigSse transportConfigSse;
 
     /**
      * 传输配置 - streamable_http
@@ -68,22 +63,6 @@ public class AiClientToolMcpVO {
         private List<String> args;
 
         private Map<String, String> env;
-    }
-
-    @Data
-    @Builder
-    @AllArgsConstructor
-    @NoArgsConstructor
-    public static class TransportConfigSse {
-
-        private String baseUri;
-
-        private String sseEndpoint;
-        /**
-         * 自定义请求头，用于认证等场景
-         * 例如: {"Authorization": "Bearer token123"}
-         */
-        private Map<String, String> headers;
     }
 
     @Data

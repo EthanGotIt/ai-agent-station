@@ -4,7 +4,7 @@ import cn.ethan.ai.domain.agent.adapter.repository.IAgentRepository;
 import cn.ethan.ai.domain.agent.model.entity.AutoAgentExecuteResultEntity;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
-import cn.ethan.ai.domain.agent.model.valobj.enums.StreamTransportTypeEnumVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.DynamicContextObjectKeyEnumVO;
 import cn.ethan.ai.domain.agent.service.execute.flow.step.factory.DefaultFlowAgentExecuteStrategyFactory;
 import cn.ethan.wrench.design.framework.tree.AbstractMultiThreadStrategyRouter;
 import com.alibaba.fastjson.JSON;
@@ -16,6 +16,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
 
 import java.io.IOException;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
@@ -44,6 +45,20 @@ public abstract class AbstractExecuteSupport extends AbstractMultiThreadStrategy
         return getBean(AiAgentEnumVO.AI_CLIENT.getBeanName(clientId));
     }
 
+    protected ChatClient getChatClientByClientId(DefaultFlowAgentExecuteStrategyFactory.DynamicContext dynamicContext, String clientId) {
+        if (dynamicContext != null) {
+            Map<String, ChatClient> chatClientMap = dynamicContext.getValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_CHAT_CLIENT_OBJECT_MAP_KEY.getCode());
+            if (chatClientMap != null) {
+                ChatClient chatClient = chatClientMap.get(clientId);
+                if (chatClient != null) {
+                    return chatClient;
+                }
+            }
+        }
+        // 兼容：如果未从 dynamicContext 取到，则回退到 Spring 容器（旧行为）
+        return getChatClientByClientId(clientId);
+    }
+
     @SuppressWarnings("unchecked")
     protected <T> T getBean(String beanName) {
         return (T) applicationContext.getBean(beanName);
@@ -54,8 +69,7 @@ public abstract class AbstractExecuteSupport extends AbstractMultiThreadStrategy
         try {
             ResponseBodyEmitter emitter = dynamicContext.getValue("emitter");
             if (emitter != null) {
-                StreamTransportTypeEnumVO streamProtocol = dynamicContext.getStreamProtocol() != null ? dynamicContext.getStreamProtocol() : StreamTransportTypeEnumVO.SSE;
-                emitter.send(encodeStreamResult(result, streamProtocol));
+                emitter.send(encodeStreamResult(result));
             }
         } catch (IOException e) {
             log.error("发送流式结果失败：{}", e.getMessage(), e);
@@ -66,12 +80,9 @@ public abstract class AbstractExecuteSupport extends AbstractMultiThreadStrategy
         sendStreamResult(dynamicContext, AutoAgentExecuteResultEntity.createCompleteResult(sessionId));
     }
 
-    private String encodeStreamResult(AutoAgentExecuteResultEntity result, StreamTransportTypeEnumVO protocol) {
+    private String encodeStreamResult(AutoAgentExecuteResultEntity result) {
         String json = JSON.toJSONString(result);
-        if (protocol == StreamTransportTypeEnumVO.STREAMABLE_HTTP) {
-            return json + "\n";
-        }
-        return "data: " + json + "\n\n";
+        return json + "\n";
     }
 
 }

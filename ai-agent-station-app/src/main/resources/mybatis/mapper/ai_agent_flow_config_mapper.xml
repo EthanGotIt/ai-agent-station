@@ -65,6 +65,7 @@
                create_time
         FROM ai_agent_flow_config
         WHERE agent_id = #{agentId}
+          AND status = 1
         ORDER BY sequence
     </select>
 

@@ -49,7 +49,7 @@ public class DefaultFlowAgentExecuteStrategyFactory {
 
         boolean isCompleted = false;
 
-        private StreamTransportTypeEnumVO streamProtocol = StreamTransportTypeEnumVO.SSE;
+        private StreamTransportTypeEnumVO streamProtocol = StreamTransportTypeEnumVO.STREAMABLE_HTTP;
 
         private Map<String, AiAgentClientFlowConfigVO> aiAgentClientFlowConfigVOMap;
 

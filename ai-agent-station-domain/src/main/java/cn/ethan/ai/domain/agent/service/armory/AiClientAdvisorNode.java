@@ -3,6 +3,7 @@ package cn.ethan.ai.domain.agent.service.armory;
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiClientAdvisorTypeEnumVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.DynamicContextObjectKeyEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientAdvisorVO;
 import cn.ethan.ai.domain.agent.service.armory.factory.DefaultArmoryStrategyFactory;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
@@ -11,8 +12,6 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -41,8 +40,15 @@ public class AiClientAdvisorNode extends AbstractArmorySupport {
             return router(requestParameter, dynamicContext);
         }
 
+        java.util.Map<String, Advisor> advisorObjectMap = dynamicContext.getValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_ADVISOR_OBJECT_MAP_KEY.getCode());
+        if (advisorObjectMap == null) {
+            advisorObjectMap = new java.util.HashMap<>();
+            dynamicContext.setValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_ADVISOR_OBJECT_MAP_KEY.getCode(), advisorObjectMap);
+        }
+
         for (AiClientAdvisorVO aiClientAdvisorVO : aiClientAdvisorList) {
             Advisor advisor = createAdvisor(aiClientAdvisorVO);
+            advisorObjectMap.put(aiClientAdvisorVO.getAdvisorId(), advisor);
             registerBean(beanName(aiClientAdvisorVO.getAdvisorId()), Advisor.class, advisor);
         }
 

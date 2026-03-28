@@ -2,13 +2,13 @@ package cn.ethan.ai.domain.agent.service.armory;
 
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.DynamicContextObjectKeyEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientToolMcpVO;
 import cn.ethan.ai.domain.agent.service.armory.factory.DefaultArmoryStrategyFactory;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import com.alibaba.fastjson.JSON;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
-import io.modelcontextprotocol.client.transport.HttpClientSseClientTransport;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.client.transport.StdioClientTransport;
@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -45,8 +46,17 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
             return router(requestParameter, dynamicContext);
         }
 
+        Map<String, McpSyncClient> mcpObjectMap = dynamicContext.getValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_TOOL_MCP_OBJECT_MAP_KEY.getCode());
+        if (mcpObjectMap == null) {
+            mcpObjectMap = new HashMap<>();
+            dynamicContext.setValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_TOOL_MCP_OBJECT_MAP_KEY.getCode(), mcpObjectMap);
+        }
+
         for (AiClientToolMcpVO mcpVO : aiClientToolMcpList) {
             McpSyncClient mcpSyncClient = createMcpSyncClient(mcpVO);
+            mcpObjectMap.put(mcpVO.getMcpId(), mcpSyncClient);
+
+            // 向 Spring 容器注册：执行阶段通过 getBean(...) 获取依赖
             registerBean(beanName(mcpVO.getMcpId()), McpSyncClient.class, mcpSyncClient);
         }
 
@@ -86,29 +96,6 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
 
                 log.info("Tool Stdio MCP Initialized {}", init_stdio);
                 return mcpClient;
-            }
-            case "sse" -> {
-                AiClientToolMcpVO.TransportConfigSse transportConfigSse = aiClientToolMcpVO.getTransportConfigSse();
-                if (transportConfigSse == null || StringUtils.isBlank(transportConfigSse.getBaseUri())) {
-                    throw new RuntimeException("err! sse transportConfig/baseUri is null, mcpId:" + aiClientToolMcpVO.getMcpId());
-                }
-                ParsedHttpAddress parsedSseAddress = parseHttpAddress(transportConfigSse.getBaseUri(), transportConfigSse.getSseEndpoint(), "/sse");
-
-                HttpClientSseClientTransport.Builder sseBuilder = HttpClientSseClientTransport
-                        .builder(parsedSseAddress.baseUri()).sseEndpoint(parsedSseAddress.endpoint());
-                Map<String, String> sseHeaders = transportConfigSse.getHeaders();
-                if (sseHeaders != null && !sseHeaders.isEmpty()) {
-                    sseBuilder.customizeRequest(requestBuilder -> applyHeaders(requestBuilder, sseHeaders));
-                }
-
-                HttpClientSseClientTransport sseClientTransport = sseBuilder
-                        .build();
-
-                McpSyncClient mcpSyncClient = McpClient.sync(sseClientTransport).requestTimeout(resolveRequestTimeout(aiClientToolMcpVO)).build();
-                var init_sse = mcpSyncClient.initialize();
-
-                log.info("Tool SSE MCP Initialized {}", init_sse);
-                return mcpSyncClient;
             }
             case "streamable_http" -> {
                 AiClientToolMcpVO.TransportConfigStreamableHttp transportConfig = aiClientToolMcpVO.getTransportConfigStreamableHttp();

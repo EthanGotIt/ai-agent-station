@@ -4,7 +4,7 @@ import cn.ethan.ai.test.spring.ai.advisors.RagAnswerAdvisor;
 import com.alibaba.fastjson.JSON;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
-import io.modelcontextprotocol.client.transport.HttpClientSseClientTransport;
+import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.client.transport.StdioClientTransport;
 import io.modelcontextprotocol.json.McpJsonMapper;
@@ -247,7 +247,7 @@ public class AiAgentTest {
                         	 4. 微信公众号消息通知，平台：CSDN、主题：为文章标题、描述：为文章简述、跳转地址：为发布文章到CSDN获取 URL地址 CSDN文章链接 https 开头的地址。
                         """)
                 .defaultTools(SyncMcpToolCallbackProvider.builder()
-                        .mcpClients(sseMcpClient01(), sseMcpClient02())
+                        .mcpClients(streamableHttpMcpClient01(), streamableHttpMcpClient02())
                         .build())
                 .defaultAdvisors(
                         PromptChatMemoryAdvisor.builder(
@@ -290,26 +290,28 @@ public class AiAgentTest {
 
     }
 
-    public McpSyncClient sseMcpClient01() {
+    public McpSyncClient streamableHttpMcpClient01() {
+        HttpClientStreamableHttpTransport streamableHttpTransport = HttpClientStreamableHttpTransport.builder("http://192.168.1.108:8101")
+                .endpoint("/mcp")
+                .build();
 
-        HttpClientSseClientTransport sseClientTransport = HttpClientSseClientTransport.builder("http://192.168.1.108:8101").build();
-
-        McpSyncClient mcpSyncClient = McpClient.sync(sseClientTransport).requestTimeout(Duration.ofMinutes(180)).build();
+        McpSyncClient mcpSyncClient = McpClient.sync(streamableHttpTransport).requestTimeout(Duration.ofMinutes(180)).build();
 
         var init = mcpSyncClient.initialize();
-        System.out.println("SSE MCP Initialized: " + init);
+        System.out.println("Streamable HTTP MCP Initialized: " + init);
 
         return mcpSyncClient;
     }
 
-    public McpSyncClient sseMcpClient02() {
+    public McpSyncClient streamableHttpMcpClient02() {
+        HttpClientStreamableHttpTransport streamableHttpTransport = HttpClientStreamableHttpTransport.builder("http://192.168.1.108:8102")
+                .endpoint("/mcp")
+                .build();
 
-        HttpClientSseClientTransport sseClientTransport = HttpClientSseClientTransport.builder("http://192.168.1.108:8102").build();
-
-        McpSyncClient mcpSyncClient = McpClient.sync(sseClientTransport).requestTimeout(Duration.ofMinutes(180)).build();
+        McpSyncClient mcpSyncClient = McpClient.sync(streamableHttpTransport).requestTimeout(Duration.ofMinutes(180)).build();
 
         var init = mcpSyncClient.initialize();
-        System.out.println("SSE MCP Initialized: " + init);
+        System.out.println("Streamable HTTP MCP Initialized: " + init);
 
         return mcpSyncClient;
     }

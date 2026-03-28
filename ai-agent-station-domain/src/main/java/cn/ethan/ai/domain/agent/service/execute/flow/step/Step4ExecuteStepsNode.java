@@ -30,7 +30,7 @@ public class Step4ExecuteStepsNode extends AbstractExecuteSupport {
 
         try {
             AiAgentClientFlowConfigVO aiAgentClientFlowConfigVO = dynamicContext.getAiAgentClientFlowConfigVOMap().get(AiClientTypeEnumVO.EXECUTOR_CLIENT.getCode());
-            ChatClient executorChatClient = getChatClientByClientId(aiAgentClientFlowConfigVO.getClientId());
+            ChatClient executorChatClient = getChatClientByClientId(dynamicContext, aiAgentClientFlowConfigVO.getClientId());
             Map<String, String> stepsMap = dynamicContext.getValue("stepsMap");
             
             if (stepsMap == null || stepsMap.isEmpty()) {

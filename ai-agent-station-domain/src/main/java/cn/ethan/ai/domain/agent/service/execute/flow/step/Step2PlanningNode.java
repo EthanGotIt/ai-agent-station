@@ -27,7 +27,7 @@ public class Step2PlanningNode extends AbstractExecuteSupport {
 
         AiAgentClientFlowConfigVO aiAgentClientFlowConfigVO = dynamicContext.getAiAgentClientFlowConfigVOMap().get(AiClientTypeEnumVO.PLANNING_CLIENT.getCode());
 
-        ChatClient planningChatClient = getChatClientByClientId(aiAgentClientFlowConfigVO.getClientId());
+        ChatClient planningChatClient = getChatClientByClientId(dynamicContext, aiAgentClientFlowConfigVO.getClientId());
 
         String userRequest = dynamicContext.getCurrentTask();
         String mcpToolsAnalysis = dynamicContext.getValue("mcpToolsAnalysis");

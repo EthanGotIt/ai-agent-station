@@ -57,11 +57,11 @@ public abstract class AbstractArmorySupport extends AbstractMultiThreadStrategyR
         BeanDefinition beanDefinition = beanDefinitionBuilder.getRawBeanDefinition();
         beanDefinition.setScope(BeanDefinition.SCOPE_SINGLETON);
 
-        if (beanFactory.containsBeanDefinition(beanName)) {
-            beanFactory.removeBeanDefinition(beanName);
+        // 避免并发/运行期反复移除+重建 BeanDefinition 导致的容器结构抖动
+        // 启动阶段装配通常只会执行一次；若重复装配，优先保持已有对象（缓存/幂等）。
+        if (!beanFactory.containsBeanDefinition(beanName)) {
+            beanFactory.registerBeanDefinition(beanName, beanDefinition);
         }
-
-        beanFactory.registerBeanDefinition(beanName, beanDefinition);
 
         log.info("成功注册Bean对象: {}", beanName);
     }
