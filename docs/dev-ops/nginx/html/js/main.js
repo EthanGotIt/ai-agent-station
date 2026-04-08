@@ -309,7 +309,7 @@ function renderAgentCards() {
                 </div>
             </div>
             <div class="agent-tags mt-3">
-                <span class="agent-tag" style="border-color: ${agent.color}40; color: ${agent.color};">${escapeHtml(agent.capability)}</span>
+                <span class="agent-tag" style="border-color: ${agent.color}; opacity: 0.8; color: ${agent.color};">${escapeHtml(agent.capability)}</span>
             </div>
         </div>
     `).join('');
