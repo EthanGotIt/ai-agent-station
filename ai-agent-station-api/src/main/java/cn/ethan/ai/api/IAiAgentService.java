@@ -1,6 +1,6 @@
 package cn.ethan.ai.api;
 
-import cn.ethan.ai.api.dto.AutoAgentRequestDTO;
+import cn.ethan.ai.api.dto.AgentExecuteRequestDTO;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
 
@@ -9,6 +9,6 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter
  */
 public interface IAiAgentService {
 
-    ResponseBodyEmitter autoAgent(AutoAgentRequestDTO request, HttpServletResponse response);
+    ResponseBodyEmitter execute(AgentExecuteRequestDTO request, HttpServletResponse response);
 
 }

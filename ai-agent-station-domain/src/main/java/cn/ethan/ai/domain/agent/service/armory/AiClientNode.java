@@ -2,10 +2,10 @@ package cn.ethan.ai.domain.agent.service.armory;
 
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
-import cn.ethan.ai.domain.agent.model.valobj.enums.DynamicContextObjectKeyEnumVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.ArmoryAssemblyObjectKeyEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientSystemPromptVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientVO;
-import cn.ethan.ai.domain.agent.service.armory.factory.DefaultArmoryStrategyFactory;
+import cn.ethan.ai.domain.agent.model.valobj.ArmoryAssemblyContextVO;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import com.alibaba.fastjson.JSON;
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -22,36 +22,36 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * ai agent 客户端对话对象节点
+ * 智能体对话客户端装配节点
  */
 @Slf4j
 @Service
 public class AiClientNode extends AbstractArmorySupport {
 
     @Override
-    protected String doApply(ArmoryCommandEntity requestParameter, DefaultArmoryStrategyFactory.DynamicContext dynamicContext) throws Exception {
-        log.info("Ai Agent 构建节点，客户端{}", JSON.toJSONString(requestParameter));
+    protected String doApply(ArmoryCommandEntity requestParameter, ArmoryAssemblyContextVO assemblyContext) throws Exception {
+        log.info("智能体装配节点，对话客户端配置：{}", JSON.toJSONString(requestParameter));
 
-        List<AiClientVO> aiClientList = dynamicContext.getValue(dataName());
+        List<AiClientVO> aiClientList = assemblyContext.getValue(dataName());
 
         if (null == aiClientList || aiClientList.isEmpty()) {
-            return router(requestParameter, dynamicContext);
+            return router(requestParameter, assemblyContext);
         }
 
-        Map<String, AiClientSystemPromptVO> systemPromptMap = dynamicContext.getValue(AiAgentEnumVO.AI_CLIENT_SYSTEM_PROMPT.getDataName());
+        Map<String, AiClientSystemPromptVO> systemPromptMap = assemblyContext.getValue(AiAgentEnumVO.AI_CLIENT_SYSTEM_PROMPT.getDataName());
 
         Map<String, org.springframework.ai.openai.OpenAiChatModel> modelObjectMap =
-                dynamicContext.getValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_MODEL_OBJECT_MAP_KEY.getCode());
+                assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_MODEL_OBJECT_MAP_KEY.getCode());
         Map<String, McpSyncClient> mcpObjectMap =
-                dynamicContext.getValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_TOOL_MCP_OBJECT_MAP_KEY.getCode());
+                assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_TOOL_MCP_OBJECT_MAP_KEY.getCode());
         Map<String, Advisor> advisorObjectMap =
-                dynamicContext.getValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_ADVISOR_OBJECT_MAP_KEY.getCode());
+                assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_ADVISOR_OBJECT_MAP_KEY.getCode());
         Map<String, ChatClient> chatClientObjectMap =
-                dynamicContext.getValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_CHAT_CLIENT_OBJECT_MAP_KEY.getCode());
+                assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_CHAT_CLIENT_OBJECT_MAP_KEY.getCode());
 
         if (chatClientObjectMap == null) {
             chatClientObjectMap = new HashMap<>();
-            dynamicContext.setValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_CHAT_CLIENT_OBJECT_MAP_KEY.getCode(), chatClientObjectMap);
+            assemblyContext.setValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_CHAT_CLIENT_OBJECT_MAP_KEY.getCode(), chatClientObjectMap);
         }
 
         for (AiClientVO aiClientVO : aiClientList) {
@@ -65,7 +65,7 @@ public class AiClientNode extends AbstractArmorySupport {
 
             // 2. 对话模型
             if (modelObjectMap == null) {
-                throw new RuntimeException("ai_client_model_object_map is null");
+                throw new RuntimeException("对话模型对象缓存为空，无法装配对话客户端");
             }
             OpenAiChatModel chatModel = modelObjectMap.get(aiClientVO.getModelId());
 
@@ -81,7 +81,7 @@ public class AiClientNode extends AbstractArmorySupport {
                 }
             }
 
-            // 4. advisor 顾问角色
+            // 4. 顾问配置
             List<Advisor> advisors = new ArrayList<>();
             for (String advisorId : aiClientVO.getAdvisorIdList()) {
                 if (advisorObjectMap == null) {
@@ -106,15 +106,15 @@ public class AiClientNode extends AbstractArmorySupport {
 
             chatClientObjectMap.put(aiClientVO.getClientId(), chatClient);
 
-            // 向 Spring 容器注册：执行阶段通过 beanName 获取 ChatClient
+            // 向 Spring 容器注册：执行阶段通过名称获取对话客户端。
             registerBean(beanName(aiClientVO.getClientId()), ChatClient.class, chatClient);
         }
 
-        return String.format("已完成客户端自动装配，clientCount=%d，clientIds=%s", aiClientList.size(), requestParameter.getCommandIdList());
+        return String.format("已完成对话客户端自动装配，数量=%d，客户端ID=%s", aiClientList.size(), requestParameter.getCommandIdList());
     }
 
     @Override
-    public StrategyHandler<ArmoryCommandEntity, DefaultArmoryStrategyFactory.DynamicContext, String> get(ArmoryCommandEntity requestParameter, DefaultArmoryStrategyFactory.DynamicContext dynamicContext) throws Exception {
+    public StrategyHandler<ArmoryCommandEntity, ArmoryAssemblyContextVO, String> get(ArmoryCommandEntity requestParameter, ArmoryAssemblyContextVO assemblyContext) throws Exception {
         return defaultStrategyHandler;
     }
 

@@ -3,6 +3,7 @@ function generateSessionId() {
 }
 
 const DEFAULT_MAX_STEP = '3';
+const EXECUTE_API_URL = (window.AI_AGENT_API_BASE_URL || 'http://localhost:8090') + '/api/v1/agent/execute';
 
 let sessionId = generateSessionId();
 document.getElementById('sessionId').textContent = sessionId;
@@ -71,7 +72,7 @@ function updateChatHistoryUI() {
     chatList.innerHTML = '';
 
     if (history.length === 0) {
-        chatList.innerHTML = '<li class="text-gray-600 text-sm text-center py-4 font-mono">No Logs Found</li>';
+        chatList.innerHTML = '<li class="text-gray-600 text-sm text-center py-4 font-mono">暂无历史记录</li>';
         return;
     }
 
@@ -180,93 +181,52 @@ function loadChatHistory(targetSessionId) {
     sessionId = chat.sessionId;
     document.getElementById('sessionId').textContent = chat.sessionId;
 
-    if (chat.agentId) {
-        selectedAgentId = chat.agentId;
-        renderAgentCards();
-        updateDropdownCases(chat.agentId);
-    } else {
-        selectedAgentId = null;
-        renderAgentCards();
-        updateDropdownCases(null);
-    }
+    selectedAgentId = chat.agentId || '1';
+    renderAgentCards();
+    updateDropdownCases(selectedAgentId);
 
     if (chat.maxStep) {
-        selectedMaxStep = chat.maxStep;
-        document.querySelectorAll('.step-button').forEach(button => {
-            button.classList.remove('selected');
-            if (button.getAttribute('data-step') === chat.maxStep) {
-                button.classList.add('selected');
-            }
-        });
+        selectedMaxStep = String(chat.maxStep);
+        syncOptionButtons('.step-button', 'data-step', selectedMaxStep);
     }
 
+    updateAgentOverview();
     scrollToBottom();
 }
 
-let selectedAgentId = null;
+let selectedAgentId = '1';
 let selectedMaxStep = DEFAULT_MAX_STEP;
 
 const AGENT_CONFIGS = {
     '1': {
         id: '1',
-        name: '流程规划执行体',
-        description: '自动自主规划与工具编排',
-        capability: 'Flow 模式',
-        highlight: '适合流程明确、需要串联工具的执行任务',
-        color: '#0ea5e9',
+        name: 'Flow Plan 编排体',
+        description: '计划校验、工具调用、RAG 召回、质量监督',
+        capability: 'Flow Plan',
+        tags: ['Plan DSL', 'MCP 工具', 'RAG 多路召回', '流式追踪'],
+        metrics: [
+            { label: '执行内核', value: '单 Flow' },
+            { label: '检索链路', value: 'Query Rewrite + 去重' },
+            { label: '接口', value: 'NDJSON' }
+        ],
+        highlight: '将大模型生成的计划收敛为后端可校验、可执行、可监督的任务链路，并在知识问答场景中支持 Query Rewrite、多路召回和证据去重',
+        color: '#58d0b7',
         iconPath: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
         cases: [
             {
-                title: '搜索 Java 技术栈笔记并发送通知',
-                content: `请帮我完成以下任务：
+                title: '检索 Spring AI 资料并形成落地建议',
+                content: `请围绕“Spring AI MCP Client 和 RAG Advisor 的使用方式”完成资料调研：
 
-1. 使用小红书 MCP 工具 rednote 搜索关键词“Java技术栈”的笔记内容。
-2. 整理搜索结果，提炼出值得学习的技术方向与高频话题。
-3. 使用 notify 工具发送一条“任务完成”通知，通知中包含整理后的摘要结果。
+1. 使用可用 MCP 工具检索 Spring AI、MCP、RAG 相关资料。
+2. 提取关键实现步骤、注意事项和适用场景。
+3. 按“结论、证据、落地建议”结构输出。
+4. 如果可以发送通知，请在完成后发送任务完成提醒。
 
 请按照以上步骤依次执行，并返回清晰的执行结果。`
             },
             {
-                title: '检索 Spring AI 资料并整理摘要',
-                content: `请使用 rednote 搜索“Spring AI 实战”相关笔记，整理出 5 条最有价值的信息，并在整理完成后通过 notify 发送摘要通知。`
-            }
-        ]
-    },
-    '3': {
-        id: '3',
-        name: '调研分析执行体',
-        description: '文本调研自动分析和执行任务',
-        capability: 'Auto 模式',
-        highlight: '适合开放问题分析、资料检索和方案整理',
-        color: '#8b5cf6',
-        iconPath: 'M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z',
-        cases: [
-            {
-                title: '检索小傅哥项目并输出学习计划',
-                content: '检索小傅哥的相关项目，列出一份学习计划。'
-            },
-            {
-                title: '分析北京互联网公司入职建议',
-                content: '根据当前北京互联网程序员加班情况、收入和公司文化，列出一份大学生推荐入职单位。'
-            }
-        ]
-    },
-    '6': {
-        id: '6',
-        name: '固定执行体',
-        description: '固定任务执行与结果回传',
-        capability: 'Fixed 模式',
-        highlight: '适合固定模板任务和结果回传场景',
-        color: '#10b981',
-        iconPath: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
-        cases: [
-            {
-                title: '搜索热门 Java 笔记并通知',
-                content: '请搜索“小红书 Java 面试”相关热门笔记，整理成简要清单，并发送一条完成通知。'
-            },
-            {
-                title: '搜索 Agent 相关文章并回传摘要',
-                content: '请搜索“AI Agent 工作流”相关内容，输出摘要后发送通知告知任务完成。'
+                title: '梳理 RAG 多路召回升级方案并整理项目亮点',
+                content: `请分析 AI Agent Station 的 RAG 升级思路，重点说明 Query Rewrite、多路召回、去重合并和证据上下文注入如何提升回答质量，并整理成可以写进简历的 3 条项目亮点。`
             }
         ]
     }
@@ -293,6 +253,18 @@ function setCaseDropdownLabel(text) {
     }
 }
 
+function syncOptionButtons(selector, dataName, selectedValue) {
+    document.querySelectorAll(selector).forEach(button => {
+        button.classList.toggle('selected', button.getAttribute(dataName) === String(selectedValue));
+    });
+}
+
+function focusPromptWhenRoomy() {
+    if (window.matchMedia('(min-width: 861px)').matches) {
+        document.getElementById('messageInput').focus({ preventScroll: true });
+    }
+}
+
 function renderAgentCards() {
     const container = document.getElementById('agentCardContainer');
     container.innerHTML = Object.values(AGENT_CONFIGS).map(agent => `
@@ -305,11 +277,11 @@ function renderAgentCards() {
                 </div>
                 <div class="agent-copy flex-1 min-w-0">
                     <h5 class="agent-title truncate">${escapeHtml(agent.name)}</h5>
-                    <p class="agent-description truncate">${escapeHtml(agent.description)}</p>
+                    <p class="agent-description">${escapeHtml(agent.description)}</p>
                 </div>
             </div>
             <div class="agent-tags mt-3">
-                <span class="agent-tag" style="border-color: ${agent.color}; opacity: 0.8; color: ${agent.color};">${escapeHtml(agent.capability)}</span>
+                ${(agent.tags || [agent.capability]).map(tag => `<span class="agent-tag">${escapeHtml(tag)}</span>`).join('')}
             </div>
         </div>
     `).join('');
@@ -327,8 +299,8 @@ function updateAgentOverview() {
     if (!agent) {
         overview.innerHTML = `
             <div class="agent-overview-label">当前未选择智能体</div>
-            <div class="agent-overview-title">请选择一个执行模式后再发起任务</div>
-            <div class="agent-overview-description">建议先选择智能体，再选一个案例填充输入框，最后根据任务复杂度调整最大执行步数。</div>
+            <div class="agent-overview-title">请选择智能编排体后再发起任务</div>
+            <div class="agent-overview-description">前端会按后端 Flow Plan 事件流展示工具摘要、结构化计划、执行过程、监督结果和最终总结。</div>
         `;
         return;
     }
@@ -336,7 +308,15 @@ function updateAgentOverview() {
     overview.innerHTML = `
         <div class="agent-overview-label">当前智能体</div>
         <div class="agent-overview-title">${escapeHtml(agent.name)} · ${escapeHtml(agent.capability)}</div>
-        <div class="agent-overview-description">${escapeHtml(agent.highlight)}，当前内置 ${agent.cases.length} 个示例案例，可直接填充到输入框进行体验。</div>
+        <div class="agent-overview-description">${escapeHtml(agent.highlight)}。当前内置 ${agent.cases.length} 个示例，计划步数上限 maxStep=${escapeHtml(selectedMaxStep)}。</div>
+        <div class="agent-metrics">
+            ${(agent.metrics || []).map(metric => `
+                <div class="agent-metric">
+                    <span>${escapeHtml(metric.label)}</span>
+                    <strong>${escapeHtml(metric.value)}</strong>
+                </div>
+            `).join('')}
+        </div>
     `;
 }
 
@@ -353,9 +333,73 @@ function syncCurrentChatMeta() {
     }
 }
 
-function buildAiMessageHTML(type, subType, content, step) {
-    const stageInfo = stageTypeMap[type] || { name: type, icon: '📝', class: 'stage-analysis' };
+function renderPlanContent(content) {
+    try {
+        const plan = JSON.parse(content);
+        const steps = Array.isArray(plan.steps) ? plan.steps : [];
+        return `
+            <div class="plan-view">
+                <div class="plan-goal">
+                    <span class="plan-label">目标</span>
+                    <span>${escapeHtml(plan.goal || '未提供目标')}</span>
+                </div>
+                <div class="plan-step-list">
+                    ${steps.map((item, index) => `
+                        <div class="plan-step-row">
+                            <div class="plan-step-index">${index + 1}</div>
+                            <div class="plan-step-body">
+                                <div class="plan-step-title">${escapeHtml(item.name || item.stepId || '未命名步骤')}</div>
+                                <div class="plan-step-meta">
+                                    <span>${escapeHtml(item.type || 'LLM')}</span>
+                                    ${item.toolName ? `<span>工具：${escapeHtml(item.toolName)}</span>` : ''}
+                                    ${item.dependsOn && item.dependsOn.length ? `<span>依赖：${escapeHtml(item.dependsOn.join(', '))}</span>` : ''}
+                                </div>
+                                ${item.successCriteria ? `<div class="plan-step-criteria">${escapeHtml(item.successCriteria)}</div>` : ''}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    } catch (e) {
+        return renderMarkdown(content);
+    }
+}
+
+function renderToolSummaryContent(content) {
+    const prefix = '可用工具白名单：';
+    if (!content || !content.startsWith(prefix)) {
+        return renderMarkdown(content);
+    }
+
+    const tools = content.substring(prefix.length)
+        .split(',')
+        .map(item => item.trim())
+        .filter(Boolean);
+    return `
+        <div class="tool-summary">
+            <div class="tool-summary-title">可用工具白名单</div>
+            <div class="tool-chip-list">
+                ${tools.map(tool => `<span class="tool-chip">${escapeHtml(tool)}</span>`).join('')}
+            </div>
+        </div>
+    `;
+}
+
+function renderStreamContent(type, subType, content) {
+    if (subType === 'analysis_plan') {
+        return renderPlanContent(content);
+    }
+    if (subType === 'analysis_tools') {
+        return renderToolSummaryContent(content);
+    }
+    return renderMarkdown(content);
+}
+
+function buildAiMessageHTML(type, subType, content, step, runId) {
+    const stageInfo = stageTypeMap[type] || { name: type, icon: 'MSG', class: 'stage-analysis' };
     const subTypeName = subType ? subTypeMap[subType] || subType : '';
+    const shortRunId = runId ? String(runId).substring(0, 8) : '';
 
     let indicators = `<span class="stage-indicator ${stageInfo.class}">${stageInfo.icon} ${escapeHtml(stageInfo.name)}</span>`;
     if (subTypeName) {
@@ -364,9 +408,13 @@ function buildAiMessageHTML(type, subType, content, step) {
     if (step) {
         indicators += `<span class="sub-type-indicator">第 ${escapeHtml(step)} 步</span>`;
     }
+    if (shortRunId) {
+        indicators += `<span class="sub-type-indicator">运行 ${escapeHtml(shortRunId)}</span>`;
+    }
 
     const roleTag = (type === 'summary' || type === 'complete' || type === 'completed') ? 'OUT' : 'SYS';
     const colorClass = (type === 'summary' || type === 'complete' || type === 'completed') ? 'text-primary-600 border-primary-200 bg-primary-50' : 'text-accent-600 border-accent-200 bg-accent-50';
+    const renderedContent = renderStreamContent(type, subType, content);
 
     return `
         <div class="w-8 h-8 rounded-full border ${colorClass} flex items-center justify-center flex-shrink-0 font-mono text-xs font-bold shadow-sm">
@@ -376,7 +424,7 @@ function buildAiMessageHTML(type, subType, content, step) {
             <div class="mb-3 pb-3 border-b border-gray-100 flex flex-wrap gap-1">
                 ${indicators}
             </div>
-            <div class="markdown-content font-sans">${renderMarkdown(content)}</div>
+            <div class="markdown-content font-sans">${renderedContent}</div>
         </div>
     `;
 }
@@ -401,7 +449,7 @@ function appendAiMessageFromHistory(message) {
     const messageDiv = document.createElement('div');
     messageDiv.className = 'flex items-start gap-3 message';
     if (message.content) {
-        messageDiv.innerHTML = buildAiMessageHTML(message.stage, message.subType, message.content, message.step);
+        messageDiv.innerHTML = buildAiMessageHTML(message.stage, message.subType, message.content, message.step, message.runId);
     } else {
         messageDiv.innerHTML = DOMPurify.sanitize(message.html || '');
     }
@@ -426,19 +474,20 @@ marked.setOptions({
 });
 
 const stageTypeMap = {
-    analysis: { name: '分析阶段', icon: '🎯', class: 'stage-analysis' },
-    execution: { name: '执行阶段', icon: '⚡', class: 'stage-execution' },
-    supervision: { name: '监督阶段', icon: '🔍', class: 'stage-supervision' },
-    summary: { name: '总结阶段', icon: '📊', class: 'stage-summary' },
-    error: { name: '错误信息', icon: '❌', class: 'stage-error' },
-    complete: { name: '完成', icon: '✅', class: 'stage-summary' },
-    completed: { name: '完成', icon: '✅', class: 'stage-summary' }
+    analysis: { name: '分析阶段', icon: 'PLAN', class: 'stage-analysis' },
+    execution: { name: '执行阶段', icon: 'RUN', class: 'stage-execution' },
+    supervision: { name: '监督阶段', icon: 'QA', class: 'stage-supervision' },
+    summary: { name: '总结阶段', icon: 'OUT', class: 'stage-summary' },
+    error: { name: '错误信息', icon: 'ERR', class: 'stage-error' },
+    complete: { name: '完成', icon: 'OK', class: 'stage-summary' },
+    completed: { name: '完成', icon: 'OK', class: 'stage-summary' }
 };
 
 const subTypeMap = {
     analysis_status: '任务状态',
     analysis_history: '历史评估',
-    analysis_strategy: '执行策略',
+    analysis_tools: '工具能力摘要',
+    analysis_plan: '结构化计划',
     analysis_progress: '完成度',
     analysis_task_status: '任务状态',
     execution_target: '执行目标',
@@ -512,7 +561,7 @@ function sendMessage() {
     const sendBtn = document.getElementById('sendBtn');
     sendBtn.disabled = true;
 
-    document.getElementById('loading').style.display = 'block';
+    document.getElementById('loading').style.display = 'flex';
     hasReceivedComplete = false;
     activeStreamRoundKey = `${sessionId}-${Date.now()}`;
 
@@ -523,7 +572,7 @@ function sendMessage() {
         maxStep: parseInt(selectedMaxStep)
     };
 
-    fetch('http://localhost:8090/api/v1/agent/auto_agent', {
+    fetch(EXECUTE_API_URL, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -610,7 +659,7 @@ function sendMessage() {
 }
 
 function handleStreamMessage(jsonData) {
-    const { type, subType, step, content, completed } = jsonData;
+    const { type, subType, step, content, completed, runId } = jsonData;
 
     if (type === 'complete' || type === 'completed' || completed === true) {
         hasReceivedComplete = true;
@@ -620,10 +669,10 @@ function handleStreamMessage(jsonData) {
         return;
     }
 
-    addStageMessage(type, subType, content, step);
+    addStageMessage(type, subType, content, step, runId);
 }
 
-function addStageMessage(type, subType, content, step) {
+function addStageMessage(type, subType, content, step, runId) {
     const streamKey = buildStreamMessageKey(type, subType, step);
     let targetContainer;
     if (type === 'summary' || type === 'complete' || type === 'completed') {
@@ -632,7 +681,7 @@ function addStageMessage(type, subType, content, step) {
         targetContainer = document.getElementById('thinkingMessages');
     }
 
-    const messageHTML = buildAiMessageHTML(type, subType, content, step);
+    const messageHTML = buildAiMessageHTML(type, subType, content, step, runId);
     let messageDiv = currentStepMessages.get(streamKey);
 
     if (!messageDiv) {
@@ -651,6 +700,7 @@ function addStageMessage(type, subType, content, step) {
         stage: type,
         subType: subType,
         step: step,
+        runId: runId,
         timestamp: Date.now(),
         html: messageHTML,
         streamKey: streamKey
@@ -703,7 +753,7 @@ function createNewChat() {
     sessionId = '';
     currentStepMessages.clear();
     activeStreamRoundKey = '';
-    document.getElementById('sessionId').textContent = 'WAITING';
+    document.getElementById('sessionId').textContent = '等待中';
 
     currentChatHistory = {
         sessionId: '',
@@ -715,7 +765,7 @@ function createNewChat() {
     };
 
     document.getElementById('messageInput').value = '';
-    document.getElementById('messageInput').focus();
+    focusPromptWhenRoomy();
     updateChatHistoryUI();
 }
 
@@ -756,13 +806,13 @@ function updateDropdownCases(agentId) {
 
     const agentConfig = AGENT_CONFIGS[agentId];
     if (!agentConfig || !agentConfig.cases.length) {
-        defaultMessage.textContent = agentId ? '当前智能体暂无案例' : '请先选择一个智能体类型';
+        defaultMessage.textContent = agentId ? '当前智能体暂无案例' : '请先选择智能编排体';
         defaultMessage.style.display = 'block';
         return;
     }
 
     defaultMessage.style.display = 'none';
-    defaultMessage.textContent = '请先选择一个智能体类型';
+    defaultMessage.textContent = '请先选择智能编排体';
 
     agentConfig.cases.forEach(caseInfo => {
         const caseItem = document.createElement('div');
@@ -785,9 +835,9 @@ function updateDropdownCases(agentId) {
 
 document.querySelectorAll('.step-button').forEach(button => {
     button.addEventListener('click', function() {
-        document.querySelectorAll('.step-button').forEach(b => b.classList.remove('selected'));
-        this.classList.add('selected');
         selectedMaxStep = this.getAttribute('data-step');
+        syncOptionButtons('.step-button', 'data-step', selectedMaxStep);
+        updateAgentOverview();
         syncCurrentChatMeta();
     });
 });
@@ -802,7 +852,7 @@ function setupCaseCardEvents() {
             document.querySelectorAll('.dropdown-case-item').forEach(c => c.classList.remove('selected'));
             this.classList.add('selected');
             document.getElementById('caseDropdown').classList.add('hidden');
-            document.getElementById('messageInput').focus();
+            focusPromptWhenRoomy();
         });
     });
 }
@@ -836,7 +886,9 @@ window.addEventListener('load', function() {
     };
 
     updateChatHistoryUI();
-    document.getElementById('messageInput').focus();
+    focusPromptWhenRoomy();
+
+    syncOptionButtons('.step-button', 'data-step', selectedMaxStep);
 
     if (selectedAgentId) {
         updateDropdownCases(selectedAgentId);

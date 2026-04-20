@@ -9,12 +9,16 @@ import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.util.StringUtils;
 
 @Configuration
+@EnableConfigurationProperties(AiAgentVectorStoreProperties.class)
 public class AiAgentConfig {
 
     /**
@@ -34,10 +38,15 @@ public class AiAgentConfig {
     @Bean("vectorStore")
     @Primary
     @ConditionalOnBean(name = "pgVectorJdbcTemplate")
+    @ConditionalOnProperty(name = "ai-agent.vector-store.enabled", havingValue = "true")
     public PgVectorStore pgVectorStore(@Value("${spring.ai.openai.base-url}") String baseUrl,
                                        @Value("${spring.ai.openai.api-key}") String apiKey,
-                                       @Value("${spring.ai.openai.embedding.options.model:tongyi-embedding-vision-plus}") String embeddingModel,
+                                       @Value("${spring.ai.openai.embedding.options.model}") String embeddingModel,
+                                       @Value("${spring.ai.openai.embedding.options.dimensions:1536}") Integer embeddingDimensions,
                                        @Qualifier("pgVectorJdbcTemplate") JdbcTemplate jdbcTemplate) {
+        if (!StringUtils.hasText(apiKey)) {
+            throw new IllegalStateException("启用 PgVector 向量库时必须配置 OPENAI_API_KEY");
+        }
 
         OpenAiApi openAiApi = OpenAiApi.builder()
                 .baseUrl(baseUrl)
@@ -49,10 +58,10 @@ public class AiAgentConfig {
                         MetadataMode.EMBED,
                         OpenAiEmbeddingOptions.builder()
                                 .model(embeddingModel)
-                                .dimensions(1536)
+                                .dimensions(embeddingDimensions)
                                 .build()))
                 .vectorTableName("vector_store_openai")
-                .dimensions(1536)
+                .dimensions(embeddingDimensions)
                 .build();
     }
 

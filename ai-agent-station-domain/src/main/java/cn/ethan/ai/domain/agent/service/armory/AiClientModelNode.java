@@ -2,9 +2,9 @@ package cn.ethan.ai.domain.agent.service.armory;
 
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
-import cn.ethan.ai.domain.agent.model.valobj.enums.DynamicContextObjectKeyEnumVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.ArmoryAssemblyObjectKeyEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientModelVO;
-import cn.ethan.ai.domain.agent.service.armory.factory.DefaultArmoryStrategyFactory;
+import cn.ethan.ai.domain.agent.model.valobj.ArmoryAssemblyContextVO;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import com.alibaba.fastjson.JSON;
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -32,37 +32,37 @@ public class AiClientModelNode extends AbstractArmorySupport {
     private AiClientAdvisorNode aiClientAdvisorNode;
 
     @Override
-    protected String doApply(ArmoryCommandEntity requestParameter, DefaultArmoryStrategyFactory.DynamicContext dynamicContext) throws Exception {
-        log.info("Ai Agent 构建节点，Mode 对话模型{}", JSON.toJSONString(requestParameter));
+    protected String doApply(ArmoryCommandEntity requestParameter, ArmoryAssemblyContextVO assemblyContext) throws Exception {
+        log.info("智能体装配节点，对话模型配置：{}", JSON.toJSONString(requestParameter));
 
-        List<AiClientModelVO> aiClientModelList = dynamicContext.getValue(dataName());
+        List<AiClientModelVO> aiClientModelList = assemblyContext.getValue(dataName());
 
         if (aiClientModelList == null || aiClientModelList.isEmpty()) {
-            log.warn("没有需要被初始化的 ai client model");
-            return router(requestParameter, dynamicContext);
+            log.warn("没有需要初始化的对话模型配置");
+            return router(requestParameter, assemblyContext);
         }
 
-        Map<String, OpenAiApi> apiObjectMap = dynamicContext.getValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_API_OBJECT_MAP_KEY.getCode());
-        Map<String, McpSyncClient> mcpObjectMap = dynamicContext.getValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_TOOL_MCP_OBJECT_MAP_KEY.getCode());
-        Map<String, OpenAiChatModel> modelObjectMap = dynamicContext.getValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_MODEL_OBJECT_MAP_KEY.getCode());
+        Map<String, OpenAiApi> apiObjectMap = assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_API_OBJECT_MAP_KEY.getCode());
+        Map<String, McpSyncClient> mcpObjectMap = assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_TOOL_MCP_OBJECT_MAP_KEY.getCode());
+        Map<String, OpenAiChatModel> modelObjectMap = assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_MODEL_OBJECT_MAP_KEY.getCode());
         if (modelObjectMap == null) {
             modelObjectMap = new HashMap<>();
-            dynamicContext.setValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_MODEL_OBJECT_MAP_KEY.getCode(), modelObjectMap);
+            assemblyContext.setValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_MODEL_OBJECT_MAP_KEY.getCode(), modelObjectMap);
         }
 
         for (AiClientModelVO modelVO : aiClientModelList) {
 
             if (apiObjectMap == null || mcpObjectMap == null) {
-                throw new RuntimeException("ai_client_api_object_map 或 ai_client_tool_mcp_object_map 为空，无法装配模型");
+                throw new RuntimeException("模型接口对象或工具客户端对象为空，无法装配对话模型");
             }
 
-            // 获取当前模型关联的 API 对象（来自请求级 DynamicContext）
+            // 获取当前模型关联的 API 对象（来自装配上下文）
             OpenAiApi openAiApi = apiObjectMap.get(modelVO.getApiId());
             if (null == openAiApi) {
-                throw new RuntimeException("mode 2 api is null");
+                throw new RuntimeException("模型关联的接口对象不存在，modelId=" + modelVO.getModelId() + "，apiId=" + modelVO.getApiId());
             }
 
-            // 获取当前模型关联的 Tool MCP 对象（来自请求级 DynamicContext）
+            // 获取当前模型关联的 MCP 工具客户端对象。
             List<McpSyncClient> mcpSyncClients = new ArrayList<>();
             for (String toolMcpId : modelVO.getToolMcpIds()) {
                 McpSyncClient mcpSyncClient = mcpObjectMap.get(toolMcpId);
@@ -71,7 +71,7 @@ public class AiClientModelNode extends AbstractArmorySupport {
                 }
             }
 
-            // 实例化对话模型（如果有其他模型对接，可以使用 one-api 服务，转换为 openai 模型格式）
+            // 实例化对话模型，其他模型可通过 OpenAI 兼容接口接入。
             OpenAiChatModel chatModel = OpenAiChatModel.builder()
                     .openAiApi(openAiApi)
                     .defaultOptions(
@@ -84,18 +84,18 @@ public class AiClientModelNode extends AbstractArmorySupport {
                                     .build())
                     .build();
 
-            // 放入请求级 DynamicContext，供后续 ChatClient 装配
+            // 放入装配上下文，供后续对话客户端装配。
             modelObjectMap.put(modelVO.getModelId(), chatModel);
 
-            // 向 Spring 容器注册：执行阶段可通过 beanName 获取 OpenAiChatModel
+            // 向 Spring 容器注册：执行阶段可通过名称获取对话模型。
             registerBean(beanName(modelVO.getModelId()), OpenAiChatModel.class, chatModel);
         }
 
-        return router(requestParameter, dynamicContext);
+        return router(requestParameter, assemblyContext);
     }
 
     @Override
-    public StrategyHandler<ArmoryCommandEntity, DefaultArmoryStrategyFactory.DynamicContext, String> get(ArmoryCommandEntity requestParameter, DefaultArmoryStrategyFactory.DynamicContext dynamicContext) throws Exception {
+    public StrategyHandler<ArmoryCommandEntity, ArmoryAssemblyContextVO, String> get(ArmoryCommandEntity requestParameter, ArmoryAssemblyContextVO assemblyContext) throws Exception {
         return aiClientAdvisorNode;
     }
 

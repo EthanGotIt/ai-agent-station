@@ -64,7 +64,7 @@ public class OpenAiTest {
         ChatResponse response = openAiChatModel.call(new Prompt(
                 "1+1",
                 OpenAiChatOptions.builder()
-                        .model("qwen3.5-plus")
+                        .model("qwen3.6-plus")
                         .build()));
 
         log.info("测试结果(call):{}", JSON.toJSONString(response));
@@ -83,7 +83,7 @@ public class OpenAiTest {
         ChatResponse response = openAiChatModel.call(new Prompt(
                 userMessage,
                 OpenAiChatOptions.builder()
-                        .model("qwen3.5-plus")
+                        .model("qwen3.6-plus")
                         .build()));
 
         log.info("测试结果(images):{}", JSON.toJSONString(response));
@@ -96,7 +96,7 @@ public class OpenAiTest {
         Flux<ChatResponse> stream = openAiChatModel.stream(new Prompt(
                 "1+1",
                 OpenAiChatOptions.builder()
-                        .model("qwen3.5-plus")
+                        .model("qwen3.6-plus")
                         .build()));
 
         stream.subscribe(
@@ -163,7 +163,7 @@ public class OpenAiTest {
         ChatResponse chatResponse = openAiChatModel.call(new Prompt(
                 messages,
                 OpenAiChatOptions.builder()
-                        .model("qwen3.5-plus")
+                        .model("qwen3.6-plus")
                         .build()));
 
         log.info("测试结果:{}", JSON.toJSONString(chatResponse));

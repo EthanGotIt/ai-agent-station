@@ -22,7 +22,7 @@ import java.util.Map;
 @NoArgsConstructor
 public enum AiClientAdvisorTypeEnumVO {
 
-    CHAT_MEMORY("ChatMemory", "上下文记忆（内存模式）") {
+    CHAT_MEMORY("ChatMemory", "上下文记忆（内存模式）", false) {
         @Override
         public Advisor createAdvisor(AiClientAdvisorVO aiClientAdvisorVO, VectorStore vectorStore) {
             AiClientAdvisorVO.ChatMemory chatMemory = aiClientAdvisorVO.getChatMemory();
@@ -34,14 +34,20 @@ public enum AiClientAdvisorTypeEnumVO {
         }
     },
     
-    RAG_ANSWER("RagAnswer", "知识库") {
+    RAG_ANSWER("RagAnswer", "知识库", true) {
         @Override
         public Advisor createAdvisor(AiClientAdvisorVO aiClientAdvisorVO, VectorStore vectorStore) {
+            if (vectorStore == null) {
+                throw new IllegalStateException("RagAnswer 顾问需要启用向量库，请配置 ai-agent.vector-store.enabled=true 和 OPENAI_API_KEY");
+            }
             AiClientAdvisorVO.RagAnswer ragAnswer = aiClientAdvisorVO.getRagAnswer();
+            if (ragAnswer == null) {
+                ragAnswer = new AiClientAdvisorVO.RagAnswer();
+            }
             return new RagAnswerAdvisor(vectorStore, SearchRequest.builder()
                     .topK(ragAnswer.getTopK())
                     .filterExpression(ragAnswer.getFilterExpression())
-                    .build());
+                    .build(), ragAnswer);
         }
     }
     
@@ -49,6 +55,7 @@ public enum AiClientAdvisorTypeEnumVO {
 
     private String code;
     private String info;
+    private boolean vectorStoreRequired;
     
     // 静态Map缓存，用于快速查找
     private static final Map<String, AiClientAdvisorTypeEnumVO> CODE_MAP = new HashMap<>();
@@ -76,7 +83,7 @@ public enum AiClientAdvisorTypeEnumVO {
     public static AiClientAdvisorTypeEnumVO getByCode(String code) {
         AiClientAdvisorTypeEnumVO enumVO = CODE_MAP.get(code);
         if (enumVO == null) {
-            throw new RuntimeException("err! advisorType " + code + " not exist!");
+            throw new RuntimeException("不支持的顾问类型：" + code);
         }
         return enumVO;
     }

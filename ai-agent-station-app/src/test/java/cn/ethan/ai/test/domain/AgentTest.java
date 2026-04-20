@@ -3,6 +3,7 @@ package cn.ethan.ai.test.domain;
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
 import cn.ethan.ai.domain.agent.service.armory.factory.DefaultArmoryStrategyFactory;
+import cn.ethan.ai.domain.agent.model.valobj.ArmoryAssemblyContextVO;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import com.alibaba.fastjson.JSON;
 import jakarta.annotation.Resource;
@@ -34,7 +35,7 @@ public class AgentTest {
 
     @Test
     public void test_aiClientApiNode() throws Exception {
-        StrategyHandler<ArmoryCommandEntity, DefaultArmoryStrategyFactory.DynamicContext, String> armoryStrategyHandler =
+        StrategyHandler<ArmoryCommandEntity, ArmoryAssemblyContextVO, String> armoryStrategyHandler =
                 defaultArmoryStrategyFactory.armoryStrategyHandler();
 
         String apply = armoryStrategyHandler.apply(
@@ -42,7 +43,7 @@ public class AgentTest {
                         .commandType(AiAgentEnumVO.AI_CLIENT.getCode())
                         .commandIdList(List.of("2101"))
                         .build(),
-                new DefaultArmoryStrategyFactory.DynamicContext());
+                new ArmoryAssemblyContextVO());
 
         OpenAiApi openAiApi = (OpenAiApi) applicationContext.getBean(AiAgentEnumVO.AI_CLIENT_API.getBeanName("1001"));
 
@@ -51,7 +52,7 @@ public class AgentTest {
 
     @Test
     public void test_aiClientModelNode() throws Exception {
-        StrategyHandler<ArmoryCommandEntity, DefaultArmoryStrategyFactory.DynamicContext, String> armoryStrategyHandler =
+        StrategyHandler<ArmoryCommandEntity, ArmoryAssemblyContextVO, String> armoryStrategyHandler =
                 defaultArmoryStrategyFactory.armoryStrategyHandler();
 
         String apply = armoryStrategyHandler.apply(
@@ -59,7 +60,7 @@ public class AgentTest {
                         .commandType(AiAgentEnumVO.AI_CLIENT.getCode())
                         .commandIdList(List.of("3101"))
                         .build(),
-                new DefaultArmoryStrategyFactory.DynamicContext());
+                new ArmoryAssemblyContextVO());
 
         OpenAiChatModel openAiChatModel = (OpenAiChatModel) applicationContext.getBean(AiAgentEnumVO.AI_CLIENT_MODEL.getBeanName("3001"));
 
@@ -79,7 +80,7 @@ public class AgentTest {
 
     @Test
     public void test_aiClientNode() throws Exception {
-        StrategyHandler<ArmoryCommandEntity, DefaultArmoryStrategyFactory.DynamicContext, String> armoryStrategyHandler =
+        StrategyHandler<ArmoryCommandEntity, ArmoryAssemblyContextVO, String> armoryStrategyHandler =
                 defaultArmoryStrategyFactory.armoryStrategyHandler();
 
         String apply = armoryStrategyHandler.apply(
@@ -87,7 +88,7 @@ public class AgentTest {
                         .commandType(AiAgentEnumVO.AI_CLIENT.getCode())
                         .commandIdList(List.of("2101"))
                         .build(),
-                new DefaultArmoryStrategyFactory.DynamicContext());
+                new ArmoryAssemblyContextVO());
 
         ChatClient chatClient = (ChatClient) applicationContext.getBean(AiAgentEnumVO.AI_CLIENT.getBeanName("2101"));
         log.info("客户端构建:{}", chatClient);

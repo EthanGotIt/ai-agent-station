@@ -56,7 +56,7 @@ public class AiAgentTest {
 
         OpenAiApi openAiApi = OpenAiApi.builder()
                 .baseUrl("https://dashscope.aliyuncs.com/compatible-mode/")
-                .apiKey("sk-0ec8457a16644d5ca60a3468b20463e2")
+                .apiKey(System.getenv().getOrDefault("OPENAI_API_KEY", ""))
                 .completionsPath("v1/chat/completions")
                 .embeddingsPath("v1/embeddings")
                 .build();
@@ -64,7 +64,7 @@ public class AiAgentTest {
         chatModel = OpenAiChatModel.builder()
                 .openAiApi(openAiApi)
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3.5-plus")
+                        .model("qwen3.6-plus")
                         .toolCallbacks(SyncMcpToolCallbackProvider.builder()
                                 .mcpClients(stdioMcpClient())
                                 .build()
@@ -219,7 +219,7 @@ public class AiAgentTest {
                                 .build())
                 )
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3.5-plus")
+                        .model("qwen3.6-plus")
                         .build())
                 .build();
 
@@ -258,7 +258,7 @@ public class AiAgentTest {
                         new SimpleLoggerAdvisor()
                 )
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3.5-plus")
+                        .model("qwen3.6-plus")
                         .build())
                 .build();
 

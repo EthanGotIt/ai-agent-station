@@ -102,6 +102,9 @@
         <logger name="com.nmys.view" level="debug"/>
     </springProfile>
 
+    <!-- MCP 客户端底层会在握手失败时打印英文堆栈，这里保留业务层中文日志即可。 -->
+    <logger name="io.modelcontextprotocol.client.LifecycleInitializer" level="ERROR"/>
+
     <root level="info">
         <appender-ref ref="CONSOLE"/>
         <!-- 异步日志-INFO -->

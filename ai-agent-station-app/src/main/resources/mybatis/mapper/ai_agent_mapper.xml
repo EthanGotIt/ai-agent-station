@@ -8,7 +8,6 @@
         <result column="agent_name" property="agentName"/>
         <result column="description" property="description"/>
         <result column="channel" property="channel"/>
-        <result column="strategy" property="strategy"/>
         <result column="status" property="status"/>
         <result column="create_time" property="createTime"/>
         <result column="update_time" property="updateTime"/>
@@ -16,8 +15,8 @@
 
     <insert id="insert" parameterType="cn.ethan.ai.infrastructure.dao.po.AiAgent" useGeneratedKeys="true"
             keyProperty="id">
-        INSERT INTO ai_agent (agent_id, agent_name, description, channel, strategy, status, create_time, update_time)
-        VALUES (#{agentId}, #{agentName}, #{description}, #{channel}, #{strategy}, #{status}, #{createTime},
+        INSERT INTO ai_agent (agent_id, agent_name, description, channel, status, create_time, update_time)
+        VALUES (#{agentId}, #{agentName}, #{description}, #{channel}, #{status}, #{createTime},
                 #{updateTime})
     </insert>
 
@@ -27,7 +26,6 @@
             agent_name  = #{agentName},
             description = #{description},
             channel     = #{channel},
-            strategy    = #{strategy},
             status      = #{status},
             update_time = #{updateTime}
         WHERE id = #{id}
@@ -38,7 +36,6 @@
         SET agent_name  = #{agentName},
             description = #{description},
             channel     = #{channel},
-            strategy    = #{strategy},
             status      = #{status},
             update_time = #{updateTime}
         WHERE agent_id = #{agentId}
@@ -62,7 +59,6 @@
                agent_name,
                description,
                channel,
-               strategy,
                status,
                create_time,
                update_time
@@ -76,7 +72,6 @@
                agent_name,
                description,
                channel,
-               strategy,
                status,
                create_time,
                update_time
@@ -90,7 +85,6 @@
                agent_name,
                description,
                channel,
-               strategy,
                status,
                create_time,
                update_time
@@ -105,7 +99,6 @@
                agent_name,
                description,
                channel,
-               strategy,
                status,
                create_time,
                update_time
@@ -120,7 +113,6 @@
                agent_name,
                description,
                channel,
-               strategy,
                status,
                create_time,
                update_time

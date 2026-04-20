@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Repository;
 
 import java.util.*;
@@ -47,6 +48,9 @@ public class AgentRepository implements IAgentRepository {
 
     @Resource
     private IAiClientToolMcpDao aiClientToolMcpDao;
+
+    @Resource
+    private Environment environment;
 
     @Override
     public List<AiClientApiVO> queryAiClientApiVOListByClientIds(List<String> clientIdList) {
@@ -109,6 +113,9 @@ public class AgentRepository implements IAgentRepository {
                             .requestTimeout(toolMcp.getRequestTimeout())
                             .build();
                     parseTransportConfig(mcpVO, toolMcp.getTransportType(), toolMcp.getTransportConfig());
+                    if (shouldSkipMcpConfig(mcpVO)) {
+                        continue;
+                    }
                     mcpVOMap.put(mcpId, mcpVO);
                 }
             }
@@ -276,10 +283,10 @@ public class AgentRepository implements IAgentRepository {
                 apiVOMap.putIfAbsent(apiConfig.getApiId(),
                         AiClientApiVO.builder()
                                 .apiId(apiConfig.getApiId())
-                                .baseUrl(apiConfig.getBaseUrl())
-                                .apiKey(apiConfig.getApiKey())
-                                .completionsPath(apiConfig.getCompletionsPath())
-                                .embeddingsPath(apiConfig.getEmbeddingsPath())
+                                .baseUrl(resolveConfigValue(apiConfig.getBaseUrl()))
+                                .apiKey(resolveConfigValue(apiConfig.getApiKey()))
+                                .completionsPath(resolveConfigValue(apiConfig.getCompletionsPath()))
+                                .embeddingsPath(resolveConfigValue(apiConfig.getEmbeddingsPath()))
                                 .build());
             }
         }
@@ -353,7 +360,6 @@ public class AgentRepository implements IAgentRepository {
                 .agentName(aiAgent.getAgentName())
                 .description(aiAgent.getDescription())
                 .channel(aiAgent.getChannel())
-                .strategy(aiAgent.getStrategy())
                 .status(aiAgent.getStatus())
                 .build();
     }
@@ -417,19 +423,66 @@ public class AgentRepository implements IAgentRepository {
     private void parseTransportConfig(AiClientToolMcpVO mcpVO, String transportType, String transportConfig) {
         try {
             ObjectMapper objectMapper = new ObjectMapper();
+            String resolvedTransportConfig = resolveConfigValue(transportConfig);
             if ("stdio".equals(transportType)) {
-                JsonNode rootNode = objectMapper.readTree(transportConfig);
+                JsonNode rootNode = objectMapper.readTree(resolvedTransportConfig);
                 JsonNode stdioNode = rootNode.has("command")
                         ? rootNode
                         : (rootNode.size() == 1 ? rootNode.elements().next() : rootNode);
                 AiClientToolMcpVO.TransportConfigStdio transportConfigStdio = objectMapper.convertValue(stdioNode, AiClientToolMcpVO.TransportConfigStdio.class);
                 mcpVO.setTransportConfigStdio(transportConfigStdio);
+                mcpVO.setToolNames(transportConfigStdio.getToolNames());
             } else if ("streamable_http".equals(transportType)) {
-                mcpVO.setTransportConfigStreamableHttp(objectMapper.readValue(transportConfig, AiClientToolMcpVO.TransportConfigStreamableHttp.class));
+                AiClientToolMcpVO.TransportConfigStreamableHttp transportConfigStreamableHttp =
+                        objectMapper.readValue(resolvedTransportConfig, AiClientToolMcpVO.TransportConfigStreamableHttp.class);
+                mcpVO.setTransportConfigStreamableHttp(transportConfigStreamableHttp);
+                mcpVO.setToolNames(transportConfigStreamableHttp.getToolNames());
             }
         } catch (Exception e) {
             throw new RuntimeException("解析传输配置失败, mcpId:" + mcpVO.getMcpId() + ", transportType:" + transportType, e);
         }
+    }
+
+    private String resolveConfigValue(String value) {
+        return ConfigPlaceholderResolver.resolve(value, environment);
+    }
+
+    private boolean shouldSkipMcpConfig(AiClientToolMcpVO mcpVO) {
+        AiClientToolMcpVO.TransportConfigStreamableHttp streamableHttpConfig = mcpVO.getTransportConfigStreamableHttp();
+        if (streamableHttpConfig == null || isEmpty(streamableHttpConfig.getRequiredHeaders())) {
+            return false;
+        }
+
+        Map<String, String> headers = streamableHttpConfig.getHeaders();
+        List<String> missingHeaders = streamableHttpConfig.getRequiredHeaders().stream()
+                .filter(headerName -> isMissingRequiredHeader(headers, headerName))
+                .toList();
+        if (missingHeaders.isEmpty()) {
+            return false;
+        }
+
+        log.info("MCP 工具配置缺少必要认证，本次跳过加载，mcpId：{}，mcpName：{}，缺失请求头：{}",
+                mcpVO.getMcpId(), mcpVO.getMcpName(), missingHeaders);
+        return true;
+    }
+
+    private boolean isMissingRequiredHeader(Map<String, String> headers, String headerName) {
+        if (headerName == null || headerName.trim().isEmpty() || headers == null) {
+            return true;
+        }
+
+        String headerValue = headers.get(headerName);
+        if (headerValue == null) {
+            return true;
+        }
+
+        String trimmedValue = headerValue.trim();
+        if (trimmedValue.isEmpty() || trimmedValue.contains("${")) {
+            return true;
+        }
+
+        return "authorization".equalsIgnoreCase(headerName.trim())
+                && "bearer".equalsIgnoreCase(trimmedValue);
     }
 
 }

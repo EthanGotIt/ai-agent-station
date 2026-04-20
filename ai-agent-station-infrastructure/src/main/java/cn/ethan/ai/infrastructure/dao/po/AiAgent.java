@@ -39,11 +39,6 @@ public class AiAgent {
     private String channel;
 
     /**
-     * 执行策略(auto、flow)
-     */
-    private String strategy;
-
-    /**
      * 状态(0:禁用,1:启用)
      */
     private Integer status;

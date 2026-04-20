@@ -43,6 +43,11 @@ public class AiClientToolMcpVO {
     private Integer requestTimeout;
 
     /**
+     * 工具名称白名单，供 Flow Plan 校验使用
+     */
+    private List<String> toolNames;
+
+    /**
      * 传输配置 - stdio
      */
     private TransportConfigStdio transportConfigStdio;
@@ -63,6 +68,8 @@ public class AiClientToolMcpVO {
         private List<String> args;
 
         private Map<String, String> env;
+
+        private List<String> toolNames;
     }
 
     @Data
@@ -83,6 +90,16 @@ public class AiClientToolMcpVO {
          * 例如: {"Authorization": "Bearer token123"}
          */
         private Map<String, String> headers;
+
+        /**
+         * 必须解析出有效值的请求头，缺失时本次运行不加载该 MCP
+         */
+        private List<String> requiredHeaders;
+
+        /**
+         * MCP Server 暴露的工具名或计划别名
+         */
+        private List<String> toolNames;
     }
 
 }

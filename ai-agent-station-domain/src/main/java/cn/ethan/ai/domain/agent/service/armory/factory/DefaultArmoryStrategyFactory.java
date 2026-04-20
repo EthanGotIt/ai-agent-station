@@ -1,16 +1,13 @@
 package cn.ethan.ai.domain.agent.service.armory.factory;
 
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
+import cn.ethan.ai.domain.agent.model.valobj.ArmoryAssemblyContextVO;
 import cn.ethan.ai.domain.agent.service.armory.RootNode;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
-import lombok.*;
 import org.springframework.stereotype.Service;
 
-import java.util.HashMap;
-import java.util.Map;
-
 /**
- * 工厂类
+ * Armory 装配流程入口工厂。
  */
 @Service
 public class DefaultArmoryStrategyFactory {
@@ -21,27 +18,8 @@ public class DefaultArmoryStrategyFactory {
         this.rootNode = rootNode;
     }
 
-    public StrategyHandler<ArmoryCommandEntity, DynamicContext, String> armoryStrategyHandler(){
+    public StrategyHandler<ArmoryCommandEntity, ArmoryAssemblyContextVO, String> armoryStrategyHandler() {
         return rootNode;
-    }
-
-    @EqualsAndHashCode(callSuper = true)
-    @Data
-    @Builder
-    @AllArgsConstructor
-    @NoArgsConstructor
-    public static class DynamicContext extends cn.ethan.wrench.design.framework.tree.DynamicContext {
-
-        private Map<String, Object> dataObjects = new HashMap<>();
-
-        public <T> void setValue(String key, T value) {
-            dataObjects.put(key, value);
-        }
-
-        @SuppressWarnings("unchecked")
-        public <T> T getValue(String key) {
-            return (T) dataObjects.get(key);
-        }
     }
 
 }

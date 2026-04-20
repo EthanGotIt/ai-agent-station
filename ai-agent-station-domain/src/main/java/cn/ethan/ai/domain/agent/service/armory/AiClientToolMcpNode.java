@@ -2,9 +2,9 @@ package cn.ethan.ai.domain.agent.service.armory;
 
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
-import cn.ethan.ai.domain.agent.model.valobj.enums.DynamicContextObjectKeyEnumVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.ArmoryAssemblyObjectKeyEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientToolMcpVO;
-import cn.ethan.ai.domain.agent.service.armory.factory.DefaultArmoryStrategyFactory;
+import cn.ethan.ai.domain.agent.model.valobj.ArmoryAssemblyContextVO;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import com.alibaba.fastjson.JSON;
 import io.modelcontextprotocol.client.McpClient;
@@ -26,7 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * MCP客户端配置节点
+ * MCP 客户端配置节点
  */
 @Slf4j
 @Service
@@ -36,35 +36,41 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
     private AiClientModelNode aiClientModelNode;
 
     @Override
-    protected String doApply(ArmoryCommandEntity requestParameter, DefaultArmoryStrategyFactory.DynamicContext dynamicContext) throws Exception {
-        log.info("Ai Agent 构建节点，Tool MCP 工具配置{}", JSON.toJSONString(requestParameter));
+    protected String doApply(ArmoryCommandEntity requestParameter, ArmoryAssemblyContextVO assemblyContext) throws Exception {
+        log.info("智能体装配节点，MCP 工具配置：{}", JSON.toJSONString(requestParameter));
 
-        List<AiClientToolMcpVO> aiClientToolMcpList = dynamicContext.getValue(dataName());
+        List<AiClientToolMcpVO> aiClientToolMcpList = assemblyContext.getValue(dataName());
 
         if (aiClientToolMcpList == null || aiClientToolMcpList.isEmpty()) {
-            log.warn("没有需要被初始化的 ai client tool mcp");
-            return router(requestParameter, dynamicContext);
+            log.warn("没有需要初始化的 MCP 工具配置");
+            return router(requestParameter, assemblyContext);
         }
 
-        Map<String, McpSyncClient> mcpObjectMap = dynamicContext.getValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_TOOL_MCP_OBJECT_MAP_KEY.getCode());
+        Map<String, McpSyncClient> mcpObjectMap = assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_TOOL_MCP_OBJECT_MAP_KEY.getCode());
         if (mcpObjectMap == null) {
             mcpObjectMap = new HashMap<>();
-            dynamicContext.setValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_TOOL_MCP_OBJECT_MAP_KEY.getCode(), mcpObjectMap);
+            assemblyContext.setValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_TOOL_MCP_OBJECT_MAP_KEY.getCode(), mcpObjectMap);
         }
 
         for (AiClientToolMcpVO mcpVO : aiClientToolMcpList) {
-            McpSyncClient mcpSyncClient = createMcpSyncClient(mcpVO);
-            mcpObjectMap.put(mcpVO.getMcpId(), mcpSyncClient);
+            try {
+                McpSyncClient mcpSyncClient = createMcpSyncClient(mcpVO);
+                mcpObjectMap.put(mcpVO.getMcpId(), mcpSyncClient);
 
-            // 向 Spring 容器注册：执行阶段通过 getBean(...) 获取依赖
-            registerBean(beanName(mcpVO.getMcpId()), McpSyncClient.class, mcpSyncClient);
+                // 向 Spring 容器注册：执行阶段可按名称获取 MCP 客户端。
+                registerBean(beanName(mcpVO.getMcpId()), McpSyncClient.class, mcpSyncClient);
+            } catch (Exception e) {
+                log.warn("MCP 工具初始化失败，已跳过该工具，mcpId：{}，mcpName：{}，传输协议：{}，原因：{}",
+                        mcpVO.getMcpId(), mcpVO.getMcpName(), mcpVO.getTransportType(), e.getMessage());
+                log.debug("MCP 工具初始化异常堆栈", e);
+            }
         }
 
-        return router(requestParameter, dynamicContext);
+        return router(requestParameter, assemblyContext);
     }
 
     @Override
-    public StrategyHandler<ArmoryCommandEntity, DefaultArmoryStrategyFactory.DynamicContext, String> get(ArmoryCommandEntity requestParameter, DefaultArmoryStrategyFactory.DynamicContext dynamicContext) throws Exception {
+    public StrategyHandler<ArmoryCommandEntity, ArmoryAssemblyContextVO, String> get(ArmoryCommandEntity requestParameter, ArmoryAssemblyContextVO assemblyContext) throws Exception {
         return aiClientModelNode;
     }
 
@@ -92,18 +98,19 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
 
                 var mcpClient = McpClient.sync(new StdioClientTransport(stdioParams, McpJsonMapper.getDefault()))
                         .requestTimeout(resolveRequestTimeout(aiClientToolMcpVO)).build();
-                var init_stdio = mcpClient.initialize();
+                mcpClient.initialize();
 
-                log.info("Tool Stdio MCP Initialized {}", init_stdio);
+                log.info("Stdio MCP 客户端初始化完成，mcpId：{}，mcpName：{}",
+                        aiClientToolMcpVO.getMcpId(), aiClientToolMcpVO.getMcpName());
                 return mcpClient;
             }
             case "streamable_http" -> {
                 AiClientToolMcpVO.TransportConfigStreamableHttp transportConfig = aiClientToolMcpVO.getTransportConfigStreamableHttp();
 
                 if (transportConfig == null || StringUtils.isBlank(transportConfig.getBaseUri())) {
-                    throw new RuntimeException("err! streamable_http transportConfig/baseUri is null, mcpId:" + aiClientToolMcpVO.getMcpId());
+                    throw new RuntimeException("Streamable HTTP MCP 配置缺少 baseUri，mcpId：" + aiClientToolMcpVO.getMcpId());
                 }
-                ParsedHttpAddress parsedStreamableAddress = parseHttpAddress(transportConfig.getBaseUri(), transportConfig.getEndpoint(), "/mcp");
+                ParsedHttpAddress parsedStreamableAddress = parseHttpAddress(transportConfig.getBaseUri(), transportConfig.getEndpoint());
 
                 HttpClientStreamableHttpTransport.Builder streamableBuilder = HttpClientStreamableHttpTransport
                         .builder(parsedStreamableAddress.baseUri())
@@ -120,15 +127,15 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
                 McpSyncClient mcpSyncClient = McpClient.sync(streamableHttpTransport)
                         .requestTimeout(resolveRequestTimeout(aiClientToolMcpVO))
                         .build();
-                var init_streamable = mcpSyncClient.initialize();
+                mcpSyncClient.initialize();
 
-                log.info("Tool Streamable HTTP MCP Initialized, mcpId:{}, baseUri:{}, endpoint:{}, result:{}",
-                        aiClientToolMcpVO.getMcpId(), parsedStreamableAddress.baseUri(), parsedStreamableAddress.endpoint(), init_streamable);
+                log.info("Streamable HTTP MCP 客户端初始化完成，mcpId：{}，mcpName：{}",
+                        aiClientToolMcpVO.getMcpId(), aiClientToolMcpVO.getMcpName());
                 return mcpSyncClient;
             }
         }
 
-        throw new RuntimeException("err! transportType " + transportType + " not exist!");
+        throw new RuntimeException("不支持的 MCP 传输协议：" + transportType);
     }
 
     private Duration resolveRequestTimeout(AiClientToolMcpVO aiClientToolMcpVO) {
@@ -147,7 +154,7 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
         });
     }
 
-    private ParsedHttpAddress parseHttpAddress(String originalBaseUri, String configuredEndpoint, String defaultEndpoint) {
+    private ParsedHttpAddress parseHttpAddress(String originalBaseUri, String configuredEndpoint) {
         String baseUri = originalBaseUri.trim();
         String endpoint = configuredEndpoint;
 
@@ -158,14 +165,14 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
             }
             if (StringUtils.isBlank(endpoint)) {
                 String path = uri.getRawPath();
-                endpoint = (StringUtils.isBlank(path) || "/".equals(path)) ? defaultEndpoint : path;
+                endpoint = (StringUtils.isBlank(path) || "/".equals(path)) ? "/mcp" : path;
                 if (StringUtils.isNotBlank(uri.getRawQuery())) {
                     endpoint = endpoint + "?" + uri.getRawQuery();
                 }
             }
         } catch (Exception ignore) {
             if (StringUtils.isBlank(endpoint)) {
-                endpoint = defaultEndpoint;
+                endpoint = "/mcp";
             }
         }
 

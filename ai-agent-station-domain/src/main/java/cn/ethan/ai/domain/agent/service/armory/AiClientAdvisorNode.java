@@ -3,18 +3,21 @@ package cn.ethan.ai.domain.agent.service.armory;
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiClientAdvisorTypeEnumVO;
-import cn.ethan.ai.domain.agent.model.valobj.enums.DynamicContextObjectKeyEnumVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.ArmoryAssemblyObjectKeyEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientAdvisorVO;
-import cn.ethan.ai.domain.agent.service.armory.factory.DefaultArmoryStrategyFactory;
+import cn.ethan.ai.domain.agent.model.valobj.ArmoryAssemblyContextVO;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import com.alibaba.fastjson.JSON;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 顾问角色节点
@@ -24,39 +27,47 @@ import java.util.List;
 public class AiClientAdvisorNode extends AbstractArmorySupport {
 
     @Resource
-    private VectorStore vectorStore;
+    private ObjectProvider<VectorStore> vectorStoreProvider;
 
     @Resource
     private AiClientNode aiClientNode;
 
     @Override
-    protected String doApply(ArmoryCommandEntity requestParameter, DefaultArmoryStrategyFactory.DynamicContext dynamicContext) throws Exception {
-        log.info("Ai Agent 构建节点，Advisor 顾问角色{}", JSON.toJSONString(requestParameter));
+    protected String doApply(ArmoryCommandEntity requestParameter, ArmoryAssemblyContextVO assemblyContext) throws Exception {
+        log.info("智能体装配节点，顾问配置：{}", JSON.toJSONString(requestParameter));
 
-        List<AiClientAdvisorVO> aiClientAdvisorList = dynamicContext.getValue(dataName());
+        List<AiClientAdvisorVO> aiClientAdvisorList = assemblyContext.getValue(dataName());
 
         if (aiClientAdvisorList == null || aiClientAdvisorList.isEmpty()) {
-            log.warn("没有需要被初始化的 ai client advisor");
-            return router(requestParameter, dynamicContext);
+            log.warn("没有需要初始化的顾问配置");
+            return router(requestParameter, assemblyContext);
         }
 
-        java.util.Map<String, Advisor> advisorObjectMap = dynamicContext.getValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_ADVISOR_OBJECT_MAP_KEY.getCode());
+        Map<String, Advisor> advisorObjectMap = assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_ADVISOR_OBJECT_MAP_KEY.getCode());
         if (advisorObjectMap == null) {
-            advisorObjectMap = new java.util.HashMap<>();
-            dynamicContext.setValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_ADVISOR_OBJECT_MAP_KEY.getCode(), advisorObjectMap);
+            advisorObjectMap = new HashMap<>();
+            assemblyContext.setValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_ADVISOR_OBJECT_MAP_KEY.getCode(), advisorObjectMap);
         }
 
+        VectorStore vectorStore = vectorStoreProvider.getIfAvailable();
         for (AiClientAdvisorVO aiClientAdvisorVO : aiClientAdvisorList) {
-            Advisor advisor = createAdvisor(aiClientAdvisorVO);
+            AiClientAdvisorTypeEnumVO advisorTypeEnum = AiClientAdvisorTypeEnumVO.getByCode(aiClientAdvisorVO.getAdvisorType());
+            if (advisorTypeEnum.isVectorStoreRequired() && vectorStore == null) {
+                log.warn("顾问配置已跳过，原因：RAG 顾问需要启用向量库。advisorId：{}，advisorName：{}",
+                        aiClientAdvisorVO.getAdvisorId(), aiClientAdvisorVO.getAdvisorName());
+                continue;
+            }
+
+            Advisor advisor = createAdvisor(aiClientAdvisorVO, advisorTypeEnum, vectorStore);
             advisorObjectMap.put(aiClientAdvisorVO.getAdvisorId(), advisor);
             registerBean(beanName(aiClientAdvisorVO.getAdvisorId()), Advisor.class, advisor);
         }
 
-        return router(requestParameter, dynamicContext);
+        return router(requestParameter, assemblyContext);
     }
 
     @Override
-    public StrategyHandler<ArmoryCommandEntity, DefaultArmoryStrategyFactory.DynamicContext, String> get(ArmoryCommandEntity requestParameter, DefaultArmoryStrategyFactory.DynamicContext dynamicContext) throws Exception {
+    public StrategyHandler<ArmoryCommandEntity, ArmoryAssemblyContextVO, String> get(ArmoryCommandEntity requestParameter, ArmoryAssemblyContextVO assemblyContext) throws Exception {
         return aiClientNode;
     }
 
@@ -69,9 +80,7 @@ public class AiClientAdvisorNode extends AbstractArmorySupport {
         return AiAgentEnumVO.AI_CLIENT_ADVISOR.getDataName();
     }
 
-    private Advisor createAdvisor(AiClientAdvisorVO aiClientAdvisorVO) {
-        String advisorType = aiClientAdvisorVO.getAdvisorType();
-        AiClientAdvisorTypeEnumVO advisorTypeEnum = AiClientAdvisorTypeEnumVO.getByCode(advisorType);
+    private Advisor createAdvisor(AiClientAdvisorVO aiClientAdvisorVO, AiClientAdvisorTypeEnumVO advisorTypeEnum, VectorStore vectorStore) {
         return advisorTypeEnum.createAdvisor(aiClientAdvisorVO, vectorStore);
     }
 

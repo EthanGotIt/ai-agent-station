@@ -2,7 +2,7 @@ package cn.ethan.ai.domain.agent.service.armory;
 
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.service.armory.business.data.ILoadDataStrategy;
-import cn.ethan.ai.domain.agent.service.armory.factory.DefaultArmoryStrategyFactory;
+import cn.ethan.ai.domain.agent.model.valobj.ArmoryAssemblyContextVO;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import com.alibaba.fastjson.JSON;
 import jakarta.annotation.Resource;
@@ -30,20 +30,20 @@ public class RootNode extends AbstractArmorySupport {
     }
 
     @Override
-    protected void multiThread(ArmoryCommandEntity requestParameter, DefaultArmoryStrategyFactory.DynamicContext dynamicContext) throws ExecutionException, InterruptedException, TimeoutException {
+    protected void multiThread(ArmoryCommandEntity requestParameter, ArmoryAssemblyContextVO assemblyContext) throws ExecutionException, InterruptedException, TimeoutException {
         // 加载数据
         ILoadDataStrategy loadDataStrategy = loadDataStrategyMap.get(requestParameter.getLoadDataStrategy());
-        loadDataStrategy.loadData(requestParameter, dynamicContext);
+        loadDataStrategy.loadData(requestParameter, assemblyContext);
     }
 
     @Override
-    protected String doApply(ArmoryCommandEntity requestParameter, DefaultArmoryStrategyFactory.DynamicContext dynamicContext) throws Exception {
-        log.info("Ai Agent 构建，数据加载节点{}", JSON.toJSONString(requestParameter));
-        return router(requestParameter, dynamicContext);
+    protected String doApply(ArmoryCommandEntity requestParameter, ArmoryAssemblyContextVO assemblyContext) throws Exception {
+        log.info("智能体装配节点，加载配置数据：{}", JSON.toJSONString(requestParameter));
+        return router(requestParameter, assemblyContext);
     }
 
     @Override
-    public StrategyHandler<ArmoryCommandEntity, DefaultArmoryStrategyFactory.DynamicContext, String> get(ArmoryCommandEntity armoryCommandEntity, DefaultArmoryStrategyFactory.DynamicContext dynamicContext) throws Exception {
+    public StrategyHandler<ArmoryCommandEntity, ArmoryAssemblyContextVO, String> get(ArmoryCommandEntity armoryCommandEntity, ArmoryAssemblyContextVO assemblyContext) throws Exception {
         return aiClientApiNode;
     }
 

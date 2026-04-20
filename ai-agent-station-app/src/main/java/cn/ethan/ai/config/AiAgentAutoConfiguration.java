@@ -3,6 +3,7 @@ package cn.ethan.ai.config;
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
 import cn.ethan.ai.domain.agent.service.armory.factory.DefaultArmoryStrategyFactory;
+import cn.ethan.ai.domain.agent.model.valobj.ArmoryAssemblyContextVO;
 import cn.ethan.ai.types.common.Constants;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import jakarta.annotation.Resource;
@@ -66,7 +67,7 @@ public class AiAgentAutoConfiguration implements ApplicationListener<Application
             log.info("开始自动装配AI客户端，客户端ID列表: {}", commandIdList);
 
             // 执行自动装配
-            StrategyHandler<ArmoryCommandEntity, DefaultArmoryStrategyFactory.DynamicContext, String> armoryStrategyHandler =
+            StrategyHandler<ArmoryCommandEntity, ArmoryAssemblyContextVO, String> armoryStrategyHandler =
                     defaultArmoryStrategyFactory.armoryStrategyHandler();
 
             String result = armoryStrategyHandler.apply(
@@ -74,7 +75,7 @@ public class AiAgentAutoConfiguration implements ApplicationListener<Application
                             .commandType(AiAgentEnumVO.AI_CLIENT.getCode())
                             .commandIdList(commandIdList)
                             .build(),
-                    new DefaultArmoryStrategyFactory.DynamicContext());
+                    new ArmoryAssemblyContextVO());
 
             String readableResult = result != null ? result : String.format("已完成AI Agent自动装配，clientIds=%s", commandIdList);
             log.info("AI Agent 自动装配完成，结果: {}", readableResult);

@@ -4,8 +4,8 @@ import cn.ethan.ai.domain.agent.adapter.repository.IAgentRepository;
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientApiVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientModelVO;
+import cn.ethan.ai.domain.agent.model.valobj.ArmoryAssemblyContextVO;
 import cn.ethan.ai.domain.agent.service.armory.business.data.ILoadDataStrategy;
-import cn.ethan.ai.domain.agent.service.armory.factory.DefaultArmoryStrategyFactory;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -15,7 +15,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
- * 以客户端对话模型，加载数据策略
+ * 按对话模型维度加载装配配置。
  */
 @Slf4j
 @Service("aiClientModelLoadDataStrategy")
@@ -28,17 +28,17 @@ public class AiClientModelLoadDataStrategy implements ILoadDataStrategy {
     protected ThreadPoolExecutor threadPoolExecutor;
 
     @Override
-    public void loadData(ArmoryCommandEntity armoryCommandEntity, DefaultArmoryStrategyFactory.DynamicContext dynamicContext) {
+    public void loadData(ArmoryCommandEntity armoryCommandEntity, ArmoryAssemblyContextVO assemblyContext) {
         List<String> modelIdList = armoryCommandEntity.getCommandIdList();
 
         CompletableFuture<List<AiClientApiVO>> aiClientApiListFuture = CompletableFuture.supplyAsync(() -> {
-            log.info("查询配置数据(ai_client_api) {}", modelIdList);
+            log.info("查询模型接口配置，模型ID：{}", modelIdList);
 
             return repository.queryAiClientApiVOListByModelIds(modelIdList);
         }, threadPoolExecutor);
 
         CompletableFuture<List<AiClientModelVO>> aiClientModelListFuture = CompletableFuture.supplyAsync(() -> {
-            log.info("查询配置数据(ai_client_model) {}", modelIdList);
+            log.info("查询对话模型配置，模型ID：{}", modelIdList);
 
             return repository.queryAiClientModelVOByModelIds(modelIdList);
         }, threadPoolExecutor);

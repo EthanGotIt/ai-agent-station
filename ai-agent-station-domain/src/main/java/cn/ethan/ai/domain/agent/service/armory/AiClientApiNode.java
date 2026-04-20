@@ -2,22 +2,23 @@ package cn.ethan.ai.domain.agent.service.armory;
 
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
-import cn.ethan.ai.domain.agent.model.valobj.enums.DynamicContextObjectKeyEnumVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.ArmoryAssemblyObjectKeyEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientApiVO;
-import cn.ethan.ai.domain.agent.service.armory.factory.DefaultArmoryStrategyFactory;
+import cn.ethan.ai.domain.agent.model.valobj.ArmoryAssemblyContextVO;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import com.alibaba.fastjson.JSON;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * OpenAI API配置节点
+ * OpenAI API 配置节点
  */
 @Slf4j
 @Service
@@ -27,24 +28,29 @@ public class AiClientApiNode extends AbstractArmorySupport {
     private AiClientToolMcpNode aiClientToolMcpNode;
 
     @Override
-    protected String doApply(ArmoryCommandEntity requestParameter, DefaultArmoryStrategyFactory.DynamicContext dynamicContext) throws Exception {
-        log.info("Ai Agent 构建节点，API 接口请求{}", JSON.toJSONString(requestParameter));
+    protected String doApply(ArmoryCommandEntity requestParameter, ArmoryAssemblyContextVO assemblyContext) throws Exception {
+        log.info("智能体装配节点，模型接口配置：{}", JSON.toJSONString(requestParameter));
 
-        List<AiClientApiVO> aiClientApiList = dynamicContext.getValue(dataName());
+        List<AiClientApiVO> aiClientApiList = assemblyContext.getValue(dataName());
 
         if (aiClientApiList == null || aiClientApiList.isEmpty()) {
-            log.warn("没有需要被初始化的 ai client api");
-            return router(requestParameter, dynamicContext);
+            log.warn("没有需要初始化的模型接口配置");
+            return router(requestParameter, assemblyContext);
         }
 
-        Map<String, OpenAiApi> apiObjectMap = dynamicContext.getValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_API_OBJECT_MAP_KEY.getCode());
+        Map<String, OpenAiApi> apiObjectMap = assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_API_OBJECT_MAP_KEY.getCode());
         if (apiObjectMap == null) {
             apiObjectMap = new HashMap<>();
-            dynamicContext.setValue(DynamicContextObjectKeyEnumVO.AI_CLIENT_API_OBJECT_MAP_KEY.getCode(), apiObjectMap);
+            assemblyContext.setValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_API_OBJECT_MAP_KEY.getCode(), apiObjectMap);
         }
 
         for (AiClientApiVO aiClientApiVO : aiClientApiList) {
-            // 仅在请求级 DynamicContext 里组装对象，避免动态 registerBean 带来的并发问题
+            if (isUnresolvedApiKey(aiClientApiVO.getApiKey())) {
+                log.warn("模型接口密钥未完成解析，真实模型调用可能失败。apiId：{}，baseUrl：{}",
+                        aiClientApiVO.getApiId(), aiClientApiVO.getBaseUrl());
+            }
+
+            // 仅在装配上下文中组装接口对象，避免动态注册带来的并发问题。
             OpenAiApi openAiApi = OpenAiApi.builder()
                     .baseUrl(aiClientApiVO.getBaseUrl())
                     .apiKey(aiClientApiVO.getApiKey())
@@ -53,15 +59,15 @@ public class AiClientApiNode extends AbstractArmorySupport {
                     .build();
             apiObjectMap.put(aiClientApiVO.getApiId(), openAiApi);
 
-            // 向 Spring 容器注册：保证执行阶段可以按 beanName 获取 ChatClient 依赖
+            // 向 Spring 容器注册：保证后续阶段可以按名称获取接口对象。
             registerBean(beanName(aiClientApiVO.getApiId()), OpenAiApi.class, openAiApi);
         }
 
-        return router(requestParameter, dynamicContext);
+        return router(requestParameter, assemblyContext);
     }
 
     @Override
-    public StrategyHandler<ArmoryCommandEntity, DefaultArmoryStrategyFactory.DynamicContext, String> get(ArmoryCommandEntity armoryCommandEntity, DefaultArmoryStrategyFactory.DynamicContext dynamicContext) throws Exception {
+    public StrategyHandler<ArmoryCommandEntity, ArmoryAssemblyContextVO, String> get(ArmoryCommandEntity armoryCommandEntity, ArmoryAssemblyContextVO assemblyContext) throws Exception {
         return aiClientToolMcpNode;
     }
 
@@ -73,6 +79,10 @@ public class AiClientApiNode extends AbstractArmorySupport {
     @Override
     protected String dataName() {
         return AiAgentEnumVO.AI_CLIENT_API.getDataName();
+    }
+
+    private boolean isUnresolvedApiKey(String apiKey) {
+        return !StringUtils.hasText(apiKey) || apiKey.contains("${");
     }
 
 }

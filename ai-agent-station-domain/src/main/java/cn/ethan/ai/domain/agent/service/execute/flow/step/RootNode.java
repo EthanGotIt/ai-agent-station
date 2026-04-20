@@ -1,8 +1,9 @@
 package cn.ethan.ai.domain.agent.service.execute.flow.step;
 
+import cn.ethan.ai.domain.agent.model.aggregate.AgentRunAggregate;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AiAgentClientFlowConfigVO;
-import cn.ethan.ai.domain.agent.service.execute.flow.step.factory.DefaultFlowAgentExecuteStrategyFactory;
+import cn.ethan.ai.domain.agent.model.valobj.AgentExecutionContextVO;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -11,31 +12,39 @@ import org.springframework.stereotype.Service;
 import java.util.Map;
 
 /**
- * 流程执行根节点
+ * Flow Plan 根节点
  */
 @Slf4j
 @Service("flowRootNode")
 public class RootNode extends AbstractExecuteSupport {
 
     @Resource
-    private Step1McpToolsAnalysisNode step1McpToolsAnalysisNode;
+    private Step1ToolCapabilityNode step1ToolCapabilityNode;
 
     @Override
-    protected String doApply(ExecuteCommandEntity requestParameter, DefaultFlowAgentExecuteStrategyFactory.DynamicContext dynamicContext) throws Exception {
+    protected String doApply(ExecuteCommandEntity requestParameter, AgentExecutionContextVO executionContext) throws Exception {
+        log.info("Flow Plan 根节点开始初始化，aiAgentId：{}", requestParameter.getAiAgentId());
 
-        Map<String, AiAgentClientFlowConfigVO> aiAgentClientFlowConfigVOMap = repository.queryAiAgentClientFlowConfig(requestParameter.getAiAgentId());
+        AgentRunAggregate run = AgentRunAggregate.create(requestParameter);
+        executionContext.setAgentRunAggregate(run);
+        executionContext.setMaxStep(run.maxStepOrDefault(executionContext.getMaxStep()));
 
-        dynamicContext.setAiAgentClientFlowConfigVOMap(aiAgentClientFlowConfigVOMap);
-        dynamicContext.setExecutionHistory(new StringBuilder());
-        dynamicContext.setCurrentTask(requestParameter.getMessage());
-        dynamicContext.setMaxStep(requestParameter.getMaxStep() != null ? requestParameter.getMaxStep() : dynamicContext.getMaxStep());
+        Map<String, AiAgentClientFlowConfigVO> flowConfigMap = repository.queryAiAgentClientFlowConfig(requestParameter.getAiAgentId());
+        executionContext.setAiAgentClientFlowConfigVOMap(flowConfigMap);
+        if (flowConfigMap == null || flowConfigMap.isEmpty()) {
+            sendErrorResult(executionContext, "智能体未配置 Flow 客户端，无法执行");
+            return "智能体未配置 Flow 客户端";
+        }
 
-        return router(requestParameter, dynamicContext);
+        return router(requestParameter, executionContext);
     }
 
     @Override
-    public StrategyHandler<ExecuteCommandEntity, DefaultFlowAgentExecuteStrategyFactory.DynamicContext, String> get(ExecuteCommandEntity requestParameter, DefaultFlowAgentExecuteStrategyFactory.DynamicContext dynamicContext) throws Exception {
-        return step1McpToolsAnalysisNode;
+    public StrategyHandler<ExecuteCommandEntity, AgentExecutionContextVO, String> get(ExecuteCommandEntity requestParameter, AgentExecutionContextVO executionContext) {
+        Map<String, AiAgentClientFlowConfigVO> flowConfigMap = executionContext.getAiAgentClientFlowConfigVOMap();
+        if (flowConfigMap == null || flowConfigMap.isEmpty()) {
+            return defaultStrategyHandler;
+        }
+        return step1ToolCapabilityNode;
     }
-
 }

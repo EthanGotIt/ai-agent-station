@@ -18,7 +18,7 @@ public class AiAgentAutoConfigProperties {
     private boolean enabled = false;
 
     /**
-     * 需要自动装配的客户端ID列表
+     * 需要自动装配的客户端 ID列表
      */
     private List<String> clientIds;
 
