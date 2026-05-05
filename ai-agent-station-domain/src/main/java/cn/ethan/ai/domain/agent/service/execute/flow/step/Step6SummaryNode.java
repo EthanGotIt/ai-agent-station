@@ -51,6 +51,7 @@ public class Step6SummaryNode extends AbstractExecuteSupport {
                     "LLM_CALL_SUMMARY",
                     "summary",
                     run.getPlan().getSteps().size() + 2,
+                    null,
                     AiClientTypeEnumVO.RESPONSE_ASSISTANT,
                     AiClientTypeEnumVO.EXECUTOR_CLIENT,
                     AiClientTypeEnumVO.DEFAULT

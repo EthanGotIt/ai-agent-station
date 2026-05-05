@@ -58,6 +58,7 @@ public class Step2PlanGenerateNode extends AbstractExecuteSupport {
                 "LLM_CALL_PLAN",
                 "plan",
                 0,
+                null,
                 AiClientTypeEnumVO.PLANNING_CLIENT,
                 AiClientTypeEnumVO.TASK_ANALYZER_CLIENT,
                 AiClientTypeEnumVO.DEFAULT
@@ -79,6 +80,7 @@ public class Step2PlanGenerateNode extends AbstractExecuteSupport {
                     "LLM_CALL_PLAN_REPAIR",
                     "plan_repair",
                     0,
+                    null,
                     AiClientTypeEnumVO.PLANNING_CLIENT,
                     AiClientTypeEnumVO.TASK_ANALYZER_CLIENT,
                     AiClientTypeEnumVO.DEFAULT

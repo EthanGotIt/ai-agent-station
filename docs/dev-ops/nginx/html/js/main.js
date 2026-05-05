@@ -201,15 +201,16 @@ const AGENT_CONFIGS = {
     '1': {
         id: '1',
         name: 'Flow Plan 编排体',
-        description: '计划校验、工具调用、RAG 召回、质量监督',
+        description: '计划校验、动态工具、混合检索、质量监督',
         capability: 'Flow Plan',
-        tags: ['Plan DSL', 'MCP 工具', 'RAG 多路召回', '流式追踪'],
+        tags: ['Plan DSL', '动态工具路由', 'Parent-Child RAG', '流式追踪'],
         metrics: [
             { label: '执行内核', value: '单 Flow' },
-            { label: '检索链路', value: 'Query Rewrite + 去重' },
+            { label: '工具路由', value: '按轮动态筛选' },
+            { label: '检索链路', value: 'RRF + Small-to-Big' },
             { label: '接口', value: 'NDJSON' }
         ],
-        highlight: '将大模型生成的计划收敛为后端可校验、可执行、可监督的任务链路，并在知识问答场景中支持 Query Rewrite、多路召回和证据去重',
+        highlight: '将大模型生成的计划收敛为后端可校验、可执行、可监督的任务链路，并在知识问答场景中支持每轮动态工具选择、RRF 融合排序与 Parent-Child Small-to-Big 检索',
         color: '#58d0b7',
         iconPath: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
         cases: [
@@ -386,17 +387,111 @@ function renderToolSummaryContent(content) {
     `;
 }
 
-function renderStreamContent(type, subType, content) {
+function renderToolRoutingContent(content, payload) {
+    if (!payload) {
+        return renderMarkdown(content);
+    }
+
+    if (Array.isArray(payload.selectedTools)) {
+        const selectedTools = payload.selectedTools;
+        const allowedToolNames = Array.isArray(payload.allowedToolNames) ? payload.allowedToolNames : [];
+        return `
+            <div class="route-panel">
+                <div class="route-panel-summary">${escapeHtml(content || '本轮工具路由')}</div>
+                ${selectedTools.length ? `
+                    <div class="route-card-list">
+                        ${selectedTools.map(item => `
+                            <div class="route-card">
+                                <div class="route-card-title">${escapeHtml(item.mcpName || item.mcpId || '未命名工具')}</div>
+                                <div class="route-card-reason">${escapeHtml(item.selectedReason || '匹配当前问题')}</div>
+                                <div class="route-chip-list">
+                                    ${Array.isArray(item.toolNames) ? item.toolNames.map(tool => `<span class="route-chip">${escapeHtml(tool)}</span>`).join('') : ''}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : `<div class="route-panel-muted">本轮未选择任何 MCP 工具</div>`}
+                ${allowedToolNames.length ? `
+                    <div class="route-panel-footnote">
+                        白名单：${escapeHtml(allowedToolNames.join(', '))}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    const toolName = payload.toolName || 'LLM_DEFAULT';
+    const allowedToolNames = Array.isArray(payload.allowedToolNames) ? payload.allowedToolNames : [];
+    return `
+        <div class="route-panel">
+            <div class="route-panel-summary">${escapeHtml(content || '步骤工具路由')}</div>
+            <div class="route-card compact">
+                <div class="route-card-title">${escapeHtml(payload.stepName || '当前步骤')}</div>
+                <div class="route-card-reason">执行方式：${escapeHtml(payload.stepType || 'LLM')} / ${escapeHtml(toolName)}</div>
+                ${allowedToolNames.length ? `
+                    <div class="route-chip-list">
+                        ${allowedToolNames.map(tool => `<span class="route-chip">${escapeHtml(tool)}</span>`).join('')}
+                    </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
+}
+
+function renderRagEvidenceContent(content, payload) {
+    if (!payload) {
+        return renderMarkdown(content);
+    }
+
+    const queries = Array.isArray(payload.queries) ? payload.queries : [];
+    const evidences = Array.isArray(payload.evidences) ? payload.evidences : [];
+    return `
+        <div class="evidence-panel">
+            <div class="evidence-panel-summary">${escapeHtml(content || 'RAG 证据')}</div>
+            ${queries.length ? `
+                <div class="evidence-query-list">
+                    ${queries.map(query => `<span class="evidence-query-chip">${escapeHtml(query)}</span>`).join('')}
+                </div>
+            ` : ''}
+            ${evidences.length ? `
+                <div class="evidence-card-list">
+                    ${evidences.map((evidence, index) => `
+                        <div class="evidence-card">
+                            <div class="evidence-card-head">
+                                <strong>${escapeHtml(evidence.evidenceId || `evidence_${index + 1}`)}</strong>
+                                <span>${escapeHtml(evidence.sourceName || evidence.documentId || '未知来源')}</span>
+                            </div>
+                            <div class="evidence-card-meta">
+                                ${evidence.chunkId ? `<span>chunk ${escapeHtml(evidence.chunkId)}</span>` : ''}
+                                ${evidence.score !== undefined && evidence.score !== null ? `<span>score ${escapeHtml(String(Number(evidence.score).toFixed ? Number(evidence.score).toFixed(4) : evidence.score))}</span>` : ''}
+                                ${evidence.retrievalQuery ? `<span>query ${escapeHtml(evidence.retrievalQuery)}</span>` : ''}
+                            </div>
+                            <div class="evidence-card-body">${escapeHtml(evidence.contentPreview || '')}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            ` : `<div class="route-panel-muted">当前步骤没有可展示的证据片段</div>`}
+        </div>
+    `;
+}
+
+function renderStreamContent(type, subType, content, payload) {
     if (subType === 'analysis_plan') {
         return renderPlanContent(content);
     }
     if (subType === 'analysis_tools') {
         return renderToolSummaryContent(content);
     }
+    if (subType === 'tool_routing') {
+        return renderToolRoutingContent(content, payload);
+    }
+    if (subType === 'rag_evidence') {
+        return renderRagEvidenceContent(content, payload);
+    }
     return renderMarkdown(content);
 }
 
-function buildAiMessageHTML(type, subType, content, step, runId) {
+function buildAiMessageHTML(type, subType, content, step, runId, payload) {
     const stageInfo = stageTypeMap[type] || { name: type, icon: 'MSG', class: 'stage-analysis' };
     const subTypeName = subType ? subTypeMap[subType] || subType : '';
     const shortRunId = runId ? String(runId).substring(0, 8) : '';
@@ -414,7 +509,7 @@ function buildAiMessageHTML(type, subType, content, step, runId) {
 
     const roleTag = (type === 'summary' || type === 'complete' || type === 'completed') ? 'OUT' : 'SYS';
     const colorClass = (type === 'summary' || type === 'complete' || type === 'completed') ? 'text-primary-600 border-primary-200 bg-primary-50' : 'text-accent-600 border-accent-200 bg-accent-50';
-    const renderedContent = renderStreamContent(type, subType, content);
+    const renderedContent = renderStreamContent(type, subType, content, payload);
 
     return `
         <div class="w-8 h-8 rounded-full border ${colorClass} flex items-center justify-center flex-shrink-0 font-mono text-xs font-bold shadow-sm">
@@ -449,7 +544,7 @@ function appendAiMessageFromHistory(message) {
     const messageDiv = document.createElement('div');
     messageDiv.className = 'flex items-start gap-3 message';
     if (message.content) {
-        messageDiv.innerHTML = buildAiMessageHTML(message.stage, message.subType, message.content, message.step, message.runId);
+        messageDiv.innerHTML = buildAiMessageHTML(message.stage, message.subType, message.content, message.step, message.runId, message.payload);
     } else {
         messageDiv.innerHTML = DOMPurify.sanitize(message.html || '');
     }
@@ -490,10 +585,12 @@ const subTypeMap = {
     analysis_plan: '结构化计划',
     analysis_progress: '完成度',
     analysis_task_status: '任务状态',
+    tool_routing: '工具路由',
     execution_target: '执行目标',
     execution_process: '执行过程',
     execution_result: '执行结果',
     execution_quality: '质量检查',
+    rag_evidence: '证据面板',
     assessment: '质量评估',
     issues: '问题识别',
     suggestions: '改进建议',
@@ -659,7 +756,7 @@ function sendMessage() {
 }
 
 function handleStreamMessage(jsonData) {
-    const { type, subType, step, content, completed, runId } = jsonData;
+    const { type, subType, step, content, completed, runId, payload } = jsonData;
 
     if (type === 'complete' || type === 'completed' || completed === true) {
         hasReceivedComplete = true;
@@ -669,10 +766,10 @@ function handleStreamMessage(jsonData) {
         return;
     }
 
-    addStageMessage(type, subType, content, step, runId);
+    addStageMessage(type, subType, content, step, runId, payload);
 }
 
-function addStageMessage(type, subType, content, step, runId) {
+function addStageMessage(type, subType, content, step, runId, payload) {
     const streamKey = buildStreamMessageKey(type, subType, step);
     let targetContainer;
     if (type === 'summary' || type === 'complete' || type === 'completed') {
@@ -681,7 +778,7 @@ function addStageMessage(type, subType, content, step, runId) {
         targetContainer = document.getElementById('thinkingMessages');
     }
 
-    const messageHTML = buildAiMessageHTML(type, subType, content, step, runId);
+    const messageHTML = buildAiMessageHTML(type, subType, content, step, runId, payload);
     let messageDiv = currentStepMessages.get(streamKey);
 
     if (!messageDiv) {
@@ -701,6 +798,7 @@ function addStageMessage(type, subType, content, step, runId) {
         subType: subType,
         step: step,
         runId: runId,
+        payload: payload,
         timestamp: Date.now(),
         html: messageHTML,
         streamKey: streamKey

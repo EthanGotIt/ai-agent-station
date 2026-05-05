@@ -44,6 +44,7 @@ public class Step5QualitySupervisorNode extends AbstractExecuteSupport {
                     "LLM_CALL_SUPERVISION",
                     "supervision",
                     run.getPlan().getSteps().size() + 1,
+                    null,
                     AiClientTypeEnumVO.QUALITY_SUPERVISOR_CLIENT,
                     AiClientTypeEnumVO.DEFAULT
             );

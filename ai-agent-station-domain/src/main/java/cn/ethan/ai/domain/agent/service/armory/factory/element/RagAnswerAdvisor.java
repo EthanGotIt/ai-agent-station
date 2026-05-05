@@ -1,5 +1,6 @@
 package cn.ethan.ai.domain.agent.service.armory.factory.element;
 
+import cn.ethan.ai.domain.agent.adapter.port.IRagRetrievalPort;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientAdvisorVO;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.springframework.ai.chat.client.ChatClientRequest;
@@ -13,7 +14,6 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
-import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.Filter;
 import org.springframework.ai.vectorstore.filter.FilterExpressionTextParser;
 import org.springframework.util.StringUtils;
@@ -27,18 +27,18 @@ import java.util.stream.Collectors;
 
 public class RagAnswerAdvisor implements BaseAdvisor {
 
-    private final VectorStore vectorStore;
+    private final IRagRetrievalPort ragRetrievalPort;
     private final SearchRequest searchRequest;
     private final AiClientAdvisorVO.RagAnswer ragAnswer;
     private final RagRetrievalSupport ragRetrievalSupport;
     private final String userTextAdvise;
 
-    public RagAnswerAdvisor(VectorStore vectorStore, SearchRequest searchRequest) {
-        this(vectorStore, searchRequest, new AiClientAdvisorVO.RagAnswer());
+    public RagAnswerAdvisor(IRagRetrievalPort ragRetrievalPort, SearchRequest searchRequest) {
+        this(ragRetrievalPort, searchRequest, new AiClientAdvisorVO.RagAnswer());
     }
 
-    public RagAnswerAdvisor(VectorStore vectorStore, SearchRequest searchRequest, AiClientAdvisorVO.RagAnswer ragAnswer) {
-        this.vectorStore = vectorStore;
+    public RagAnswerAdvisor(IRagRetrievalPort ragRetrievalPort, SearchRequest searchRequest, AiClientAdvisorVO.RagAnswer ragAnswer) {
+        this.ragRetrievalPort = ragRetrievalPort;
         this.searchRequest = searchRequest;
         this.ragAnswer = ragAnswer == null ? new AiClientAdvisorVO.RagAnswer() : ragAnswer;
         this.ragRetrievalSupport = new RagRetrievalSupport();
@@ -64,19 +64,33 @@ public class RagAnswerAdvisor implements BaseAdvisor {
                 ? this.ragRetrievalSupport.rewriteQueries(userText, this.ragAnswer.getMaxRewriteQueries())
                 : List.of(userText);
 
-        List<Document> retrievedDocuments = new ArrayList<>();
+        List<List<Document>> routeDocuments = new ArrayList<>();
         for (String retrievalQuery : retrievalQueries) {
             SearchRequest searchRequestToUse = SearchRequest.from(this.searchRequest)
                     .query(retrievalQuery)
                     .topK(resolveRouteTopK())
                     .filterExpression(this.doGetFilterExpression(context))
                     .build();
-            retrievedDocuments.addAll(this.vectorStore.similaritySearch(searchRequestToUse));
+            routeDocuments.add(this.ragRetrievalPort.retrieve(searchRequestToUse, context));
         }
 
-        List<Document> documents = this.ragAnswer.isDeduplicateEnabled()
-                ? this.ragRetrievalSupport.mergeAndDeduplicate(retrievedDocuments, this.ragAnswer.getTopK(), this.ragAnswer.getContentFingerprintLength())
-                : retrievedDocuments.stream().limit(this.ragAnswer.getTopK()).collect(Collectors.toList());
+        List<Document> documents;
+        if (this.ragAnswer.isDeduplicateEnabled()) {
+            List<Document> fusedDocuments = this.ragRetrievalSupport.rrfFuse(routeDocuments, this.ragAnswer.getTopK() * 3, 60);
+            documents = this.ragRetrievalSupport.deduplicateByParent(fusedDocuments, this.ragAnswer.getTopK());
+            if (documents.isEmpty()) {
+                documents = this.ragRetrievalSupport.mergeAndDeduplicate(
+                        routeDocuments.stream().flatMap(List::stream).collect(Collectors.toList()),
+                        this.ragAnswer.getTopK(),
+                        this.ragAnswer.getContentFingerprintLength()
+                );
+            }
+        } else {
+            documents = routeDocuments.stream()
+                    .flatMap(List::stream)
+                    .limit(this.ragAnswer.getTopK())
+                    .collect(Collectors.toList());
+        }
 
         context.put("qa_retrieved_documents", documents);
         context.put("qa_retrieval_queries", retrievalQueries);

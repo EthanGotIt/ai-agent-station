@@ -1,5 +1,6 @@
 package cn.ethan.ai.domain.agent.service.armory;
 
+import cn.ethan.ai.domain.agent.adapter.port.IRagRetrievalPort;
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiClientAdvisorTypeEnumVO;
@@ -11,7 +12,6 @@ import com.alibaba.fastjson.JSON;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
-import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
@@ -27,7 +27,7 @@ import java.util.Map;
 public class AiClientAdvisorNode extends AbstractArmorySupport {
 
     @Resource
-    private ObjectProvider<VectorStore> vectorStoreProvider;
+    private ObjectProvider<IRagRetrievalPort> ragRetrievalPortProvider;
 
     @Resource
     private AiClientNode aiClientNode;
@@ -49,16 +49,16 @@ public class AiClientAdvisorNode extends AbstractArmorySupport {
             assemblyContext.setValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_ADVISOR_OBJECT_MAP_KEY.getCode(), advisorObjectMap);
         }
 
-        VectorStore vectorStore = vectorStoreProvider.getIfAvailable();
+        IRagRetrievalPort ragRetrievalPort = ragRetrievalPortProvider.getIfAvailable();
         for (AiClientAdvisorVO aiClientAdvisorVO : aiClientAdvisorList) {
             AiClientAdvisorTypeEnumVO advisorTypeEnum = AiClientAdvisorTypeEnumVO.getByCode(aiClientAdvisorVO.getAdvisorType());
-            if (advisorTypeEnum.isVectorStoreRequired() && vectorStore == null) {
-                log.warn("顾问配置已跳过，原因：RAG 顾问需要启用向量库。advisorId：{}，advisorName：{}",
+            if (advisorTypeEnum.isVectorStoreRequired() && ragRetrievalPort == null) {
+                log.warn("顾问配置已跳过，原因：RAG 顾问缺少检索端口。advisorId：{}，advisorName：{}",
                         aiClientAdvisorVO.getAdvisorId(), aiClientAdvisorVO.getAdvisorName());
                 continue;
             }
 
-            Advisor advisor = createAdvisor(aiClientAdvisorVO, advisorTypeEnum, vectorStore);
+            Advisor advisor = createAdvisor(aiClientAdvisorVO, advisorTypeEnum, ragRetrievalPort);
             advisorObjectMap.put(aiClientAdvisorVO.getAdvisorId(), advisor);
             registerBean(beanName(aiClientAdvisorVO.getAdvisorId()), Advisor.class, advisor);
         }
@@ -80,8 +80,8 @@ public class AiClientAdvisorNode extends AbstractArmorySupport {
         return AiAgentEnumVO.AI_CLIENT_ADVISOR.getDataName();
     }
 
-    private Advisor createAdvisor(AiClientAdvisorVO aiClientAdvisorVO, AiClientAdvisorTypeEnumVO advisorTypeEnum, VectorStore vectorStore) {
-        return advisorTypeEnum.createAdvisor(aiClientAdvisorVO, vectorStore);
+    private Advisor createAdvisor(AiClientAdvisorVO aiClientAdvisorVO, AiClientAdvisorTypeEnumVO advisorTypeEnum, IRagRetrievalPort ragRetrievalPort) {
+        return advisorTypeEnum.createAdvisor(aiClientAdvisorVO, ragRetrievalPort);
     }
 
 }

@@ -23,3 +23,8 @@ CREATE TABLE public.vector_store_openai (
     metadata JSONB,
     embedding VECTOR(1536)
 );
+
+-- Parent-Child RAG 默认使用 HNSW 索引支撑语义召回。
+CREATE INDEX IF NOT EXISTS idx_vector_store_openai_embedding_hnsw
+    ON public.vector_store_openai
+    USING hnsw (embedding vector_cosine_ops);

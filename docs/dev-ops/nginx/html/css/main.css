@@ -428,7 +428,7 @@ svg {
     position: relative;
     flex: 0 0 auto;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(340px, 390px);
+    grid-template-columns: minmax(0, 1.35fr) minmax(290px, 320px);
     grid-template-areas: "agent config";
     align-items: stretch;
     gap: 12px;
@@ -440,9 +440,9 @@ svg {
     grid-area: agent;
     min-width: 0;
     display: grid;
-    grid-template-columns: 392px minmax(0, 1fr);
+    grid-template-columns: minmax(290px, 310px) minmax(0, 1fr);
     align-items: stretch;
-    gap: 8px;
+    gap: 12px;
 }
 
 .command-agent > .section-label {
@@ -514,14 +514,14 @@ svg {
     min-width: 0;
     height: 100%;
     margin-top: 0;
-    padding: 12px 14px;
+    padding: 14px 16px;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
         "title"
         "description"
         "metrics";
-    gap: 7px;
+    gap: 9px;
     align-content: center;
     align-items: center;
     border: 1px solid var(--line-soft);
@@ -541,9 +541,9 @@ svg {
     border: 0;
     color: var(--ink);
     background: transparent;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 700;
-    line-height: 1.45;
+    line-height: 1.5;
 }
 
 .command-agent .agent-metrics {
@@ -573,7 +573,7 @@ svg {
     font-size: 12px;
     line-height: 1.55;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 4;
 }
 
 .run-config {
@@ -1137,6 +1137,107 @@ svg {
     color: var(--green-deep);
     border-color: rgba(15, 159, 143, 0.28);
     background: rgba(15, 159, 143, 0.06);
+}
+
+.route-panel,
+.evidence-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.route-panel-summary,
+.evidence-panel-summary {
+    color: var(--ink);
+    font-weight: 700;
+}
+
+.route-panel-muted {
+    color: var(--ink-faint);
+    font-size: 13px;
+}
+
+.route-card-list,
+.evidence-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.route-card,
+.evidence-card {
+    padding: 10px 12px;
+    border: 1px solid var(--line-soft);
+    border-radius: 8px;
+    background: #fbfcfd;
+}
+
+.route-card.compact {
+    background: #ffffff;
+}
+
+.route-card-title,
+.evidence-card-head strong {
+    color: var(--ink);
+    font-weight: 800;
+}
+
+.route-card-reason,
+.evidence-card-meta,
+.route-panel-footnote {
+    margin-top: 4px;
+    color: var(--ink-soft);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.route-chip-list,
+.evidence-query-list,
+.evidence-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.route-chip,
+.evidence-query-chip,
+.evidence-card-meta span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 3px 8px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    color: var(--ink-soft);
+    font-family: Consolas, "JetBrains Mono", monospace;
+    font-size: 11px;
+}
+
+.evidence-query-chip {
+    color: var(--green-deep);
+    border-color: rgba(15, 159, 143, 0.26);
+    background: rgba(15, 159, 143, 0.06);
+}
+
+.evidence-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.evidence-card-head span {
+    color: var(--ink-faint);
+    font-size: 12px;
+}
+
+.evidence-card-body {
+    margin-top: 8px;
+    color: var(--ink);
+    font-size: 13px;
+    line-height: 1.7;
+    white-space: pre-wrap;
 }
 
 .custom-scrollbar::-webkit-scrollbar {

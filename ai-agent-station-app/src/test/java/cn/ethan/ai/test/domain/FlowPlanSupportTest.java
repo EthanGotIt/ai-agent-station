@@ -93,6 +93,30 @@ public class FlowPlanSupportTest {
     }
 
     @Test
+    public void rejectToolStepWhenCurrentRoundHasNoTool() {
+        AgentPlanVO plan = parser.parse("""
+                {
+                  "goal": "test",
+                  "steps": [
+                    {
+                      "stepId": "step_1",
+                      "name": "search",
+                      "type": "TOOL",
+                      "toolName": "web_search_exa",
+                      "input": {},
+                      "dependsOn": [],
+                      "successCriteria": "done"
+                    }
+                  ]
+                }
+                """);
+
+        AgentPlanValidationResultVO result = validator.validate(plan, 3, Set.of());
+        Assert.assertFalse(result.isValid());
+        Assert.assertTrue(result.formatErrors().contains("未开放任何工具"));
+    }
+
+    @Test
     public void rejectDuplicateStepIdAndExceededMaxStep() {
         AgentPlanVO plan = parser.parse("""
                 {

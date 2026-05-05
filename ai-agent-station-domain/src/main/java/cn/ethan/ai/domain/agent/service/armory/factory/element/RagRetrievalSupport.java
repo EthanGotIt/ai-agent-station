@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /**
@@ -38,6 +39,10 @@ public class RagRetrievalSupport {
     private static final List<String> CHUNK_ID_KEYS = List.of(
             "chunk_id", "chunkId", "chunk_index", "chunkIndex", "page", "section"
     );
+
+    private static final String PARENT_CHUNK_ID_KEY = "parent_chunk_id";
+
+    private static final String RETRIEVAL_PARENT_KEY = "qa_parent_key";
 
     public List<String> rewriteQueries(String userText, int maxRewriteQueries) {
         int effectiveMaxQueries = maxRewriteQueries <= 0 ? DEFAULT_REWRITE_QUERY_COUNT : maxRewriteQueries;
@@ -80,6 +85,120 @@ public class RagRetrievalSupport {
                 .toList();
     }
 
+    /**
+     * RRF 融合排序（Reciprocal Rank Fusion）。
+     */
+    public List<Document> rrfFuse(List<List<Document>> routeDocuments, int limit, int rankConstant) {
+        if (routeDocuments == null || routeDocuments.isEmpty()) {
+            return List.of();
+        }
+
+        int effectiveLimit = limit <= 0 ? Integer.MAX_VALUE : limit;
+        int effectiveRankConstant = rankConstant <= 0 ? 60 : rankConstant;
+        Map<String, Document> bestDocumentMap = new LinkedHashMap<>();
+        Map<String, Double> fusedScoreMap = new LinkedHashMap<>();
+
+        for (List<Document> documents : routeDocuments) {
+            if (documents == null || documents.isEmpty()) {
+                continue;
+            }
+            for (int i = 0; i < documents.size(); i++) {
+                Document document = documents.get(i);
+                if (document == null || StringUtils.isBlank(document.getText())) {
+                    continue;
+                }
+                String key = dedupeKey(document, DEFAULT_FINGERPRINT_LENGTH);
+                double delta = 1D / (effectiveRankConstant + i + 1D);
+                fusedScoreMap.put(key, fusedScoreMap.getOrDefault(key, 0D) + delta);
+                Document existed = bestDocumentMap.get(key);
+                if (existed == null || compareScore(document, existed) > 0) {
+                    bestDocumentMap.put(key, document);
+                }
+            }
+        }
+
+        return bestDocumentMap.entrySet().stream()
+                .map(entry -> {
+                    Double rrfScore = fusedScoreMap.getOrDefault(entry.getKey(), 0D);
+                    return entry.getValue().mutate()
+                            .score(rrfScore)
+                            .metadata(RETRIEVAL_PARENT_KEY, entry.getKey())
+                            .build();
+                })
+                .sorted(Comparator.comparing(this::scoreOrZero).reversed())
+                .limit(effectiveLimit)
+                .toList();
+    }
+
+    /**
+     * 子块命中后向父块回溯（Small-to-Big）。
+     */
+    public List<Document> expandWithParent(List<Document> fusedDocuments, Function<Document, Document> parentResolver) {
+        if (fusedDocuments == null || fusedDocuments.isEmpty()) {
+            return List.of();
+        }
+        if (parentResolver == null) {
+            return fusedDocuments;
+        }
+
+        List<Document> expanded = new ArrayList<>();
+        for (Document document : fusedDocuments) {
+            if (document == null) {
+                continue;
+            }
+            Document parentDocument = parentResolver.apply(document);
+            if (parentDocument == null) {
+                expanded.add(document);
+                continue;
+            }
+
+            Map<String, Object> mergedMetadata = new LinkedHashMap<>();
+            if (parentDocument.getMetadata() != null) {
+                mergedMetadata.putAll(parentDocument.getMetadata());
+            }
+            if (document.getMetadata() != null) {
+                mergedMetadata.putAll(document.getMetadata());
+            }
+            mergedMetadata.put("qa_hit_chunk_id", metadataKey(document, List.of("chunk_id", "chunkId")));
+            mergedMetadata.put("qa_parent_chunk_id", metadataKey(parentDocument, List.of("chunk_id", "chunkId")));
+            mergedMetadata.put("qa_hit_text", document.getText());
+            mergedMetadata.put(RETRIEVAL_PARENT_KEY, resolveParentKey(parentDocument, document));
+
+            expanded.add(parentDocument.mutate()
+                    .score(scoreOrZero(document))
+                    .metadata(mergedMetadata)
+                    .build());
+        }
+        return expanded;
+    }
+
+    /**
+     * 父级去重，命中同一父块只保留最高分结果。
+     */
+    public List<Document> deduplicateByParent(List<Document> documents, int limit) {
+        if (documents == null || documents.isEmpty()) {
+            return List.of();
+        }
+
+        int effectiveLimit = limit <= 0 ? documents.size() : limit;
+        Map<String, Document> grouped = new LinkedHashMap<>();
+        for (Document document : documents) {
+            if (document == null || StringUtils.isBlank(document.getText())) {
+                continue;
+            }
+            String parentKey = resolveParentKey(document, null);
+            Document existed = grouped.get(parentKey);
+            if (existed == null || compareScore(document, existed) > 0) {
+                grouped.put(parentKey, document);
+            }
+        }
+
+        return grouped.values().stream()
+                .sorted(Comparator.comparing(this::scoreOrZero).reversed())
+                .limit(effectiveLimit)
+                .toList();
+    }
+
     public String formatEvidenceContext(List<Document> documents) {
         if (documents == null || documents.isEmpty()) {
             return "";
@@ -90,6 +209,15 @@ public class RagRetrievalSupport {
             Document document = documents.get(i);
             builder.append("[证据").append(i + 1).append("] ");
             builder.append("来源：").append(resolveSource(document)).append(System.lineSeparator());
+            if (document.getMetadata() != null) {
+                Object retrievalQuery = document.getMetadata().get("qa_retrieval_query");
+                if (retrievalQuery != null && StringUtils.isNotBlank(retrievalQuery.toString())) {
+                    builder.append("召回Query：").append(retrievalQuery).append(System.lineSeparator());
+                }
+            }
+            if (document.getScore() != null) {
+                builder.append("融合分数：").append(document.getScore()).append(System.lineSeparator());
+            }
             builder.append(document.getText()).append(System.lineSeparator()).append(System.lineSeparator());
         }
         return builder.toString().trim();
@@ -155,8 +283,31 @@ public class RagRetrievalSupport {
         return "id:" + document.getId();
     }
 
+    private String resolveParentKey(Document parentOrSelf, Document fallbackChild) {
+        if (parentOrSelf != null && parentOrSelf.getMetadata() != null) {
+            Object value = parentOrSelf.getMetadata().get(RETRIEVAL_PARENT_KEY);
+            if (value != null && StringUtils.isNotBlank(value.toString())) {
+                return value.toString();
+            }
+        }
+        String documentId = metadataKey(parentOrSelf, DOCUMENT_ID_KEYS);
+        String parentChunkId = metadataKey(parentOrSelf, List.of(PARENT_CHUNK_ID_KEY, "parentChunkId"));
+        String chunkId = metadataKey(parentOrSelf, CHUNK_ID_KEYS);
+        if (StringUtils.isBlank(chunkId) && fallbackChild != null) {
+            chunkId = metadataKey(fallbackChild, CHUNK_ID_KEYS);
+        }
+        String effectiveChunkId = StringUtils.defaultIfBlank(parentChunkId, chunkId);
+        if (StringUtils.isNotBlank(documentId) && StringUtils.isNotBlank(effectiveChunkId)) {
+            return "parent:" + documentId + ":" + effectiveChunkId;
+        }
+        if (StringUtils.isNotBlank(documentId)) {
+            return "parent:" + documentId;
+        }
+        return "parent:" + StringUtils.defaultIfBlank(parentOrSelf == null ? null : parentOrSelf.getId(), "unknown");
+    }
+
     private String metadataKey(Document document, List<String> keys) {
-        if (document.getMetadata() == null || document.getMetadata().isEmpty()) {
+        if (document == null || document.getMetadata() == null || document.getMetadata().isEmpty()) {
             return "";
         }
         for (String key : keys) {

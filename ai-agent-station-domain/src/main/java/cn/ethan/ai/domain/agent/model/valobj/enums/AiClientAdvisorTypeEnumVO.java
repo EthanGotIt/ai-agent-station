@@ -1,5 +1,6 @@
 package cn.ethan.ai.domain.agent.model.valobj.enums;
 
+import cn.ethan.ai.domain.agent.adapter.port.IRagRetrievalPort;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientAdvisorVO;
 import cn.ethan.ai.domain.agent.service.armory.factory.element.RagAnswerAdvisor;
 import lombok.AllArgsConstructor;
@@ -9,7 +10,6 @@ import org.springframework.ai.chat.client.advisor.PromptChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.vectorstore.SearchRequest;
-import org.springframework.ai.vectorstore.VectorStore;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -24,7 +24,7 @@ public enum AiClientAdvisorTypeEnumVO {
 
     CHAT_MEMORY("ChatMemory", "上下文记忆（内存模式）", false) {
         @Override
-        public Advisor createAdvisor(AiClientAdvisorVO aiClientAdvisorVO, VectorStore vectorStore) {
+        public Advisor createAdvisor(AiClientAdvisorVO aiClientAdvisorVO, IRagRetrievalPort ragRetrievalPort) {
             AiClientAdvisorVO.ChatMemory chatMemory = aiClientAdvisorVO.getChatMemory();
             return PromptChatMemoryAdvisor.builder(
                     MessageWindowChatMemory.builder()
@@ -36,15 +36,15 @@ public enum AiClientAdvisorTypeEnumVO {
     
     RAG_ANSWER("RagAnswer", "知识库", true) {
         @Override
-        public Advisor createAdvisor(AiClientAdvisorVO aiClientAdvisorVO, VectorStore vectorStore) {
-            if (vectorStore == null) {
-                throw new IllegalStateException("RagAnswer 顾问需要启用向量库，请配置 ai-agent.vector-store.enabled=true 和 OPENAI_API_KEY");
+        public Advisor createAdvisor(AiClientAdvisorVO aiClientAdvisorVO, IRagRetrievalPort ragRetrievalPort) {
+            if (ragRetrievalPort == null) {
+                throw new IllegalStateException("RagAnswer 顾问需要启用检索端口，请检查 ai-agent.vector-store.enabled、ES 与数据库配置");
             }
             AiClientAdvisorVO.RagAnswer ragAnswer = aiClientAdvisorVO.getRagAnswer();
             if (ragAnswer == null) {
                 ragAnswer = new AiClientAdvisorVO.RagAnswer();
             }
-            return new RagAnswerAdvisor(vectorStore, SearchRequest.builder()
+            return new RagAnswerAdvisor(ragRetrievalPort, SearchRequest.builder()
                     .topK(ragAnswer.getTopK())
                     .filterExpression(ragAnswer.getFilterExpression())
                     .build(), ragAnswer);
@@ -70,10 +70,10 @@ public enum AiClientAdvisorTypeEnumVO {
     /**
      * 策略方法：创建顾问对象
      * @param aiClientAdvisorVO 顾问配置对象
-     * @param vectorStore 向量存储
+     * @param ragRetrievalPort RAG 检索端口
      * @return 顾问对象
      */
-    public abstract Advisor createAdvisor(AiClientAdvisorVO aiClientAdvisorVO, VectorStore vectorStore);
+    public abstract Advisor createAdvisor(AiClientAdvisorVO aiClientAdvisorVO, IRagRetrievalPort ragRetrievalPort);
     
     /**
      * 根据code 获取枚举

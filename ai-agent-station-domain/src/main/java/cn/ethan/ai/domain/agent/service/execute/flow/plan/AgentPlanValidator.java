@@ -61,6 +61,8 @@ public class AgentPlanValidator {
             if (PlanStepTypeEnumVO.requiresTool(step.getType())) {
                 if (StringUtils.isBlank(step.getToolName())) {
                     errors.add("工具步骤 " + step.getStepId() + " 的 toolName 不能为空");
+                } else if (normalizedTools.isEmpty()) {
+                    errors.add("当前轮次未开放任何工具，步骤 " + step.getStepId() + " 不允许使用 TOOL");
                 } else if (!normalizedTools.isEmpty()
                         && !normalizedTools.contains(step.getToolName().trim().toLowerCase(Locale.ROOT))) {
                     errors.add("工具 " + step.getToolName() + " 不在白名单内");

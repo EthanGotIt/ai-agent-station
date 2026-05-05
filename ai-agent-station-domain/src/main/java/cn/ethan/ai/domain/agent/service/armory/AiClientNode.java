@@ -8,15 +8,12 @@ import cn.ethan.ai.domain.agent.model.valobj.AiClientVO;
 import cn.ethan.ai.domain.agent.model.valobj.ArmoryAssemblyContextVO;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import com.alibaba.fastjson.JSON;
-import io.modelcontextprotocol.client.McpSyncClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
-import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,8 +39,6 @@ public class AiClientNode extends AbstractArmorySupport {
 
         Map<String, org.springframework.ai.openai.OpenAiChatModel> modelObjectMap =
                 assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_MODEL_OBJECT_MAP_KEY.getCode());
-        Map<String, McpSyncClient> mcpObjectMap =
-                assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_TOOL_MCP_OBJECT_MAP_KEY.getCode());
         Map<String, Advisor> advisorObjectMap =
                 assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_ADVISOR_OBJECT_MAP_KEY.getCode());
         Map<String, ChatClient> chatClientObjectMap =
@@ -69,20 +64,8 @@ public class AiClientNode extends AbstractArmorySupport {
             }
             OpenAiChatModel chatModel = modelObjectMap.get(aiClientVO.getModelId());
 
-            // 3. MCP 服务
-            List<McpSyncClient> mcpSyncClients = new ArrayList<>();
-            for (String mcpId : aiClientVO.getMcpIdList()) {
-                if (mcpObjectMap == null) {
-                    continue;
-                }
-                McpSyncClient mcpSyncClient = mcpObjectMap.get(mcpId);
-                if (mcpSyncClient != null) {
-                    mcpSyncClients.add(mcpSyncClient);
-                }
-            }
-
-            // 4. 顾问配置
-            List<Advisor> advisors = new ArrayList<>();
+            // 3. 顾问配置
+            List<Advisor> advisors = new java.util.ArrayList<>();
             for (String advisorId : aiClientVO.getAdvisorIdList()) {
                 if (advisorObjectMap == null) {
                     continue;
@@ -95,12 +78,9 @@ public class AiClientNode extends AbstractArmorySupport {
 
             Advisor[] advisorArray = advisors.toArray(new Advisor[]{});
 
-            // 5. 构建对话客户端
+            // 4. 构建对话客户端
             ChatClient chatClient = ChatClient.builder(chatModel)
                     .defaultSystem(defaultSystem.toString())
-                    .defaultToolCallbacks(SyncMcpToolCallbackProvider.builder()
-                            .mcpClients(mcpSyncClients)
-                            .build())
                     .defaultAdvisors(advisorArray)
                     .build();
 

@@ -63,6 +63,11 @@ public class DataSourceConfig {
         return new SqlSessionTemplate(Objects.requireNonNull(sqlSessionFactoryBean.getObject()));
     }
 
+    @Bean("mysqlJdbcTemplate")
+    public JdbcTemplate mysqlJdbcTemplate(@Qualifier("mysqlDataSource") DataSource dataSource) {
+        return new JdbcTemplate(dataSource);
+    }
+
     @Bean("pgVectorDataSource")
     @ConditionalOnProperty(name = "ai-agent.vector-store.enabled", havingValue = "true")
     public DataSource pgVectorDataSource(@Value("${spring.datasource.pgvector.driver-class-name}") String driverClassName,

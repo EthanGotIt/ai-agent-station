@@ -97,7 +97,8 @@ CREATE TABLE `ai_client_advisor` (
 LOCK TABLES `ai_client_advisor` WRITE;
 INSERT INTO `ai_client_advisor` (`id`, `advisor_id`, `advisor_name`, `advisor_type`, `order_num`, `ext_param`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '4001', '会话记忆', 'ChatMemory', 1, '{\n  "maxMessages": 30\n}', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, '4001', '会话记忆', 'ChatMemory', 1, '{\n  "maxMessages": 30\n}', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (2, '4002', '知识问答增强', 'RagAnswer', 2, '{\n  "topK": 4,\n  "queryRewriteEnabled": true,\n  "maxRewriteQueries": 3,\n  "routeTopK": 8,\n  "deduplicateEnabled": true,\n  "contentFingerprintLength": 180\n}', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 知识库配置表保留，当前不写入 RAG 种子数据
@@ -113,6 +114,52 @@ CREATE TABLE `ai_client_rag_order` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_rag_id` (`rag_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='知识库配置表';
+
+LOCK TABLES `ai_client_rag_order` WRITE;
+INSERT INTO `ai_client_rag_order` (`id`, `rag_id`, `rag_name`, `knowledge_tag`, `status`, `create_time`, `update_time`)
+VALUES
+    (1, '7001', 'AI Agent Station 知识库', 'ai-agent-station', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+UNLOCK TABLES;
+
+-- RAG 文档主表（Parent）
+DROP TABLE IF EXISTS `ai_rag_document`;
+CREATE TABLE `ai_rag_document` (
+    `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `rag_id` varchar(64) NOT NULL COMMENT '知识库业务ID',
+    `doc_id` varchar(64) NOT NULL COMMENT '文档业务ID',
+    `title` varchar(255) DEFAULT NULL COMMENT '文档标题',
+    `source` varchar(255) DEFAULT NULL COMMENT '来源标识',
+    `summary` text COMMENT '文档摘要',
+    `metadata_json` text COMMENT '扩展元数据 JSON',
+    `status` tinyint(1) DEFAULT '1' COMMENT '状态：0禁用，1启用',
+    `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_rag_doc` (`rag_id`, `doc_id`),
+    KEY `idx_doc_status` (`doc_id`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='RAG 文档主表';
+
+-- RAG 分块表（Child/Parent）
+DROP TABLE IF EXISTS `ai_rag_chunk`;
+CREATE TABLE `ai_rag_chunk` (
+    `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `rag_id` varchar(64) NOT NULL COMMENT '知识库业务ID',
+    `doc_id` varchar(64) NOT NULL COMMENT '文档业务ID',
+    `chunk_id` varchar(64) NOT NULL COMMENT '分块业务ID',
+    `parent_chunk_id` varchar(64) DEFAULT NULL COMMENT '父块业务ID，子块命中后回溯使用',
+    `chunk_level` tinyint DEFAULT '1' COMMENT '分块层级：1父块，2子块',
+    `chunk_type` varchar(32) DEFAULT 'text' COMMENT '分块类型',
+    `chunk_text` mediumtext COMMENT '分块正文',
+    `metadata_json` text COMMENT '扩展元数据 JSON',
+    `status` tinyint(1) DEFAULT '1' COMMENT '状态：0禁用，1启用',
+    `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_doc_chunk` (`doc_id`, `chunk_id`),
+    KEY `idx_rag_doc` (`rag_id`, `doc_id`),
+    KEY `idx_parent_chunk` (`parent_chunk_id`),
+    KEY `idx_chunk_status` (`doc_id`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='RAG 父子分块表';
 
 -- 系统提示词配置
 DROP TABLE IF EXISTS `ai_client_system_prompt`;
@@ -257,11 +304,12 @@ VALUES
     (7, 'client', '2103', 'model', '2001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
     (8, 'client', '2103', 'prompt', '6003', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
     (9, 'client', '2103', 'advisor', '4001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (10, 'model', '2001', 'tool_mcp', '5001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (11, 'model', '2001', 'tool_mcp', '5002', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (12, 'model', '2001', 'tool_mcp', '5003', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (13, 'model', '2001', 'tool_mcp', '5004', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (14, 'model', '2001', 'tool_mcp', '5005', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (10, 'client', '2103', 'advisor', '4002', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (11, 'model', '2001', 'tool_mcp', '5001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (12, 'model', '2001', 'tool_mcp', '5002', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (13, 'model', '2001', 'tool_mcp', '5003', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (14, 'model', '2001', 'tool_mcp', '5004', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (15, 'model', '2001', 'tool_mcp', '5005', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

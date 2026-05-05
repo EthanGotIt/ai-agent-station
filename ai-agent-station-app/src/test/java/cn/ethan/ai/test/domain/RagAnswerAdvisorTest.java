@@ -1,5 +1,6 @@
 package cn.ethan.ai.test.domain;
 
+import cn.ethan.ai.domain.agent.adapter.port.IRagRetrievalPort;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientAdvisorVO;
 import cn.ethan.ai.domain.agent.service.armory.factory.element.RagAnswerAdvisor;
 import org.junit.Assert;
@@ -10,8 +11,6 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
-import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.ai.vectorstore.filter.Filter;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,7 +20,7 @@ public class RagAnswerAdvisorTest {
 
     @Test
     public void beforeShouldExposeRetrievalQueriesAndDocuments() {
-        RecordingVectorStore vectorStore = new RecordingVectorStore();
+        RecordingRetrievalPort retrievalPort = new RecordingRetrievalPort();
         AiClientAdvisorVO.RagAnswer ragAnswer = AiClientAdvisorVO.RagAnswer.builder()
                 .topK(2)
                 .routeTopK(3)
@@ -29,7 +28,7 @@ public class RagAnswerAdvisorTest {
                 .queryRewriteEnabled(true)
                 .deduplicateEnabled(true)
                 .build();
-        RagAnswerAdvisor advisor = new RagAnswerAdvisor(vectorStore, SearchRequest.builder().topK(2).build(), ragAnswer);
+        RagAnswerAdvisor advisor = new RagAnswerAdvisor(retrievalPort, SearchRequest.builder().topK(2).build(), ragAnswer);
 
         ChatClientRequest request = ChatClientRequest.builder()
                 .prompt(Prompt.builder().messages(new UserMessage("请帮我总结 Spring AI MCP 工具接入流程")).build())
@@ -39,7 +38,7 @@ public class RagAnswerAdvisorTest {
         ChatClientRequest advisedRequest = advisor.before(request, new AdvisorChain() {
         });
 
-        Assert.assertEquals(3, vectorStore.queries.size());
+        Assert.assertEquals(3, retrievalPort.queries.size());
         Assert.assertEquals(3, advisedRequest.context().get("qa_retrieval_queries") instanceof List<?> list ? list.size() : 0);
         Assert.assertTrue(advisedRequest.context().get("qa_retrieved_documents") instanceof List<?>);
         Assert.assertTrue(advisedRequest.context().containsKey("question_answer_context"));
@@ -48,12 +47,12 @@ public class RagAnswerAdvisorTest {
         Assert.assertTrue(advisedRequest.prompt().getUserMessage().getText().contains("请优先基于知识库证据"));
     }
 
-    private static class RecordingVectorStore implements VectorStore {
+    private static class RecordingRetrievalPort implements IRagRetrievalPort {
 
         private final List<String> queries = new ArrayList<>();
 
         @Override
-        public List<Document> similaritySearch(SearchRequest request) {
+        public List<Document> retrieve(SearchRequest request, Map<String, Object> context) {
             this.queries.add(request.getQuery());
             return List.of(Document.builder()
                     .id("doc-" + this.queries.size())
@@ -62,19 +61,6 @@ public class RagAnswerAdvisorTest {
                     .score(1.0D - this.queries.size() * 0.1D)
                     .build());
         }
-
-        @Override
-        public void add(List<Document> documents) {
-        }
-
-        @Override
-        public void delete(List<String> idList) {
-        }
-
-        @Override
-        public void delete(Filter.Expression filterExpression) {
-        }
-
     }
 
 }

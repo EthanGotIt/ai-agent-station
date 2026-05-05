@@ -72,14 +72,79 @@ public class RagRetrievalSupportTest {
     public void formatEvidenceContextShouldIncludeCitationNumberAndSource() {
         Document document = Document.builder()
                 .text("Flow Plan 负责任务编排。")
-                .metadata(Map.of("source", "agent-doc.md"))
+                .metadata(Map.of("source", "agent-doc.md", "qa_retrieval_query", "flow plan 编排"))
+                .score(0.88)
                 .build();
 
         String context = ragRetrievalSupport.formatEvidenceContext(List.of(document));
 
         Assert.assertTrue(context.contains("[证据1]"));
         Assert.assertTrue(context.contains("agent-doc.md"));
+        Assert.assertTrue(context.contains("flow plan 编排"));
+        Assert.assertTrue(context.contains("0.88"));
         Assert.assertTrue(context.contains("Flow Plan"));
+    }
+
+    @Test
+    public void rrfFuseShouldPreferFrequentlyHitEvidence() {
+        Document firstRouteTop1 = Document.builder()
+                .id("doc-1")
+                .text("Spring AI MCP 接入步骤")
+                .metadata(Map.of("doc_id", "doc", "chunk_id", "1"))
+                .score(0.95)
+                .build();
+        Document secondRouteTop1 = Document.builder()
+                .id("doc-1")
+                .text("Spring AI MCP 接入步骤")
+                .metadata(Map.of("doc_id", "doc", "chunk_id", "1"))
+                .score(0.80)
+                .build();
+        Document secondRouteTop2 = Document.builder()
+                .id("doc-2")
+                .text("Flow Plan 质量监督")
+                .metadata(Map.of("doc_id", "doc", "chunk_id", "2"))
+                .score(0.70)
+                .build();
+
+        List<Document> fused = ragRetrievalSupport.rrfFuse(
+                List.of(List.of(firstRouteTop1), List.of(secondRouteTop1, secondRouteTop2)),
+                5,
+                60
+        );
+
+        Assert.assertEquals(2, fused.size());
+        Assert.assertEquals("doc-1", fused.get(0).getId());
+        Assert.assertTrue(fused.get(0).getScore() > fused.get(1).getScore());
+    }
+
+    @Test
+    public void deduplicateByParentShouldKeepHighestScoreParentChunk() {
+        Document parentA = Document.builder()
+                .id("doc-a-1")
+                .text("父块A")
+                .metadata(Map.of("doc_id", "doc-a", "chunk_id", "parent-1", "qa_parent_key", "parent:doc-a:parent-1"))
+                .score(0.91)
+                .build();
+        Document parentADuplicate = Document.builder()
+                .id("doc-a-2")
+                .text("父块A duplicate")
+                .metadata(Map.of("doc_id", "doc-a", "chunk_id", "parent-1", "qa_parent_key", "parent:doc-a:parent-1"))
+                .score(0.84)
+                .build();
+        Document parentB = Document.builder()
+                .id("doc-b-1")
+                .text("父块B")
+                .metadata(Map.of("doc_id", "doc-b", "chunk_id", "parent-2", "qa_parent_key", "parent:doc-b:parent-2"))
+                .score(0.89)
+                .build();
+
+        List<Document> deduplicated = ragRetrievalSupport.deduplicateByParent(
+                List.of(parentA, parentADuplicate, parentB),
+                5
+        );
+
+        Assert.assertEquals(2, deduplicated.size());
+        Assert.assertEquals("doc-a-1", deduplicated.get(0).getId());
     }
 
 }
