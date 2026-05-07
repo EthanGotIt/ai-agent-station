@@ -29,7 +29,7 @@ public class FlowToolCapabilityServiceTest {
                 buildMcp("5005", "windows-notify", "stdio", List.of("notify_task_complete", "send_notification"))
         )));
 
-        ToolRoutingDecisionVO decision = service.buildToolRoutingDecision(flowConfigMap(), "请检索 Spring AI 文档，完成后通知我");
+        ToolRoutingDecisionVO decision = service.routeTools(flowConfigMap(), "请检索 Spring AI 文档，完成后通知我");
 
         Assert.assertTrue(decision.isEnabled());
         Assert.assertTrue(decision.getAllowedToolNames().contains("web_search_exa"));
@@ -45,7 +45,7 @@ public class FlowToolCapabilityServiceTest {
                 buildMcp("5005", "windows-notify", "stdio", List.of("notify_task_complete"))
         )));
 
-        ToolRoutingDecisionVO decision = service.buildToolRoutingDecision(flowConfigMap(), "帮我润色这段项目描述");
+        ToolRoutingDecisionVO decision = service.routeTools(flowConfigMap(), "帮我润色这段项目描述");
 
         Assert.assertFalse(decision.isEnabled());
         Assert.assertTrue(decision.getAllowedToolNames().isEmpty());

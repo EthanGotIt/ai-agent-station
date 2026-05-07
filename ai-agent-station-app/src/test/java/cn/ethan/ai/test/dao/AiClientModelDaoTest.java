@@ -1,5 +1,6 @@
 package cn.ethan.ai.test.dao;
 
+import cn.ethan.ai.test.support.ManualTestGate;
 import cn.ethan.ai.infrastructure.dao.IAiClientModelDao;
 import cn.ethan.ai.infrastructure.dao.po.AiClientModel;
 import jakarta.annotation.Resource;
@@ -8,7 +9,9 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.Rollback;
 import org.springframework.test.context.junit4.SpringRunner;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -16,6 +19,8 @@ import java.util.List;
 @Slf4j
 @RunWith(SpringRunner.class)
 @SpringBootTest
+@Transactional
+@Rollback
 public class AiClientModelDaoTest {
 
     private static final String TEST_MODEL_ID_PREFIX = "test-model-";
@@ -25,6 +30,8 @@ public class AiClientModelDaoTest {
 
     @Test
     public void test_insert() {
+        ManualTestGate.requireDbMutation("AiClientModelDaoTest.test_insert");
+
         AiClientModel aiClientModel = buildTestModel(uniqueModelId());
         try {
             int result = aiClientModelDao.insert(aiClientModel);
@@ -153,3 +160,6 @@ public class AiClientModelDaoTest {
     }
 
 }
+
+
+

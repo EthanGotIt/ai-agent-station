@@ -1,5 +1,6 @@
 package cn.ethan.ai.test.spring.ai;
 
+import cn.ethan.ai.test.support.ManualTestGate;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.ServerParameters;
@@ -7,6 +8,7 @@ import io.modelcontextprotocol.client.transport.StdioClientTransport;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -30,6 +32,11 @@ import java.util.Map;
 public class AiAgentStepTest {
 
     private ChatModel chatModel;
+
+    @BeforeClass
+    public static void beforeClass() {
+        ManualTestGate.requireRealAi("AiAgentStepTest");
+    }
 
     @Before
     public void init() {

@@ -1,5 +1,6 @@
 package cn.ethan.ai.test.spring.ai;
 
+import cn.ethan.ai.test.support.ManualTestGate;
 import com.alibaba.fastjson.JSON;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -9,6 +10,7 @@ import io.modelcontextprotocol.json.McpJsonMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.ai.chat.client.ChatClient;
@@ -20,7 +22,6 @@ import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
-import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.junit4.SpringRunner;
 
@@ -37,11 +38,13 @@ public class AiAgentMCPESTest {
 
     private ChatClient chatClient;
 
-    @Resource
-    private PgVectorStore vectorStore;
-
     public static final String CHAT_MEMORY_CONVERSATION_ID_KEY = "chat_memory_conversation_id";
     public static final String CHAT_MEMORY_RETRIEVE_SIZE_KEY = "chat_memory_response_size";
+
+    @BeforeClass
+    public static void beforeClass() {
+        ManualTestGate.requireRealAi("AiAgentMCPESTest");
+    }
 
     @Before
     public void init() {

@@ -1,5 +1,6 @@
 package cn.ethan.ai.test.spring.ai;
 
+import cn.ethan.ai.test.support.ManualTestGate;
 import cn.ethan.ai.test.spring.ai.advisors.RagAnswerAdvisor;
 import com.alibaba.fastjson.JSON;
 import io.modelcontextprotocol.client.McpClient;
@@ -11,6 +12,7 @@ import io.modelcontextprotocol.json.McpJsonMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.ai.chat.client.ChatClient;
@@ -50,6 +52,11 @@ public class AiAgentTest {
 
     public static final String CHAT_MEMORY_CONVERSATION_ID_KEY = "chat_memory_conversation_id";
     public static final String CHAT_MEMORY_RETRIEVE_SIZE_KEY = "chat_memory_response_size";
+
+    @BeforeClass
+    public static void beforeClass() {
+        ManualTestGate.requireRealAi("AiAgentTest");
+    }
 
     @Before
     public void init() {

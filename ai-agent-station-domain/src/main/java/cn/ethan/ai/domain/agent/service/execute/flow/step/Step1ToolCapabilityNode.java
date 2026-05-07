@@ -28,7 +28,7 @@ public class Step1ToolCapabilityNode extends AbstractExecuteSupport {
     protected String doApply(ExecuteCommandEntity requestParameter, AgentExecutionContextVO executionContext) throws Exception {
         log.info("步骤1：执行 MCP 动态工具路由");
 
-        ToolRoutingDecisionVO toolRoutingDecision = flowToolCapabilityService.buildToolRoutingDecision(
+        ToolRoutingDecisionVO toolRoutingDecision = flowToolCapabilityService.routeTools(
                 executionContext.getAiAgentClientFlowConfigVOMap(),
                 requestParameter.getMessage()
         );
@@ -41,6 +41,7 @@ public class Step1ToolCapabilityNode extends AbstractExecuteSupport {
                 nextStreamStep(executionContext),
                 "analysis_tools",
                 toolRoutingDecision.getSummary(),
+                toolRoutingDecision,
                 requestParameter.getSessionId(),
                 run.runId()
         ));

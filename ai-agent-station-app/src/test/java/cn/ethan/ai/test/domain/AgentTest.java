@@ -1,5 +1,6 @@
 package cn.ethan.ai.test.domain;
 
+import cn.ethan.ai.test.support.ManualTestGate;
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
 import cn.ethan.ai.domain.agent.service.armory.factory.DefaultArmoryStrategyFactory;
@@ -35,6 +36,8 @@ public class AgentTest {
 
     @Test
     public void test_aiClientApiNode() throws Exception {
+        ManualTestGate.requireRealAi("AgentTest.test_aiClientApiNode");
+
         StrategyHandler<ArmoryCommandEntity, ArmoryAssemblyContextVO, String> armoryStrategyHandler =
                 defaultArmoryStrategyFactory.armoryStrategyHandler();
 
@@ -52,6 +55,8 @@ public class AgentTest {
 
     @Test
     public void test_aiClientModelNode() throws Exception {
+        ManualTestGate.requireRealAi("AgentTest.test_aiClientModelNode");
+
         StrategyHandler<ArmoryCommandEntity, ArmoryAssemblyContextVO, String> armoryStrategyHandler =
                 defaultArmoryStrategyFactory.armoryStrategyHandler();
 
@@ -80,6 +85,8 @@ public class AgentTest {
 
     @Test
     public void test_aiClientNode() throws Exception {
+        ManualTestGate.requireRealAi("AgentTest.test_aiClientNode");
+
         StrategyHandler<ArmoryCommandEntity, ArmoryAssemblyContextVO, String> armoryStrategyHandler =
                 defaultArmoryStrategyFactory.armoryStrategyHandler();
 

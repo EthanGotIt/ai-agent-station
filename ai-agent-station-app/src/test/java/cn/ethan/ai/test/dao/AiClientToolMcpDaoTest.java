@@ -1,5 +1,6 @@
 package cn.ethan.ai.test.dao;
 
+import cn.ethan.ai.test.support.ManualTestGate;
 import cn.ethan.ai.infrastructure.dao.IAiClientToolMcpDao;
 import cn.ethan.ai.infrastructure.dao.po.AiClientToolMcp;
 import jakarta.annotation.Resource;
@@ -8,7 +9,9 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.Rollback;
 import org.springframework.test.context.junit4.SpringRunner;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -16,6 +19,8 @@ import java.util.List;
 @Slf4j
 @RunWith(SpringRunner.class)
 @SpringBootTest
+@Transactional
+@Rollback
 public class AiClientToolMcpDaoTest {
 
     private static final String TEST_MCP_ID_PREFIX = "test-mcp-";
@@ -25,6 +30,8 @@ public class AiClientToolMcpDaoTest {
 
     @Test
     public void test_insert() {
+        ManualTestGate.requireDbMutation("AiClientToolMcpDaoTest.test_insert");
+
         AiClientToolMcp aiClientToolMcp = buildTestMcp(uniqueMcpId());
         try {
             int result = aiClientToolMcpDao.insert(aiClientToolMcp);
@@ -154,3 +161,6 @@ public class AiClientToolMcpDaoTest {
     }
 
 }
+
+
+

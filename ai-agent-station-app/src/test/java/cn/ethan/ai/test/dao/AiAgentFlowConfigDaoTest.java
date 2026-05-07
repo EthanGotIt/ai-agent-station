@@ -1,5 +1,6 @@
 package cn.ethan.ai.test.dao;
 
+import cn.ethan.ai.test.support.ManualTestGate;
 import cn.ethan.ai.infrastructure.dao.IAiAgentFlowConfigDao;
 import cn.ethan.ai.infrastructure.dao.po.AiAgentFlowConfig;
 import jakarta.annotation.Resource;
@@ -8,7 +9,9 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.Rollback;
 import org.springframework.test.context.junit4.SpringRunner;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -16,6 +19,8 @@ import java.util.List;
 @Slf4j
 @RunWith(SpringRunner.class)
 @SpringBootTest
+@Transactional
+@Rollback
 public class AiAgentFlowConfigDaoTest {
 
     private static final String TEST_AGENT_ID = "test-flow-dao";
@@ -25,6 +30,8 @@ public class AiAgentFlowConfigDaoTest {
 
     @Test
     public void test_insert() {
+        ManualTestGate.requireDbMutation("AiAgentFlowConfigDaoTest.test_insert");
+
         AiAgentFlowConfig aiAgentFlowConfig = buildTestConfig(uniqueClientId(), 1);
         try {
             int result = aiAgentFlowConfigDao.insert(aiAgentFlowConfig);
@@ -128,3 +135,6 @@ public class AiAgentFlowConfigDaoTest {
     }
 
 }
+
+
+

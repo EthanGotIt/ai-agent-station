@@ -1,5 +1,6 @@
 package cn.ethan.ai.test.spring.ai;
 
+import cn.ethan.ai.test.support.ManualTestGate;
 import com.alibaba.fastjson.JSON;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -7,6 +8,7 @@ import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.client.transport.StdioClientTransport;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -27,6 +29,11 @@ import java.util.Map;
 @RunWith(SpringRunner.class)
 @SpringBootTest
 public class FlowAgentMCPTest {
+
+    @BeforeClass
+    public static void beforeClass() {
+        ManualTestGate.requireRealAi("FlowAgentMCPTest");
+    }
 
     @Test
     public void test() {
@@ -74,7 +81,7 @@ public class FlowAgentMCPTest {
     public McpSyncClient stdioMcpClient_Grafana() {
         Map<String, String> env = new HashMap<>();
         env.put("GRAFANA_URL", "http://127.0.0.1:9200");
-        env.put("GRAFANA_API_KEY", "glsa_IObTIVBoma3KsCmse8V9iNRDeZrV1L99_cab3b0b0");
+        env.put("GRAFANA_API_KEY", System.getenv().getOrDefault("GRAFANA_API_KEY", ""));
 
         var stdioParams = ServerParameters.builder("docker")
                 .args("run",

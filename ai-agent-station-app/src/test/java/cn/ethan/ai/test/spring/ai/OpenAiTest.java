@@ -1,7 +1,9 @@
 package cn.ethan.ai.test.spring.ai;
 
+import cn.ethan.ai.test.support.ManualTestGate;
 import com.alibaba.fastjson.JSON;
 import lombok.extern.slf4j.Slf4j;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -40,6 +42,11 @@ import java.util.stream.Collectors;
 @RunWith(SpringRunner.class)
 @SpringBootTest
 public class OpenAiTest {
+
+    @BeforeClass
+    public static void beforeClass() {
+        ManualTestGate.requireRealAi("OpenAiTest");
+    }
 
     @Value("classpath:data/dog.png")
     private Resource imageResource;

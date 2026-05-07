@@ -10,7 +10,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -20,87 +20,116 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Flow 执行期工具能力与动态路由服务。
+ * Flow 运行期工具能力服务，负责每轮动态筛选 MCP 工具。
  */
 @Service
 public class FlowToolCapabilityService {
 
-    private static final List<String> SIMPLE_TASK_KEYWORDS = List.of(
-            "润色", "改写", "翻译", "总结", "解释", "写一段", "写一篇", "生成文案", "优化表达"
+    private static final List<String> SIMPLE_TASK_HINTS = List.of(
+            "润色", "改写", "翻译", "总结", "解释", "写一段", "写一篇", "生成文案", "优化这段"
     );
 
-    private static final List<String> SEARCH_TASK_KEYWORDS = List.of(
-            "搜索", "检索", "查找", "查一下", "资料", "文档", "官网", "最新", "联网", "教程", "示例", "案例", "对比"
+    private static final List<String> EXTERNAL_TOOL_HINTS = List.of(
+            "搜索", "检索", "查找", "查询", "联网", "官网", "文档", "资料", "最新", "帮我找", "调研"
     );
 
-    private static final List<String> COMPLEX_REASONING_KEYWORDS = List.of(
-            "规划", "拆解", "步骤", "执行计划", "分步", "路线图", "排期", "编排"
+    private static final List<String> REASONING_HINTS = List.of(
+            "分步骤", "拆解", "规划", "计划", "方案", "执行步骤", "排查链路"
     );
 
-    private static final List<String> NOTIFY_KEYWORDS = List.of(
-            "通知", "提醒", "完成后告诉我", "结束后告诉我", "发个提醒"
+    private static final List<String> MEMORY_HINTS = List.of(
+            "记住", "记忆", "长期记录", "知识图谱", "关系图"
     );
 
-    private static final Map<String, List<String>> TAG_KEYWORDS = Map.of(
-            "search", List.of("search", "fetch", "doc", "docs", "context7", "exa", "resolve-library-id", "get-library-docs"),
-            "reasoning", List.of("sequential", "thinking", "plan"),
-            "memory", List.of("memory", "graph", "node", "relation", "observation"),
-            "notify", List.of("notify", "notification", "reminder")
+    private static final List<String> NOTIFY_HINTS = List.of(
+            "通知", "提醒", "完成后告诉我", "结束后提醒"
     );
 
     @Resource
     private IAgentRepository repository;
 
-    public ToolRoutingDecisionVO buildToolRoutingDecision(Map<String, AiAgentClientFlowConfigVO> flowConfigMap, String userMessage) {
+    public ToolRoutingDecisionVO routeTools(Map<String, AiAgentClientFlowConfigVO> flowConfigMap, String userMessage) {
         List<AiClientToolMcpVO> mcpTools = loadMcpTools(flowConfigMap);
         if (mcpTools.isEmpty()) {
             return ToolRoutingDecisionVO.disabled("当前智能体未配置可用 MCP 工具，本轮仅使用模型能力。");
         }
 
-        if (isSimpleTask(userMessage)) {
-            return ToolRoutingDecisionVO.disabled("当前任务偏内容生成或解释，本轮不启用 MCP 工具。");
+        if (shouldSkipExternalTools(userMessage)) {
+            return ToolRoutingDecisionVO.disabled("当前任务偏生成或解释，本轮无需调用外部 MCP 工具。");
         }
 
-        List<ToolRoutingItemVO> selectedTools = selectTools(mcpTools, userMessage);
-        if (selectedTools.isEmpty()) {
-            return ToolRoutingDecisionVO.disabled("当前问题未命中合适的工具标签，本轮直接使用模型推理。");
+        List<ToolRoutingItemVO> candidates = mcpTools.stream()
+                .map(this::toRouteItem)
+                .filter(item -> item.getToolNames() != null && !item.getToolNames().isEmpty())
+                .toList();
+        if (candidates.isEmpty()) {
+            return ToolRoutingDecisionVO.disabled("MCP 工具缺少可路由的工具名，本轮仅使用模型能力。");
         }
 
-        Set<String> allowedToolNames = new LinkedHashSet<>();
-        Set<String> selectedMcpIds = new LinkedHashSet<>();
-        for (ToolRoutingItemVO item : selectedTools) {
-            selectedMcpIds.add(item.getMcpId());
-            if (item.getToolNames() != null) {
-                for (String toolName : item.getToolNames()) {
-                    if (StringUtils.isNotBlank(toolName)) {
-                        allowedToolNames.add(toolName.trim().toLowerCase(Locale.ROOT));
-                    }
+        String normalizedMessage = normalize(userMessage);
+        boolean needExternalSearch = containsAny(normalizedMessage, EXTERNAL_TOOL_HINTS) || normalizedMessage.contains("mcp");
+        boolean needReasoning = containsAny(normalizedMessage, REASONING_HINTS);
+        boolean needMemory = containsAny(normalizedMessage, MEMORY_HINTS);
+        boolean needNotify = containsAny(normalizedMessage, NOTIFY_HINTS);
+
+        List<ScoredRouteItem> scoredItems = new ArrayList<>();
+        for (ToolRoutingItemVO item : candidates) {
+            int score = scoreRouteItem(item, normalizedMessage, needExternalSearch, needReasoning, needMemory, needNotify);
+            if (score > 0) {
+                scoredItems.add(new ScoredRouteItem(item, score));
+            }
+        }
+
+        if (scoredItems.isEmpty() && needExternalSearch) {
+            for (ToolRoutingItemVO item : candidates) {
+                if (item.getRouteTags().contains("docs") || item.getRouteTags().contains("search")) {
+                    scoredItems.add(new ScoredRouteItem(item, 1));
                 }
             }
         }
 
+        if (scoredItems.isEmpty()) {
+            return ToolRoutingDecisionVO.disabled("未匹配到合适的外部工具，本轮由模型直接完成。");
+        }
+
+        List<ToolRoutingItemVO> selectedItems = scoredItems.stream()
+                .sorted(Comparator.comparingInt(ScoredRouteItem::score).reversed())
+                .map(ScoredRouteItem::item)
+                .distinct()
+                .limit(3)
+                .toList();
+
+        Set<String> allowedToolNames = selectedItems.stream()
+                .flatMap(item -> item.getToolNames().stream())
+                .filter(StringUtils::isNotBlank)
+                .map(this::normalize)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> selectedMcpIds = selectedItems.stream()
+                .map(ToolRoutingItemVO::getMcpId)
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
         return ToolRoutingDecisionVO.builder()
                 .enabled(true)
-                .summary(buildToolCapabilitySummary(selectedTools))
+                .summary(buildToolCapabilitySummary(selectedItems))
                 .allowedToolNames(allowedToolNames)
                 .selectedMcpIds(selectedMcpIds)
-                .selectedTools(selectedTools)
+                .selectedTools(selectedItems)
                 .build();
     }
 
-    public String buildToolCapabilitySummary(List<ToolRoutingItemVO> selectedTools) {
-        if (selectedTools == null || selectedTools.isEmpty()) {
-            return "本轮未选择任何 MCP 工具，优先使用 LLM 直接完成任务。";
+    public String buildToolCapabilitySummary(List<ToolRoutingItemVO> selectedItems) {
+        if (selectedItems == null || selectedItems.isEmpty()) {
+            return "本轮没有选择任何 MCP 工具。";
         }
 
-        StringBuilder builder = new StringBuilder("本轮可用工具：");
-        for (int i = 0; i < selectedTools.size(); i++) {
-            ToolRoutingItemVO item = selectedTools.get(i);
-            if (i > 0) {
-                builder.append("；");
-            }
-            builder.append(item.getMcpName()).append(" -> ");
-            builder.append(String.join(", ", item.getToolNames()));
+        StringBuilder builder = new StringBuilder("本轮已选择以下 MCP 工具：");
+        for (ToolRoutingItemVO item : selectedItems) {
+            builder.append(System.lineSeparator())
+                    .append("- ")
+                    .append(item.getMcpName())
+                    .append("：")
+                    .append(String.join(", ", item.getToolNames()));
             if (StringUtils.isNotBlank(item.getSelectedReason())) {
                 builder.append("（").append(item.getSelectedReason()).append("）");
             }
@@ -118,112 +147,85 @@ public class FlowToolCapabilityService {
                 .map(AiAgentClientFlowConfigVO::getClientId)
                 .filter(StringUtils::isNotBlank)
                 .distinct()
-                .collect(Collectors.toList());
+                .toList();
         if (clientIds.isEmpty()) {
             return List.of();
         }
 
-        List<AiClientToolMcpVO> mcpTools = repository.queryAiClientToolMcpVOByClientIds(clientIds);
-        return mcpTools == null ? List.of() : mcpTools;
+        try {
+            return repository.queryAiClientToolMcpVOByClientIds(clientIds);
+        } catch (Exception e) {
+            throw new IllegalStateException("加载 MCP 工具配置失败", e);
+        }
     }
 
-    private boolean isSimpleTask(String userMessage) {
-        String normalized = normalize(userMessage);
-        if (StringUtils.isBlank(normalized)) {
-            return true;
-        }
-        boolean containsSearchIntent = containsAny(normalized, SEARCH_TASK_KEYWORDS);
-        boolean containsSimpleIntent = containsAny(normalized, SIMPLE_TASK_KEYWORDS);
-        return containsSimpleIntent && !containsSearchIntent;
+    private boolean shouldSkipExternalTools(String userMessage) {
+        String normalizedMessage = normalize(userMessage);
+        return containsAny(normalizedMessage, SIMPLE_TASK_HINTS) && !containsAny(normalizedMessage, EXTERNAL_TOOL_HINTS);
     }
 
-    private List<ToolRoutingItemVO> selectTools(List<AiClientToolMcpVO> mcpTools, String userMessage) {
-        String normalized = normalize(userMessage);
-        List<ToolRoutingItemVO> selected = new ArrayList<>();
-
-        boolean needSearch = containsAny(normalized, SEARCH_TASK_KEYWORDS);
-        boolean needReasoning = containsAny(normalized, COMPLEX_REASONING_KEYWORDS);
-        boolean needNotify = containsAny(normalized, NOTIFY_KEYWORDS);
-
-        for (AiClientToolMcpVO mcpTool : mcpTools) {
-            Set<String> tags = inferTags(mcpTool);
-            int score = score(tags, normalized, needSearch, needReasoning, needNotify);
-            if (score <= 0) {
-                continue;
-            }
-            selected.add(ToolRoutingItemVO.builder()
-                    .mcpId(mcpTool.getMcpId())
-                    .mcpName(defaultName(mcpTool))
-                    .transportType(mcpTool.getTransportType())
-                    .toolNames(normalizeToolNames(mcpTool))
-                    .routeTags(new ArrayList<>(tags))
-                    .selectedReason(buildReason(tags, needSearch, needReasoning, needNotify))
-                    .build());
-        }
-
-        if (selected.isEmpty() && needSearch) {
-            for (AiClientToolMcpVO mcpTool : mcpTools) {
-                Set<String> tags = inferTags(mcpTool);
-                if (tags.contains("search")) {
-                    selected.add(ToolRoutingItemVO.builder()
-                            .mcpId(mcpTool.getMcpId())
-                            .mcpName(defaultName(mcpTool))
-                            .transportType(mcpTool.getTransportType())
-                            .toolNames(normalizeToolNames(mcpTool))
-                            .routeTags(new ArrayList<>(tags))
-                            .selectedReason("兜底启用通用检索工具")
-                            .build());
-                    break;
-                }
-            }
-        }
-        return selected;
+    private ToolRoutingItemVO toRouteItem(AiClientToolMcpVO mcpTool) {
+        List<String> toolNames = normalizeToolNames(mcpTool.getToolNames());
+        List<String> routeTags = inferRouteTags(mcpTool.getMcpName(), toolNames);
+        return ToolRoutingItemVO.builder()
+                .mcpId(mcpTool.getMcpId())
+                .mcpName(StringUtils.defaultIfBlank(mcpTool.getMcpName(), mcpTool.getMcpId()))
+                .transportType(mcpTool.getTransportType())
+                .toolNames(toolNames)
+                .routeTags(routeTags)
+                .selectedReason(resolveDefaultReason(routeTags))
+                .build();
     }
 
-    private int score(Set<String> tags, String normalized, boolean needSearch, boolean needReasoning, boolean needNotify) {
+    private int scoreRouteItem(ToolRoutingItemVO item,
+                               String message,
+                               boolean needExternalSearch,
+                               boolean needReasoning,
+                               boolean needMemory,
+                               boolean needNotify) {
         int score = 0;
-        if (needSearch && tags.contains("search")) {
+        List<String> tags = item.getRouteTags();
+        if (tags.contains("docs") && (message.contains("spring ai") || message.contains("sdk") || message.contains("文档"))) {
+            score += 5;
+        }
+        if (tags.contains("search") && needExternalSearch) {
+            score += 4;
+        }
+        if (tags.contains("reasoning") && needReasoning) {
             score += 3;
         }
-        if (needReasoning && tags.contains("reasoning")) {
+        if (tags.contains("memory") && needMemory) {
+            score += 3;
+        }
+        if (tags.contains("notify") && needNotify) {
+            score += 3;
+        }
+        if (tags.contains("search") && message.contains("最新")) {
             score += 2;
         }
-        if (needNotify && tags.contains("notify")) {
+        if (tags.contains("docs") && message.contains("mcp")) {
             score += 2;
-        }
-        if (normalized.contains("记住") && tags.contains("memory")) {
-            score += 2;
-        }
-        if (!needSearch && !needReasoning && !needNotify && tags.contains("search")) {
-            score += 1;
         }
         return score;
     }
 
-    private String buildReason(Set<String> tags, boolean needSearch, boolean needReasoning, boolean needNotify) {
-        List<String> reasons = new ArrayList<>();
-        if (needSearch && tags.contains("search")) {
-            reasons.add("匹配资料检索");
+    private List<String> inferRouteTags(String mcpName, List<String> toolNames) {
+        String merged = normalize((StringUtils.defaultString(mcpName) + " " + String.join(" ", toolNames)));
+        List<String> tags = new ArrayList<>();
+        if (containsAny(merged, List.of("context7", "resolve-library", "get-library-docs", "docs"))) {
+            tags.add("docs");
         }
-        if (needReasoning && tags.contains("reasoning")) {
-            reasons.add("匹配分步推理");
+        if (containsAny(merged, List.of("search", "fetch", "exa", "web_"))) {
+            tags.add("search");
         }
-        if (needNotify && tags.contains("notify")) {
-            reasons.add("匹配完成提醒");
+        if (containsAny(merged, List.of("sequential", "thinking"))) {
+            tags.add("reasoning");
         }
-        if (reasons.isEmpty() && tags.contains("search")) {
-            reasons.add("通用检索兜底");
+        if (containsAny(merged, List.of("memory", "graph", "node", "relation"))) {
+            tags.add("memory");
         }
-        return String.join("、", reasons);
-    }
-
-    private Set<String> inferTags(AiClientToolMcpVO mcpTool) {
-        String searchText = normalize(defaultName(mcpTool) + " " + String.join(" ", normalizeToolNames(mcpTool)));
-        Set<String> tags = new LinkedHashSet<>();
-        for (Map.Entry<String, List<String>> entry : TAG_KEYWORDS.entrySet()) {
-            if (containsAny(searchText, entry.getValue())) {
-                tags.add(entry.getKey());
-            }
+        if (containsAny(merged, List.of("notify", "notification", "reminder"))) {
+            tags.add("notify");
         }
         if (tags.isEmpty()) {
             tags.add("general");
@@ -231,19 +233,34 @@ public class FlowToolCapabilityService {
         return tags;
     }
 
-    private List<String> normalizeToolNames(AiClientToolMcpVO mcpTool) {
-        if (mcpTool.getToolNames() == null || mcpTool.getToolNames().isEmpty()) {
-            return List.of(defaultName(mcpTool));
+    private String resolveDefaultReason(List<String> routeTags) {
+        if (routeTags.contains("docs")) {
+            return "适合文档检索与官方资料查询";
         }
-        return mcpTool.getToolNames().stream()
-                .filter(StringUtils::isNotBlank)
-                .map(String::trim)
-                .distinct()
-                .collect(Collectors.toList());
+        if (routeTags.contains("search")) {
+            return "适合联网搜索与信息补充";
+        }
+        if (routeTags.contains("reasoning")) {
+            return "适合复杂任务拆解与顺序推理";
+        }
+        if (routeTags.contains("memory")) {
+            return "适合知识记忆与关系追踪";
+        }
+        if (routeTags.contains("notify")) {
+            return "适合任务完成提醒";
+        }
+        return "适合通用外部能力补充";
     }
 
-    private String defaultName(AiClientToolMcpVO mcpTool) {
-        return StringUtils.defaultIfBlank(mcpTool.getMcpName(), mcpTool.getMcpId());
+    private List<String> normalizeToolNames(List<String> toolNames) {
+        if (toolNames == null || toolNames.isEmpty()) {
+            return List.of();
+        }
+        return toolNames.stream()
+                .filter(StringUtils::isNotBlank)
+                .map(this::normalize)
+                .distinct()
+                .toList();
     }
 
     private boolean containsAny(String text, List<String> keywords) {
@@ -251,7 +268,7 @@ public class FlowToolCapabilityService {
             return false;
         }
         for (String keyword : keywords) {
-            if (StringUtils.isNotBlank(keyword) && text.contains(keyword.toLowerCase(Locale.ROOT))) {
+            if (StringUtils.isNotBlank(keyword) && text.contains(normalize(keyword))) {
                 return true;
             }
         }
@@ -260,6 +277,9 @@ public class FlowToolCapabilityService {
 
     private String normalize(String text) {
         return StringUtils.defaultString(text).trim().toLowerCase(Locale.ROOT);
+    }
+
+    private record ScoredRouteItem(ToolRoutingItemVO item, int score) {
     }
 }
 

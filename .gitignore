@@ -1,5 +1,6 @@
 target/
 test-results/
+output/
 docs/dev-ops/log/
 output/playwright/
 !.mvn/wrapper/maven-wrapper.jar

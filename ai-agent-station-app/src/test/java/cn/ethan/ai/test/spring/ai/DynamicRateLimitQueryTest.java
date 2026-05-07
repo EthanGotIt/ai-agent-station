@@ -1,5 +1,6 @@
 package cn.ethan.ai.test.spring.ai;
 
+import cn.ethan.ai.test.support.ManualTestGate;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.ServerParameters;
@@ -9,6 +10,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -39,6 +41,11 @@ public class DynamicRateLimitQueryTest {
     private ChatModel chatModel;
     private final List<String> executionLog = new ArrayList<>();
     private final Map<String, Object> analysisContext = new HashMap<>();
+
+    @BeforeClass
+    public static void beforeClass() {
+        ManualTestGate.requireRealAi("DynamicRateLimitQueryTest");
+    }
 
     @Before
     public void init() {

@@ -1,5 +1,6 @@
 package cn.ethan.ai.test.dao;
 
+import cn.ethan.ai.test.support.ManualTestGate;
 import cn.ethan.ai.infrastructure.dao.IAiClientRagOrderDao;
 import cn.ethan.ai.infrastructure.dao.po.AiClientRagOrder;
 import jakarta.annotation.Resource;
@@ -7,7 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.Rollback;
 import org.springframework.test.context.junit4.SpringRunner;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -15,6 +18,8 @@ import java.util.List;
 @Slf4j
 @RunWith(SpringRunner.class)
 @SpringBootTest
+@Transactional
+@Rollback
 public class AiClientRagOrderDaoTest {
 
     @Resource
@@ -22,6 +27,8 @@ public class AiClientRagOrderDaoTest {
 
     @Test
     public void test_insert() {
+        ManualTestGate.requireDbMutation("AiClientRagOrderDaoTest.test_insert");
+
         AiClientRagOrder aiClientRagOrder = AiClientRagOrder.builder()
                 .ragId("test_rag_001")
                 .ragName("测试知识库")
@@ -107,3 +114,5 @@ public class AiClientRagOrderDaoTest {
     }
 
 }
+
+
