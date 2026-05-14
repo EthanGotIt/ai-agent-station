@@ -395,9 +395,12 @@ function renderToolRoutingContent(content, payload) {
     if (Array.isArray(payload.selectedTools)) {
         const selectedTools = payload.selectedTools;
         const allowedToolNames = Array.isArray(payload.allowedToolNames) ? payload.allowedToolNames : [];
+        const routeReason = payload.routeReason || payload.summary || '';
+        const disabledReason = payload.disabledReason || '';
         return `
             <div class="route-panel">
                 <div class="route-panel-summary">${escapeHtml(content || '本轮工具路由')}</div>
+                ${routeReason ? `<div class="route-panel-footnote">路由说明：${escapeHtml(routeReason)}</div>` : ''}
                 ${selectedTools.length ? `
                     <div class="route-card-list">
                         ${selectedTools.map(item => `
@@ -410,7 +413,7 @@ function renderToolRoutingContent(content, payload) {
                             </div>
                         `).join('')}
                     </div>
-                ` : `<div class="route-panel-muted">本轮未选择任何 MCP 工具</div>`}
+                ` : `<div class="route-panel-muted">${escapeHtml(disabledReason || '本轮未选择任何 MCP 工具')}</div>`}
                 ${allowedToolNames.length ? `
                     <div class="route-panel-footnote">
                         白名单：${escapeHtml(allowedToolNames.join(', '))}
@@ -428,11 +431,31 @@ function renderToolRoutingContent(content, payload) {
             <div class="route-card compact">
                 <div class="route-card-title">${escapeHtml(payload.stepName || '当前步骤')}</div>
                 <div class="route-card-reason">执行方式：${escapeHtml(payload.stepType || 'LLM')} / ${escapeHtml(toolName)}</div>
+                ${payload.routeReason ? `<div class="route-panel-footnote">路由说明：${escapeHtml(payload.routeReason)}</div>` : ''}
                 ${allowedToolNames.length ? `
                     <div class="route-chip-list">
                         ${allowedToolNames.map(tool => `<span class="route-chip">${escapeHtml(tool)}</span>`).join('')}
                     </div>
                 ` : ''}
+            </div>
+        </div>
+    `;
+}
+
+function renderContextGuardContent(content, payload) {
+    if (!payload) {
+        return renderMarkdown(content);
+    }
+
+    return `
+        <div class="route-panel">
+            <div class="route-panel-summary">${escapeHtml(content || '上下文预算保护')}</div>
+            <div class="route-card compact">
+                <div class="route-card-title">上下文压缩</div>
+                <div class="route-card-reason">
+                    原始长度 ${escapeHtml(String(payload.originalChars || 0))} / 压缩后 ${escapeHtml(String(payload.compressedChars || 0))}
+                </div>
+                ${payload.historySummary ? `<div class="evidence-card-body">${escapeHtml(payload.historySummary)}</div>` : ''}
             </div>
         </div>
     `;
@@ -463,6 +486,9 @@ function renderRagEvidenceContent(content, payload) {
                             </div>
                             <div class="evidence-card-meta">
                                 ${evidence.chunkId ? `<span>chunk ${escapeHtml(evidence.chunkId)}</span>` : ''}
+                                ${evidence.parentChunkId ? `<span>parent ${escapeHtml(evidence.parentChunkId)}</span>` : ''}
+                                ${evidence.sourceType ? `<span>${escapeHtml(evidence.sourceType)}</span>` : ''}
+                                ${evidence.fusionRank ? `<span>fusion ${escapeHtml(String(evidence.fusionRank))}</span>` : ''}
                                 ${evidence.score !== undefined && evidence.score !== null ? `<span>score ${escapeHtml(String(Number(evidence.score).toFixed ? Number(evidence.score).toFixed(4) : evidence.score))}</span>` : ''}
                                 ${evidence.retrievalQuery ? `<span>query ${escapeHtml(evidence.retrievalQuery)}</span>` : ''}
                             </div>
@@ -484,6 +510,9 @@ function renderStreamContent(type, subType, content, payload) {
     }
     if (subType === 'tool_routing') {
         return renderToolRoutingContent(content, payload);
+    }
+    if (subType === 'context_guard') {
+        return renderContextGuardContent(content, payload);
     }
     if (subType === 'rag_evidence') {
         return renderRagEvidenceContent(content, payload);
@@ -586,6 +615,7 @@ const subTypeMap = {
     analysis_progress: '完成度',
     analysis_task_status: '任务状态',
     tool_routing: '工具路由',
+    context_guard: '上下文保护',
     execution_target: '执行目标',
     execution_process: '执行过程',
     execution_result: '执行结果',

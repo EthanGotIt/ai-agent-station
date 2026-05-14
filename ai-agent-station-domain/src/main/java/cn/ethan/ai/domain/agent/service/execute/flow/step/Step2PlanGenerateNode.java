@@ -36,56 +36,67 @@ public class Step2PlanGenerateNode extends AbstractExecuteSupport {
     @Override
     protected String doApply(ExecuteCommandEntity requestParameter, AgentExecutionContextVO executionContext) throws Exception {
         log.info("步骤2：生成结构化执行计划");
-
-        AgentRunAggregate run = currentRun(executionContext);
-        if (!agentModelPort.hasAvailableModelClient(
-                executionContext.getAiAgentClientFlowConfigVOMap(),
-                AiClientTypeEnumVO.PLANNING_CLIENT,
-                AiClientTypeEnumVO.TASK_ANALYZER_CLIENT,
-                AiClientTypeEnumVO.DEFAULT
-        )) {
-            run.bindExecutionPlan(createFallbackPlan(requestParameter));
-            return router(requestParameter, executionContext);
+        if (stopIfCancelled(executionContext, "任务已取消，停止生成执行计划。")) {
+            return "任务已取消";
         }
-
-        String planningPrompt = promptFactory.buildPlanningPrompt(requestParameter, executionContext.getToolCapabilitySummary());
-        String planText = agentModelPort.callModel(
-                executionContext.getAiAgentClientFlowConfigVOMap(),
-                requestParameter,
-                run.getContextWindowGuard(),
-                run.getTrace(),
-                planningPrompt,
-                "LLM_CALL_PLAN",
-                "plan",
-                0,
-                null,
-                AiClientTypeEnumVO.PLANNING_CLIENT,
-                AiClientTypeEnumVO.TASK_ANALYZER_CLIENT,
-                AiClientTypeEnumVO.DEFAULT
-        );
+        long startTime = markStepRunning(executionContext, "flow_plan_generate", "结构化计划生成", 2, "SYSTEM", null);
 
         try {
-            run.bindExecutionPlan(agentPlanParser.parse(planText));
-        } catch (RuntimeException e) {
-            log.warn("计划解析失败，尝试进行一次 JSON 修复，原因：{}", e.getMessage());
-            if (run.getContextWindowGuard().shouldStopNewLlmCall()) {
-                throw e;
+            AgentRunAggregate run = currentRun(executionContext);
+            if (!agentModelPort.hasAvailableModelClient(
+                    executionContext.getAiAgentClientFlowConfigVOMap(),
+                    AiClientTypeEnumVO.PLANNING_CLIENT,
+                    AiClientTypeEnumVO.TASK_ANALYZER_CLIENT,
+                    AiClientTypeEnumVO.DEFAULT
+            )) {
+                run.bindExecutionPlan(createFallbackPlan(requestParameter));
+                markStepSuccess(executionContext, "flow_plan_generate", "未找到规划模型，已使用兜底计划。", startTime);
+                return router(requestParameter, executionContext);
             }
-            String repairedPlanText = agentModelPort.callModel(
+
+            String planningPrompt = promptFactory.buildPlanningPrompt(requestParameter, executionContext.getToolCapabilitySummary());
+            String planText = agentModelPort.callModel(
                     executionContext.getAiAgentClientFlowConfigVOMap(),
                     requestParameter,
                     run.getContextWindowGuard(),
                     run.getTrace(),
-                    promptFactory.buildPlanRepairPrompt(planText),
-                    "LLM_CALL_PLAN_REPAIR",
-                    "plan_repair",
+                    planningPrompt,
+                    "LLM_CALL_PLAN",
+                    "plan",
                     0,
                     null,
                     AiClientTypeEnumVO.PLANNING_CLIENT,
                     AiClientTypeEnumVO.TASK_ANALYZER_CLIENT,
                     AiClientTypeEnumVO.DEFAULT
             );
-            run.bindExecutionPlan(agentPlanParser.parse(repairedPlanText));
+
+            try {
+                run.bindExecutionPlan(agentPlanParser.parse(planText));
+            } catch (RuntimeException e) {
+                log.warn("计划解析失败，尝试进行一次 JSON 修复，原因：{}", e.getMessage());
+                if (run.getContextWindowGuard().shouldStopNewLlmCall()) {
+                    throw e;
+                }
+                String repairedPlanText = agentModelPort.callModel(
+                        executionContext.getAiAgentClientFlowConfigVOMap(),
+                        requestParameter,
+                        run.getContextWindowGuard(),
+                        run.getTrace(),
+                        promptFactory.buildPlanRepairPrompt(planText),
+                        "LLM_CALL_PLAN_REPAIR",
+                        "plan_repair",
+                        0,
+                        null,
+                        AiClientTypeEnumVO.PLANNING_CLIENT,
+                        AiClientTypeEnumVO.TASK_ANALYZER_CLIENT,
+                        AiClientTypeEnumVO.DEFAULT
+                );
+                run.bindExecutionPlan(agentPlanParser.parse(repairedPlanText));
+            }
+            markStepSuccess(executionContext, "flow_plan_generate", "结构化计划生成完成", startTime);
+        } catch (Exception e) {
+            markStepFailed(executionContext, "flow_plan_generate", e.getMessage(), startTime);
+            throw e;
         }
 
         return router(requestParameter, executionContext);
@@ -93,6 +104,9 @@ public class Step2PlanGenerateNode extends AbstractExecuteSupport {
 
     @Override
     public StrategyHandler<ExecuteCommandEntity, AgentExecutionContextVO, String> get(ExecuteCommandEntity requestParameter, AgentExecutionContextVO executionContext) {
+        if (executionContext.isCancelled()) {
+            return defaultStrategyHandler;
+        }
         return step3PlanValidateNode;
     }
 

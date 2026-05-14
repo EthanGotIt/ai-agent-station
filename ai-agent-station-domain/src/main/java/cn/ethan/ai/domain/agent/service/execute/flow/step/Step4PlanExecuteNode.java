@@ -6,10 +6,12 @@ import cn.ethan.ai.domain.agent.model.entity.AgentModelCallResultEntity;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AgentExecutionContextVO;
 import cn.ethan.ai.domain.agent.model.valobj.AgentPlanStepVO;
+import cn.ethan.ai.domain.agent.model.valobj.ContextGuardResultVO;
 import cn.ethan.ai.domain.agent.model.valobj.RagEvidenceVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingDecisionVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiClientTypeEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.PlanStepTypeEnumVO;
+import cn.ethan.ai.domain.agent.service.execute.flow.AgentContextWindowService;
 import cn.ethan.ai.domain.agent.service.execute.flow.plan.AgentPlanPromptFactory;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import jakarta.annotation.Resource;
@@ -35,15 +37,24 @@ public class Step4PlanExecuteNode extends AbstractExecuteSupport {
     private AgentPlanPromptFactory promptFactory;
 
     @Resource
+    private AgentContextWindowService agentContextWindowService;
+
+    @Resource
     private Step5QualitySupervisorNode step5QualitySupervisorNode;
 
     @Override
     protected String doApply(ExecuteCommandEntity requestParameter, AgentExecutionContextVO executionContext) throws Exception {
         log.info("步骤4：按计划执行任务步骤");
+        if (stopIfCancelled(executionContext, "任务已取消，停止执行计划步骤。")) {
+            return "任务已取消";
+        }
 
         AgentRunAggregate run = currentRun(executionContext);
         int stepIndex = 1;
         for (AgentPlanStepVO step : run.getPlan().getSteps()) {
+            if (stopIfCancelled(executionContext, "任务已取消，停止执行计划步骤。")) {
+                break;
+            }
             if (run.getContextWindowGuard().shouldStopNewLlmCall()) {
                 sendStreamResult(executionContext, AgentExecuteResultEntity.createExecutionSubResult(
                         stepIndex,
@@ -55,6 +66,14 @@ public class Step4PlanExecuteNode extends AbstractExecuteSupport {
                 break;
             }
 
+            long startTime = markStepRunning(
+                    executionContext,
+                    step.getStepId(),
+                    step.getName(),
+                    10 + stepIndex,
+                    step.getType(),
+                    step.getToolName()
+            );
             sendStreamResult(executionContext, AgentExecuteResultEntity.createExecutionSubResult(
                     stepIndex,
                     "execution_target",
@@ -72,27 +91,42 @@ public class Step4PlanExecuteNode extends AbstractExecuteSupport {
                     run.runId()
             ));
 
-            AgentModelCallResultEntity modelCallResult = executeSingleStep(requestParameter, executionContext, run, step, stepIndex);
-            String output = modelCallResult.getContent();
-            run.recordStepOutput(step.getStepId(), output);
-            sendStreamResult(executionContext, AgentExecuteResultEntity.createExecutionResult(
-                    stepIndex,
-                    output,
-                    requestParameter.getSessionId(),
-                    run.runId()
-            ));
+            try {
+                ContextGuardResultVO contextGuardResult = agentContextWindowService.prepareStepOutputs(run);
+                if (contextGuardResult.isCompressed()) {
+                    sendStreamResult(executionContext, AgentExecuteResultEntity.createAnalysisSubResult(
+                            stepIndex,
+                            "context_guard",
+                            "上下文已超过阈值，后续步骤将优先使用压缩后的历史摘要。",
+                            buildContextGuardPayload(contextGuardResult),
+                            requestParameter.getSessionId(),
+                            run.runId()
+                    ));
+                    syncRunState(executionContext);
+                }
 
-            emitRagEvidence(executionContext, requestParameter, run, step, stepIndex, modelCallResult);
-
-            if (run.getContextWindowGuard().shouldCompactHistory()) {
-                run.getContextWindowGuard().markHistoryCompacted();
-                sendStreamResult(executionContext, AgentExecuteResultEntity.createAnalysisSubResult(
+                AgentModelCallResultEntity modelCallResult = executeSingleStep(
+                        requestParameter,
+                        executionContext,
+                        run,
+                        step,
                         stepIndex,
-                        "analysis_progress",
-                        "上下文较长，后续步骤将使用压缩后的历史摘要。",
+                        contextGuardResult
+                );
+                String output = modelCallResult.getContent();
+                run.recordStepOutput(step.getStepId(), output);
+                sendStreamResult(executionContext, AgentExecuteResultEntity.createExecutionResult(
+                        stepIndex,
+                        output,
                         requestParameter.getSessionId(),
                         run.runId()
                 ));
+
+                emitRagEvidence(executionContext, requestParameter, run, step, stepIndex, modelCallResult);
+                markStepSuccess(executionContext, step.getStepId(), output, startTime);
+            } catch (Exception e) {
+                markStepFailed(executionContext, step.getStepId(), e.getMessage(), startTime);
+                throw e;
             }
             stepIndex++;
         }
@@ -102,6 +136,9 @@ public class Step4PlanExecuteNode extends AbstractExecuteSupport {
 
     @Override
     public StrategyHandler<ExecuteCommandEntity, AgentExecutionContextVO, String> get(ExecuteCommandEntity requestParameter, AgentExecutionContextVO executionContext) {
+        if (executionContext.isCancelled()) {
+            return defaultStrategyHandler;
+        }
         return step5QualitySupervisorNode;
     }
 
@@ -109,16 +146,17 @@ public class Step4PlanExecuteNode extends AbstractExecuteSupport {
                                                          AgentExecutionContextVO executionContext,
                                                          AgentRunAggregate run,
                                                          AgentPlanStepVO step,
-                                                         Integer stepIndex) {
+                                                         Integer stepIndex,
+                                                         ContextGuardResultVO contextGuardResult) {
         if (PlanStepTypeEnumVO.SUMMARY.name().equalsIgnoreCase(step.getType())) {
             return AgentModelCallResultEntity.builder()
                     .content(promptFactory.buildLocalSummary(requestParameter, run.getPlan(), run.stepOutputs(), ""))
                     .build();
         }
 
-        Map<String, String> promptStepOutputs = run.getContextWindowGuard().isHistoryCompacted()
-                ? promptFactory.compactStepOutputsAsMap(run.stepOutputs())
-                : run.stepOutputs();
+        Map<String, String> promptStepOutputs = contextGuardResult == null
+                ? run.stepOutputs()
+                : contextGuardResult.getStepOutputs();
         String prompt = promptFactory.buildStepExecutionPrompt(requestParameter, run.getPlan(), step, promptStepOutputs);
         return agentModelPort.callModelResult(
                 executionContext.getAiAgentClientFlowConfigVOMap(),
@@ -159,6 +197,18 @@ public class Step4PlanExecuteNode extends AbstractExecuteSupport {
         payload.put("toolName", step.getToolName());
         payload.put("dependsOn", step.getDependsOn() == null ? Collections.emptyList() : step.getDependsOn());
         payload.put("allowedToolNames", routingDecision == null ? Collections.emptyList() : routingDecision.getAllowedToolNames());
+        payload.put("routeReason", routingDecision == null ? "当前步骤直接执行" : routingDecision.getSummary());
+        payload.put("selectedCount", routingDecision == null || routingDecision.getSelectedTools() == null ? 0 : routingDecision.getSelectedTools().size());
+        payload.put("disabledReason", routingDecision == null || routingDecision.isEnabled() ? "" : routingDecision.getSummary());
+        return payload;
+    }
+
+    private Map<String, Object> buildContextGuardPayload(ContextGuardResultVO contextGuardResult) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("compressed", contextGuardResult.isCompressed());
+        payload.put("originalChars", contextGuardResult.getOriginalChars());
+        payload.put("compressedChars", contextGuardResult.getCompressedChars());
+        payload.put("historySummary", contextGuardResult.getHistorySummary());
         return payload;
     }
 
@@ -211,10 +261,13 @@ public class Step4PlanExecuteNode extends AbstractExecuteSupport {
                     .evidenceId("evidence_" + index)
                     .documentId(readMetadata(metadata, "doc_id", "document_id", "documentId"))
                     .chunkId(readMetadata(metadata, "chunk_id", "chunkId"))
+                    .parentChunkId(readMetadata(metadata, "parent_chunk_id", "parentChunkId"))
                     .sourceName(readMetadata(metadata, "source", "title", "file_name", "filename"))
                     .sectionTitle(readMetadata(metadata, "section_title", "sectionTitle", "qa_parent_chunk_id"))
                     .retrievalQuery(readMetadata(metadata, "qa_retrieval_query"))
                     .rank(resolveInteger(metadata.get("qa_retrieval_rank"), index))
+                    .fusionRank(resolveInteger(metadata.get("qa_retrieval_rank"), index))
+                    .sourceType(readMetadata(metadata, "qa_retrieval_source"))
                     .score(document.getScore())
                     .contentPreview(clip(document.getText(), 260))
                     .build());

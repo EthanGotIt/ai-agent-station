@@ -20,13 +20,19 @@ public class RagEvidenceVO {
 
     private String chunkId;
 
+    private String parentChunkId;
+
     private String sourceName;
+
+    private String sourceType;
 
     private String sectionTitle;
 
     private String retrievalQuery;
 
     private Integer rank;
+
+    private Integer fusionRank;
 
     private Double score;
 

@@ -92,6 +92,10 @@ public class AgentExecuteResultEntity {
         return create(TYPE_COMPLETE, null, null, "执行完成", null, true, sessionId, runId);
     }
 
+    public static AgentExecuteResultEntity createCompleteResult(String content, String sessionId, String runId) {
+        return create(TYPE_COMPLETE, null, null, content, null, true, sessionId, runId);
+    }
+
     private static AgentExecuteResultEntity create(String type,
                                                    String subType,
                                                    Integer step,

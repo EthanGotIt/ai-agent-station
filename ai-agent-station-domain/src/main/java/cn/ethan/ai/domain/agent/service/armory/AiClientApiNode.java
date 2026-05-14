@@ -46,7 +46,7 @@ public class AiClientApiNode extends AbstractArmorySupport {
 
         for (AiClientApiVO aiClientApiVO : aiClientApiList) {
             if (isUnresolvedApiKey(aiClientApiVO.getApiKey())) {
-                log.warn("模型接口密钥未完成解析，真实模型调用可能失败。apiId：{}，baseUrl：{}",
+                log.warn("模型接口配置中的 API Key 仍为占位符或为空。若运行环境未提供 OPENAI_API_KEY，真实模型调用将失败。apiId：{}，baseUrl：{}",
                         aiClientApiVO.getApiId(), aiClientApiVO.getBaseUrl());
             }
 

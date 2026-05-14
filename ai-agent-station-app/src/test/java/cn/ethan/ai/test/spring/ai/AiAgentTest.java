@@ -62,16 +62,16 @@ public class AiAgentTest {
     public void init() {
 
         OpenAiApi openAiApi = OpenAiApi.builder()
-                .baseUrl("https://dashscope.aliyuncs.com/compatible-mode/")
+                .baseUrl("https://dashscope.aliyuncs.com/compatible-mode/v1")
                 .apiKey(System.getenv().getOrDefault("OPENAI_API_KEY", ""))
-                .completionsPath("v1/chat/completions")
-                .embeddingsPath("v1/embeddings")
+                .completionsPath("/chat/completions")
+                .embeddingsPath("/embeddings")
                 .build();
 
         chatModel = OpenAiChatModel.builder()
                 .openAiApi(openAiApi)
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3.6-plus")
+                        .model("qwen3.6-max-preview")
                         .toolCallbacks(SyncMcpToolCallbackProvider.builder()
                                 .mcpClients(stdioMcpClient())
                                 .build()

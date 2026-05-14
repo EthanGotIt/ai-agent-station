@@ -1,6 +1,8 @@
 package cn.ethan.ai.domain.agent.service.execute.flow;
 
 import cn.ethan.ai.domain.agent.adapter.port.IAgentStreamPort;
+import cn.ethan.ai.domain.agent.adapter.repository.IAgentRunRepository;
+import cn.ethan.ai.domain.agent.model.aggregate.AgentRunAggregate;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AgentExecutionContextVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.StreamTransportTypeEnumVO;
@@ -22,6 +24,12 @@ public class FlowPlanExecuteService {
     @Resource
     private RootNode flowRootNode;
 
+    @Resource
+    private AgentContextPolicyService agentContextPolicyService;
+
+    @Resource
+    private IAgentRunRepository agentRunRepository;
+
     public void execute(ExecuteCommandEntity executeCommandEntity, IAgentStreamPort streamPort) throws Exception {
         StrategyHandler<ExecuteCommandEntity, AgentExecutionContextVO, String> executeHandler
                 = flowRootNode;
@@ -31,9 +39,20 @@ public class FlowPlanExecuteService {
         executionContext.setStreamProtocol(StreamTransportTypeEnumVO.fromCode(executeCommandEntity.getStreamProtocol()));
         executionContext.setStreamPort(streamPort);
         executionContext.bindSessionId(executeCommandEntity.getSessionId());
+        AgentRunAggregate run = AgentRunAggregate.create(executeCommandEntity, agentContextPolicyService.buildPolicy());
+        executionContext.setAgentRunAggregate(run);
+        agentRunRepository.createRun(run.toRecord());
 
-        String apply = executeHandler.apply(executeCommandEntity, executionContext);
-        log.info("Flow Plan 执行结果：{}", apply);
+        try {
+            String apply = executeHandler.apply(executeCommandEntity, executionContext);
+            log.info("Flow Plan 执行结果：{}", apply);
+        } catch (Exception e) {
+            if (!run.isCancelled()) {
+                run.markFailed(e.getMessage());
+                agentRunRepository.updateRun(run.toRecord());
+            }
+            throw new AgentExecutionException(run.runId(), e.getMessage(), e);
+        }
     }
 
 }

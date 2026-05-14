@@ -47,6 +47,75 @@ public class RagAnswerAdvisorTest {
         Assert.assertTrue(advisedRequest.prompt().getUserMessage().getText().contains("请优先基于知识库证据"));
     }
 
+    @Test
+    public void beforeShouldUseOriginalUserRequestWhenFlowPromptContainsInternalSections() {
+        RecordingRetrievalPort retrievalPort = new RecordingRetrievalPort();
+        AiClientAdvisorVO.RagAnswer ragAnswer = AiClientAdvisorVO.RagAnswer.builder()
+                .topK(2)
+                .routeTopK(2)
+                .queryRewriteEnabled(false)
+                .deduplicateEnabled(false)
+                .build();
+        RagAnswerAdvisor advisor = new RagAnswerAdvisor(retrievalPort, SearchRequest.builder().topK(2).build(), ragAnswer);
+
+        ChatClientRequest request = ChatClientRequest.builder()
+                .prompt(Prompt.builder().messages(new UserMessage("""
+                        你是 Flow Plan Engine 的步骤执行器。
+
+                        用户原始请求：
+                        请调研 Spring AI MCP Client 的使用方式
+
+                        计划目标：
+                        输出一份结构化调研结果
+
+                        当前步骤：
+                        {"stepId":"step_2","name":"整理资料","type":"LLM"}
+
+                        已完成步骤输出：
+                        {"step_1":"已经拿到工具搜索结果"}
+                        """)).build())
+                .context(Map.of("traceId", "flow-run"))
+                .build();
+
+        ChatClientRequest advisedRequest = advisor.before(request, new AdvisorChain() {
+        });
+
+        Assert.assertEquals(1, retrievalPort.queries.size());
+        Assert.assertEquals("请调研 Spring AI MCP Client 的使用方式", retrievalPort.queries.get(0));
+        Assert.assertTrue(advisedRequest.context().get("qa_retrieval_queries") instanceof List<?> list && list.size() == 1);
+        Assert.assertTrue(advisedRequest.prompt().getUserMessage().getText().contains("[证据1]"));
+    }
+
+    @Test
+    public void beforeShouldSkipRetrievalWhenInternalPromptHasNoOriginalRequest() {
+        RecordingRetrievalPort retrievalPort = new RecordingRetrievalPort();
+        AiClientAdvisorVO.RagAnswer ragAnswer = AiClientAdvisorVO.RagAnswer.builder()
+                .topK(2)
+                .routeTopK(2)
+                .queryRewriteEnabled(false)
+                .deduplicateEnabled(false)
+                .build();
+        RagAnswerAdvisor advisor = new RagAnswerAdvisor(retrievalPort, SearchRequest.builder().topK(2).build(), ragAnswer);
+
+        ChatClientRequest request = ChatClientRequest.builder()
+                .prompt(Prompt.builder().messages(new UserMessage("""
+                        当前步骤：
+                        {"stepId":"step_3","name":"总结结果","type":"LLM"}
+
+                        已完成步骤输出：
+                        {"step_1":"A","step_2":"B"}
+                        """)).build())
+                .context(Map.of("traceId", "skip-run"))
+                .build();
+
+        ChatClientRequest advisedRequest = advisor.before(request, new AdvisorChain() {
+        });
+
+        Assert.assertTrue(retrievalPort.queries.isEmpty());
+        Assert.assertTrue(advisedRequest.context().get("qa_retrieval_queries") instanceof List<?> list && list.isEmpty());
+        Assert.assertEquals(request.prompt().getUserMessage().getText(), advisedRequest.prompt().getUserMessage().getText());
+    }
+
     private static class RecordingRetrievalPort implements IRagRetrievalPort {
 
         private final List<String> queries = new ArrayList<>();

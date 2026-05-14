@@ -27,6 +27,8 @@ import java.util.stream.Collectors;
 
 public class RagAnswerAdvisor implements BaseAdvisor {
 
+    private static final int MAX_RETRIEVAL_QUERY_CHARS = 240;
+
     private final IRagRetrievalPort ragRetrievalPort;
     private final SearchRequest searchRequest;
     private final AiClientAdvisorVO.RagAnswer ragAnswer;
@@ -57,12 +59,23 @@ public class RagAnswerAdvisor implements BaseAdvisor {
     @Override
     public @NonNull ChatClientRequest before(@NonNull ChatClientRequest chatClientRequest, @NonNull AdvisorChain advisorChain) {
         HashMap<String, Object> context = new HashMap<>(chatClientRequest.context());
-
         String userText = chatClientRequest.prompt().getUserMessage().getText();
+        String retrievalBaseQuery = resolveRetrievalBaseQuery(userText);
+        if (!StringUtils.hasText(retrievalBaseQuery)) {
+            return buildPassthroughRequest(chatClientRequest, context, "当前提示词属于内部编排上下文，跳过知识检索。");
+        }
 
         List<String> retrievalQueries = this.ragAnswer.isQueryRewriteEnabled()
-                ? this.ragRetrievalSupport.rewriteQueries(userText, this.ragAnswer.getMaxRewriteQueries())
-                : List.of(userText);
+                ? this.ragRetrievalSupport.rewriteQueries(retrievalBaseQuery, this.ragAnswer.getMaxRewriteQueries())
+                : List.of(retrievalBaseQuery);
+        retrievalQueries = retrievalQueries.stream()
+                .map(this::normalizeRetrievalQuery)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
+        if (retrievalQueries.isEmpty()) {
+            return buildPassthroughRequest(chatClientRequest, context, "未生成有效检索查询，跳过知识检索。");
+        }
 
         List<List<Document>> routeDocuments = new ArrayList<>();
         for (String retrievalQuery : retrievalQueries) {
@@ -94,14 +107,21 @@ public class RagAnswerAdvisor implements BaseAdvisor {
 
         context.put("qa_retrieved_documents", documents);
         context.put("qa_retrieval_queries", retrievalQueries);
+        context.put("question_answer_context", this.ragRetrievalSupport.formatEvidenceContext(documents));
 
-        String documentContext = this.ragRetrievalSupport.formatEvidenceContext(documents);
         Map<String, Object> advisedUserParams = new HashMap<>(context);
-        advisedUserParams.put("question_answer_context", documentContext);
         advisedUserParams.put("qa_retrieval_queries", retrievalQueries);
+        advisedUserParams.put("question_answer_context", context.get("question_answer_context"));
+
+        if (documents.isEmpty()) {
+            return ChatClientRequest.builder()
+                    .prompt(chatClientRequest.prompt())
+                    .context(advisedUserParams)
+                    .build();
+        }
 
         String advisedUserText = userText + System.lineSeparator() + this.userTextAdvise
-                .replace("{question_answer_context}", documentContext);
+                .replace("{question_answer_context}", context.get("question_answer_context").toString());
 
         return ChatClientRequest.builder()
                 .prompt(Prompt.builder().messages(new UserMessage(advisedUserText)).build())
@@ -150,6 +170,71 @@ public class RagAnswerAdvisor implements BaseAdvisor {
 
     private int resolveRouteTopK() {
         return this.ragAnswer.getRouteTopK() <= 0 ? this.ragAnswer.getTopK() : this.ragAnswer.getRouteTopK();
+    }
+
+    private String resolveRetrievalBaseQuery(String userText) {
+        if (!StringUtils.hasText(userText)) {
+            return "";
+        }
+        String normalized = userText.trim();
+        if (!looksLikeFlowInternalPrompt(normalized)) {
+            return normalizeRetrievalQuery(normalized);
+        }
+
+        String originalRequest = extractSection(normalized, "用户原始请求：", "计划目标：");
+        if (StringUtils.hasText(originalRequest)) {
+            return normalizeRetrievalQuery(originalRequest);
+        }
+        return "";
+    }
+
+    private boolean looksLikeFlowInternalPrompt(String text) {
+        return containsAny(text, "当前步骤：", "已完成步骤输出：", "执行计划：", "质量监督结果：", "请返回：");
+    }
+
+    private boolean containsAny(String text, String... candidates) {
+        for (String candidate : candidates) {
+            if (text.contains(candidate)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String extractSection(String text, String startMarker, String endMarker) {
+        int startIndex = text.indexOf(startMarker);
+        if (startIndex < 0) {
+            return "";
+        }
+        int contentStart = startIndex + startMarker.length();
+        int endIndex = StringUtils.hasText(endMarker) ? text.indexOf(endMarker, contentStart) : -1;
+        String section = endIndex > contentStart ? text.substring(contentStart, endIndex) : text.substring(contentStart);
+        return section == null ? "" : section.trim();
+    }
+
+    private String normalizeRetrievalQuery(String query) {
+        if (!StringUtils.hasText(query)) {
+            return "";
+        }
+        String normalized = query.replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= MAX_RETRIEVAL_QUERY_CHARS) {
+            return normalized;
+        }
+        return normalized.substring(0, MAX_RETRIEVAL_QUERY_CHARS).trim();
+    }
+
+    private ChatClientRequest buildPassthroughRequest(ChatClientRequest originalRequest,
+                                                      Map<String, Object> originalContext,
+                                                      String reason) {
+        Map<String, Object> advisedUserParams = new HashMap<>(originalContext);
+        advisedUserParams.put("qa_retrieved_documents", List.of());
+        advisedUserParams.put("qa_retrieval_queries", List.of());
+        advisedUserParams.put("question_answer_context", "");
+        advisedUserParams.put("qa_retrieval_skipped_reason", reason);
+        return ChatClientRequest.builder()
+                .prompt(originalRequest.prompt())
+                .context(advisedUserParams)
+                .build();
     }
 
 }

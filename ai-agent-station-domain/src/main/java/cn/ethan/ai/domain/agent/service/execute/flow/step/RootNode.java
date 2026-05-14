@@ -25,16 +25,22 @@ public class RootNode extends AbstractExecuteSupport {
     protected String doApply(ExecuteCommandEntity requestParameter, AgentExecutionContextVO executionContext) throws Exception {
         log.info("Flow Plan 根节点开始初始化，aiAgentId：{}", requestParameter.getAiAgentId());
 
-        AgentRunAggregate run = AgentRunAggregate.create(requestParameter);
-        executionContext.setAgentRunAggregate(run);
+        AgentRunAggregate run = currentRun(executionContext);
+        long startTime = markStepRunning(executionContext, "flow_root", "Flow 根节点初始化", 0, "SYSTEM", null);
         executionContext.setMaxStep(run.maxStepOrDefault(executionContext.getMaxStep()));
 
         Map<String, AiAgentClientFlowConfigVO> flowConfigMap = repository.queryAiAgentClientFlowConfig(requestParameter.getAiAgentId());
         executionContext.setAiAgentClientFlowConfigVOMap(flowConfigMap);
+        run.markRunning();
+        syncRunState(executionContext);
         if (flowConfigMap == null || flowConfigMap.isEmpty()) {
+            run.markFailed("智能体未配置 Flow 客户端，无法执行");
+            syncRunState(executionContext);
+            markStepFailed(executionContext, "flow_root", "智能体未配置 Flow 客户端，无法执行", startTime);
             sendErrorResult(executionContext, "智能体未配置 Flow 客户端，无法执行");
             return "智能体未配置 Flow 客户端";
         }
+        markStepSuccess(executionContext, "flow_root", "Flow 根节点初始化完成", startTime);
 
         return router(requestParameter, executionContext);
     }

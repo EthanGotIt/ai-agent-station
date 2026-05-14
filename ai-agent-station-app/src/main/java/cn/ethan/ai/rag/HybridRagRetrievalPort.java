@@ -13,7 +13,6 @@ import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -27,6 +26,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,12 +40,13 @@ import java.util.Objects;
  */
 @Slf4j
 @Service
-@ConditionalOnProperty(name = "ai-agent.vector-store.enabled", havingValue = "true")
 public class HybridRagRetrievalPort implements IRagRetrievalPort {
 
     private static final String META_RETRIEVAL_SOURCE = "qa_retrieval_source";
     private static final String META_RETRIEVAL_RANK = "qa_retrieval_rank";
     private static final String META_RETRIEVAL_QUERY = "qa_retrieval_query";
+    private static final int MAX_BM25_QUERY_CHARS = 240;
+    private static final int MAX_BM25_QUERY_TERMS = 48;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final RagRetrievalSupport ragRetrievalSupport = new RagRetrievalSupport();
@@ -80,7 +81,10 @@ public class HybridRagRetrievalPort implements IRagRetrievalPort {
         List<Document> expanded = properties.isSmallToBigEnabled()
                 ? ragRetrievalSupport.expandWithParent(fused, this::resolveParentChunkDocument)
                 : fused;
-        return ragRetrievalSupport.deduplicateByParent(expanded, finalTopK);
+        List<Document> finalDocuments = ragRetrievalSupport.deduplicateByParent(expanded, finalTopK);
+        log.info("RAG 混合检索完成，query：{}，queryCount：1，vectorHits：{}，bm25Hits：{}，finalEvidence：{}",
+                searchRequest.getQuery(), vectorDocuments.size(), bm25Documents.size(), finalDocuments.size());
+        return finalDocuments;
     }
 
     private List<Document> vectorSearch(SearchRequest originalRequest) {
@@ -97,6 +101,11 @@ public class HybridRagRetrievalPort implements IRagRetrievalPort {
     }
 
     private List<Document> bm25Search(String query, int finalTopK) {
+        String normalizedQuery = normalizeBm25Query(query);
+        if (StringUtils.isBlank(normalizedQuery)) {
+            log.warn("BM25 检索已跳过，原因：查询为空或被裁剪后无有效内容。");
+            return List.of();
+        }
         int routeTopK = Math.max(finalTopK, properties.getBm25RouteTopK());
         String body = """
                 {
@@ -134,7 +143,7 @@ public class HybridRagRetrievalPort implements IRagRetrievalPort {
                     }
                   }
                 }
-                """.formatted(routeTopK, jsonQuote(query), jsonQuote(query));
+                """.formatted(routeTopK, jsonQuote(normalizedQuery), jsonQuote(normalizedQuery));
 
         try {
             HttpResponse<String> response = sendRequest(HttpMethod.POST, "/" + properties.getEsIndexName() + "/_search", body);
@@ -172,11 +181,26 @@ public class HybridRagRetrievalPort implements IRagRetrievalPort {
                         .score(hit.path("_score").asDouble(0D))
                         .build());
             }
-            return withEvidence(documents, "bm25", query);
+            return withEvidence(documents, "bm25", normalizedQuery);
         } catch (Exception e) {
-            log.warn("BM25 检索异常，query:{}", query, e);
+            log.warn("BM25 检索异常，query:{}", normalizedQuery, e);
             return List.of();
         }
+    }
+
+    private String normalizeBm25Query(String query) {
+        if (StringUtils.isBlank(query)) {
+            return "";
+        }
+        String normalized = query.replaceAll("\\s+", " ").trim();
+        String[] terms = normalized.split(" ");
+        if (terms.length > MAX_BM25_QUERY_TERMS) {
+            normalized = String.join(" ", Arrays.copyOf(terms, MAX_BM25_QUERY_TERMS));
+        }
+        if (normalized.length() > MAX_BM25_QUERY_CHARS) {
+            normalized = normalized.substring(0, MAX_BM25_QUERY_CHARS).trim();
+        }
+        return normalized;
     }
 
     private List<Document> withEvidence(List<Document> documents, String source, String query) {

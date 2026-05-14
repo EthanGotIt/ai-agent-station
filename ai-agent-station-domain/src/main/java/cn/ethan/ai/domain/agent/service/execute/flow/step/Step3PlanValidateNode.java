@@ -28,33 +28,47 @@ public class Step3PlanValidateNode extends AbstractExecuteSupport {
     @Override
     protected String doApply(ExecuteCommandEntity requestParameter, AgentExecutionContextVO executionContext) throws Exception {
         log.info("步骤3：校验结构化执行计划");
-
-        AgentRunAggregate run = currentRun(executionContext);
-        AgentPlanValidationResultVO validationResult = agentPlanValidator.validate(
-                run.getPlan(),
-                executionContext.getMaxStep(),
-                executionContext.getAllowedTools()
-        );
-        executionContext.setPlanValid(validationResult.isValid());
-
-        if (!validationResult.isValid()) {
-            sendErrorResult(executionContext, "执行计划校验失败：" + validationResult.formatErrors());
-            return "执行计划校验失败";
+        if (stopIfCancelled(executionContext, "任务已取消，停止校验执行计划。")) {
+            return "任务已取消";
         }
+        long startTime = markStepRunning(executionContext, "flow_plan_validate", "执行计划校验", 3, "SYSTEM", null);
 
-        sendStreamResult(executionContext, AgentExecuteResultEntity.createAnalysisSubResult(
-                nextStreamStep(executionContext),
-                "analysis_plan",
-                JSON.toJSONString(run.getPlan()),
-                requestParameter.getSessionId(),
-                run.runId()
-        ));
+        try {
+            AgentRunAggregate run = currentRun(executionContext);
+            AgentPlanValidationResultVO validationResult = agentPlanValidator.validate(
+                    run.getPlan(),
+                    executionContext.getMaxStep(),
+                    executionContext.getAllowedTools()
+            );
+            executionContext.setPlanValid(validationResult.isValid());
+
+            if (!validationResult.isValid()) {
+                markStepFailed(executionContext, "flow_plan_validate", validationResult.formatErrors(), startTime);
+                sendErrorResult(executionContext, "执行计划校验失败：" + validationResult.formatErrors());
+                return "执行计划校验失败";
+            }
+
+            sendStreamResult(executionContext, AgentExecuteResultEntity.createAnalysisSubResult(
+                    nextStreamStep(executionContext),
+                    "analysis_plan",
+                    JSON.toJSONString(run.getPlan()),
+                    requestParameter.getSessionId(),
+                    run.runId()
+            ));
+            markStepSuccess(executionContext, "flow_plan_validate", "执行计划校验通过", startTime);
+        } catch (Exception e) {
+            markStepFailed(executionContext, "flow_plan_validate", e.getMessage(), startTime);
+            throw e;
+        }
 
         return router(requestParameter, executionContext);
     }
 
     @Override
     public StrategyHandler<ExecuteCommandEntity, AgentExecutionContextVO, String> get(ExecuteCommandEntity requestParameter, AgentExecutionContextVO executionContext) {
+        if (executionContext.isCancelled()) {
+            return defaultStrategyHandler;
+        }
         return executionContext.isPlanValid() ? step4PlanExecuteNode : defaultStrategyHandler;
     }
 }

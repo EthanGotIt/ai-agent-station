@@ -44,7 +44,7 @@ spring:
         speech: ${SPRING_AI_MODEL_AUDIO_SPEECH:none}
         transcription: ${SPRING_AI_MODEL_AUDIO_TRANSCRIPTION:none}
     openai:
-      base-url: https://dashscope.aliyuncs.com/compatible-mode/
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
       api-key: ${OPENAI_API_KEY:}
       embedding:
         options:
@@ -56,6 +56,11 @@ spring:
         client-ids: 2101,2102,2103
 
 ai-agent:
+  context:
+    max-chars: ${AI_AGENT_CONTEXT_MAX_CHARS:12000}
+    compress-threshold: ${AI_AGENT_CONTEXT_COMPRESS_THRESHOLD:0.80}
+    stop-threshold: ${AI_AGENT_CONTEXT_STOP_THRESHOLD:0.95}
+    summary-max-chars: ${AI_AGENT_CONTEXT_SUMMARY_MAX_CHARS:1500}
   vector-store:
     enabled: ${AI_AGENT_VECTOR_STORE_ENABLED:false}
   hybrid-retrieval:

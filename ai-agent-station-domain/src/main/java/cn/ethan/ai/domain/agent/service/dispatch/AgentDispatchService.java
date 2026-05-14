@@ -6,6 +6,7 @@ import cn.ethan.ai.domain.agent.model.entity.AgentExecuteResultEntity;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AiAgentVO;
 import cn.ethan.ai.domain.agent.service.IAgentDispatchService;
+import cn.ethan.ai.domain.agent.service.execute.flow.AgentExecutionException;
 import cn.ethan.ai.domain.agent.service.execute.flow.FlowPlanExecuteService;
 import cn.ethan.ai.types.exception.BizException;
 import jakarta.annotation.Resource;
@@ -43,10 +44,13 @@ public class AgentDispatchService implements IAgentDispatchService {
                 flowPlanExecuteService.execute(requestParameter, streamPort);
             } catch (Exception e) {
                 log.error("Agent 执行异常：{}", e.getMessage(), e);
+                String runId = e instanceof AgentExecutionException executionException
+                        ? executionException.getRunId()
+                        : null;
                 AgentExecuteResultEntity errorResult = AgentExecuteResultEntity.createErrorResult(
                         "执行异常：" + (e.getMessage() == null ? "未知错误" : e.getMessage()),
                         requestParameter.getSessionId(),
-                        null
+                        runId
                 );
                 streamPort.send(errorResult);
             } finally {

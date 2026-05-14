@@ -75,7 +75,7 @@ CREATE TABLE `ai_client_api` (
 LOCK TABLES `ai_client_api` WRITE;
 INSERT INTO `ai_client_api` (`id`, `api_id`, `base_url`, `api_key`, `completions_path`, `embeddings_path`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '1001', 'https://dashscope.aliyuncs.com/compatible-mode/', '${OPENAI_API_KEY}', 'v1/chat/completions', 'v1/embeddings', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, '1001', 'https://dashscope.aliyuncs.com/compatible-mode/v1', '${OPENAI_API_KEY}', '/chat/completions', '/embeddings', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 顾问配置
@@ -230,7 +230,7 @@ CREATE TABLE `ai_client_model` (
 LOCK TABLES `ai_client_model` WRITE;
 INSERT INTO `ai_client_model` (`id`, `model_id`, `api_id`, `model_name`, `model_type`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '2001', '1001', 'qwen3.6-plus', 'openai', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, '2001', '1001', 'qwen3.6-max-preview', 'openai', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 定时任务表
@@ -248,6 +248,54 @@ CREATE TABLE `ai_agent_task_schedule` (
     PRIMARY KEY (`id`),
     KEY `idx_agent_id` (`agent_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='智能体定时任务配置表';
+
+-- 智能体运行主表
+DROP TABLE IF EXISTS `ai_agent_run`;
+CREATE TABLE `ai_agent_run` (
+    `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `run_id` varchar(64) NOT NULL COMMENT '运行ID',
+    `agent_id` varchar(64) NOT NULL COMMENT '智能体业务ID',
+    `session_id` varchar(128) NOT NULL COMMENT '会话ID',
+    `user_message` text COMMENT '用户原始输入',
+    `status` varchar(32) NOT NULL COMMENT '运行状态',
+    `final_summary` mediumtext COMMENT '最终总结',
+    `error_message` varchar(1024) DEFAULT NULL COMMENT '错误信息',
+    `cancel_reason` varchar(255) DEFAULT NULL COMMENT '取消原因',
+    `context_original_chars` int DEFAULT '0' COMMENT '压缩前上下文长度',
+    `context_compressed_chars` int DEFAULT '0' COMMENT '压缩后上下文长度',
+    `context_summary` mediumtext COMMENT '历史摘要',
+    `start_time` datetime DEFAULT NULL COMMENT '开始时间',
+    `end_time` datetime DEFAULT NULL COMMENT '结束时间',
+    `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_run_id` (`run_id`),
+    KEY `idx_run_session` (`session_id`),
+    KEY `idx_run_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='智能体运行主表';
+
+-- 智能体运行步骤表
+DROP TABLE IF EXISTS `ai_agent_step_run`;
+CREATE TABLE `ai_agent_step_run` (
+    `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `run_id` varchar(64) NOT NULL COMMENT '运行ID',
+    `step_id` varchar(64) NOT NULL COMMENT '步骤ID',
+    `step_name` varchar(255) DEFAULT NULL COMMENT '步骤名称',
+    `step_order` int DEFAULT '0' COMMENT '步骤序号',
+    `step_type` varchar(32) DEFAULT NULL COMMENT '步骤类型',
+    `tool_name` varchar(128) DEFAULT NULL COMMENT '工具名称',
+    `status` varchar(32) NOT NULL COMMENT '步骤状态',
+    `output_summary` mediumtext COMMENT '步骤摘要',
+    `error_message` varchar(1024) DEFAULT NULL COMMENT '步骤错误',
+    `cost_millis` bigint DEFAULT '0' COMMENT '耗时毫秒',
+    `start_time` datetime DEFAULT NULL COMMENT '开始时间',
+    `end_time` datetime DEFAULT NULL COMMENT '结束时间',
+    `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_run_step` (`run_id`, `step_id`),
+    KEY `idx_step_run_order` (`run_id`, `step_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='智能体运行步骤表';
 
 -- Flow 节点配置
 DROP TABLE IF EXISTS `ai_agent_flow_config`;

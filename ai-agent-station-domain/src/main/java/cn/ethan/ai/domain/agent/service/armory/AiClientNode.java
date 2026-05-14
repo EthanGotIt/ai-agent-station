@@ -10,7 +10,6 @@ import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import com.alibaba.fastjson.JSON;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.stereotype.Service;
 
@@ -39,8 +38,6 @@ public class AiClientNode extends AbstractArmorySupport {
 
         Map<String, org.springframework.ai.openai.OpenAiChatModel> modelObjectMap =
                 assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_MODEL_OBJECT_MAP_KEY.getCode());
-        Map<String, Advisor> advisorObjectMap =
-                assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_ADVISOR_OBJECT_MAP_KEY.getCode());
         Map<String, ChatClient> chatClientObjectMap =
                 assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_CHAT_CLIENT_OBJECT_MAP_KEY.getCode());
 
@@ -64,24 +61,9 @@ public class AiClientNode extends AbstractArmorySupport {
             }
             OpenAiChatModel chatModel = modelObjectMap.get(aiClientVO.getModelId());
 
-            // 3. 顾问配置
-            List<Advisor> advisors = new java.util.ArrayList<>();
-            for (String advisorId : aiClientVO.getAdvisorIdList()) {
-                if (advisorObjectMap == null) {
-                    continue;
-                }
-                Advisor advisor = advisorObjectMap.get(advisorId);
-                if (advisor != null) {
-                    advisors.add(advisor);
-                }
-            }
-
-            Advisor[] advisorArray = advisors.toArray(new Advisor[]{});
-
-            // 4. 构建对话客户端
+            // 3. 构建对话客户端。顾问在运行时按请求装配，避免启动期固定绑定导致重复注入。
             ChatClient chatClient = ChatClient.builder(chatModel)
                     .defaultSystem(defaultSystem.toString())
-                    .defaultAdvisors(advisorArray)
                     .build();
 
             chatClientObjectMap.put(aiClientVO.getClientId(), chatClient);

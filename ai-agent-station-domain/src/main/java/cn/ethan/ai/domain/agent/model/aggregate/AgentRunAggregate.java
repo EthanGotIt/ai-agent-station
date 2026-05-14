@@ -3,10 +3,14 @@ package cn.ethan.ai.domain.agent.model.aggregate;
 import cn.ethan.ai.domain.agent.model.entity.AgentRunTraceEntity;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AgentPlanVO;
+import cn.ethan.ai.domain.agent.model.valobj.AgentRunRecordVO;
+import cn.ethan.ai.domain.agent.model.valobj.ContextBudgetPolicyVO;
 import cn.ethan.ai.domain.agent.model.valobj.ContextWindowGuardVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.AgentRunStatusEnumVO;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.time.LocalDateTime;
 import lombok.Getter;
 
 /**
@@ -28,14 +32,33 @@ public class AgentRunAggregate {
     @Getter
     private AgentPlanVO plan;
 
-    private AgentRunAggregate(ExecuteCommandEntity command) {
+    @Getter
+    private AgentRunStatusEnumVO status;
+
+    @Getter
+    private String finalSummary;
+
+    @Getter
+    private String errorMessage;
+
+    @Getter
+    private String cancelReason;
+
+    @Getter
+    private LocalDateTime startTime;
+
+    @Getter
+    private LocalDateTime endTime;
+
+    private AgentRunAggregate(ExecuteCommandEntity command, ContextBudgetPolicyVO contextBudgetPolicy) {
         this.command = command;
         this.trace = new AgentRunTraceEntity();
-        this.contextWindowGuard = new ContextWindowGuardVO();
+        this.contextWindowGuard = new ContextWindowGuardVO(contextBudgetPolicy);
+        this.status = AgentRunStatusEnumVO.INIT;
     }
 
-    public static AgentRunAggregate create(ExecuteCommandEntity command) {
-        return new AgentRunAggregate(command);
+    public static AgentRunAggregate create(ExecuteCommandEntity command, ContextBudgetPolicyVO contextBudgetPolicy) {
+        return new AgentRunAggregate(command, contextBudgetPolicy);
     }
 
     public String runId() {
@@ -57,5 +80,50 @@ public class AgentRunAggregate {
 
     public Map<String, String> stepOutputs() {
         return Collections.unmodifiableMap(stepOutputs);
+    }
+
+    public void markRunning() {
+        this.status = AgentRunStatusEnumVO.RUNNING;
+        this.startTime = LocalDateTime.now();
+    }
+
+    public void markSuccess(String summary) {
+        this.status = AgentRunStatusEnumVO.SUCCESS;
+        this.finalSummary = summary;
+        this.endTime = LocalDateTime.now();
+    }
+
+    public void markFailed(String error) {
+        this.status = AgentRunStatusEnumVO.FAILED;
+        this.errorMessage = error;
+        this.endTime = LocalDateTime.now();
+    }
+
+    public void markCancelled(String reason) {
+        this.status = AgentRunStatusEnumVO.CANCELLED;
+        this.cancelReason = reason;
+        this.endTime = LocalDateTime.now();
+    }
+
+    public boolean isCancelled() {
+        return AgentRunStatusEnumVO.CANCELLED == status;
+    }
+
+    public AgentRunRecordVO toRecord() {
+        return AgentRunRecordVO.builder()
+                .runId(runId())
+                .agentId(command.getAiAgentId())
+                .sessionId(command.getSessionId())
+                .userMessage(command.getMessage())
+                .status(status)
+                .finalSummary(finalSummary)
+                .errorMessage(errorMessage)
+                .cancelReason(cancelReason)
+                .contextOriginalChars(contextWindowGuard.getLatestOriginalChars())
+                .contextCompressedChars(contextWindowGuard.getLatestCompressedChars())
+                .contextSummary(contextWindowGuard.getHistorySummary())
+                .startTime(startTime)
+                .endTime(endTime)
+                .build();
     }
 }

@@ -56,6 +56,8 @@ public class AgentExecutionContextVO extends cn.ethan.wrench.design.framework.tr
 
     private boolean planValid;
 
+    private boolean cancelled;
+
     public int nextStreamStepCursor() {
         int current = streamStepCursor;
         streamStepCursor++;

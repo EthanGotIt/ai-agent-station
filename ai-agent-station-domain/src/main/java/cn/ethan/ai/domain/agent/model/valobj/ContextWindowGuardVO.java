@@ -10,18 +10,34 @@ public class ContextWindowGuardVO {
 
     public static final int DEFAULT_MAX_CONTEXT_UNITS = 12000;
 
-    private static final double COMPACT_HISTORY_THRESHOLD = 0.80;
-
-    private static final double STOP_LLM_CALL_THRESHOLD = 0.95;
-
     private final int maxContextUnits;
+
+    private final double compactHistoryThreshold;
+
+    private final double stopLlmCallThreshold;
+
+    private final int summaryMaxChars;
 
     private int usedContextUnits;
 
     private boolean historyCompacted;
 
+    private int latestOriginalChars;
+
+    private int latestCompressedChars;
+
+    private String historySummary;
+
     public ContextWindowGuardVO() {
-        this.maxContextUnits = DEFAULT_MAX_CONTEXT_UNITS;
+        this(ContextBudgetPolicyVO.builder().build());
+    }
+
+    public ContextWindowGuardVO(ContextBudgetPolicyVO policy) {
+        ContextBudgetPolicyVO actualPolicy = policy == null ? ContextBudgetPolicyVO.builder().build() : policy;
+        this.maxContextUnits = actualPolicy.getMaxChars() <= 0 ? DEFAULT_MAX_CONTEXT_UNITS : actualPolicy.getMaxChars();
+        this.compactHistoryThreshold = actualPolicy.getCompressThreshold() <= 0 ? 0.80D : actualPolicy.getCompressThreshold();
+        this.stopLlmCallThreshold = actualPolicy.getStopThreshold() <= 0 ? 0.95D : actualPolicy.getStopThreshold();
+        this.summaryMaxChars = actualPolicy.getSummaryMaxChars() <= 0 ? 1500 : actualPolicy.getSummaryMaxChars();
     }
 
     public void record(String text) {
@@ -51,15 +67,29 @@ public class ContextWindowGuardVO {
     }
 
     public boolean shouldCompactHistory() {
-        return !historyCompacted && usageRatio() >= COMPACT_HISTORY_THRESHOLD;
+        return !historyCompacted && usageRatio() >= compactHistoryThreshold;
+    }
+
+    public boolean shouldCompactHistory(int originalChars) {
+        this.latestOriginalChars = originalChars;
+        return !historyCompacted && originalChars >= (int) Math.ceil(maxContextUnits * compactHistoryThreshold);
     }
 
     public boolean shouldStopNewLlmCall() {
-        return usageRatio() >= STOP_LLM_CALL_THRESHOLD;
+        return usageRatio() >= stopLlmCallThreshold;
     }
 
     public void markHistoryCompacted() {
         this.historyCompacted = true;
+    }
+
+    public void updateHistorySnapshot(int originalChars, int compressedChars, String summary) {
+        this.latestOriginalChars = Math.max(originalChars, 0);
+        this.latestCompressedChars = Math.max(compressedChars, 0);
+        this.historySummary = summary;
+        if (compressedChars > 0 && compressedChars < originalChars) {
+            this.historyCompacted = true;
+        }
     }
 
     public double usageRatio() {
