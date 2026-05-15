@@ -72,7 +72,7 @@ public class RagRetrievalSupportTest {
     public void formatEvidenceContextShouldIncludeCitationNumberAndSource() {
         Document document = Document.builder()
                 .text("Flow Plan 负责任务编排。")
-                .metadata(Map.of("source", "agent-doc.md", "qa_retrieval_query", "flow plan 编排"))
+                .metadata(Map.of("source", "agent-doc.md", "section_title", "运行时编排", "qa_retrieval_query", "flow plan 编排"))
                 .score(0.88)
                 .build();
 
@@ -80,6 +80,7 @@ public class RagRetrievalSupportTest {
 
         Assert.assertTrue(context.contains("[证据1]"));
         Assert.assertTrue(context.contains("agent-doc.md"));
+        Assert.assertTrue(context.contains("运行时编排"));
         Assert.assertTrue(context.contains("flow plan 编排"));
         Assert.assertTrue(context.contains("0.88"));
         Assert.assertTrue(context.contains("Flow Plan"));

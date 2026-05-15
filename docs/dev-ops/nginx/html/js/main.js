@@ -210,7 +210,7 @@ const AGENT_CONFIGS = {
             { label: '检索链路', value: 'RRF + Small-to-Big' },
             { label: '接口', value: 'NDJSON' }
         ],
-        highlight: '将大模型生成的计划收敛为后端可校验、可执行、可监督的任务链路，并在知识问答场景中支持每轮动态工具选择、RRF 融合排序与 Parent-Child Small-to-Big 检索',
+        highlight: '将大模型生成的计划收敛为后端可校验、可执行、可监督的任务链路，并在知识问答场景中支持每轮动态工具选择、Parent-Child 导入、RRF 融合排序与 Small-to-Big 检索',
         color: '#58d0b7',
         iconPath: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
         cases: [
@@ -227,7 +227,7 @@ const AGENT_CONFIGS = {
             },
             {
                 title: '梳理 RAG 多路召回升级方案并整理项目亮点',
-                content: `请分析 AI Agent Station 的 RAG 升级思路，重点说明 Query Rewrite、多路召回、去重合并和证据上下文注入如何提升回答质量，并整理成可以写进简历的 3 条项目亮点。`
+                content: `请分析 AI Agent Station 的 RAG 升级思路，重点说明 Markdown Parent-Child 导入、Query Rewrite、多路召回、RRF 融合、父块回查和证据上下文注入如何提升回答质量，并整理成可以写进简历的 3 条项目亮点。`
             }
         ]
     }

@@ -24,7 +24,7 @@ CREATE TABLE public.vector_store_openai (
     embedding VECTOR(1536)
 );
 
--- Parent-Child RAG 默认使用 HNSW 索引支撑语义召回。
+-- Parent-Child RAG 默认只为 child chunk 建立向量索引，并使用 HNSW 支撑语义召回。
 CREATE INDEX IF NOT EXISTS idx_vector_store_openai_embedding_hnsw
     ON public.vector_store_openai
     USING hnsw (embedding vector_cosine_ops);

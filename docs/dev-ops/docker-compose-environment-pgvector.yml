@@ -31,6 +31,7 @@ services:
     image: dbeaver/cloudbeaver:latest
     container_name: cloudbeaver
     restart: always
+    profiles: ["tools"]
     depends_on:
       pgvector:
         condition: service_healthy

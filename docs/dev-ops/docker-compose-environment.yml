@@ -28,6 +28,7 @@ services:
     image: redis:6.2
     container_name: redis
     restart: always
+    profiles: ["extras"]
     hostname: redis
     privileged: true
     ports:
@@ -48,6 +49,7 @@ services:
     image: dbeaver/cloudbeaver:latest
     container_name: cloudbeaver
     restart: always
+    profiles: ["tools"]
     depends_on:
       mysql:
         condition: service_healthy
@@ -62,6 +64,7 @@ services:
     image: redis/redisinsight:latest
     container_name: redisinsight
     restart: always
+    profiles: ["tools", "extras"]
     depends_on:
       redis:
         condition: service_healthy

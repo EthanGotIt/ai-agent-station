@@ -210,6 +210,13 @@ public class RagRetrievalSupport {
             builder.append("[证据").append(i + 1).append("] ");
             builder.append("来源：").append(resolveSource(document)).append(System.lineSeparator());
             if (document.getMetadata() != null) {
+                Object sectionTitle = document.getMetadata().get("section_title");
+                if (sectionTitle == null) {
+                    sectionTitle = document.getMetadata().get("sectionTitle");
+                }
+                if (sectionTitle != null && StringUtils.isNotBlank(sectionTitle.toString())) {
+                    builder.append("章节：").append(sectionTitle).append(System.lineSeparator());
+                }
                 Object retrievalQuery = document.getMetadata().get("qa_retrieval_query");
                 if (retrievalQuery != null && StringUtils.isNotBlank(retrievalQuery.toString())) {
                     builder.append("召回Query：").append(retrievalQuery).append(System.lineSeparator());

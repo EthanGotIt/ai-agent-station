@@ -1,0 +1,127 @@
+name: ai-agent-station-local
+
+services:
+  mysql:
+    image: mysql:8.0.32
+    container_name: ai-agent-mysql-local
+    command: --default-authentication-plugin=mysql_native_password
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: ai-agent-station
+    ports:
+      - "13306:3306"
+    volumes:
+      - ai_agent_mysql_data:/var/lib/mysql
+      - ./mysql/my.cnf:/etc/mysql/conf.d/mysql.cnf:ro
+      - ./mysql/sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 15s
+
+  pgvector:
+    image: pgvector/pgvector:pg16
+    container_name: ai-agent-pgvector-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai-agent-station
+    ports:
+      - "15432:5432"
+    volumes:
+      - ai_agent_pgvector_data:/var/lib/postgresql/data
+      - ./pgvector/sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai-agent-station"]
+      interval: 5s
+      timeout: 20s
+      retries: 12
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.28
+    container_name: ai-agent-elasticsearch-local
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - "19200:9200"
+    volumes:
+      - ai_agent_es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:9200/_cluster/health >/dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+
+  redis:
+    image: redis:6.2
+    container_name: ai-agent-redis-local
+    restart: unless-stopped
+    profiles: ["extras"]
+    ports:
+      - "16379:6379"
+    volumes:
+      - ai_agent_redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  cloudbeaver:
+    image: dbeaver/cloudbeaver:latest
+    container_name: ai-agent-cloudbeaver-local
+    restart: unless-stopped
+    profiles: ["tools"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      pgvector:
+        condition: service_healthy
+    ports:
+      - "8978:8978"
+    volumes:
+      - ai_agent_cloudbeaver_data:/opt/cloudbeaver/workspace
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    container_name: ai-agent-redisinsight-local
+    restart: unless-stopped
+    profiles: ["tools", "extras"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "5540:5540"
+    volumes:
+      - ai_agent_redisinsight_data:/data
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.28
+    container_name: ai-agent-kibana-local
+    restart: unless-stopped
+    profiles: ["tools"]
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+
+volumes:
+  ai_agent_mysql_data:
+  ai_agent_pgvector_data:
+  ai_agent_es_data:
+  ai_agent_redis_data:
+  ai_agent_cloudbeaver_data:
+  ai_agent_redisinsight_data:

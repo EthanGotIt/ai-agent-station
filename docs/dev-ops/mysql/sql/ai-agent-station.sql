@@ -121,7 +121,7 @@ VALUES
     (1, '7001', 'AI Agent Station 知识库', 'ai-agent-station', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
--- RAG 文档主表（Parent）
+-- RAG 文档主表（Markdown Parent 元数据）
 DROP TABLE IF EXISTS `ai_rag_document`;
 CREATE TABLE `ai_rag_document` (
     `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -130,7 +130,7 @@ CREATE TABLE `ai_rag_document` (
     `title` varchar(255) DEFAULT NULL COMMENT '文档标题',
     `source` varchar(255) DEFAULT NULL COMMENT '来源标识',
     `summary` text COMMENT '文档摘要',
-    `metadata_json` text COMMENT '扩展元数据 JSON',
+    `metadata_json` text COMMENT '扩展元数据 JSON，包含 doc_type、knowledge_tag 等',
     `status` tinyint(1) DEFAULT '1' COMMENT '状态：0禁用，1启用',
     `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -139,7 +139,7 @@ CREATE TABLE `ai_rag_document` (
     KEY `idx_doc_status` (`doc_id`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='RAG 文档主表';
 
--- RAG 分块表（Child/Parent）
+-- RAG 分块表（Parent-Child 元数据）
 DROP TABLE IF EXISTS `ai_rag_chunk`;
 CREATE TABLE `ai_rag_chunk` (
     `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -150,7 +150,7 @@ CREATE TABLE `ai_rag_chunk` (
     `chunk_level` tinyint DEFAULT '1' COMMENT '分块层级：1父块，2子块',
     `chunk_type` varchar(32) DEFAULT 'text' COMMENT '分块类型',
     `chunk_text` mediumtext COMMENT '分块正文',
-    `metadata_json` text COMMENT '扩展元数据 JSON',
+    `metadata_json` text COMMENT '扩展元数据 JSON，包含 title、section_title、chunk_order 等',
     `status` tinyint(1) DEFAULT '1' COMMENT '状态：0禁用，1启用',
     `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',

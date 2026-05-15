@@ -1,6 +1,8 @@
 package cn.ethan.ai.test.spring.ai;
 
 import cn.ethan.ai.test.support.ManualTestGate;
+import cn.ethan.ai.domain.agent.model.valobj.RagParentChildIngestionResultVO;
+import cn.ethan.ai.domain.agent.service.rag.RagParentChildIngestionService;
 import com.alibaba.fastjson.JSON;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.BeforeClass;
@@ -18,20 +20,22 @@ import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.ai.openai.OpenAiEmbeddingOptions;
-import org.springframework.ai.reader.tika.TikaDocumentReader;
-import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.io.Resource;
+import org.springframework.util.FileCopyUtils;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.junit4.SpringRunner;
 import org.springframework.util.MimeType;
 import org.springframework.util.MimeTypeUtils;
 import reactor.core.publisher.Flux;
 
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -54,8 +58,11 @@ public class OpenAiTest {
     @Value("classpath:data/file.txt")
     private Resource textResource;
 
-    @Value("classpath:data/article-prompt-words.txt")
-    private Resource articlePromptWordsResource;
+    @Value("classpath:data/spring-ai-mcp-client.md")
+    private Resource springAiMcpClientMarkdown;
+
+    @Value("classpath:data/rag-parent-child-upgrade.md")
+    private Resource ragParentChildMarkdown;
 
     @Autowired
     private OpenAiChatModel openAiChatModel;
@@ -64,7 +71,7 @@ public class OpenAiTest {
     private PgVectorStore pgVectorStore;
 
     @jakarta.annotation.Resource
-    private TokenTextSplitter tokenTextSplitter;
+    private RagParentChildIngestionService ragParentChildIngestionService;
 
     @Test
     public void test_call() {
@@ -122,26 +129,31 @@ public class OpenAiTest {
     }
 
     @Test
-    public void upload() {
-        // textResource and articlePromptWordsResource
-        processAndUpload(new TikaDocumentReader(textResource), "text");
+    public void uploadMarkdownParentChild() throws IOException {
+        ManualTestGate.requireDbMutation("OpenAiTest.uploadMarkdownParentChild");
 
-        processAndUpload(new TikaDocumentReader(articlePromptWordsResource), "article-prompt-words");
+        RagParentChildIngestionResultVO mcpGuideResult = ragParentChildIngestionService.ingestMarkdown(
+                "7001",
+                "Spring AI MCP Client 使用指南",
+                "spring-ai-mcp-client.md",
+                readUtf8Resource(springAiMcpClientMarkdown)
+        );
 
-        log.info("上传完成");
-    }
+        RagParentChildIngestionResultVO ragGuideResult = ragParentChildIngestionService.ingestMarkdown(
+                "7001",
+                "Parent-Child RAG 升级说明",
+                "rag-parent-child-upgrade.md",
+                readUtf8Resource(ragParentChildMarkdown)
+        );
 
-    private void processAndUpload(TikaDocumentReader reader, String category) {
-        List<Document> docs = reader.get();
-        List<Document> splitDocs = tokenTextSplitter.apply(docs);
-        splitDocs.forEach(doc -> doc.getMetadata().put("knowledge", category));
-
-        pgVectorStore.accept(splitDocs);
+        log.info("Markdown Parent-Child 导入完成，结果1:{}，结果2:{}",
+                JSON.toJSONString(mcpGuideResult),
+                JSON.toJSONString(ragGuideResult));
     }
 
     @Test
     public void chat() {
-        String message = "王大瓜今年几岁？";
+        String message = "Spring AI MCP Client 常见的接入方式有哪些？";
 
         String SYSTEM_PROMPT = """
                 Use the information from the DOCUMENTS section to provide accurate answers but act as if you knew this information innately.
@@ -154,7 +166,7 @@ public class OpenAiTest {
         SearchRequest request = SearchRequest.builder()
                 .query(message)
                 .topK(5)
-                .filterExpression("knowledge == 'text'")
+                .filterExpression("rag_id == '7001'")
                 .build();
 
         List<Document> documents = pgVectorStore.similaritySearch(request);
@@ -174,6 +186,12 @@ public class OpenAiTest {
                         .build()));
 
         log.info("测试结果:{}", JSON.toJSONString(chatResponse));
+    }
+
+    private String readUtf8Resource(Resource resource) throws IOException {
+        try (InputStreamReader reader = new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8)) {
+            return FileCopyUtils.copyToString(reader);
+        }
     }
 
 }

@@ -115,6 +115,9 @@ public class HybridRagRetrievalPort implements IRagRetrievalPort {
                     "doc_id",
                     "chunk_id",
                     "parent_chunk_id",
+                    "chunk_level",
+                    "chunk_order",
+                    "section_title",
                     "chunk_text",
                     "title",
                     "source",
@@ -122,6 +125,13 @@ public class HybridRagRetrievalPort implements IRagRetrievalPort {
                   ],
                   "query": {
                     "bool": {
+                      "filter": [
+                        {
+                          "term": {
+                            "chunk_level": 2
+                          }
+                        }
+                      ],
                       "should": [
                         {
                           "multi_match": {
@@ -170,6 +180,9 @@ public class HybridRagRetrievalPort implements IRagRetrievalPort {
                 metadata.put("doc_id", trimToEmpty(source.path("doc_id").asText("")));
                 metadata.put("chunk_id", trimToEmpty(source.path("chunk_id").asText("")));
                 metadata.put("parent_chunk_id", trimToEmpty(source.path("parent_chunk_id").asText("")));
+                metadata.put("chunk_level", source.path("chunk_level").asInt(2));
+                metadata.put("chunk_order", source.path("chunk_order").asInt(0));
+                metadata.put("section_title", trimToEmpty(source.path("section_title").asText("")));
                 metadata.put("title", trimToEmpty(source.path("title").asText("")));
                 metadata.put("source", trimToEmpty(source.path("source").asText("")));
 
@@ -255,6 +268,7 @@ public class HybridRagRetrievalPort implements IRagRetrievalPort {
                                   AND c.doc_id = d.doc_id
                             WHERE c.doc_id = ?
                               AND c.chunk_id = ?
+                              AND c.chunk_level = 1
                               AND c.status = 1
                             LIMIT 1
                             """,
@@ -333,6 +347,14 @@ public class HybridRagRetrievalPort implements IRagRetrievalPort {
                       "doc_id": {"type": "keyword"},
                       "chunk_id": {"type": "keyword"},
                       "parent_chunk_id": {"type": "keyword"},
+                      "chunk_level": {"type": "integer"},
+                      "chunk_order": {"type": "integer"},
+                      "section_title": {
+                        "type": "text",
+                        "fields": {
+                          "keyword": {"type": "keyword", "ignore_above": 256}
+                        }
+                      },
                       "title": {
                         "type": "text",
                         "fields": {
