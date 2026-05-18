@@ -10,7 +10,7 @@ services:
       TZ: Asia/Shanghai
       MYSQL_ROOT_PASSWORD: 123456
     ports:
-      - "13306:3306"
+      - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./mysql/my.cnf:/etc/mysql/conf.d/mysql.cnf:ro

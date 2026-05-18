@@ -16,7 +16,7 @@ spring:
     mysql:
       username: ${MYSQL_USERNAME:root}
       password: ${MYSQL_PASSWORD:123456}
-      url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3306/ai-agent-station?useUnicode=true&characterEncoding=utf8&autoReconnect=true&zeroDateTimeBehavior=convertToNull&serverTimezone=Asia/Shanghai&useSSL=true}
+      url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3306/ai-agent-station?useUnicode=true&characterEncoding=utf8&autoReconnect=true&zeroDateTimeBehavior=convertToNull&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
       driver-class-name: com.mysql.cj.jdbc.Driver
       hikari:
         minimum-idle: 15
@@ -46,10 +46,6 @@ spring:
     openai:
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
       api-key: ${OPENAI_API_KEY:}
-      embedding:
-        options:
-          model: text-embedding-v4
-          dimensions: 1536
     agent:
       auto-config:
         enabled: true
@@ -63,6 +59,10 @@ ai-agent:
     summary-max-chars: ${AI_AGENT_CONTEXT_SUMMARY_MAX_CHARS:1500}
   vector-store:
     enabled: ${AI_AGENT_VECTOR_STORE_ENABLED:false}
+    base-url: ${AI_AGENT_VECTOR_STORE_BASE_URL:https://api.jina.ai/v1}
+    api-key: ${JINA_API_KEY:}
+    model: ${AI_AGENT_VECTOR_STORE_MODEL:jina-embeddings-v5-text-small}
+    dimensions: ${AI_AGENT_VECTOR_STORE_DIMENSIONS:1024}
   hybrid-retrieval:
     es-base-url: ${AI_AGENT_ES_BASE_URL:http://127.0.0.1:9200}
     es-index-name: ${AI_AGENT_ES_INDEX_NAME:ai_rag_chunk}

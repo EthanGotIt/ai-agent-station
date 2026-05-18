@@ -10,7 +10,7 @@ CREATE TABLE public.vector_store (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     content TEXT NOT NULL,
     metadata JSONB,
-    embedding VECTOR(1536)
+    embedding VECTOR(1024)
 );
 
 -- 删除旧的表（如果存在）
@@ -21,7 +21,7 @@ CREATE TABLE public.vector_store_openai (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     content TEXT NOT NULL,
     metadata JSONB,
-    embedding VECTOR(1536)
+    embedding VECTOR(1024)
 );
 
 -- Parent-Child RAG 默认只为 child chunk 建立向量索引，并使用 HNSW 支撑语义召回。

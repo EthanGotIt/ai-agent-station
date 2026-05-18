@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -251,7 +252,7 @@ public class RagParentChildIngestionService {
                                                String parentText,
                                                int childOrderStart) {
         Document parentDocument = Document.builder()
-                .id(docId + ":" + parentChunkId)
+                .id(buildVectorDocumentId(docId, parentChunkId))
                 .text(parentText)
                 .metadata(Map.of(
                         "rag_id", ragId,
@@ -273,7 +274,7 @@ public class RagParentChildIngestionService {
             Map<String, Object> metadata = buildChunkMetadata(ragId, docId, title, source,
                     sectionTitle, childOrder, chunkId, parentChunkId, 2, "markdown_child");
             childDocuments.add(Document.builder()
-                    .id(docId + ":" + chunkId)
+                    .id(buildVectorDocumentId(docId, chunkId))
                     .text(splitDocument.getText())
                     .metadata(metadata)
                     .build());
@@ -334,6 +335,10 @@ public class RagParentChildIngestionService {
 
     private String buildChildChunkId(String parentChunkId, int order) {
         return parentChunkId + "_c_" + String.format("%03d", order);
+    }
+
+    private String buildVectorDocumentId(String docId, String chunkId) {
+        return UUID.nameUUIDFromBytes((docId + ":" + chunkId).getBytes()).toString();
     }
 
     private String firstNonBlankLine(String markdownText) {

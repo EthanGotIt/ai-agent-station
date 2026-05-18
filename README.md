@@ -46,43 +46,45 @@ RAG 链路当前为：
 可选环境变量：
 
 - `OPENAI_API_KEY`
+- `JINA_API_KEY`
 - `CONTEXT7_API_KEY`
 - `EXA_API_KEY`
 - `RUN_REAL_AI_TESTS=true`
 - `RUN_DB_MUTATION_TESTS=true`
 
-## 本地启动方式（Docker Desktop）
+## 本地启动方式（复用现有环境）
 
-### 1. 拉起本地依赖
+### 1. 准备现有依赖
 
-默认只启动核心依赖：MySQL、PGVector、Elasticsearch。
+当前默认复用你机器上已有的本地环境：
+
+- MySQL：`127.0.0.1:3306`
+- PGVector：`127.0.0.1:5432`
+- Elasticsearch：`127.0.0.1:9200`
+
+其中：
+
+- MySQL 走本机已有实例
+- PGVector / Elasticsearch 走 Docker Desktop 中已有容器
+
+如需快速确认环境可用，可以执行：
 
 ```powershell
 .\scripts\dev\up-local-stack.ps1
 ```
 
-如需 CloudBeaver / Kibana / RedisInsight，再显式开启：
+该脚本不会再新建隔离 stack，只会：
 
-```powershell
-.\scripts\dev\up-local-stack.ps1 -WithTools
-.\scripts\dev\up-local-stack.ps1 -WithExtras
-```
-
-当前统一使用的 compose 为：
-
-- `docs/dev-ops/docker-compose-local.yml`
-
-其中：
-
-- MySQL：`127.0.0.1:13306`
-- PGVector：`127.0.0.1:15432`
-- Elasticsearch：`127.0.0.1:19200`
+- 检查本机 MySQL `3306`
+- 启动并检查现有 `pgvector`
+- 启动并检查现有 `elasticsearch`
 
 ### 2. 配置必要环境变量
 
 至少需要：
 
 - `OPENAI_API_KEY`
+- `JINA_API_KEY`
 
 可选：
 
@@ -99,10 +101,12 @@ RAG 链路当前为：
 
 这个脚本会自动设置：
 
-- `MYSQL_URL=jdbc:mysql://127.0.0.1:13306/ai-agent-station...`
-- `PGVECTOR_URL=jdbc:postgresql://127.0.0.1:15432/ai-agent-station`
-- `AI_AGENT_ES_BASE_URL=http://127.0.0.1:19200`
+- `MYSQL_URL=jdbc:mysql://127.0.0.1:3306/ai-agent-station...`
+- `PGVECTOR_URL=jdbc:postgresql://127.0.0.1:5432/ai-agent-station`
+- `AI_AGENT_ES_BASE_URL=http://127.0.0.1:9200`
 - `AI_AGENT_VECTOR_STORE_ENABLED=true`
+- `AI_AGENT_VECTOR_STORE_MODEL=jina-embeddings-v5-text-small`
+- `AI_AGENT_VECTOR_STORE_DIMENSIONS=1024`
 
 ### 4. 导入 Markdown Parent-Child 知识
 
@@ -142,6 +146,12 @@ RAG 链路当前为：
 .\scripts\dev\down-local-stack.ps1
 ```
 
+如需顺手关闭观测类容器：
+
+```powershell
+.\scripts\dev\down-local-stack.ps1 -StopObservability
+```
+
 ## 核心表
 
 - `ai_agent`：智能体配置
@@ -161,20 +171,26 @@ RAG 链路当前为：
 
 查询阶段先命中子块，再按 `parent_chunk_id` 回查父块，用更完整的章节内容参与回答。
 
+当前本地默认向量模型为：
+
+- `jina-embeddings-v5-text-small`
+- 维度 `1024`
+- Chat 侧仍走 DashScope OpenAI compatible 模式
+
 ## 默认停止的辅助容器
-
-为了避免本地开发阶段无关容器长期占用内存，以下组件默认不会启动，只有显式指定 profile 时才会启动：
-
-- `CloudBeaver`
-- `Kibana`
-- `RedisInsight`
-- `Redis`
 
 项目主链路仅依赖：
 
 - MySQL
 - PGVector
 - Elasticsearch
+
+本地如无需观测类容器，建议保持以下服务停止，减少内存占用：
+
+- `kibana`
+- `logstash`
+- `grafana`
+- `prometheus`
 
 ## 示例请求
 

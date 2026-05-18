@@ -1,24 +1,24 @@
 param(
-    [switch]$WithVolumes
+    [switch]$StopObservability
 )
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 
-$repoRoot = Get-RepoRoot
-$composePath = Get-ComposePath
-
 Assert-DockerReady
-
-Push-Location $repoRoot
-try {
-    $args = @('compose', '-f', $composePath, 'down')
-    if ($WithVolumes) {
-        $args += '--volumes'
+foreach ($containerName in @('pgvector', 'elasticsearch')) {
+    $exists = docker ps -a --format '{{.Names}}' | Where-Object { $_ -eq $containerName } | Select-Object -First 1
+    if ($exists) {
+        & docker stop $containerName | Out-Null
     }
-    & docker @args
-    if ($LASTEXITCODE -ne 0) {
-        throw '关闭本地依赖失败。'
-    }
-} finally {
-    Pop-Location
 }
+
+if ($StopObservability) {
+    foreach ($containerName in @('kibana', 'logstash', 'grafana', 'prometheus')) {
+        $exists = docker ps -a --format '{{.Names}}' | Where-Object { $_ -eq $containerName } | Select-Object -First 1
+        if ($exists) {
+            & docker stop $containerName | Out-Null
+        }
+    }
+}
+
+Write-Host '已停止复用环境中的核心容器：pgvector / elasticsearch。'

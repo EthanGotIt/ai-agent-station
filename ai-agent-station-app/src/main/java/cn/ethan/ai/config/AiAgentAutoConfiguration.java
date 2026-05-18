@@ -36,6 +36,9 @@ public class AiAgentAutoConfiguration implements ApplicationListener<Application
     @Resource
     private DefaultArmoryStrategyFactory defaultArmoryStrategyFactory;
 
+    @Resource
+    private AiAgentArmoryReadyState aiAgentArmoryReadyState;
+
     @Override
     public void onApplicationEvent(@NonNull ApplicationReadyEvent event) {
         try {
@@ -44,12 +47,14 @@ public class AiAgentAutoConfiguration implements ApplicationListener<Application
             // 检查配置是否有效
             if (!aiAgentAutoConfigProperties.isEnabled()) {
                 log.info("AI Agent 自动装配未启用");
+                aiAgentArmoryReadyState.markSkipped("AI Agent 自动装配未启用");
                 return;
             }
 
             List<String> clientIds = aiAgentAutoConfigProperties.getClientIds();
             if (CollectionUtils.isEmpty(clientIds)) {
                 log.warn("AI Agent 自动装配配置的客户端ID列表为空");
+                aiAgentArmoryReadyState.markSkipped("AI Agent 自动装配客户端ID为空");
                 return;
             }
 
@@ -65,6 +70,7 @@ public class AiAgentAutoConfiguration implements ApplicationListener<Application
             }
 
             log.info("开始自动装配AI客户端，客户端ID列表: {}", commandIdList);
+            aiAgentArmoryReadyState.markAssembling(commandIdList);
 
             // 执行自动装配
             StrategyHandler<ArmoryCommandEntity, ArmoryAssemblyContextVO, String> armoryStrategyHandler =
@@ -79,9 +85,11 @@ public class AiAgentAutoConfiguration implements ApplicationListener<Application
 
             String readableResult = result != null ? result : String.format("已完成AI Agent自动装配，clientIds=%s", commandIdList);
             log.info("AI Agent 自动装配完成，结果: {}", readableResult);
+            aiAgentArmoryReadyState.markReady(readableResult);
             
         } catch (Exception e) {
             log.error("AI Agent 自动装配失败", e);
+            aiAgentArmoryReadyState.markFailed("AI Agent 自动装配失败：" + e.getMessage());
         }
     }
 

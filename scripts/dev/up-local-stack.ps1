@@ -1,46 +1,11 @@
-param(
-    [switch]$Pull,
-    [switch]$WithTools,
-    [switch]$WithExtras
-)
-
 . (Join-Path $PSScriptRoot 'common.ps1')
 
-$repoRoot = Get-RepoRoot
-$composePath = Get-ComposePath
-
 Assert-DockerReady
+Set-LocalAppEnvironment
 
-$composeArgs = @('compose', '-f', $composePath)
-if ($WithTools) {
-    $composeArgs += @('--profile', 'tools')
-}
-if ($WithExtras) {
-    $composeArgs += @('--profile', 'extras')
-}
+Assert-TcpPortReady -TargetHost '127.0.0.1' -Port 3306 -TimeoutSeconds 15
+Ensure-ContainerRunning -ContainerName 'pgvector'
+Ensure-ContainerRunning -ContainerName 'elasticsearch'
 
-Push-Location $repoRoot
-try {
-    if ($Pull) {
-        & docker @composeArgs pull
-        if ($LASTEXITCODE -ne 0) {
-            throw '拉取本地依赖镜像失败。'
-        }
-    }
-
-    & docker @composeArgs up -d
-    if ($LASTEXITCODE -ne 0) {
-        throw '拉起本地依赖失败。'
-    }
-
-    Wait-ContainerHealthy -ContainerName 'ai-agent-mysql-local'
-    Wait-ContainerHealthy -ContainerName 'ai-agent-pgvector-local'
-    Wait-ContainerHealthy -ContainerName 'ai-agent-elasticsearch-local'
-
-    Write-Host '本地核心依赖已就绪。默认仅启动 MySQL / PGVector / Elasticsearch。'
-    if (-not $WithTools -and -not $WithExtras) {
-        Write-Host '如需 CloudBeaver / Kibana / RedisInsight，请追加 -WithTools 或 -WithExtras。'
-    }
-} finally {
-    Pop-Location
-}
+Write-Host '已复用现有本地环境：MySQL(3306) + pgvector(5432) + elasticsearch(9200)。'
+Write-Host '如需停止额外观测容器，请手工关闭 kibana / logstash / grafana / prometheus。'

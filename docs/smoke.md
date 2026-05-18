@@ -8,6 +8,12 @@
 .\scripts\dev\up-local-stack.ps1
 ```
 
+默认复用：
+
+- 本机 MySQL `3306`
+- Docker 容器 `pgvector`（`5432`）
+- Docker 容器 `elasticsearch`（`9200`）
+
 2. 启动 Spring Boot：
 
 ```powershell
@@ -26,7 +32,12 @@
 .\scripts\dev\run-local-smoke.ps1
 ```
 
-默认只启动核心依赖。CloudBeaver / Kibana / RedisInsight / Redis 都需要手工指定 profile 才会启动。
+脚本不会再新建新的 compose stack，只会检查并复用当前已有环境。
+
+运行前需要至少配置：
+
+- `OPENAI_API_KEY`：对话模型
+- `JINA_API_KEY`：向量模型（默认 `jina-embeddings-v5-text-small`，`1024` 维）
 
 ## 场景一：纯 Flow Plan 编排
 
@@ -64,7 +75,7 @@
 - 前置动作：
   - 先执行一次 Markdown Parent-Child 导入
 - 输入：
-  - `Spring AI MCP Client 常见的接入方式有哪些？`
+  - `请仅基于已导入的 Markdown 知识回答 Spring AI MCP Client 常见的接入方式，不要调用外部 MCP 搜索工具。`
 - 预期关键事件：
   - `context_guard`
   - `rag_evidence`

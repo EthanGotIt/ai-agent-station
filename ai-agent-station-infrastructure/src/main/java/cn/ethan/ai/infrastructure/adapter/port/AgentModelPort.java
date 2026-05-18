@@ -17,6 +17,7 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -46,6 +47,12 @@ public class AgentModelPort implements IAgentModelPort {
 
     public static final String CHAT_MEMORY_CONVERSATION_ID_KEY = "chat_memory_conversation_id";
     public static final String CHAT_MEMORY_RETRIEVE_SIZE_KEY = "chat_memory_response_size";
+    private static final List<String> RAG_CONTEXT_METADATA_KEYS = List.of(
+            "qa_retrieved_documents",
+            "qa_retrieval_queries",
+            "question_answer_context",
+            "qa_retrieval_skipped_reason"
+    );
 
     @Resource
     private ApplicationContext applicationContext;
@@ -126,9 +133,10 @@ public class AgentModelPort implements IAgentModelPort {
             requestSpec = applyAdvisorRuntimeParams(requestSpec, command, advisors);
             logCallAdvisorChain(requestSpec, eventType, selectedConfig.getClientId());
             ChatClient.CallResponseSpec responseSpec = requestSpec.call();
-            ChatResponse chatResponse = responseSpec.chatResponse();
+            ChatClientResponse chatClientResponse = responseSpec.chatClientResponse();
+            ChatResponse chatResponse = chatClientResponse == null ? responseSpec.chatResponse() : chatClientResponse.chatResponse();
             String content = extractContent(chatResponse);
-            Map<String, Object> metadata = extractMetadata(chatResponse);
+            Map<String, Object> metadata = extractMetadata(chatClientResponse, chatResponse);
             contextWindowGuard.record(content);
             AgentRunEventEntity event = trace.record(eventType, stepId, step, start, limit(content, 300), null);
             log.info("Agent 模型调用追踪事件：{}", event);
@@ -312,12 +320,24 @@ public class AgentModelPort implements IAgentModelPort {
         return filtered;
     }
 
-    private Map<String, Object> extractMetadata(ChatResponse chatResponse) {
-        if (chatResponse == null || chatResponse.getMetadata() == null || chatResponse.getMetadata().isEmpty()) {
+    private Map<String, Object> extractMetadata(ChatClientResponse chatClientResponse, ChatResponse chatResponse) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        if (chatResponse != null && chatResponse.getMetadata() != null && !chatResponse.getMetadata().isEmpty()) {
+            chatResponse.getMetadata().entrySet().forEach(entry -> metadata.put(entry.getKey(), entry.getValue()));
+        }
+
+        if (chatClientResponse != null && chatClientResponse.context() != null && !chatClientResponse.context().isEmpty()) {
+            for (String key : RAG_CONTEXT_METADATA_KEYS) {
+                Object value = chatClientResponse.context().get(key);
+                if (value != null) {
+                    metadata.putIfAbsent(key, value);
+                }
+            }
+        }
+
+        if (metadata.isEmpty()) {
             return Collections.emptyMap();
         }
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        chatResponse.getMetadata().entrySet().forEach(entry -> metadata.put(entry.getKey(), entry.getValue()));
         return metadata;
     }
 
