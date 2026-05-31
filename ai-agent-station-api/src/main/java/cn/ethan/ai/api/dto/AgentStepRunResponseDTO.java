@@ -21,13 +21,13 @@ public class AgentStepRunResponseDTO {
 
     private String stepType;
 
-    private String toolName;
-
     private String status;
 
     private String outputSummary;
 
     private String errorMessage;
+
+    private String terminalReason;
 
     private Long costMillis;
 

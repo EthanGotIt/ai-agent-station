@@ -32,7 +32,7 @@ public class AiClientAdvisorDaoTest {
         AiClientAdvisor aiClientAdvisor = AiClientAdvisor.builder()
                 .advisorId("advisor_001")
                 .advisorName("测试顾问")
-                .advisorType("PromptChatMemory")
+                .advisorType("ChatMemory")
                 .orderNum(1)
                 .extParam("{\"key\":\"value\"}")
                 .status(1)
@@ -115,7 +115,7 @@ public class AiClientAdvisorDaoTest {
 
     @Test
     public void test_queryByAdvisorType() {
-        List<AiClientAdvisor> aiClientAdvisorList = aiClientAdvisorDao.queryByAdvisorType("PromptChatMemory");
+        List<AiClientAdvisor> aiClientAdvisorList = aiClientAdvisorDao.queryByAdvisorType("ChatMemory");
         log.info("根据顾问类型查询结果: {}", aiClientAdvisorList);
     }
 

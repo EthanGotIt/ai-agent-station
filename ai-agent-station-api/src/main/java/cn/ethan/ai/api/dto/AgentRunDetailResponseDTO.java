@@ -45,6 +45,10 @@ public class AgentRunDetailResponseDTO {
 
     private LocalDateTime updateTime;
 
+    private AgentRunLifecycleResponseDTO lifecycle;
+
+    private AgentContextBoundaryResponseDTO contextBoundary;
+
     @Builder.Default
     private List<AgentStepRunResponseDTO> steps = Collections.emptyList();
 

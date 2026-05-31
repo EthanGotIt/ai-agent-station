@@ -3,7 +3,7 @@ package cn.ethan.ai.domain.agent.model.valobj;
 import lombok.Getter;
 
 /**
- * 运行上下文窗口保护值对象，使用字符数进行保守估算，避免额外引入 tokenizer 依赖。
+ * 运行上下文窗口保护值对象，默认使用轻量估算器，后续可替换为模型 tokenizer 实现。
  */
 @Getter
 public class ContextWindowGuardVO {
@@ -17,6 +17,8 @@ public class ContextWindowGuardVO {
     private final double stopLlmCallThreshold;
 
     private final int summaryMaxChars;
+
+    private final ContextUnitEstimator contextUnitEstimator;
 
     private int usedContextUnits;
 
@@ -33,11 +35,16 @@ public class ContextWindowGuardVO {
     }
 
     public ContextWindowGuardVO(ContextBudgetPolicyVO policy) {
+        this(policy, HeuristicContextUnitEstimator.INSTANCE);
+    }
+
+    public ContextWindowGuardVO(ContextBudgetPolicyVO policy, ContextUnitEstimator contextUnitEstimator) {
         ContextBudgetPolicyVO actualPolicy = policy == null ? ContextBudgetPolicyVO.builder().build() : policy;
         this.maxContextUnits = actualPolicy.getMaxChars() <= 0 ? DEFAULT_MAX_CONTEXT_UNITS : actualPolicy.getMaxChars();
         this.compactHistoryThreshold = actualPolicy.getCompressThreshold() <= 0 ? 0.80D : actualPolicy.getCompressThreshold();
         this.stopLlmCallThreshold = actualPolicy.getStopThreshold() <= 0 ? 0.95D : actualPolicy.getStopThreshold();
         this.summaryMaxChars = actualPolicy.getSummaryMaxChars() <= 0 ? 1500 : actualPolicy.getSummaryMaxChars();
+        this.contextUnitEstimator = contextUnitEstimator == null ? HeuristicContextUnitEstimator.INSTANCE : contextUnitEstimator;
     }
 
     public void record(String text) {
@@ -46,24 +53,7 @@ public class ContextWindowGuardVO {
     }
 
     public int estimate(String text) {
-        if (text == null || text.isEmpty()) {
-            return 0;
-        }
-        double tokens = 0;
-        for (int offset = 0; offset < text.length(); ) {
-            int codePoint = text.codePointAt(offset);
-            if (Character.isWhitespace(codePoint)) {
-                tokens += 0.25;
-            } else if (isCjkCodePoint(codePoint)) {
-                tokens += 1;
-            } else if (codePoint <= 0x007F) {
-                tokens += 0.25;
-            } else {
-                tokens += 0.5;
-            }
-            offset += Character.charCount(codePoint);
-        }
-        return Math.max(1, (int) Math.ceil(tokens));
+        return contextUnitEstimator.estimate(text);
     }
 
     public boolean shouldCompactHistory() {
@@ -96,11 +86,4 @@ public class ContextWindowGuardVO {
         return maxContextUnits == 0 ? 1.0 : (double) usedContextUnits / maxContextUnits;
     }
 
-    private boolean isCjkCodePoint(int codePoint) {
-        Character.UnicodeScript script = Character.UnicodeScript.of(codePoint);
-        return script == Character.UnicodeScript.HAN
-                || script == Character.UnicodeScript.HIRAGANA
-                || script == Character.UnicodeScript.KATAKANA
-                || script == Character.UnicodeScript.HANGUL;
-    }
 }

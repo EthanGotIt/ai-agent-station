@@ -9,7 +9,6 @@
         <result column="step_name" property="stepName"/>
         <result column="step_order" property="stepOrder"/>
         <result column="step_type" property="stepType"/>
-        <result column="tool_name" property="toolName"/>
         <result column="status" property="status"/>
         <result column="output_summary" property="outputSummary"/>
         <result column="error_message" property="errorMessage"/>
@@ -21,9 +20,9 @@
     </resultMap>
 
     <insert id="insert" parameterType="cn.ethan.ai.infrastructure.dao.po.AiAgentStepRun" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO ai_agent_step_run (run_id, step_id, step_name, step_order, step_type, tool_name, status,
+        INSERT INTO ai_agent_step_run (run_id, step_id, step_name, step_order, step_type, status,
                                        output_summary, error_message, cost_millis, start_time, end_time, create_time, update_time)
-        VALUES (#{runId}, #{stepId}, #{stepName}, #{stepOrder}, #{stepType}, #{toolName}, #{status},
+        VALUES (#{runId}, #{stepId}, #{stepName}, #{stepOrder}, #{stepType}, #{status},
                 #{outputSummary}, #{errorMessage}, #{costMillis}, #{startTime}, #{endTime}, #{createTime}, #{updateTime})
     </insert>
 
@@ -46,7 +45,6 @@
                step_name,
                step_order,
                step_type,
-               tool_name,
                status,
                output_summary,
                error_message,

@@ -25,7 +25,7 @@ public class AiClientAdvisorVO {
     private String advisorName;
 
     /**
-     * 顾问类型(PromptChatMemory/RagAnswer/SimpleLoggerAdvisor等)
+     * 顾问类型(ChatMemory/RagAnswer/SimpleLoggerAdvisor等)
      */
     private String advisorType;
 

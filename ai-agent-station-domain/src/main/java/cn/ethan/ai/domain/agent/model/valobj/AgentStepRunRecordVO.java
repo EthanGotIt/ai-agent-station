@@ -27,8 +27,6 @@ public class AgentStepRunRecordVO {
 
     private String stepType;
 
-    private String toolName;
-
     private AgentStepRunStatusEnumVO status;
 
     private String outputSummary;

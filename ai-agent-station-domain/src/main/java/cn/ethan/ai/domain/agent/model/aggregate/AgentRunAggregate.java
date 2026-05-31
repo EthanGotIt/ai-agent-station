@@ -45,6 +45,9 @@ public class AgentRunAggregate {
     private String cancelReason;
 
     @Getter
+    private String sessionContextSummary;
+
+    @Getter
     private LocalDateTime startTime;
 
     @Getter
@@ -72,6 +75,10 @@ public class AgentRunAggregate {
 
     public void bindExecutionPlan(AgentPlanVO plan) {
         this.plan = plan;
+    }
+
+    public void bindSessionContextSummary(String sessionContextSummary) {
+        this.sessionContextSummary = sessionContextSummary;
     }
 
     public void recordStepOutput(String stepId, String output) {
@@ -119,6 +126,7 @@ public class AgentRunAggregate {
                 .finalSummary(finalSummary)
                 .errorMessage(errorMessage)
                 .cancelReason(cancelReason)
+                .sessionContextSummary(sessionContextSummary)
                 .contextOriginalChars(contextWindowGuard.getLatestOriginalChars())
                 .contextCompressedChars(contextWindowGuard.getLatestCompressedChars())
                 .contextSummary(contextWindowGuard.getHistorySummary())

@@ -33,6 +33,7 @@ public class AiAgentRunDaoTest {
                 .sessionId("session-test")
                 .userMessage("hello")
                 .status("RUNNING")
+                .sessionContextSummary("previous session summary")
                 .createTime(LocalDateTime.now())
                 .updateTime(LocalDateTime.now())
                 .build();
@@ -41,6 +42,7 @@ public class AiAgentRunDaoTest {
         AiAgentRun loaded = aiAgentRunDao.queryByRunId(runId);
         Assert.assertNotNull(loaded);
         Assert.assertEquals("RUNNING", loaded.getStatus());
+        Assert.assertEquals("previous session summary", loaded.getSessionContextSummary());
         log.info("运行记录查询结果：{}", loaded);
     }
 }

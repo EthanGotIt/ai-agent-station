@@ -7,20 +7,20 @@ import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AgentExecutionContextVO;
 import cn.ethan.ai.domain.agent.model.valobj.AgentPlanStepVO;
 import cn.ethan.ai.domain.agent.model.valobj.ContextGuardResultVO;
-import cn.ethan.ai.domain.agent.model.valobj.RagEvidenceVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingDecisionVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiClientTypeEnumVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.AgentStepRunStatusEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.PlanStepTypeEnumVO;
+import cn.ethan.ai.domain.agent.service.execute.flow.AgentContextBoundaryService;
 import cn.ethan.ai.domain.agent.service.execute.flow.AgentContextWindowService;
+import cn.ethan.ai.domain.agent.service.execute.flow.AgentStepToolInjectionPolicy;
+import cn.ethan.ai.domain.agent.service.execute.flow.RagEvidenceAssembler;
 import cn.ethan.ai.domain.agent.service.execute.flow.plan.AgentPlanPromptFactory;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.ai.document.Document;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -42,6 +42,8 @@ public class Step4PlanExecuteNode extends AbstractExecuteSupport {
     @Resource
     private Step5QualitySupervisorNode step5QualitySupervisorNode;
 
+    private final RagEvidenceAssembler ragEvidenceAssembler = new RagEvidenceAssembler();
+
     @Override
     protected String doApply(ExecuteCommandEntity requestParameter, AgentExecutionContextVO executionContext) throws Exception {
         log.info("步骤4：按计划执行任务步骤");
@@ -51,11 +53,27 @@ public class Step4PlanExecuteNode extends AbstractExecuteSupport {
 
         AgentRunAggregate run = currentRun(executionContext);
         int stepIndex = 1;
-        for (AgentPlanStepVO step : run.getPlan().getSteps()) {
+        List<AgentPlanStepVO> planSteps = run.getPlan().getSteps();
+        for (int planIndex = 0; planIndex < planSteps.size(); planIndex++) {
+            AgentPlanStepVO step = planSteps.get(planIndex);
             if (stopIfCancelled(executionContext, "任务已取消，停止执行计划步骤。")) {
-                break;
+                markRemainingPlanSteps(
+                        executionContext,
+                        planSteps,
+                        planIndex,
+                        AgentStepRunStatusEnumVO.CANCELLED,
+                        "任务已取消，未执行该计划步骤。"
+                );
+                return "任务已取消";
             }
             if (run.getContextWindowGuard().shouldStopNewLlmCall()) {
+                markRemainingPlanSteps(
+                        executionContext,
+                        planSteps,
+                        planIndex,
+                        AgentStepRunStatusEnumVO.SKIPPED,
+                        "上下文预算达到终止阈值，跳过未执行计划步骤。"
+                );
                 sendStreamResult(executionContext, AgentExecuteResultEntity.createExecutionSubResult(
                         stepIndex,
                         "execution_quality",
@@ -71,8 +89,7 @@ public class Step4PlanExecuteNode extends AbstractExecuteSupport {
                     step.getStepId(),
                     step.getName(),
                     10 + stepIndex,
-                    step.getType(),
-                    step.getToolName()
+                    step.getType()
             );
             sendStreamResult(executionContext, AgentExecuteResultEntity.createExecutionSubResult(
                     stepIndex,
@@ -93,6 +110,10 @@ public class Step4PlanExecuteNode extends AbstractExecuteSupport {
 
             try {
                 ContextGuardResultVO contextGuardResult = agentContextWindowService.prepareStepOutputs(run);
+                AgentContextBoundaryService.attachRunSummary(
+                        executionContext.getContextBoundary(),
+                        contextGuardResult.getHistorySummary()
+                );
                 if (contextGuardResult.isCompressed()) {
                     sendStreamResult(executionContext, AgentExecuteResultEntity.createAnalysisSubResult(
                             stepIndex,
@@ -157,7 +178,13 @@ public class Step4PlanExecuteNode extends AbstractExecuteSupport {
         Map<String, String> promptStepOutputs = contextGuardResult == null
                 ? run.stepOutputs()
                 : contextGuardResult.getStepOutputs();
-        String prompt = promptFactory.buildStepExecutionPrompt(requestParameter, run.getPlan(), step, promptStepOutputs);
+        String prompt = promptFactory.buildStepExecutionPrompt(
+                requestParameter,
+                run.getPlan(),
+                step,
+                promptStepOutputs,
+                executionContext.getContextBoundary()
+        );
         return agentModelPort.callModelResult(
                 executionContext.getAiAgentClientFlowConfigVOMap(),
                 requestParameter,
@@ -167,25 +194,50 @@ public class Step4PlanExecuteNode extends AbstractExecuteSupport {
                 "LLM_CALL_STEP",
                 step.getStepId(),
                 stepIndex,
-                shouldEnableTools(step) ? executionContext.getToolRoutingDecision() : null,
+                AgentStepToolInjectionPolicy.shouldInjectExternalMcpTools(step, executionContext.getToolRoutingDecision())
+                        ? executionContext.getToolRoutingDecision()
+                        : null,
                 AiClientTypeEnumVO.EXECUTOR_CLIENT,
                 AiClientTypeEnumVO.PRECISION_EXECUTOR_CLIENT,
                 AiClientTypeEnumVO.DEFAULT
         );
     }
 
-    private boolean shouldEnableTools(AgentPlanStepVO step) {
-        return PlanStepTypeEnumVO.requiresTool(step.getType()) || StringUtils.isNotBlank(step.getToolName());
+    private void markRemainingPlanSteps(AgentExecutionContextVO executionContext,
+                                        List<AgentPlanStepVO> planSteps,
+                                        int fromIndex,
+                                        AgentStepRunStatusEnumVO status,
+                                        String reason) {
+        if (planSteps == null || planSteps.isEmpty()) {
+            return;
+        }
+        for (int index = fromIndex; index < planSteps.size(); index++) {
+            markPlannedStepTerminal(
+                    executionContext,
+                    planSteps.get(index),
+                    10 + index + 1,
+                    status,
+                    reason
+            );
+        }
+        syncRunState(executionContext);
     }
 
     private String buildStepRoutingMessage(AgentPlanStepVO step, ToolRoutingDecisionVO routingDecision) {
-        if (PlanStepTypeEnumVO.requiresTool(step.getType())) {
-            return "当前步骤使用工具：" + StringUtils.defaultIfBlank(step.getToolName(), "未指定");
+        if (PlanStepTypeEnumVO.RAG.name().equalsIgnoreCase(step.getType())) {
+            return "当前步骤使用 Agentic RAG：知识库检索、证据融合和可追踪回答，不注入外部 MCP 工具。";
+        }
+        if (PlanStepTypeEnumVO.SUPERVISION.name().equalsIgnoreCase(step.getType())
+                || PlanStepTypeEnumVO.SUMMARY.name().equalsIgnoreCase(step.getType())) {
+            return "当前步骤为内部监督或总结步骤，不注入外部 MCP 工具。";
         }
         if (routingDecision == null || !routingDecision.isEnabled()) {
             return "当前步骤直接使用模型执行。";
         }
-        return "当前步骤为 LLM 执行，保留本轮工具白名单以便需要时调用。";
+        if (PlanStepTypeEnumVO.TOOL.name().equalsIgnoreCase(step.getType())) {
+            return "当前步骤可使用本轮已筛选 MCP 工具，模型将在执行时自主决定是否调用。";
+        }
+        return "当前步骤为 LLM 执行，已注入本轮筛选后的 MCP 工具供模型按需调用。";
     }
 
     private Map<String, Object> buildStepRoutingPayload(AgentPlanStepVO step, Integer stepIndex, ToolRoutingDecisionVO routingDecision) {
@@ -194,7 +246,7 @@ public class Step4PlanExecuteNode extends AbstractExecuteSupport {
         payload.put("stepId", step.getStepId());
         payload.put("stepName", step.getName());
         payload.put("stepType", step.getType());
-        payload.put("toolName", step.getToolName());
+        payload.put("agenticRag", PlanStepTypeEnumVO.RAG.name().equalsIgnoreCase(step.getType()));
         payload.put("dependsOn", step.getDependsOn() == null ? Collections.emptyList() : step.getDependsOn());
         payload.put("allowedToolNames", routingDecision == null ? Collections.emptyList() : routingDecision.getAllowedToolNames());
         payload.put("routeReason", routingDecision == null ? "当前步骤直接执行" : routingDecision.getSummary());
@@ -222,108 +274,19 @@ public class Step4PlanExecuteNode extends AbstractExecuteSupport {
             return;
         }
 
-        List<RagEvidenceVO> evidences = simplifyEvidences(modelCallResult.getMetadata().get("qa_retrieved_documents"));
-        List<String> retrievalQueries = simplifyQueries(modelCallResult.getMetadata().get("qa_retrieval_queries"));
-        if (evidences.isEmpty() && retrievalQueries.isEmpty()) {
+        Map<String, Object> payload = ragEvidenceAssembler.buildPayload(step, stepIndex, modelCallResult.getMetadata());
+        if (payload.isEmpty()) {
             return;
         }
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("step", stepIndex);
-        payload.put("stepId", step.getStepId());
-        payload.put("stepName", step.getName());
-        payload.put("queries", retrievalQueries);
-        payload.put("evidences", evidences);
 
         sendStreamResult(executionContext, AgentExecuteResultEntity.createExecutionSubResult(
                 stepIndex,
                 "rag_evidence",
-                "本步骤关联 RAG 证据 " + evidences.size() + " 条。",
+                ragEvidenceAssembler.buildMessage(payload),
                 payload,
                 requestParameter.getSessionId(),
                 run.runId()
         ));
-    }
-
-    private List<RagEvidenceVO> simplifyEvidences(Object rawDocuments) {
-        if (!(rawDocuments instanceof List<?> documents) || documents.isEmpty()) {
-            return List.of();
-        }
-
-        List<RagEvidenceVO> result = new ArrayList<>();
-        int index = 1;
-        for (Object item : documents) {
-            if (!(item instanceof Document document)) {
-                continue;
-            }
-            Map<String, Object> metadata = document.getMetadata() == null ? Collections.emptyMap() : document.getMetadata();
-            result.add(RagEvidenceVO.builder()
-                    .evidenceId("evidence_" + index)
-                    .documentId(readMetadata(metadata, "doc_id", "document_id", "documentId"))
-                    .chunkId(readMetadata(metadata, "chunk_id", "chunkId"))
-                    .parentChunkId(readMetadata(metadata, "parent_chunk_id", "parentChunkId"))
-                    .sourceName(readMetadata(metadata, "source", "title", "file_name", "filename"))
-                    .sectionTitle(readMetadata(metadata, "section_title", "sectionTitle", "qa_parent_chunk_id"))
-                    .retrievalQuery(readMetadata(metadata, "qa_retrieval_query"))
-                    .rank(resolveInteger(metadata.get("qa_retrieval_rank"), index))
-                    .fusionRank(resolveInteger(metadata.get("qa_retrieval_rank"), index))
-                    .sourceType(readMetadata(metadata, "qa_retrieval_source"))
-                    .score(document.getScore())
-                    .contentPreview(clip(document.getText(), 260))
-                    .build());
-            index++;
-        }
-        return result;
-    }
-
-    private List<String> simplifyQueries(Object rawQueries) {
-        if (!(rawQueries instanceof List<?> queryList) || queryList.isEmpty()) {
-            return List.of();
-        }
-
-        List<String> queries = new ArrayList<>();
-        for (Object item : queryList) {
-            if (item == null) {
-                continue;
-            }
-            String query = item.toString().trim();
-            if (!query.isEmpty()) {
-                queries.add(query);
-            }
-        }
-        return queries;
-    }
-
-    private String readMetadata(Map<String, Object> metadata, String... keys) {
-        if (metadata == null || metadata.isEmpty()) {
-            return "";
-        }
-        for (String key : keys) {
-            Object value = metadata.get(key);
-            if (value != null && StringUtils.isNotBlank(value.toString())) {
-                return value.toString().trim();
-            }
-        }
-        return "";
-    }
-
-    private Integer resolveInteger(Object value, int defaultValue) {
-        if (value == null) {
-            return defaultValue;
-        }
-        try {
-            return Integer.parseInt(value.toString());
-        } catch (Exception ignore) {
-            return defaultValue;
-        }
-    }
-
-    private String clip(String text, int maxLength) {
-        if (StringUtils.isBlank(text)) {
-            return "";
-        }
-        String normalized = text.trim().replaceAll("\\s+", " ");
-        return normalized.length() <= maxLength ? normalized : normalized.substring(0, maxLength) + "...";
     }
 }
 

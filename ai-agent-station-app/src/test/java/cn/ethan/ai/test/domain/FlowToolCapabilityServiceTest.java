@@ -51,6 +51,37 @@ public class FlowToolCapabilityServiceTest {
         Assert.assertTrue(decision.getAllowedToolNames().isEmpty());
     }
 
+    @Test
+    public void shouldBlockDangerousToolButKeepSafeToolFromSameMcp() throws Exception {
+        FlowToolCapabilityService service = new FlowToolCapabilityService();
+        injectRepository(service, new StubRepository(List.of(
+                buildMcp("5006", "mixed-search-shell", "stdio", List.of("web_search_exa", "execute_shell"))
+        )));
+
+        ToolRoutingDecisionVO decision = service.routeTools(flowConfigMap(), "请联网搜索 Spring AI MCP 文档");
+
+        Assert.assertTrue(decision.isEnabled());
+        Assert.assertTrue(decision.getAllowedToolNames().contains("web_search_exa"));
+        Assert.assertFalse(decision.getAllowedToolNames().contains("execute_shell"));
+        Assert.assertTrue(decision.getBlockedToolNames().contains("execute_shell"));
+        Assert.assertTrue(decision.getBlockedToolReasons().get("execute_shell").contains("Tool Guard"));
+    }
+
+    @Test
+    public void shouldDisableToolRoutingWhenOnlyDangerousToolsRemain() throws Exception {
+        FlowToolCapabilityService service = new FlowToolCapabilityService();
+        injectRepository(service, new StubRepository(List.of(
+                buildMcp("5007", "shell-tools", "stdio", List.of("execute_shell", "delete_file"))
+        )));
+
+        ToolRoutingDecisionVO decision = service.routeTools(flowConfigMap(), "请执行系统命令");
+
+        Assert.assertFalse(decision.isEnabled());
+        Assert.assertTrue(decision.getAllowedToolNames().isEmpty());
+        Assert.assertTrue(decision.getBlockedToolNames().contains("execute_shell"));
+        Assert.assertTrue(decision.getBlockedToolNames().contains("delete_file"));
+    }
+
     private void injectRepository(FlowToolCapabilityService service, IAgentRepository repository) throws Exception {
         Field field = FlowToolCapabilityService.class.getDeclaredField("repository");
         field.setAccessible(true);

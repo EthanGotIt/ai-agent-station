@@ -210,11 +210,10 @@ Assert-EventPresent -Events $toolEvents -Value 'complete'
 $toolRun = $toolResult.RunDetail
 Assert-RunSucceeded -RunDetail $toolRun -Label '工具路由 smoke'
 
-$longSuffix = ('请同时保留章节级证据、融合排序、父块回查、Parent-Child、Small-to-Big、rag_evidence、context_guard 等上下文信息。' * 120)
 $ragResult = Invoke-AgentExecuteWithRetry -Label 'RAG smoke' -Payload @{
     aiAgentId = '1'
     sessionId = "smoke-rag-$timestamp"
-    message = "请仅基于已导入的 Markdown 知识完成回答，不要调用外部 MCP 搜索工具。请回答 Spring AI MCP Client 常见接入方式，并按结论、证据、落地建议输出。$longSuffix"
+    message = '请仅基于已导入的 Markdown 知识完成回答，不要调用外部 MCP 搜索工具。请回答 Spring AI MCP Client 常见接入方式，并按结论、证据、落地建议输出。'
     maxStep = 3
 }
 $ragEvents = $ragResult.Events
@@ -223,11 +222,40 @@ Assert-EventPresent -Events $ragEvents -Value 'complete'
 $ragRun = $ragResult.RunDetail
 Assert-RunSucceeded -RunDetail $ragRun -Label 'RAG smoke'
 
-$contextGuardEvent = $ragEvents | Where-Object { $_.subType -eq 'context_guard' }
-if (-not $contextGuardEvent) {
-    Write-Warning 'RAG smoke 未触发 context_guard，请考虑降低 AI_AGENT_CONTEXT_MAX_CHARS 或加长输入。'
-} else {
-    Write-Host 'RAG smoke 已触发 context_guard。'
+$memorySessionId = "smoke-memory-$timestamp"
+$memoryFirstResult = Invoke-AgentExecuteWithRetry -Label '记忆首轮 smoke' -Payload @{
+    aiAgentId = '1'
+    sessionId = $memorySessionId
+    message = '以后请使用中文简洁回答。请把当前项目的 Agent Runtime 主链路总结成 3 点。'
+    maxStep = 2
+}
+Assert-EventPresent -Events $memoryFirstResult.Events -Value 'context_boundary'
+Assert-EventPresent -Events $memoryFirstResult.Events -Value 'complete'
+Assert-RunSucceeded -RunDetail $memoryFirstResult.RunDetail -Label '记忆首轮 smoke'
+
+$memorySecondResult = Invoke-AgentExecuteWithRetry -Label '记忆续轮 smoke' -Payload @{
+    aiAgentId = '1'
+    sessionId = $memorySessionId
+    message = '继续补充记忆治理部分。'
+    maxStep = 2
+}
+Assert-EventPresent -Events $memorySecondResult.Events -Value 'context_boundary'
+Assert-EventPresent -Events $memorySecondResult.Events -Value 'complete'
+Assert-RunSucceeded -RunDetail $memorySecondResult.RunDetail -Label '记忆续轮 smoke'
+if ([string]::IsNullOrWhiteSpace($memorySecondResult.RunDetail.contextBoundary.sessionContextSummary)) {
+    throw '记忆续轮 smoke 未加载同一 session 的历史摘要。'
 }
 
-Write-Host '本地 smoke 验证完成：Flow / 工具路由 / RAG 证据链路均已通过。'
+$allEvents = @($flowEvents) + @($toolEvents) + @($ragEvents) + @($memoryFirstResult.Events) + @($memorySecondResult.Events)
+$contextGuardEvent = $allEvents | Where-Object {
+    $_ -and
+    ($_.PSObject.Properties.Name -contains 'subType') -and
+    $_.subType -eq 'context_guard'
+}
+if (-not $contextGuardEvent) {
+    Write-Warning '本轮 smoke 未触发 context_guard。该事件依赖实际模型输出长度，确定性行为由 AgentContextWindowServiceTest 覆盖。'
+} else {
+    Write-Host '本轮 smoke 已触发 context_guard。'
+}
+
+Write-Host '本地 smoke 验证完成：Flow / 工具路由 / RAG 证据 / session 短期记忆链路均已通过。'

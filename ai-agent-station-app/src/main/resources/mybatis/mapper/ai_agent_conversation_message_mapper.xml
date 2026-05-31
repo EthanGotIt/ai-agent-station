@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.ethan.ai.infrastructure.dao.IAiAgentConversationMessageDao">
+
+    <resultMap id="AiAgentConversationMessageMap" type="cn.ethan.ai.infrastructure.dao.po.AiAgentConversationMessage">
+        <id column="id" property="id"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="run_id" property="runId"/>
+        <result column="role" property="role"/>
+        <result column="content" property="content"/>
+        <result column="content_summary" property="contentSummary"/>
+        <result column="context_units" property="contextUnits"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="cn.ethan.ai.infrastructure.dao.po.AiAgentConversationMessage" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_agent_conversation_message (session_id, run_id, role, content, content_summary, context_units,
+                                                   create_time)
+        VALUES (#{sessionId}, #{runId}, #{role}, #{content}, #{contentSummary}, #{contextUnits},
+                #{createTime})
+    </insert>
+
+    <select id="queryRecentBySessionId" resultMap="AiAgentConversationMessageMap">
+        SELECT id,
+               session_id,
+               run_id,
+               role,
+               content,
+               content_summary,
+               context_units,
+               create_time
+        FROM (
+            SELECT id,
+                   session_id,
+                   run_id,
+                   role,
+                   content,
+                   content_summary,
+                   context_units,
+                   create_time
+            FROM ai_agent_conversation_message
+            WHERE session_id = #{sessionId}
+            ORDER BY id DESC
+            LIMIT #{limit}
+        ) recent_messages
+        ORDER BY id ASC
+    </select>
+
+</mapper>

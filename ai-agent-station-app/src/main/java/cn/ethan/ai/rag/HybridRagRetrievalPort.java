@@ -5,7 +5,6 @@ import cn.ethan.ai.domain.agent.adapter.port.IRagRetrievalPort;
 import cn.ethan.ai.domain.agent.service.armory.factory.element.RagRetrievalSupport;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.document.Document;

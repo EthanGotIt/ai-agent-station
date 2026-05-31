@@ -5,12 +5,14 @@ import cn.ethan.ai.domain.agent.model.valobj.AiAgentClientFlowConfigVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientToolMcpVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingDecisionVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingItemVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.ToolRiskLevelEnumVO;
 import jakarta.annotation.Resource;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -58,12 +60,23 @@ public class FlowToolCapabilityService {
             return ToolRoutingDecisionVO.disabled("当前任务偏生成或解释，本轮无需调用外部 MCP 工具。");
         }
 
-        List<ToolRoutingItemVO> candidates = mcpTools.stream()
+        List<ToolRoutingItemVO> routeItems = mcpTools.stream()
                 .map(this::toRouteItem)
+                .toList();
+        Set<String> blockedToolNames = collectBlockedToolNames(routeItems);
+        Map<String, String> blockedToolReasons = collectBlockedToolReasons(routeItems);
+
+        List<ToolRoutingItemVO> candidates = routeItems.stream()
                 .filter(item -> item.getToolNames() != null && !item.getToolNames().isEmpty())
                 .toList();
         if (candidates.isEmpty()) {
-            return ToolRoutingDecisionVO.disabled("MCP 工具缺少可路由的工具名，本轮仅使用模型能力。");
+            return ToolRoutingDecisionVO.disabled(
+                    blockedToolNames.isEmpty()
+                            ? "MCP 工具缺少可路由的工具名，本轮仅使用模型能力。"
+                            : "MCP 工具均被 Tool Guard 拦截或缺少可路由工具名，本轮仅使用模型能力。",
+                    blockedToolNames,
+                    blockedToolReasons
+            );
         }
 
         String normalizedMessage = normalize(userMessage);
@@ -89,7 +102,7 @@ public class FlowToolCapabilityService {
         }
 
         if (scoredItems.isEmpty()) {
-            return ToolRoutingDecisionVO.disabled("未匹配到合适的外部工具，本轮由模型直接完成。");
+            return ToolRoutingDecisionVO.disabled("未匹配到合适的外部工具，本轮由模型直接完成。", blockedToolNames, blockedToolReasons);
         }
 
         List<ToolRoutingItemVO> selectedItems = scoredItems.stream()
@@ -115,6 +128,8 @@ public class FlowToolCapabilityService {
                 .allowedToolNames(allowedToolNames)
                 .selectedMcpIds(selectedMcpIds)
                 .selectedTools(selectedItems)
+                .blockedToolNames(blockedToolNames)
+                .blockedToolReasons(blockedToolReasons)
                 .build();
     }
 
@@ -130,6 +145,12 @@ public class FlowToolCapabilityService {
                     .append(item.getMcpName())
                     .append("：")
                     .append(String.join(", ", item.getToolNames()));
+            if (StringUtils.isNotBlank(item.getRiskLevel())) {
+                builder.append("，风险等级=").append(item.getRiskLevel());
+            }
+            if (item.getBlockedToolNames() != null && !item.getBlockedToolNames().isEmpty()) {
+                builder.append("，已拦截=").append(String.join(", ", item.getBlockedToolNames()));
+            }
             if (StringUtils.isNotBlank(item.getSelectedReason())) {
                 builder.append("（").append(item.getSelectedReason()).append("）");
             }
@@ -165,16 +186,63 @@ public class FlowToolCapabilityService {
     }
 
     private ToolRoutingItemVO toRouteItem(AiClientToolMcpVO mcpTool) {
-        List<String> toolNames = normalizeToolNames(mcpTool.getToolNames());
-        List<String> routeTags = inferRouteTags(mcpTool.getMcpName(), toolNames);
+        List<String> rawToolNames = normalizeToolNames(mcpTool.getToolNames());
+        List<String> allowedToolNames = new ArrayList<>();
+        List<String> blockedToolNames = new ArrayList<>();
+        ToolRiskLevelEnumVO maxRiskLevel = ToolRiskLevelEnumVO.LOW;
+        for (String toolName : rawToolNames) {
+            ToolRiskLevelEnumVO riskLevel = ToolGuardPolicy.assessRisk(toolName);
+            maxRiskLevel = ToolGuardPolicy.max(maxRiskLevel, riskLevel);
+            if (ToolGuardPolicy.isBlocked(toolName)) {
+                blockedToolNames.add(toolName);
+            } else {
+                allowedToolNames.add(toolName);
+            }
+        }
+        List<String> routeTags = inferRouteTags(mcpTool.getMcpName(), rawToolNames);
         return ToolRoutingItemVO.builder()
                 .mcpId(mcpTool.getMcpId())
                 .mcpName(StringUtils.defaultIfBlank(mcpTool.getMcpName(), mcpTool.getMcpId()))
                 .transportType(mcpTool.getTransportType())
-                .toolNames(toolNames)
+                .toolNames(allowedToolNames)
                 .routeTags(routeTags)
+                .riskLevel(maxRiskLevel.name())
+                .blockedToolNames(blockedToolNames)
+                .guardReason(blockedToolNames.isEmpty()
+                        ? "Tool Guard 检查通过"
+                        : "Tool Guard 已拦截危险工具：" + String.join(", ", blockedToolNames))
                 .selectedReason(resolveDefaultReason(routeTags))
                 .build();
+    }
+
+    private Set<String> collectBlockedToolNames(List<ToolRoutingItemVO> routeItems) {
+        if (routeItems == null || routeItems.isEmpty()) {
+            return new LinkedHashSet<>();
+        }
+        return routeItems.stream()
+                .filter(Objects::nonNull)
+                .filter(item -> item.getBlockedToolNames() != null)
+                .flatMap(item -> item.getBlockedToolNames().stream())
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private Map<String, String> collectBlockedToolReasons(List<ToolRoutingItemVO> routeItems) {
+        Map<String, String> reasons = new LinkedHashMap<>();
+        if (routeItems == null || routeItems.isEmpty()) {
+            return reasons;
+        }
+        for (ToolRoutingItemVO item : routeItems) {
+            if (item == null || item.getBlockedToolNames() == null) {
+                continue;
+            }
+            for (String blockedToolName : item.getBlockedToolNames()) {
+                if (StringUtils.isNotBlank(blockedToolName)) {
+                    reasons.putIfAbsent(blockedToolName, ToolGuardPolicy.describe(blockedToolName));
+                }
+            }
+        }
+        return reasons;
     }
 
     private int scoreRouteItem(ToolRoutingItemVO item,
@@ -282,4 +350,3 @@ public class FlowToolCapabilityService {
     private record ScoredRouteItem(ToolRoutingItemVO item, int score) {
     }
 }
-

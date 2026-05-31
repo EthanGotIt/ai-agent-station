@@ -5,6 +5,7 @@ import cn.ethan.ai.domain.agent.model.entity.AgentExecuteResultEntity;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.ContextGuardResultVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiClientTypeEnumVO;
+import cn.ethan.ai.domain.agent.service.execute.flow.AgentContextBoundaryService;
 import cn.ethan.ai.domain.agent.service.execute.flow.AgentContextWindowService;
 import cn.ethan.ai.domain.agent.service.execute.flow.plan.AgentPlanPromptFactory;
 import cn.ethan.ai.domain.agent.model.valobj.AgentExecutionContextVO;
@@ -35,7 +36,7 @@ public class Step5QualitySupervisorNode extends AbstractExecuteSupport {
         if (stopIfCancelled(executionContext, "任务已取消，跳过质量监督。")) {
             return "任务已取消";
         }
-        long startTime = markStepRunning(executionContext, "flow_supervision", "质量监督", 200, "SYSTEM", null);
+        long startTime = markStepRunning(executionContext, "flow_supervision", "质量监督", 200, "SYSTEM");
 
         try {
             AgentRunAggregate run = currentRun(executionContext);
@@ -45,8 +46,17 @@ public class Step5QualitySupervisorNode extends AbstractExecuteSupport {
                         + " 个计划步骤。";
             } else {
                 ContextGuardResultVO contextGuardResult = agentContextWindowService.prepareStepOutputs(run);
+                AgentContextBoundaryService.attachRunSummary(
+                        executionContext.getContextBoundary(),
+                        contextGuardResult.getHistorySummary()
+                );
                 syncRunState(executionContext);
-                String prompt = promptFactory.buildSupervisionPrompt(requestParameter, run.getPlan(), contextGuardResult.getStepOutputs());
+                String prompt = promptFactory.buildSupervisionPrompt(
+                        requestParameter,
+                        run.getPlan(),
+                        contextGuardResult.getStepOutputs(),
+                        executionContext.getContextBoundary()
+                );
                 supervision = agentModelPort.callModel(
                         executionContext.getAiAgentClientFlowConfigVOMap(),
                         requestParameter,

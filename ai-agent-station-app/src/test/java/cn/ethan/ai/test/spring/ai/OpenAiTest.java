@@ -15,11 +15,8 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
-import org.springframework.ai.openai.OpenAiEmbeddingModel;
-import org.springframework.ai.openai.OpenAiEmbeddingOptions;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,7 +24,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.io.Resource;
 import org.springframework.util.FileCopyUtils;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.junit4.SpringRunner;
 import org.springframework.util.MimeType;
 import org.springframework.util.MimeTypeUtils;
@@ -78,7 +74,7 @@ public class OpenAiTest {
         ChatResponse response = openAiChatModel.call(new Prompt(
                 "1+1",
                 OpenAiChatOptions.builder()
-                        .model("qwen3.6-max-preview")
+                        .model("qwen3.7-max")
                         .build()));
 
         log.info("测试结果(call):{}", JSON.toJSONString(response));
@@ -97,7 +93,7 @@ public class OpenAiTest {
         ChatResponse response = openAiChatModel.call(new Prompt(
                 userMessage,
                 OpenAiChatOptions.builder()
-                        .model("qwen3.6-max-preview")
+                        .model("qwen3.7-max")
                         .build()));
 
         log.info("测试结果(images):{}", JSON.toJSONString(response));
@@ -110,7 +106,7 @@ public class OpenAiTest {
         Flux<ChatResponse> stream = openAiChatModel.stream(new Prompt(
                 "1+1",
                 OpenAiChatOptions.builder()
-                        .model("qwen3.6-max-preview")
+                        .model("qwen3.7-max")
                         .build()));
 
         stream.subscribe(
@@ -182,7 +178,7 @@ public class OpenAiTest {
         ChatResponse chatResponse = openAiChatModel.call(new Prompt(
                 messages,
                 OpenAiChatOptions.builder()
-                        .model("qwen3.6-max-preview")
+                        .model("qwen3.7-max")
                         .build()));
 
         log.info("测试结果:{}", JSON.toJSONString(chatResponse));

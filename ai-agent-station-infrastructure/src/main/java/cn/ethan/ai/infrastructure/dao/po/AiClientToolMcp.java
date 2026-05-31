@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 import java.time.LocalDateTime;
 
@@ -36,10 +37,11 @@ public class AiClientToolMcp {
     /**
      * 传输配置(stdio/streamable_http)
      */
+    @ToString.Exclude
     private String transportConfig;
 
     /**
-     * 请求超时时间(分钟)
+     * 请求及初始化超时时间(分钟)
      */
     private Integer requestTimeout;
 

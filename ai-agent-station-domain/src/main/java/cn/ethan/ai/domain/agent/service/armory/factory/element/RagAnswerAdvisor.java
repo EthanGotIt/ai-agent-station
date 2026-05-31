@@ -29,6 +29,15 @@ public class RagAnswerAdvisor implements BaseAdvisor {
 
     private static final int MAX_RETRIEVAL_QUERY_CHARS = 240;
 
+    private static final List<String> RETRIEVAL_HINTS = List.of(
+            "知识库", "已导入", "基于", "证据", "文档", "资料", "检索", "召回",
+            "rag", "mcp", "spring ai", "ai agent station", "接入", "配置", "流程", "架构", "机制"
+    );
+
+    private static final List<String> NON_RETRIEVAL_HINTS = List.of(
+            "润色", "改写", "翻译", "生成文案", "写一段", "写一篇"
+    );
+
     private final IRagRetrievalPort ragRetrievalPort;
     private final SearchRequest searchRequest;
     private final AiClientAdvisorVO.RagAnswer ragAnswer;
@@ -60,9 +69,13 @@ public class RagAnswerAdvisor implements BaseAdvisor {
     public @NonNull ChatClientRequest before(@NonNull ChatClientRequest chatClientRequest, @NonNull AdvisorChain advisorChain) {
         HashMap<String, Object> context = new HashMap<>(chatClientRequest.context());
         String userText = chatClientRequest.prompt().getUserMessage().getText();
+        boolean ragPlanStep = isRagPlanStep(userText);
         String retrievalBaseQuery = resolveRetrievalBaseQuery(userText);
         if (!StringUtils.hasText(retrievalBaseQuery)) {
             return buildPassthroughRequest(chatClientRequest, context, "当前提示词属于内部编排上下文，跳过知识检索。");
+        }
+        if (!ragPlanStep && !shouldUseRetrieval(retrievalBaseQuery)) {
+            return buildPassthroughRequest(chatClientRequest, context, "非 RAG 请求，跳过知识检索。");
         }
 
         List<String> retrievalQueries = this.ragAnswer.isQueryRewriteEnabled()
@@ -107,6 +120,8 @@ public class RagAnswerAdvisor implements BaseAdvisor {
 
         context.put("qa_retrieved_documents", documents);
         context.put("qa_retrieval_queries", retrievalQueries);
+        context.put("qa_retrieval_pipeline", List.of("query_rewrite", "hybrid_recall", "rrf_fusion", "small_to_big", "deduplicate"));
+        context.put("qa_retrieval_no_evidence", documents.isEmpty());
         context.put("question_answer_context", this.ragRetrievalSupport.formatEvidenceContext(documents));
 
         Map<String, Object> advisedUserParams = new HashMap<>(context);
@@ -135,6 +150,7 @@ public class RagAnswerAdvisor implements BaseAdvisor {
         ChatResponse.Builder chatResponseBuilder = ChatResponse.builder().from(chatClientResponse.chatResponse());
         chatResponseBuilder.metadata("qa_retrieved_documents", chatClientResponse.context().get("qa_retrieved_documents"));
         chatResponseBuilder.metadata("qa_retrieval_queries", chatClientResponse.context().get("qa_retrieval_queries"));
+        chatResponseBuilder.metadata("qa_retrieval_pipeline", chatClientResponse.context().get("qa_retrieval_pipeline"));
         ChatResponse chatResponse = chatResponseBuilder.build();
 
         return ChatClientResponse.builder()
@@ -192,6 +208,25 @@ public class RagAnswerAdvisor implements BaseAdvisor {
         return containsAny(text, "当前步骤：", "已完成步骤输出：", "执行计划：", "质量监督结果：", "请返回：");
     }
 
+    private boolean isRagPlanStep(String text) {
+        if (!StringUtils.hasText(text)) {
+            return false;
+        }
+        return text.contains("\"type\":\"RAG\"") || text.contains("\"type\": \"RAG\"");
+    }
+
+    private boolean shouldUseRetrieval(String retrievalBaseQuery) {
+        if (!StringUtils.hasText(retrievalBaseQuery)) {
+            return false;
+        }
+        String normalized = retrievalBaseQuery.trim().toLowerCase();
+        if (containsAny(normalized, NON_RETRIEVAL_HINTS.toArray(String[]::new))
+                && !containsAny(normalized, RETRIEVAL_HINTS.toArray(String[]::new))) {
+            return false;
+        }
+        return containsAny(normalized, RETRIEVAL_HINTS.toArray(String[]::new));
+    }
+
     private boolean containsAny(String text, String... candidates) {
         for (String candidate : candidates) {
             if (text.contains(candidate)) {
@@ -229,6 +264,8 @@ public class RagAnswerAdvisor implements BaseAdvisor {
         Map<String, Object> advisedUserParams = new HashMap<>(originalContext);
         advisedUserParams.put("qa_retrieved_documents", List.of());
         advisedUserParams.put("qa_retrieval_queries", List.of());
+        advisedUserParams.put("qa_retrieval_pipeline", List.of());
+        advisedUserParams.put("qa_retrieval_no_evidence", true);
         advisedUserParams.put("question_answer_context", "");
         advisedUserParams.put("qa_retrieval_skipped_reason", reason);
         return ChatClientRequest.builder()

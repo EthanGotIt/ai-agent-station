@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 import java.util.List;
 import java.util.Map;
@@ -35,15 +36,16 @@ public class AiClientToolMcpVO {
     /**
      * 传输配置(stdio/streamable_http)
      */
+    @ToString.Exclude
     private String transportConfig;
 
     /**
-     * 请求超时时间(分钟)
+     * 请求及初始化超时时间(分钟)
      */
     private Integer requestTimeout;
 
     /**
-     * 工具名称白名单，供 Flow Plan 校验使用
+     * MCP Server 暴露的工具名称，用于运行时路由和授权注入
      */
     private List<String> toolNames;
 
@@ -67,6 +69,7 @@ public class AiClientToolMcpVO {
 
         private List<String> args;
 
+        @ToString.Exclude
         private Map<String, String> env;
 
         private List<String> toolNames;
@@ -89,6 +92,7 @@ public class AiClientToolMcpVO {
          * 自定义请求头，用于认证等场景
          * 例如: {"Authorization": "Bearer token123"}
          */
+        @ToString.Exclude
         private Map<String, String> headers;
 
         /**

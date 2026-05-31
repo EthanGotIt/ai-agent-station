@@ -2,6 +2,7 @@ package cn.ethan.ai.infrastructure.adapter.repository;
 
 import cn.ethan.ai.domain.agent.adapter.repository.IAgentRunRepository;
 import cn.ethan.ai.domain.agent.model.valobj.AgentRunDetailVO;
+import cn.ethan.ai.domain.agent.model.valobj.AgentRunLifecycleVO;
 import cn.ethan.ai.domain.agent.model.valobj.AgentRunRecordVO;
 import cn.ethan.ai.domain.agent.model.valobj.AgentStepRunRecordVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AgentRunStatusEnumVO;
@@ -41,6 +42,7 @@ public class AgentRunRepository implements IAgentRunRepository {
                 .finalSummary(record.getFinalSummary())
                 .errorMessage(record.getErrorMessage())
                 .cancelReason(record.getCancelReason())
+                .sessionContextSummary(record.getSessionContextSummary())
                 .contextOriginalChars(record.getContextOriginalChars())
                 .contextCompressedChars(record.getContextCompressedChars())
                 .contextSummary(record.getContextSummary())
@@ -59,6 +61,7 @@ public class AgentRunRepository implements IAgentRunRepository {
                 .finalSummary(record.getFinalSummary())
                 .errorMessage(record.getErrorMessage())
                 .cancelReason(record.getCancelReason())
+                .sessionContextSummary(record.getSessionContextSummary())
                 .contextOriginalChars(record.getContextOriginalChars())
                 .contextCompressedChars(record.getContextCompressedChars())
                 .contextSummary(record.getContextSummary())
@@ -76,7 +79,6 @@ public class AgentRunRepository implements IAgentRunRepository {
                 .stepName(record.getStepName())
                 .stepOrder(record.getStepOrder())
                 .stepType(record.getStepType())
-                .toolName(record.getToolName())
                 .status(nameOf(record.getStatus()))
                 .outputSummary(record.getOutputSummary())
                 .errorMessage(record.getErrorMessage())
@@ -112,15 +114,18 @@ public class AgentRunRepository implements IAgentRunRepository {
             return null;
         }
         List<AiAgentStepRun> stepRuns = aiAgentStepRunDao.queryByRunId(runId);
+        List<AgentStepRunRecordVO> stepVos = toStepVos(stepRuns);
+        AgentRunStatusEnumVO status = run.getStatus() == null ? AgentRunStatusEnumVO.INIT : AgentRunStatusEnumVO.valueOf(run.getStatus());
         return AgentRunDetailVO.builder()
                 .runId(run.getRunId())
                 .agentId(run.getAgentId())
                 .sessionId(run.getSessionId())
                 .userMessage(run.getUserMessage())
-                .status(run.getStatus() == null ? AgentRunStatusEnumVO.INIT : AgentRunStatusEnumVO.valueOf(run.getStatus()))
+                .status(status)
                 .finalSummary(run.getFinalSummary())
                 .errorMessage(run.getErrorMessage())
                 .cancelReason(run.getCancelReason())
+                .sessionContextSummary(run.getSessionContextSummary())
                 .contextOriginalChars(run.getContextOriginalChars())
                 .contextCompressedChars(run.getContextCompressedChars())
                 .contextSummary(run.getContextSummary())
@@ -128,7 +133,16 @@ public class AgentRunRepository implements IAgentRunRepository {
                 .endTime(run.getEndTime())
                 .createTime(run.getCreateTime())
                 .updateTime(run.getUpdateTime())
-                .steps(toStepVos(stepRuns))
+                .lifecycle(AgentRunLifecycleVO.from(
+                        status,
+                        run.getErrorMessage(),
+                        run.getCancelReason(),
+                        run.getContextOriginalChars(),
+                        run.getContextCompressedChars(),
+                        run.getContextSummary(),
+                        stepVos
+                ))
+                .steps(stepVos)
                 .build();
     }
 
@@ -154,7 +168,6 @@ public class AgentRunRepository implements IAgentRunRepository {
                         .stepName(item.getStepName())
                         .stepOrder(item.getStepOrder())
                         .stepType(item.getStepType())
-                        .toolName(item.getToolName())
                         .status(item.getStatus() == null ? AgentStepRunStatusEnumVO.PENDING : AgentStepRunStatusEnumVO.valueOf(item.getStatus()))
                         .outputSummary(item.getOutputSummary())
                         .errorMessage(item.getErrorMessage())

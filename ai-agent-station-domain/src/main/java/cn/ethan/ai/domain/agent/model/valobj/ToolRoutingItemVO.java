@@ -26,6 +26,12 @@ public class ToolRoutingItemVO {
 
     private List<String> routeTags;
 
+    private String riskLevel;
+
+    private List<String> blockedToolNames;
+
+    private String guardReason;
+
     private String selectedReason;
 }
 

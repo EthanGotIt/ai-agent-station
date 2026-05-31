@@ -5,7 +5,9 @@ import cn.ethan.ai.domain.agent.model.entity.AgentExecuteResultEntity;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.ContextGuardResultVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiClientTypeEnumVO;
+import cn.ethan.ai.domain.agent.service.execute.flow.AgentContextBoundaryService;
 import cn.ethan.ai.domain.agent.service.execute.flow.AgentContextWindowService;
+import cn.ethan.ai.domain.agent.service.execute.flow.AgentConversationMemoryService;
 import cn.ethan.ai.domain.agent.service.execute.flow.plan.AgentPlanPromptFactory;
 import cn.ethan.ai.domain.agent.model.valobj.AgentExecutionContextVO;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
@@ -26,13 +28,16 @@ public class Step6SummaryNode extends AbstractExecuteSupport {
     @Resource
     private AgentContextWindowService agentContextWindowService;
 
+    @Resource
+    private AgentConversationMemoryService agentConversationMemoryService;
+
     @Override
     protected String doApply(ExecuteCommandEntity requestParameter, AgentExecutionContextVO executionContext) {
         log.info("步骤6：生成最终总结");
         if (executionContext.isCancelled()) {
             return "任务已取消";
         }
-        long startTime = markStepRunning(executionContext, "flow_summary", "最终总结", 201, "SYSTEM", null);
+        long startTime = markStepRunning(executionContext, "flow_summary", "最终总结", 201, "SYSTEM");
 
         try {
             AgentRunAggregate run = currentRun(executionContext);
@@ -52,8 +57,18 @@ public class Step6SummaryNode extends AbstractExecuteSupport {
                 log.info("步骤6：上下文已接近上限，跳过最终总结模型调用，使用本地总结输出。runId：{}", run.runId());
             } else {
                 ContextGuardResultVO contextGuardResult = agentContextWindowService.prepareStepOutputs(run);
+                AgentContextBoundaryService.attachRunSummary(
+                        executionContext.getContextBoundary(),
+                        contextGuardResult.getHistorySummary()
+                );
                 syncRunState(executionContext);
-                String prompt = promptFactory.buildSummaryPrompt(requestParameter, run.getPlan(), contextGuardResult.getStepOutputs(), supervision);
+                String prompt = promptFactory.buildSummaryPrompt(
+                        requestParameter,
+                        run.getPlan(),
+                        contextGuardResult.getStepOutputs(),
+                        supervision,
+                        executionContext.getContextBoundary()
+                );
                 summary = agentModelPort.callModel(
                         executionContext.getAiAgentClientFlowConfigVOMap(),
                         requestParameter,
@@ -72,6 +87,11 @@ public class Step6SummaryNode extends AbstractExecuteSupport {
 
             run.markSuccess(summary);
             syncRunState(executionContext);
+            agentConversationMemoryService.recordAssistantMessage(
+                    requestParameter.getSessionId(),
+                    run.runId(),
+                    summary
+            );
             sendStreamResult(executionContext, AgentExecuteResultEntity.createSummaryResult(
                     summary,
                     requestParameter.getSessionId(),

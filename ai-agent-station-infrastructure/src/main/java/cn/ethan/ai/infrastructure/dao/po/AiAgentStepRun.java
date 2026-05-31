@@ -28,8 +28,6 @@ public class AiAgentStepRun {
 
     private String stepType;
 
-    private String toolName;
-
     private String status;
 
     private String outputSummary;

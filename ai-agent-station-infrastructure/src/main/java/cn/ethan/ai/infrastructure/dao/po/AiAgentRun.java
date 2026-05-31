@@ -34,6 +34,8 @@ public class AiAgentRun {
 
     private String cancelReason;
 
+    private String sessionContextSummary;
+
     private Integer contextOriginalChars;
 
     private Integer contextCompressedChars;

@@ -12,6 +12,7 @@ import cn.ethan.ai.domain.agent.model.valobj.ContextWindowGuardVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingDecisionVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiClientTypeEnumVO;
+import cn.ethan.ai.domain.agent.service.execute.flow.ToolGuardPolicy;
 import io.modelcontextprotocol.client.McpSyncClient;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -45,12 +46,12 @@ import java.util.Set;
 @Slf4j
 public class AgentModelPort implements IAgentModelPort {
 
-    public static final String CHAT_MEMORY_CONVERSATION_ID_KEY = "chat_memory_conversation_id";
-    public static final String CHAT_MEMORY_RETRIEVE_SIZE_KEY = "chat_memory_response_size";
     private static final List<String> RAG_CONTEXT_METADATA_KEYS = List.of(
             "qa_retrieved_documents",
             "qa_retrieval_queries",
             "question_answer_context",
+            "qa_retrieval_pipeline",
+            "qa_retrieval_no_evidence",
             "qa_retrieval_skipped_reason"
     );
 
@@ -123,14 +124,13 @@ public class AgentModelPort implements IAgentModelPort {
                         .build();
             }
 
-            List<Advisor> advisors = resolveAdvisors(selectedConfig);
+            List<Advisor> advisors = AgentRuntimeAdvisorPolicy.filterInternalRuntimeAdvisors(resolveAdvisors(selectedConfig));
             List<ToolCallback> callbacks = resolveToolCallbacks(toolRoutingDecision);
             ChatClient runtimeChatClient = buildRuntimeChatClient(baseChatClient, selectedConfig, advisors, callbacks, eventType);
 
             contextWindowGuard.record(prompt);
             ChatClient.ChatClientRequestSpec requestSpec = runtimeChatClient.prompt(prompt)
                     .system(s -> s.param("current_date", LocalDate.now().toString()));
-            requestSpec = applyAdvisorRuntimeParams(requestSpec, command, advisors);
             logCallAdvisorChain(requestSpec, eventType, selectedConfig.getClientId());
             ChatClient.CallResponseSpec responseSpec = requestSpec.call();
             ChatClientResponse chatClientResponse = responseSpec.chatClientResponse();
@@ -178,22 +178,6 @@ public class AgentModelPort implements IAgentModelPort {
         }
 
         return builder.build();
-    }
-
-    private ChatClient.ChatClientRequestSpec applyAdvisorRuntimeParams(ChatClient.ChatClientRequestSpec requestSpec,
-                                                                       ExecuteCommandEntity command,
-                                                                       List<Advisor> advisors) {
-        if (requestSpec == null || command == null || advisors == null || advisors.isEmpty()) {
-            return requestSpec;
-        }
-
-        if (StringUtils.isBlank(command.getSessionId())) {
-            return requestSpec;
-        }
-
-        return requestSpec.advisors(advisorSpec -> advisorSpec
-                .param(CHAT_MEMORY_CONVERSATION_ID_KEY, command.getSessionId())
-                .param(CHAT_MEMORY_RETRIEVE_SIZE_KEY, 100));
     }
 
     private AiAgentClientFlowConfigVO firstAvailableConfig(Map<String, AiAgentClientFlowConfigVO> flowConfigMap,
@@ -304,7 +288,8 @@ public class AgentModelPort implements IAgentModelPort {
             }
         }
         if (allowedNames.isEmpty()) {
-            return List.of(rawCallbacks);
+            log.warn("运行时工具路由已启用但授权工具集合为空，本轮不注入任何工具。");
+            return Collections.emptyList();
         }
 
         List<ToolCallback> filtered = new ArrayList<>();
@@ -313,9 +298,14 @@ public class AgentModelPort implements IAgentModelPort {
                 continue;
             }
             String toolName = callback.getToolDefinition().name().trim().toLowerCase(Locale.ROOT);
-            if (allowedNames.contains(toolName)) {
-                filtered.add(callback);
+            if (!allowedNames.contains(toolName)) {
+                continue;
             }
+            if (ToolGuardPolicy.isBlocked(toolName)) {
+                log.warn("Tool Guard 拦截危险工具注入，toolName：{}", toolName);
+                continue;
+            }
+            filtered.add(new GuardedToolCallback(callback, allowedNames));
         }
         return filtered;
     }

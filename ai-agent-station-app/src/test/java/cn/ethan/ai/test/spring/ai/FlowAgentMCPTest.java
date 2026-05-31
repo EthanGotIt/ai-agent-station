@@ -1,12 +1,11 @@
 package cn.ethan.ai.test.spring.ai;
 
 import cn.ethan.ai.test.support.ManualTestGate;
+import cn.ethan.ai.test.support.McpTestSupport;
 import com.alibaba.fastjson.JSON;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.ServerParameters;
-import io.modelcontextprotocol.client.transport.StdioClientTransport;
-import io.modelcontextprotocol.json.McpJsonMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -45,7 +44,7 @@ public class FlowAgentMCPTest {
                         .embeddingsPath("/embeddings")
                         .build())
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3.6-max-preview")
+                        .model("qwen3.7-max")
                         .toolCallbacks(SyncMcpToolCallbackProvider.builder()
                                 .mcpClients(stdioMcpClient_Grafana())
                                 .build()
@@ -67,7 +66,7 @@ public class FlowAgentMCPTest {
                 .env(env)
                 .build();
 
-        var mcpClient = McpClient.sync(new StdioClientTransport(stdioParams, McpJsonMapper.getDefault()))
+        var mcpClient = McpClient.sync(McpTestSupport.stdioTransport(stdioParams))
                 .requestTimeout(Duration.ofSeconds(100)).build();
 
         var init = mcpClient.initialize();
@@ -97,7 +96,7 @@ public class FlowAgentMCPTest {
                 .env(env)
                 .build();
 
-        var mcpClient = McpClient.sync(new StdioClientTransport(stdioParams, McpJsonMapper.getDefault()))
+        var mcpClient = McpClient.sync(McpTestSupport.stdioTransport(stdioParams))
                 .requestTimeout(Duration.ofSeconds(100)).build();
 
         var init = mcpClient.initialize();

@@ -1,14 +1,13 @@
 package cn.ethan.ai.test.spring.ai;
 
 import cn.ethan.ai.test.support.ManualTestGate;
+import cn.ethan.ai.test.support.McpTestSupport;
 import cn.ethan.ai.test.spring.ai.advisors.RagAnswerAdvisor;
 import com.alibaba.fastjson.JSON;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.client.transport.ServerParameters;
-import io.modelcontextprotocol.client.transport.StdioClientTransport;
-import io.modelcontextprotocol.json.McpJsonMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Before;
@@ -16,7 +15,7 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.PromptChatMemoryAdvisor;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -71,7 +70,7 @@ public class AiAgentTest {
         chatModel = OpenAiChatModel.builder()
                 .openAiApi(openAiApi)
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3.6-max-preview")
+                        .model("qwen3.7-max")
                         .toolCallbacks(SyncMcpToolCallbackProvider.builder()
                                 .mcpClients(stdioMcpClient())
                                 .build()
@@ -96,7 +95,7 @@ public class AiAgentTest {
                         .build()
                         .getToolCallbacks())
                 .defaultAdvisors(
-                        PromptChatMemoryAdvisor.builder(
+                        MessageChatMemoryAdvisor.builder(
                                 MessageWindowChatMemory.builder()
                                         .maxMessages(100)
                                         .build()
@@ -215,7 +214,7 @@ public class AiAgentTest {
                         请基于以上模板，优化并扩展以下prompt，确保内容专业、完整且结构清晰，注意不要携带任何引导词或解释，不要使用代码块包围。
                         """)
                 .defaultAdvisors(
-                        PromptChatMemoryAdvisor.builder(
+                        MessageChatMemoryAdvisor.builder(
                                 MessageWindowChatMemory.builder()
                                         .maxMessages(100)
                                         .build()
@@ -226,7 +225,7 @@ public class AiAgentTest {
                                 .build())
                 )
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3.6-plus")
+                        .model("qwen3.7-max")
                         .build())
                 .build();
 
@@ -257,7 +256,7 @@ public class AiAgentTest {
                         .mcpClients(streamableHttpMcpClient01(), streamableHttpMcpClient02())
                         .build())
                 .defaultAdvisors(
-                        PromptChatMemoryAdvisor.builder(
+                        MessageChatMemoryAdvisor.builder(
                                 MessageWindowChatMemory.builder()
                                         .maxMessages(100)
                                         .build()
@@ -265,7 +264,7 @@ public class AiAgentTest {
                         new SimpleLoggerAdvisor()
                 )
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3.6-plus")
+                        .model("qwen3.7-max")
                         .build())
                 .build();
 
@@ -286,7 +285,7 @@ public class AiAgentTest {
                 .args("-y", "@modelcontextprotocol/server-filesystem", "C:/Users/23260/Desktop", "D:/FileSystemMcp")
                 .build();
 
-        var mcpClient = McpClient.sync(new StdioClientTransport(stdioParams, McpJsonMapper.getDefault()))
+        var mcpClient = McpClient.sync(McpTestSupport.stdioTransport(stdioParams))
                 .requestTimeout(Duration.ofSeconds(10)).build();
 
         var init = mcpClient.initialize();

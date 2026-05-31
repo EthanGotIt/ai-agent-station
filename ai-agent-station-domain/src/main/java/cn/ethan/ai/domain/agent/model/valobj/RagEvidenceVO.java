@@ -20,7 +20,13 @@ public class RagEvidenceVO {
 
     private String chunkId;
 
+    private String hitChunkId;
+
     private String parentChunkId;
+
+    private String parentKey;
+
+    private Boolean parentExpanded;
 
     private String sourceName;
 

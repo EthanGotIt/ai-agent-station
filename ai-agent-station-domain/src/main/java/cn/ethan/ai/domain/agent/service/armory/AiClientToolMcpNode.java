@@ -7,12 +7,13 @@ import cn.ethan.ai.domain.agent.model.valobj.AiClientToolMcpVO;
 import cn.ethan.ai.domain.agent.model.valobj.ArmoryAssemblyContextVO;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import com.alibaba.fastjson.JSON;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.client.transport.StdioClientTransport;
-import io.modelcontextprotocol.json.McpJsonMapper;
+import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -31,6 +32,8 @@ import java.util.Map;
 @Slf4j
 @Service
 public class AiClientToolMcpNode extends AbstractArmorySupport {
+
+    private static final ObjectMapper MCP_OBJECT_MAPPER = new ObjectMapper();
 
     @Resource
     private AiClientModelNode aiClientModelNode;
@@ -90,14 +93,17 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
         switch (transportType) {
             case "stdio" -> {
                 AiClientToolMcpVO.TransportConfigStdio transportConfigStdio = aiClientToolMcpVO.getTransportConfigStdio();
+                Duration timeout = resolveTimeout(aiClientToolMcpVO);
 
                 var stdioParams = ServerParameters.builder(transportConfigStdio.getCommand())
                         .args(transportConfigStdio.getArgs())
                         .env(transportConfigStdio.getEnv())
                         .build();
 
-                var mcpClient = McpClient.sync(new StdioClientTransport(stdioParams, McpJsonMapper.getDefault()))
-                        .requestTimeout(resolveRequestTimeout(aiClientToolMcpVO)).build();
+                var mcpClient = McpClient.sync(new StdioClientTransport(stdioParams, new JacksonMcpJsonMapper(MCP_OBJECT_MAPPER)))
+                        .requestTimeout(timeout)
+                        .initializationTimeout(timeout)
+                        .build();
                 mcpClient.initialize();
 
                 log.info("Stdio MCP 客户端初始化完成，mcpId：{}，mcpName：{}",
@@ -106,6 +112,7 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
             }
             case "streamable_http" -> {
                 AiClientToolMcpVO.TransportConfigStreamableHttp transportConfig = aiClientToolMcpVO.getTransportConfigStreamableHttp();
+                Duration timeout = resolveTimeout(aiClientToolMcpVO);
 
                 if (transportConfig == null || StringUtils.isBlank(transportConfig.getBaseUri())) {
                     throw new RuntimeException("Streamable HTTP MCP 配置缺少 baseUri，mcpId：" + aiClientToolMcpVO.getMcpId());
@@ -125,7 +132,8 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
                         .build();
 
                 McpSyncClient mcpSyncClient = McpClient.sync(streamableHttpTransport)
-                        .requestTimeout(resolveRequestTimeout(aiClientToolMcpVO))
+                        .requestTimeout(timeout)
+                        .initializationTimeout(timeout)
                         .build();
                 mcpSyncClient.initialize();
 
@@ -138,7 +146,7 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
         throw new RuntimeException("不支持的 MCP 传输协议：" + transportType);
     }
 
-    private Duration resolveRequestTimeout(AiClientToolMcpVO aiClientToolMcpVO) {
+    private Duration resolveTimeout(AiClientToolMcpVO aiClientToolMcpVO) {
         Integer requestTimeout = aiClientToolMcpVO.getRequestTimeout();
         if (requestTimeout == null || requestTimeout <= 0) {
             return Duration.ofMinutes(3);

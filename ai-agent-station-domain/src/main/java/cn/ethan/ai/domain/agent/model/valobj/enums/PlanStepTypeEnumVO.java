@@ -8,6 +8,7 @@ import java.util.Arrays;
 public enum PlanStepTypeEnumVO {
 
     LLM,
+    RAG,
     TOOL,
     SUPERVISION,
     SUMMARY;

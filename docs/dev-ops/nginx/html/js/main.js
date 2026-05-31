@@ -352,7 +352,6 @@ function renderPlanContent(content) {
                                 <div class="plan-step-title">${escapeHtml(item.name || item.stepId || '未命名步骤')}</div>
                                 <div class="plan-step-meta">
                                     <span>${escapeHtml(item.type || 'LLM')}</span>
-                                    ${item.toolName ? `<span>工具：${escapeHtml(item.toolName)}</span>` : ''}
                                     ${item.dependsOn && item.dependsOn.length ? `<span>依赖：${escapeHtml(item.dependsOn.join(', '))}</span>` : ''}
                                 </div>
                                 ${item.successCriteria ? `<div class="plan-step-criteria">${escapeHtml(item.successCriteria)}</div>` : ''}
@@ -379,7 +378,7 @@ function renderToolSummaryContent(content) {
         .filter(Boolean);
     return `
         <div class="tool-summary">
-            <div class="tool-summary-title">可用工具白名单</div>
+            <div class="tool-summary-title">本轮授权工具</div>
             <div class="tool-chip-list">
                 ${tools.map(tool => `<span class="tool-chip">${escapeHtml(tool)}</span>`).join('')}
             </div>
@@ -416,21 +415,20 @@ function renderToolRoutingContent(content, payload) {
                 ` : `<div class="route-panel-muted">${escapeHtml(disabledReason || '本轮未选择任何 MCP 工具')}</div>`}
                 ${allowedToolNames.length ? `
                     <div class="route-panel-footnote">
-                        白名单：${escapeHtml(allowedToolNames.join(', '))}
+                        本轮授权工具：${escapeHtml(allowedToolNames.join(', '))}
                     </div>
                 ` : ''}
             </div>
         `;
     }
 
-    const toolName = payload.toolName || 'LLM_DEFAULT';
     const allowedToolNames = Array.isArray(payload.allowedToolNames) ? payload.allowedToolNames : [];
     return `
         <div class="route-panel">
             <div class="route-panel-summary">${escapeHtml(content || '步骤工具路由')}</div>
             <div class="route-card compact">
                 <div class="route-card-title">${escapeHtml(payload.stepName || '当前步骤')}</div>
-                <div class="route-card-reason">执行方式：${escapeHtml(payload.stepType || 'LLM')} / ${escapeHtml(toolName)}</div>
+                <div class="route-card-reason">执行方式：${escapeHtml(payload.stepType || 'LLM')}</div>
                 ${payload.routeReason ? `<div class="route-panel-footnote">路由说明：${escapeHtml(payload.routeReason)}</div>` : ''}
                 ${allowedToolNames.length ? `
                     <div class="route-chip-list">

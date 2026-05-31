@@ -10,9 +10,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Agent 执行计划校验器
@@ -21,6 +19,10 @@ import java.util.stream.Collectors;
 public class AgentPlanValidator {
 
     public AgentPlanValidationResultVO validate(AgentPlanVO plan, Integer maxStep, Set<String> allowedTools) {
+        return validate(plan, maxStep);
+    }
+
+    public AgentPlanValidationResultVO validate(AgentPlanVO plan, Integer maxStep) {
         List<String> errors = new ArrayList<>();
         if (plan == null) {
             errors.add("执行计划为空");
@@ -35,11 +37,6 @@ public class AgentPlanValidator {
         if (plan.getSteps().size() > effectiveMaxStep) {
             errors.add("执行计划步骤数超过 maxStep " + effectiveMaxStep);
         }
-
-        Set<String> normalizedTools = allowedTools == null ? Set.of() : allowedTools.stream()
-                .filter(StringUtils::isNotBlank)
-                .map(item -> item.trim().toLowerCase(Locale.ROOT))
-                .collect(Collectors.toSet());
 
         Set<String> stepIds = new HashSet<>();
         for (AgentPlanStepVO step : plan.getSteps()) {
@@ -57,16 +54,6 @@ public class AgentPlanValidator {
             }
             if (!PlanStepTypeEnumVO.contains(step.getType())) {
                 errors.add("步骤 " + step.getStepId() + " 的 type 不支持：" + step.getType());
-            }
-            if (PlanStepTypeEnumVO.requiresTool(step.getType())) {
-                if (StringUtils.isBlank(step.getToolName())) {
-                    errors.add("工具步骤 " + step.getStepId() + " 的 toolName 不能为空");
-                } else if (normalizedTools.isEmpty()) {
-                    errors.add("当前轮次未开放任何工具，步骤 " + step.getStepId() + " 不允许使用 TOOL");
-                } else if (!normalizedTools.isEmpty()
-                        && !normalizedTools.contains(step.getToolName().trim().toLowerCase(Locale.ROOT))) {
-                    errors.add("工具 " + step.getToolName() + " 不在白名单内");
-                }
             }
         }
 

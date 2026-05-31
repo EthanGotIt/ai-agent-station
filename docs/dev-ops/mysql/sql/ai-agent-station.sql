@@ -30,7 +30,7 @@ CREATE TABLE `ai_agent` (
 LOCK TABLES `ai_agent` WRITE;
 INSERT INTO `ai_agent` (`id`, `agent_id`, `agent_name`, `description`, `channel`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '1', 'Flow Plan 编排体', '结构化计划、工具白名单、顺序执行、质量监督与总结输出', 'agent', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, '1', 'Flow Plan 编排体', '结构化计划、运行时工具注入、顺序执行、质量监督与总结输出', 'agent', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 对话客户端配置
@@ -50,7 +50,7 @@ CREATE TABLE `ai_client` (
 LOCK TABLES `ai_client` WRITE;
 INSERT INTO `ai_client` (`id`, `client_id`, `client_name`, `description`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '2101', '工具能力摘要客户端', '读取当前智能体可用 MCP 工具，并为计划生成阶段提供工具能力上下文', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (1, '2101', '工具能力摘要客户端', '读取当前智能体可用 MCP 工具，并为执行阶段提供运行时工具策略上下文', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
     (2, '2102', '结构化计划客户端', '根据用户目标生成 JSON Plan，要求步骤、依赖和成功标准可校验', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
     (3, '2103', '计划执行客户端', '按已校验的 Plan 执行步骤，并承担质量监督和最终总结', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
@@ -179,9 +179,9 @@ CREATE TABLE `ai_client_system_prompt` (
 LOCK TABLES `ai_client_system_prompt` WRITE;
 INSERT INTO `ai_client_system_prompt` (`id`, `prompt_id`, `prompt_name`, `prompt_content`, `description`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '6001', '工具能力摘要提示词', '你是 Flow Plan 编排体的工具能力整理助手。你的职责是理解当前可用 MCP 工具的名称、用途和限制，为后续计划生成提供简洁、准确的工具上下文。', '工具能力摘要', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (2, '6002', '结构化计划生成提示词', '你是 Flow Plan 编排体的计划生成器。请根据用户目标和可用工具生成结构化 JSON Plan。计划必须目标明确、步骤可执行、依赖关系清晰，并且每个步骤都包含成功标准。除 JSON 外不要输出额外解释。', 'JSON Plan 生成', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (3, '6003', '步骤执行与总结提示词', '你是 Flow Plan 编排体的执行助手。请严格依据已校验的 Plan 执行当前步骤；需要工具时优先使用已授权 MCP 工具，不需要工具时直接完成内容生成。输出要聚焦结果、过程可追踪，质量检查和最终总结要直接回应用户原始目标。', '步骤执行、质量监督、最终总结', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, '6001', '工具能力摘要提示词', '你是 Flow Plan 编排体的工具能力整理助手。你的职责是理解当前可用 MCP 工具的用途和限制，为执行阶段的运行时工具注入提供简洁、准确的策略上下文。', '工具能力摘要', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (2, '6002', '结构化计划生成提示词', '你是 Flow Plan 编排体的计划生成器。请根据用户目标生成结构化 JSON Plan，计划只描述目标、步骤、依赖关系和成功标准，不输出 toolName 字段，也不提前绑定具体 MCP 工具。除 JSON 外不要输出额外解释。', 'JSON Plan 生成', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (3, '6003', '步骤执行与总结提示词', '你是 Flow Plan 编排体的执行助手。请严格依据已校验的 Plan 执行当前步骤；可用工具会由系统在执行阶段按权限注入，工具失败时不得编造结果，应说明失败并给出替代方案。输出要聚焦结果、过程可追踪，质量检查和最终总结要直接回应用户原始目标。', '步骤执行、质量监督、最终总结', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- MCP 工具配置
@@ -192,7 +192,7 @@ CREATE TABLE `ai_client_tool_mcp` (
     `mcp_name` varchar(50) NOT NULL COMMENT 'MCP 工具名称',
     `transport_type` varchar(20) NOT NULL COMMENT '传输协议：stdio 或 streamable_http',
     `transport_config` varchar(1024) DEFAULT NULL COMMENT '传输配置 JSON',
-    `request_timeout` int DEFAULT '3' COMMENT '请求超时时间，单位分钟',
+    `request_timeout` int DEFAULT '3' COMMENT '请求及初始化超时时间，单位分钟',
     `status` tinyint(1) DEFAULT '1' COMMENT '状态：0禁用，1启用',
     `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -230,7 +230,7 @@ CREATE TABLE `ai_client_model` (
 LOCK TABLES `ai_client_model` WRITE;
 INSERT INTO `ai_client_model` (`id`, `model_id`, `api_id`, `model_name`, `model_type`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '2001', '1001', 'qwen3.6-max-preview', 'openai', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, '2001', '1001', 'qwen3.7-max', 'openai', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 定时任务表
@@ -261,6 +261,7 @@ CREATE TABLE `ai_agent_run` (
     `final_summary` mediumtext COMMENT '最终总结',
     `error_message` varchar(1024) DEFAULT NULL COMMENT '错误信息',
     `cancel_reason` varchar(255) DEFAULT NULL COMMENT '取消原因',
+    `session_context_summary` mediumtext COMMENT '执行前注入的 session 短期记忆快照',
     `context_original_chars` int DEFAULT '0' COMMENT '压缩前上下文长度',
     `context_compressed_chars` int DEFAULT '0' COMMENT '压缩后上下文长度',
     `context_summary` mediumtext COMMENT '历史摘要',
@@ -274,6 +275,22 @@ CREATE TABLE `ai_agent_run` (
     KEY `idx_run_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='智能体运行主表';
 
+-- Session 级短期记忆消息表
+DROP TABLE IF EXISTS `ai_agent_conversation_message`;
+CREATE TABLE `ai_agent_conversation_message` (
+    `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `session_id` varchar(128) NOT NULL COMMENT '会话ID',
+    `run_id` varchar(64) NOT NULL COMMENT '运行ID',
+    `role` varchar(32) NOT NULL COMMENT '消息角色：USER、ASSISTANT',
+    `content` mediumtext NOT NULL COMMENT '用户可见消息原文',
+    `content_summary` text COMMENT '轻量摘要，用于超预算压缩',
+    `context_units` int DEFAULT '0' COMMENT '轻量上下文预算估算值',
+    `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_conversation_session_id` (`session_id`, `id`),
+    UNIQUE KEY `uk_conversation_run_role` (`run_id`, `role`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Session级持久化短期记忆消息表';
+
 -- 智能体运行步骤表
 DROP TABLE IF EXISTS `ai_agent_step_run`;
 CREATE TABLE `ai_agent_step_run` (
@@ -283,7 +300,6 @@ CREATE TABLE `ai_agent_step_run` (
     `step_name` varchar(255) DEFAULT NULL COMMENT '步骤名称',
     `step_order` int DEFAULT '0' COMMENT '步骤序号',
     `step_type` varchar(32) DEFAULT NULL COMMENT '步骤类型',
-    `tool_name` varchar(128) DEFAULT NULL COMMENT '工具名称',
     `status` varchar(32) NOT NULL COMMENT '步骤状态',
     `output_summary` mediumtext COMMENT '步骤摘要',
     `error_message` varchar(1024) DEFAULT NULL COMMENT '步骤错误',
@@ -316,8 +332,8 @@ CREATE TABLE `ai_agent_flow_config` (
 LOCK TABLES `ai_agent_flow_config` WRITE;
 INSERT INTO `ai_agent_flow_config` (`id`, `agent_id`, `client_id`, `client_name`, `client_type`, `sequence`, `step_prompt`, `status`, `create_time`)
 VALUES
-    (1, '1', '2101', '工具能力摘要', 'TOOL_MCP_CLIENT', 1, '从客户端关联模型加载可用 MCP 工具，生成工具白名单上下文。', 1, '2025-09-01 00:00:00'),
-    (2, '1', '2102', '结构化计划生成', 'PLANNING_CLIENT', 2, '根据用户目标和工具白名单生成 JSON Plan。', 1, '2025-09-01 00:00:00'),
+    (1, '1', '2101', '工具能力摘要', 'TOOL_MCP_CLIENT', 1, '从客户端关联模型加载可用 MCP 工具，生成执行阶段工具策略上下文。', 1, '2025-09-01 00:00:00'),
+    (2, '1', '2102', '结构化计划生成', 'PLANNING_CLIENT', 2, '根据用户目标生成 JSON Plan，计划阶段不输出 toolName，也不提前绑定具体 MCP 工具。', 1, '2025-09-01 00:00:00'),
     (3, '1', '2103', '步骤执行', 'EXECUTOR_CLIENT', 3, '按已校验的 Plan 顺序执行每个步骤。', 1, '2025-09-01 00:00:00'),
     (4, '1', '2103', '质量监督', 'QUALITY_SUPERVISOR_CLIENT', 4, '检查步骤结果是否满足用户目标和成功标准。', 1, '2025-09-01 00:00:00'),
     (5, '1', '2103', '总结输出', 'RESPONSE_ASSISTANT', 5, '汇总计划、执行记录和监督结果，生成最终回答。', 1, '2025-09-01 00:00:00');

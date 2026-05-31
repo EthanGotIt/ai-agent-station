@@ -52,6 +52,8 @@ public class AgentExecutionContextVO extends cn.ethan.wrench.design.framework.tr
 
     private ToolRoutingDecisionVO toolRoutingDecision;
 
+    private AgentContextBoundaryVO contextBoundary;
+
     private String supervisionResult;
 
     private boolean planValid;

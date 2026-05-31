@@ -1,13 +1,11 @@
 package cn.ethan.ai.test.spring.ai;
 
 import cn.ethan.ai.test.support.ManualTestGate;
+import cn.ethan.ai.test.support.McpTestSupport;
 import com.alibaba.fastjson.JSON;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.ServerParameters;
-import io.modelcontextprotocol.client.transport.StdioClientTransport;
-import io.modelcontextprotocol.json.McpJsonMapper;
-import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -38,9 +36,6 @@ public class AiAgentMCPESTest {
 
     private ChatClient chatClient;
 
-    public static final String CHAT_MEMORY_CONVERSATION_ID_KEY = "chat_memory_conversation_id";
-    public static final String CHAT_MEMORY_RETRIEVE_SIZE_KEY = "chat_memory_response_size";
-
     @BeforeClass
     public static void beforeClass() {
         ManualTestGate.requireRealAi("AiAgentMCPESTest");
@@ -57,7 +52,7 @@ public class AiAgentMCPESTest {
         chatModel = OpenAiChatModel.builder()
                 .openAiApi(openAiApi)
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .model("qwen3.6-max-preview")
+                        .model("qwen3.7-max")
                         .toolCallbacks(SyncMcpToolCallbackProvider.builder()
                                 .mcpClients(stdioMcpClientElasticsearch())
                                 .build()
@@ -123,7 +118,7 @@ public class AiAgentMCPESTest {
                 .env(env)
                 .build();
 
-        var mcpClient = McpClient.sync(new StdioClientTransport(stdioParams, McpJsonMapper.getDefault()))
+        var mcpClient = McpClient.sync(McpTestSupport.stdioTransport(stdioParams))
                 .requestTimeout(Duration.ofSeconds(100)).build();
 
         var init = mcpClient.initialize();

@@ -31,20 +31,23 @@ public class Step3PlanValidateNode extends AbstractExecuteSupport {
         if (stopIfCancelled(executionContext, "任务已取消，停止校验执行计划。")) {
             return "任务已取消";
         }
-        long startTime = markStepRunning(executionContext, "flow_plan_validate", "执行计划校验", 3, "SYSTEM", null);
+        long startTime = markStepRunning(executionContext, "flow_plan_validate", "执行计划校验", 3, "SYSTEM");
 
         try {
             AgentRunAggregate run = currentRun(executionContext);
             AgentPlanValidationResultVO validationResult = agentPlanValidator.validate(
                     run.getPlan(),
-                    executionContext.getMaxStep(),
-                    executionContext.getAllowedTools()
+                    executionContext.getMaxStep()
             );
             executionContext.setPlanValid(validationResult.isValid());
 
             if (!validationResult.isValid()) {
+                String errorMessage = "执行计划校验失败：" + validationResult.formatErrors();
+                run.markFailed(errorMessage);
+                syncRunState(executionContext);
                 markStepFailed(executionContext, "flow_plan_validate", validationResult.formatErrors(), startTime);
-                sendErrorResult(executionContext, "执行计划校验失败：" + validationResult.formatErrors());
+                sendErrorResult(executionContext, errorMessage);
+                sendCompleteResult(executionContext);
                 return "执行计划校验失败";
             }
 

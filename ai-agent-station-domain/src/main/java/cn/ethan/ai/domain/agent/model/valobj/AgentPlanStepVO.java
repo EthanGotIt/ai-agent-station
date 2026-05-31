@@ -25,8 +25,6 @@ public class AgentPlanStepVO {
 
     private String type;
 
-    private String toolName;
-
     @Builder.Default
     private Map<String, Object> input = new LinkedHashMap<>();
 

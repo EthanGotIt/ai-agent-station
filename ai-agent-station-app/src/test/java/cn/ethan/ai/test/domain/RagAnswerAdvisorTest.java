@@ -116,6 +116,55 @@ public class RagAnswerAdvisorTest {
         Assert.assertEquals(request.prompt().getUserMessage().getText(), advisedRequest.prompt().getUserMessage().getText());
     }
 
+    @Test
+    public void beforeShouldSkipSimpleNonRagRequest() {
+        RecordingRetrievalPort retrievalPort = new RecordingRetrievalPort();
+        RagAnswerAdvisor advisor = new RagAnswerAdvisor(
+                retrievalPort,
+                SearchRequest.builder().topK(2).build(),
+                AiClientAdvisorVO.RagAnswer.builder().queryRewriteEnabled(true).build()
+        );
+
+        ChatClientRequest request = ChatClientRequest.builder()
+                .prompt(Prompt.builder().messages(new UserMessage("帮我润色这段项目描述，让它更适合简历")).build())
+                .context(Map.of("traceId", "skip-non-rag"))
+                .build();
+
+        ChatClientRequest advisedRequest = advisor.before(request, new AdvisorChain() {
+        });
+
+        Assert.assertTrue(retrievalPort.queries.isEmpty());
+        Assert.assertTrue(advisedRequest.context().get("qa_retrieval_skipped_reason").toString().contains("非 RAG 请求"));
+        Assert.assertEquals(request.prompt().getUserMessage().getText(), advisedRequest.prompt().getUserMessage().getText());
+    }
+
+    @Test
+    public void beforeShouldExposeNoEvidenceWhenRecallIsEmpty() {
+        EmptyRetrievalPort retrievalPort = new EmptyRetrievalPort();
+        RagAnswerAdvisor advisor = new RagAnswerAdvisor(
+                retrievalPort,
+                SearchRequest.builder().topK(2).build(),
+                AiClientAdvisorVO.RagAnswer.builder()
+                        .topK(2)
+                        .routeTopK(2)
+                        .queryRewriteEnabled(false)
+                        .build()
+        );
+
+        ChatClientRequest request = ChatClientRequest.builder()
+                .prompt(Prompt.builder().messages(new UserMessage("请基于知识库回答一个不存在的内部流程")).build())
+                .context(Map.of("traceId", "empty-rag"))
+                .build();
+
+        ChatClientRequest advisedRequest = advisor.before(request, new AdvisorChain() {
+        });
+
+        Assert.assertEquals(1, retrievalPort.queries.size());
+        Assert.assertTrue(advisedRequest.context().get("qa_retrieved_documents") instanceof List<?> list && list.isEmpty());
+        Assert.assertEquals(Boolean.TRUE, advisedRequest.context().get("qa_retrieval_no_evidence"));
+        Assert.assertEquals(request.prompt().getUserMessage().getText(), advisedRequest.prompt().getUserMessage().getText());
+    }
+
     private static class RecordingRetrievalPort implements IRagRetrievalPort {
 
         private final List<String> queries = new ArrayList<>();
@@ -129,6 +178,17 @@ public class RagAnswerAdvisorTest {
                     .metadata(Map.of("doc_id", "spring-ai", "chunk_id", String.valueOf(this.queries.size())))
                     .score(1.0D - this.queries.size() * 0.1D)
                     .build());
+        }
+    }
+
+    private static class EmptyRetrievalPort implements IRagRetrievalPort {
+
+        private final List<String> queries = new ArrayList<>();
+
+        @Override
+        public List<Document> retrieve(SearchRequest request, Map<String, Object> context) {
+            this.queries.add(request.getQuery());
+            return List.of();
         }
     }
 

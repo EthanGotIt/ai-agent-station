@@ -2,16 +2,22 @@ package cn.ethan.ai.trigger.http;
 
 import cn.ethan.ai.api.IAiAgentService;
 import cn.ethan.ai.api.dto.AgentRunCancelResponseDTO;
+import cn.ethan.ai.api.dto.AgentContextBoundaryResponseDTO;
 import cn.ethan.ai.api.dto.AgentRunDetailResponseDTO;
+import cn.ethan.ai.api.dto.AgentRunLifecycleResponseDTO;
 import cn.ethan.ai.api.dto.AgentStepRunResponseDTO;
 import cn.ethan.ai.api.dto.AgentExecuteRequestDTO;
 import cn.ethan.ai.domain.agent.model.entity.AgentExecuteResultEntity;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AgentRunDetailVO;
+import cn.ethan.ai.domain.agent.model.valobj.AgentRunLifecycleVO;
 import cn.ethan.ai.domain.agent.model.valobj.AgentStepRunRecordVO;
+import cn.ethan.ai.domain.agent.model.valobj.AgentContextBoundaryVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.AgentStepRunStatusEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.StreamTransportTypeEnumVO;
 import cn.ethan.ai.domain.agent.service.IAgentDispatchService;
 import cn.ethan.ai.domain.agent.service.IAgentRunService;
+import cn.ethan.ai.domain.agent.service.execute.flow.AgentContextBoundaryService;
 import cn.ethan.ai.domain.agent.service.execute.flow.AgentExecutionException;
 import cn.ethan.ai.trigger.http.adapter.ResponseBodyEmitterStreamPort;
 import com.alibaba.fastjson.JSON;
@@ -44,6 +50,9 @@ public class AiAgentController implements IAiAgentService {
 
     @Resource
     private IAgentRunService agentRunService;
+
+    @Resource
+    private AgentContextBoundaryService agentContextBoundaryService;
 
     @Override
     @RequestMapping(value = "execute", method = RequestMethod.POST)
@@ -103,6 +112,8 @@ public class AiAgentController implements IAiAgentService {
                 .endTime(detail.getEndTime())
                 .createTime(detail.getCreateTime())
                 .updateTime(detail.getUpdateTime())
+                .lifecycle(toLifecycleDto(detail.getLifecycle()))
+                .contextBoundary(toContextBoundaryDto(buildPersistedContextBoundary(detail)))
                 .steps(detail.getSteps() == null ? Collections.emptyList() : detail.getSteps().stream().map(this::toStepDto).toList())
                 .build();
     }
@@ -159,13 +170,71 @@ public class AiAgentController implements IAiAgentService {
                 .stepName(step.getStepName())
                 .stepOrder(step.getStepOrder())
                 .stepType(step.getStepType())
-                .toolName(step.getToolName())
                 .status(step.getStatus() == null ? null : step.getStatus().name())
                 .outputSummary(step.getOutputSummary())
                 .errorMessage(step.getErrorMessage())
+                .terminalReason(resolveStepTerminalReason(step))
                 .costMillis(step.getCostMillis())
                 .startTime(step.getStartTime())
                 .endTime(step.getEndTime())
                 .build();
+    }
+
+    private AgentRunLifecycleResponseDTO toLifecycleDto(AgentRunLifecycleVO lifecycle) {
+        if (lifecycle == null) {
+            return null;
+        }
+        return AgentRunLifecycleResponseDTO.builder()
+                .runtimePhase(lifecycle.getRuntimePhase())
+                .currentStepId(lifecycle.getCurrentStepId())
+                .terminalReason(lifecycle.getTerminalReason())
+                .trackedStepCount(lifecycle.getTrackedStepCount())
+                .completedStepCount(lifecycle.getCompletedStepCount())
+                .failedStepCount(lifecycle.getFailedStepCount())
+                .skippedStepCount(lifecycle.getSkippedStepCount())
+                .cancelledStepCount(lifecycle.getCancelledStepCount())
+                .contextCompacted(lifecycle.getContextCompacted())
+                .build();
+    }
+
+    private AgentContextBoundaryResponseDTO toContextBoundaryDto(AgentContextBoundaryVO boundary) {
+        if (boundary == null) {
+            return null;
+        }
+        return AgentContextBoundaryResponseDTO.builder()
+                .sessionId(boundary.getSessionId())
+                .projectRuleScope(boundary.getProjectRuleScope())
+                .userPreferenceScope(boundary.getUserPreferenceScope())
+                .conversationScope(boundary.getConversationScope())
+                .projectRules(boundary.getProjectRules())
+                .userPreferences(boundary.getUserPreferences())
+                .sessionContextSummary(boundary.getSessionContextSummary())
+                .runContextSummary(boundary.getRunContextSummary())
+                .longTermMemoryEnabled(boundary.isLongTermMemoryEnabled())
+                .build();
+    }
+
+    private AgentContextBoundaryVO buildPersistedContextBoundary(AgentRunDetailVO detail) {
+        AgentContextBoundaryVO boundary = agentContextBoundaryService.buildBoundary(
+                detail.getSessionId(),
+                detail.getUserMessage(),
+                detail.getSessionContextSummary()
+        );
+        AgentContextBoundaryService.attachRunSummary(boundary, detail.getContextSummary());
+        return boundary;
+    }
+
+    private String resolveStepTerminalReason(AgentStepRunRecordVO step) {
+        if (step == null || step.getStatus() == null) {
+            return "";
+        }
+        if (AgentStepRunStatusEnumVO.FAILED == step.getStatus()) {
+            return StringUtils.defaultString(step.getErrorMessage());
+        }
+        if (AgentStepRunStatusEnumVO.SKIPPED == step.getStatus()
+                || AgentStepRunStatusEnumVO.CANCELLED == step.getStatus()) {
+            return StringUtils.defaultIfBlank(step.getOutputSummary(), step.getErrorMessage());
+        }
+        return "";
     }
 }

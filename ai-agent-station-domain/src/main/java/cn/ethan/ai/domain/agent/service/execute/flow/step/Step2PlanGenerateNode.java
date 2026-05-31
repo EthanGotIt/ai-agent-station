@@ -39,7 +39,7 @@ public class Step2PlanGenerateNode extends AbstractExecuteSupport {
         if (stopIfCancelled(executionContext, "任务已取消，停止生成执行计划。")) {
             return "任务已取消";
         }
-        long startTime = markStepRunning(executionContext, "flow_plan_generate", "结构化计划生成", 2, "SYSTEM", null);
+        long startTime = markStepRunning(executionContext, "flow_plan_generate", "结构化计划生成", 2, "SYSTEM");
 
         try {
             AgentRunAggregate run = currentRun(executionContext);
@@ -54,7 +54,11 @@ public class Step2PlanGenerateNode extends AbstractExecuteSupport {
                 return router(requestParameter, executionContext);
             }
 
-            String planningPrompt = promptFactory.buildPlanningPrompt(requestParameter, executionContext.getToolCapabilitySummary());
+            String planningPrompt = promptFactory.buildPlanningPrompt(
+                    requestParameter,
+                    executionContext.getToolCapabilitySummary(),
+                    executionContext.getContextBoundary()
+            );
             String planText = agentModelPort.callModel(
                     executionContext.getAiAgentClientFlowConfigVOMap(),
                     requestParameter,
@@ -115,7 +119,6 @@ public class Step2PlanGenerateNode extends AbstractExecuteSupport {
                 .stepId("step_1")
                 .name("执行用户请求")
                 .type(PlanStepTypeEnumVO.LLM.name())
-                .toolName("")
                 .input(Map.of("message", requestParameter.getMessage()))
                 .dependsOn(List.of())
                 .successCriteria("能够回答用户的原始问题")

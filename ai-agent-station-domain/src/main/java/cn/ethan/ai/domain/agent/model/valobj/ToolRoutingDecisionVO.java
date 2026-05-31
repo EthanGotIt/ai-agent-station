@@ -6,8 +6,10 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -32,10 +34,27 @@ public class ToolRoutingDecisionVO {
     @Builder.Default
     private List<ToolRoutingItemVO> selectedTools = new ArrayList<>();
 
+    @Builder.Default
+    private Set<String> blockedToolNames = new LinkedHashSet<>();
+
+    @Builder.Default
+    private Map<String, String> blockedToolReasons = new LinkedHashMap<>();
+
     public static ToolRoutingDecisionVO disabled(String summary) {
         return ToolRoutingDecisionVO.builder()
                 .enabled(false)
                 .summary(summary)
+                .build();
+    }
+
+    public static ToolRoutingDecisionVO disabled(String summary,
+                                                 Set<String> blockedToolNames,
+                                                 Map<String, String> blockedToolReasons) {
+        return ToolRoutingDecisionVO.builder()
+                .enabled(false)
+                .summary(summary)
+                .blockedToolNames(blockedToolNames == null ? new LinkedHashSet<>() : blockedToolNames)
+                .blockedToolReasons(blockedToolReasons == null ? new LinkedHashMap<>() : blockedToolReasons)
                 .build();
     }
 

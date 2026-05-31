@@ -29,8 +29,22 @@ public class AgentContextWindowService {
 
         ContextWindowGuardVO guard = run.getContextWindowGuard();
         Map<String, String> rawOutputs = run.stepOutputs();
-        int originalChars = calculateChars(rawOutputs);
+        int originalChars = calculateContextUnits(rawOutputs, guard);
         if (!guard.shouldCompactHistory(originalChars)) {
+            if (guard.isHistoryCompacted() && StringUtils.isNotBlank(guard.getHistorySummary())) {
+                Map<String, String> compactedOutputs = new LinkedHashMap<>();
+                compactedOutputs.put("history_summary", guard.getHistorySummary());
+                appendRecentOutputs(rawOutputs, compactedOutputs);
+                int compressedChars = calculateContextUnits(compactedOutputs, guard);
+                guard.updateHistorySnapshot(originalChars, compressedChars, guard.getHistorySummary());
+                return ContextGuardResultVO.builder()
+                        .stepOutputs(compactedOutputs)
+                        .compressed(true)
+                        .originalChars(originalChars)
+                        .compressedChars(compressedChars)
+                        .historySummary(guard.getHistorySummary())
+                        .build();
+            }
             guard.updateHistorySnapshot(originalChars, originalChars, "");
             return ContextGuardResultVO.builder()
                     .stepOutputs(rawOutputs)
@@ -46,7 +60,7 @@ public class AgentContextWindowService {
         compactedOutputs.put("history_summary", historySummary);
         appendRecentOutputs(rawOutputs, compactedOutputs);
 
-        int compressedChars = calculateChars(compactedOutputs);
+        int compressedChars = calculateContextUnits(compactedOutputs, guard);
         guard.markHistoryCompacted();
         guard.updateHistorySnapshot(originalChars, compressedChars, historySummary);
         return ContextGuardResultVO.builder()
@@ -86,11 +100,11 @@ public class AgentContextWindowService {
         return summary.length() <= maxChars ? summary : summary.substring(0, maxChars) + "...";
     }
 
-    private int calculateChars(Map<String, String> stepOutputs) {
+    private int calculateContextUnits(Map<String, String> stepOutputs, ContextWindowGuardVO guard) {
         int total = 0;
         for (Map.Entry<String, String> entry : stepOutputs.entrySet()) {
-            total += StringUtils.length(entry.getKey());
-            total += StringUtils.length(entry.getValue());
+            total += guard.estimate(entry.getKey());
+            total += guard.estimate(entry.getValue());
         }
         return total;
     }

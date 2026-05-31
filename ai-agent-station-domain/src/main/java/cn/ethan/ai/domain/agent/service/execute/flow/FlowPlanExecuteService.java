@@ -5,6 +5,7 @@ import cn.ethan.ai.domain.agent.adapter.repository.IAgentRunRepository;
 import cn.ethan.ai.domain.agent.model.aggregate.AgentRunAggregate;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AgentExecutionContextVO;
+import cn.ethan.ai.domain.agent.model.valobj.SessionContextSnapshotVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.StreamTransportTypeEnumVO;
 import cn.ethan.ai.domain.agent.service.execute.flow.step.RootNode;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
@@ -28,6 +29,12 @@ public class FlowPlanExecuteService {
     private AgentContextPolicyService agentContextPolicyService;
 
     @Resource
+    private AgentContextBoundaryService agentContextBoundaryService;
+
+    @Resource
+    private AgentConversationMemoryService agentConversationMemoryService;
+
+    @Resource
     private IAgentRunRepository agentRunRepository;
 
     public void execute(ExecuteCommandEntity executeCommandEntity, IAgentStreamPort streamPort) throws Exception {
@@ -39,9 +46,22 @@ public class FlowPlanExecuteService {
         executionContext.setStreamProtocol(StreamTransportTypeEnumVO.fromCode(executeCommandEntity.getStreamProtocol()));
         executionContext.setStreamPort(streamPort);
         executionContext.bindSessionId(executeCommandEntity.getSessionId());
+        SessionContextSnapshotVO sessionContextSnapshot = agentConversationMemoryService.loadSessionContext(
+                executeCommandEntity.getSessionId()
+        );
+        executionContext.setContextBoundary(agentContextBoundaryService.buildBoundary(
+                executeCommandEntity,
+                sessionContextSnapshot.getContextSummary()
+        ));
         AgentRunAggregate run = AgentRunAggregate.create(executeCommandEntity, agentContextPolicyService.buildPolicy());
+        run.bindSessionContextSummary(sessionContextSnapshot.getContextSummary());
         executionContext.setAgentRunAggregate(run);
         agentRunRepository.createRun(run.toRecord());
+        agentConversationMemoryService.recordUserMessage(
+                executeCommandEntity.getSessionId(),
+                run.runId(),
+                executeCommandEntity.getMessage()
+        );
 
         try {
             String apply = executeHandler.apply(executeCommandEntity, executionContext);

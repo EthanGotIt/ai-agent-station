@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 /**
  * OpenAI API配置，值对象
@@ -27,6 +28,7 @@ public class AiClientApiVO {
     /**
      * API密钥
      */
+    @ToString.Exclude
     private String apiKey;
 
     /**

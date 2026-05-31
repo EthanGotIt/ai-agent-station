@@ -8,6 +8,7 @@ import cn.ethan.ai.domain.agent.model.aggregate.AgentRunAggregate;
 import cn.ethan.ai.domain.agent.model.entity.AgentExecuteResultEntity;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AgentExecutionContextVO;
+import cn.ethan.ai.domain.agent.model.valobj.AgentPlanStepVO;
 import cn.ethan.ai.domain.agent.model.valobj.AgentStepRunRecordVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AgentStepRunStatusEnumVO;
 import cn.ethan.wrench.design.framework.tree.AbstractMultiThreadStrategyRouter;
@@ -78,8 +79,7 @@ public abstract class AbstractExecuteSupport extends AbstractMultiThreadStrategy
                                    String stepId,
                                    String stepName,
                                    Integer stepOrder,
-                                   String stepType,
-                                   String toolName) {
+                                   String stepType) {
         AgentRunAggregate run = currentRun(executionContext);
         long start = System.currentTimeMillis();
         agentRunRepository.createStep(AgentStepRunRecordVO.builder()
@@ -88,7 +88,6 @@ public abstract class AbstractExecuteSupport extends AbstractMultiThreadStrategy
                 .stepName(stepName)
                 .stepOrder(stepOrder)
                 .stepType(stepType)
-                .toolName(toolName)
                 .status(AgentStepRunStatusEnumVO.RUNNING)
                 .startTime(LocalDateTime.now())
                 .createTime(LocalDateTime.now())
@@ -128,6 +127,32 @@ public abstract class AbstractExecuteSupport extends AbstractMultiThreadStrategy
                 .costMillis(end - startTime)
                 .endTime(LocalDateTime.now())
                 .updateTime(LocalDateTime.now())
+                .build());
+    }
+
+    protected void markPlannedStepTerminal(AgentExecutionContextVO executionContext,
+                                           AgentPlanStepVO step,
+                                           Integer stepOrder,
+                                           AgentStepRunStatusEnumVO status,
+                                           String reason) {
+        if (step == null) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        AgentRunAggregate run = currentRun(executionContext);
+        agentRunRepository.createStep(AgentStepRunRecordVO.builder()
+                .runId(run.runId())
+                .stepId(step.getStepId())
+                .stepName(step.getName())
+                .stepOrder(stepOrder)
+                .stepType(step.getType())
+                .status(status)
+                .outputSummary(limit(reason, 500))
+                .costMillis(0L)
+                .startTime(now)
+                .endTime(now)
+                .createTime(now)
+                .updateTime(now)
                 .build());
     }
 

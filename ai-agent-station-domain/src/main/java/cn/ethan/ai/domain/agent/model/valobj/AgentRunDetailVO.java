@@ -35,6 +35,8 @@ public class AgentRunDetailVO {
 
     private String cancelReason;
 
+    private String sessionContextSummary;
+
     private Integer contextOriginalChars;
 
     private Integer contextCompressedChars;
@@ -48,6 +50,8 @@ public class AgentRunDetailVO {
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;
+
+    private AgentRunLifecycleVO lifecycle;
 
     @Builder.Default
     private List<AgentStepRunRecordVO> steps = Collections.emptyList();

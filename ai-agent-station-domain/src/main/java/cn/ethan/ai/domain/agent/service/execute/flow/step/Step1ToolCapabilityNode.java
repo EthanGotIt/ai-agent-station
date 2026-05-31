@@ -33,7 +33,7 @@ public class Step1ToolCapabilityNode extends AbstractExecuteSupport {
         if (stopIfCancelled(executionContext, "任务已取消，停止执行工具路由。")) {
             return "任务已取消";
         }
-        long startTime = markStepRunning(executionContext, "flow_tool_routing", "运行时工具路由", 1, "SYSTEM", null);
+        long startTime = markStepRunning(executionContext, "flow_tool_routing", "运行时工具路由", 1, "SYSTEM");
 
         try {
             ToolRoutingDecisionVO toolRoutingDecision = flowToolCapabilityService.routeTools(
@@ -88,6 +88,8 @@ public class Step1ToolCapabilityNode extends AbstractExecuteSupport {
         payload.put("allowedToolNames", toolRoutingDecision.getAllowedToolNames());
         payload.put("selectedMcpIds", toolRoutingDecision.getSelectedMcpIds());
         payload.put("selectedTools", toolRoutingDecision.getSelectedTools());
+        payload.put("blockedToolNames", toolRoutingDecision.getBlockedToolNames());
+        payload.put("blockedToolReasons", toolRoutingDecision.getBlockedToolReasons());
         return payload;
     }
 }

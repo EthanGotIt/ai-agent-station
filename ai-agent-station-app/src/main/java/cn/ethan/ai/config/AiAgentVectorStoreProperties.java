@@ -1,6 +1,7 @@
 package cn.ethan.ai.config;
 
 import lombok.Data;
+import lombok.ToString;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -23,6 +24,7 @@ public class AiAgentVectorStoreProperties {
     /**
      * 向量模型密钥。
      */
+    @ToString.Exclude
     private String apiKey;
 
     /**
