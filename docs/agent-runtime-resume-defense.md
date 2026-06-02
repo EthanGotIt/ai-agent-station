@@ -20,7 +20,10 @@
 
 - 请求期按用户输入动态路由 MCP 工具。
 - 注入前按 allowed set 和风险规则再次过滤。
-- 调用期使用 `GuardedToolCallback` 处理越权、危险调用、参数错误和工具异常。
+- 调用期使用 `GuardedToolCallback` 拒绝越权和危险调用。
+- 低风险查询类 MCP 工具使用官方 `ToolRetryInterceptor` 做一次有限重试；参数错误、写操作、通知工具和 `rag_search` 不自动重试。
+- 最终失败由 `StructuredToolErrorInterceptor` 统一返回结构化错误。
+- `/actuator/health/mcpClients`、结构化日志和 `graph_lifecycle` 暴露安全生命周期摘要。
 - 模型只看到本轮注入的工具，不注入全量 MCP 表。
 
 ## RAG 怎么做
@@ -36,5 +39,5 @@
 
 ## 边界说明
 
-- `SummarizationHook` 使用近似 token 估算，不是精确 Qwen tokenizer。
+- `SummarizationHook` 使用官方可校准近似 token 估算，不是精确 Qwen tokenizer。
 - 当前不包含长期 Store、HITL、真实危险工具沙箱、Nacos 和 Studio。

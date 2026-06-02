@@ -2,6 +2,7 @@ package cn.ethan.ai.domain.agent.service.execute.graph;
 
 import cn.ethan.ai.domain.agent.adapter.port.IAgentRuntimeAssemblyPort;
 import cn.ethan.ai.domain.agent.adapter.port.IAgentStreamPort;
+import cn.ethan.ai.domain.agent.adapter.port.IMcpClientLifecyclePort;
 import cn.ethan.ai.domain.agent.adapter.port.IRagRetrievalPort;
 import cn.ethan.ai.domain.agent.adapter.repository.IAgentRepository;
 import cn.ethan.ai.domain.agent.adapter.repository.IAgentRunRepository;
@@ -10,18 +11,20 @@ import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AgentRunRecordVO;
 import cn.ethan.ai.domain.agent.model.valobj.AgentStepRunRecordVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiAgentRuntimeConfigVO;
+import cn.ethan.ai.domain.agent.model.valobj.McpClientLifecycleSnapshotVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingDecisionVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AgentRunStatusEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AgentStepRunStatusEnumVO;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
+import com.alibaba.cloud.ai.graph.agent.hook.TokenCounter;
 import com.alibaba.cloud.ai.graph.agent.hook.modelcalllimit.ModelCallLimitHook;
 import com.alibaba.cloud.ai.graph.agent.hook.summarization.SummarizationHook;
 import com.alibaba.cloud.ai.graph.agent.hook.toolcalllimit.ToolCallLimitHook;
+import com.alibaba.cloud.ai.graph.agent.interceptor.Interceptor;
 import com.alibaba.cloud.ai.graph.agent.interceptor.todolist.TodoListInterceptor;
-import com.alibaba.cloud.ai.graph.agent.interceptor.toolerror.ToolErrorInterceptor;
+import com.alibaba.cloud.ai.graph.agent.interceptor.toolretry.ToolRetryInterceptor;
 import com.alibaba.cloud.ai.graph.checkpoint.BaseCheckpointSaver;
-import com.alibaba.fastjson.JSON;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -38,7 +41,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * 基于 Spring AI Alibaba ReactAgent 的单 Agent Graph Runtime。
@@ -51,6 +57,12 @@ public class GraphAgentExecuteService {
 
     private static final int DEFAULT_MAX_CALLS = 8;
 
+    private static final int DEFAULT_CHARS_PER_TOKEN = 4;
+
+    private static final int MIN_CHARS_PER_TOKEN = 1;
+
+    private static final int MAX_CHARS_PER_TOKEN = 8;
+
     @Resource
     private IAgentRepository repository;
 
@@ -59,6 +71,9 @@ public class GraphAgentExecuteService {
 
     @Resource
     private IAgentRuntimeAssemblyPort runtimeAssemblyPort;
+
+    @Resource
+    private IMcpClientLifecyclePort mcpClientLifecyclePort;
 
     @Resource
     private RuntimeToolCapabilityService toolCapabilityService;
@@ -77,6 +92,9 @@ public class GraphAgentExecuteService {
 
     @Value("${ai-agent.graph.summarization.messages-to-keep:6}")
     private Integer messagesToKeep;
+
+    @Value("${ai-agent.graph.summarization.chars-per-token:4}")
+    private Integer charsPerToken;
 
     public void execute(ExecuteCommandEntity command, IAgentStreamPort streamPort) {
         String runId = UUID.randomUUID().toString();
@@ -97,13 +115,17 @@ public class GraphAgentExecuteService {
                     List.of(runtimeConfig.getClientId()),
                     command.getMessage()
             );
+            long toolResolutionStartedAt = System.nanoTime();
             List<ToolCallback> tools = new ArrayList<>(runtimeAssemblyPort.resolveMcpToolCallbacks(routingDecision));
+            long toolResolutionMillis = elapsedMillis(toolResolutionStartedAt);
             GraphRagSearchToolCallback ragSearchTool = createRagSearchTool();
             if (ragSearchTool != null) {
                 tools.add(ragSearchTool);
             }
+            McpClientLifecycleSnapshotVO routedMcpSnapshot = mcpClientLifecyclePort.snapshot(routingDecision.getSelectedMcpIds());
 
             ChatModel chatModel = runtimeAssemblyPort.resolveChatModel(runtimeConfig.getClientId());
+            List<Interceptor> interceptors = buildInterceptors(streamPort, sessionId, runId, tools);
             reactAgent = ReactAgent.builder()
                     .name("ai-agent-station")
                     .description("可追踪、可中断、带工具治理的通用智能体")
@@ -113,11 +135,7 @@ public class GraphAgentExecuteService {
                     .saver(requireCheckpointSaver())
                     .releaseThread(false)
                     .hooks(
-                            SummarizationHook.builder()
-                                    .model(chatModel)
-                                    .maxTokensBeforeSummary(maxTokensBeforeSummary)
-                                    .messagesToKeep(messagesToKeep)
-                                    .build(),
+                            buildSummarizationHook(chatModel),
                             ModelCallLimitHook.builder()
                                     .runLimit(resolveLimit(command.getMaxStep(), runtimeConfig.getMaxModelCalls()))
                                     .build(),
@@ -125,19 +143,13 @@ public class GraphAgentExecuteService {
                                     .runLimit(resolveLimit(command.getMaxStep(), runtimeConfig.getMaxToolCalls()))
                                     .build()
                     )
-                    .interceptors(
-                            TodoListInterceptor.builder()
-                                    .todoEventHandler(todos -> streamPort.send(AgentExecuteResultEntity.createAnalysisSubResult(
-                                            null, "todo_update", "Graph Runtime 已更新任务清单。", todos, sessionId, runId
-                                    )))
-                                    .build(),
-                            ToolErrorInterceptor.builder().build()
-                    )
+                    .interceptors(interceptors)
                     .enableLogging(true)
                     .build();
             runRegistry.register(runId, reactAgent, runnableConfig);
 
-            sendRuntimeStart(streamPort, sessionId, runId, runnableConfig, routingDecision, tools);
+            sendRuntimeStart(streamPort, sessionId, runId, runnableConfig, routingDecision, tools,
+                    routedMcpSnapshot, toolResolutionMillis);
             AssistantMessage response = reactAgent.call(command.getMessage(), runnableConfig);
             if (isCancelled(runId)) {
                 markCancelled(runRecord, stepRecord, "执行期间收到取消请求");
@@ -171,7 +183,9 @@ public class GraphAgentExecuteService {
                                   String runId,
                                   RunnableConfig runnableConfig,
                                   ToolRoutingDecisionVO routingDecision,
-                                  List<ToolCallback> tools) {
+                                  List<ToolCallback> tools,
+                                  McpClientLifecycleSnapshotVO routedMcpSnapshot,
+                                  long toolResolutionMillis) {
         Map<String, Object> boundary = new LinkedHashMap<>();
         boundary.put("sessionId", sessionId);
         boundary.put("threadId", runnableConfig.threadId().orElse(""));
@@ -184,9 +198,81 @@ public class GraphAgentExecuteService {
         streamPort.send(AgentExecuteResultEntity.createAnalysisSubResult(
                 null, "tool_routing", routingDecision.getSummary(), routingDecision, sessionId, runId
         ));
+        Map<String, Object> lifecycle = new LinkedHashMap<>();
+        lifecycle.put("toolResolutionMillis", toolResolutionMillis);
+        lifecycle.put("injectedToolCount", tools.size());
+        lifecycle.put("mcpClients", routedMcpSnapshot);
         streamPort.send(AgentExecuteResultEntity.createExecutionSubResult(
-                null, "graph_lifecycle", "ReactAgent GraphRuntime 开始执行，可用工具数：" + tools.size(), sessionId, runId
+                null, "graph_lifecycle", "ReactAgent GraphRuntime 开始执行，可用工具数：" + tools.size(),
+                lifecycle, sessionId, runId
         ));
+    }
+
+    private SummarizationHook buildSummarizationHook(ChatModel chatModel) {
+        return SummarizationHook.builder()
+                .model(chatModel)
+                .maxTokensBeforeSummary(maxTokensBeforeSummary)
+                .messagesToKeep(messagesToKeep)
+                .tokenCounter(TokenCounter.approximateMsgCounter(normalizeCharsPerToken(charsPerToken)))
+                .build();
+    }
+
+    private List<Interceptor> buildInterceptors(IAgentStreamPort streamPort,
+                                                String sessionId,
+                                                String runId,
+                                                List<ToolCallback> tools) {
+        List<Interceptor> interceptors = new ArrayList<>();
+        interceptors.add(TodoListInterceptor.builder()
+                .todoEventHandler(todos -> streamPort.send(AgentExecuteResultEntity.createAnalysisSubResult(
+                        null, "todo_update", "Graph Runtime 已更新任务清单。", todos, sessionId, runId
+                )))
+                .build());
+        interceptors.add(new StructuredToolErrorInterceptor());
+
+        Set<String> retryableToolNames = tools.stream()
+                .filter(tool -> tool != null && tool.getToolDefinition() != null)
+                .map(tool -> tool.getToolDefinition().name())
+                .filter(StringUtils::isNotBlank)
+                .map(ToolGuardPolicy::normalize)
+                .filter(toolName -> !"rag_search".equals(toolName))
+                .filter(ToolGuardPolicy::isRetryable)
+                .collect(Collectors.toSet());
+        if (!retryableToolNames.isEmpty()) {
+            interceptors.add(ToolRetryInterceptor.builder()
+                    .toolNames(retryableToolNames)
+                    .maxRetries(1)
+                    .initialDelay(200)
+                    .maxDelay(500)
+                    .jitter(false)
+                    .retryOn(this::isRetryableException)
+                    .onFailure(ToolRetryInterceptor.OnFailureBehavior.RAISE)
+                    .build());
+        }
+        return interceptors;
+    }
+
+    static int normalizeCharsPerToken(Integer configuredValue) {
+        if (configuredValue == null) {
+            return DEFAULT_CHARS_PER_TOKEN;
+        }
+        return Math.max(MIN_CHARS_PER_TOKEN, Math.min(MAX_CHARS_PER_TOKEN, configuredValue));
+    }
+
+    private boolean isRetryableException(Exception exception) {
+        Throwable root = rootCause(exception);
+        return !(root instanceof IllegalArgumentException) && !(root instanceof ToolGuardException);
+    }
+
+    private Throwable rootCause(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current;
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
     }
 
     private GraphRagSearchToolCallback createRagSearchTool() {

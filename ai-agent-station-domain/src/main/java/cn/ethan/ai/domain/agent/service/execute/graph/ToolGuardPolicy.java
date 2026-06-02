@@ -26,6 +26,10 @@ public final class ToolGuardPolicy {
             "search", "fetch", "read", "get", "list", "resolve", "docs", "open"
     );
 
+    private static final List<String> RETRYABLE_HINTS = List.of(
+            "search", "fetch", "read", "get", "list", "resolve", "docs", "open"
+    );
+
     private ToolGuardPolicy() {
     }
 
@@ -48,6 +52,12 @@ public final class ToolGuardPolicy {
 
     public static boolean isBlocked(String toolName) {
         return ToolRiskLevelEnumVO.DANGEROUS == assessRisk(toolName);
+    }
+
+    public static boolean isRetryable(String toolName) {
+        String normalizedName = normalize(toolName);
+        return ToolRiskLevelEnumVO.LOW == assessRisk(normalizedName)
+                && containsAny(normalizedName, RETRYABLE_HINTS);
     }
 
     public static String describe(String toolName) {

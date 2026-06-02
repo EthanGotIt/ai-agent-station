@@ -13,6 +13,7 @@
 | Phase 7：持久化 Session 短期记忆 | 已完成 | 验证旧方案的消息持久化闭环 |
 | Phase 8：Spring AI Alibaba GraphRuntime | 已完成 | 真实模型、MCP 路由、BM25 降级、checkpoint 和 cancel smoke 已验收 |
 | Phase 9：百炼 Embedding 与 MCP 生命周期收敛 | 已完成 | 切换 `text-embedding-v4`，移除旧 Embedding 遗留，消除 MCP 全量串行冷启动 |
+| Phase 10：MCP 可观测性、有限重试与逻辑收敛 | 已完成 | MCP health、稳定规则路由、查询类工具有限重试和可校准近似 token 预算均已验收 |
 
 ## 项目变化
 
@@ -80,7 +81,8 @@ Run audit
        -> ModelCallLimitHook
        -> ToolCallLimitHook
        -> TodoListInterceptor
-       -> ToolErrorInterceptor
+       -> StructuredToolErrorInterceptor
+       -> ToolRetryInterceptor（仅查询类 MCP 工具）
        -> filtered MCP tools
        -> rag_search
   -> summary / complete
@@ -90,7 +92,7 @@ Run audit
 ## 记忆边界
 
 - PostgreSQL `GraphThread / GraphCheckpoint`：同一 session 的短期记忆和 checkpoint。
-- `SummarizationHook`：近似 token 预算、摘要压缩、最近消息保留。
+- `SummarizationHook`：官方可校准近似 token 预算、摘要压缩、最近消息保留。
 - MySQL `ai_agent_run / ai_agent_step_run`：审计，不是聊天消息。
 - Run detail 旧上下文摘要字段暂时保留为空值，兼容已有前端。
 - Store 长期记忆暂缓。
@@ -107,8 +109,8 @@ Run audit
 - `AiAgentController` 仍有 DTO 手工映射；接口继续扩展时再抽 mapper。
 - `ToolGuardPolicy` 仍按工具名启发式分级；真实工具规模扩大后改为配置化策略。
 - 开发环境 `PostgresSaver` 使用 `CREATE_IF_NOT_EXISTS`；生产环境应预建表并调整为 `CREATE_NONE`。
-- Graph 内部 tool/todo 细粒度事件目前只保留关键 SSE；需要更完整 trace 时再接事件适配器。
-- `SummarizationHook` 是近似 token 估算；只有出现明确预算误差问题时再接精确 tokenizer。
+- Graph 内部 tool/todo 细粒度事件目前只保留关键 SSE；`graph_lifecycle` 已补充本轮工具解析耗时、注入数和 MCP 状态摘要，需要更完整 trace 时再接事件适配器。
+- `SummarizationHook` 显式使用 `TokenCounter.approximateMsgCounter(charsPerToken)`；只有出现明确预算误差问题时再评估精确 tokenizer。
 - MCP 客户端生命周期已从 domain 下沉 infrastructure：装配阶段只登记配置，后台并发预热，请求命中路由时按需初始化并缓存复用。
 - Chat 和 Embedding 已统一到百炼 OpenAI-compatible 接口，默认 Embedding 模型为 `text-embedding-v4`、维度为 `1024`。
 
@@ -168,3 +170,39 @@ git diff --check
 - RAG 导入脚本关闭 Agent 自动装配，不再启动无关 MCP 预热。
 - Maven 测试环境默认关闭 MCP 后台预热，避免单测依赖外部 npm 进程；live smoke 继续覆盖真实预热。
 - 完整 Maven 回归：`126` 个测试通过，`0` 失败。
+
+## Phase 10 技术评估
+
+- 不新增 LLM Tool Selector：保留现有规则路由，通过标签常量、稳定排序和实际命中理由提升可维护性与可解释性。
+- 不接精确 tokenizer：显式使用 Alibaba 官方 `TokenCounter.approximateMsgCounter(int)`，通过字符比配置校准近似预算。
+- 不自研工具重试循环：使用 Alibaba 官方 `ToolRetryInterceptor`，只对低风险查询类 MCP 工具执行一次有限重试。
+- MCP 初始化重试与工具执行重试分离：前者仍由 infrastructure 生命周期管理器负责，后者位于 ReactAgent 工具拦截器链。
+- 不增加业务查询 API：MCP readiness 通过 Actuator health、结构化日志和已有 `graph_lifecycle` 事件暴露。
+
+## Phase 10 验收
+
+执行命令：
+
+```powershell
+mvn -q -pl ai-agent-station-app -am "-DskipTests=false" "-Dsurefire.failIfNoSpecifiedTests=false" "-Dtest=RuntimeToolCapabilityServiceTest,McpClientLifecycleManagerTest,McpClientsHealthIndicatorTest,ToolRetryInterceptorCompatibilityTest,ReactAgentCompatibilityTest" test
+mvn -q "-DskipTests=false" test
+mvn -q "-DskipTests" package
+git diff --check
+.\scripts\dev\run-local-smoke.ps1
+```
+
+验收范围：
+
+- MCP 生命周期快照不暴露 header、env、command 或 API key，失败摘要与日志统一脱敏。
+- `/actuator/health/mcpClients` 返回安全 readiness 明细；MCP 是可选能力，部分失败只标记 `DEGRADED`。
+- `graph_lifecycle` 事件包含工具解析耗时、注入工具数和本轮 MCP 状态摘要。
+- 查询类工具瞬态失败最多重试一次；参数错误、写操作、通知工具和本地 `rag_search` 不自动重试。
+- 上下文摘要显式使用官方可校准近似 token 估算，不恢复旧自研 estimator。
+
+验收结果：
+
+- Phase 10 目标单测：`20` 个通过，`0` 失败。
+- 完整 Maven 回归：`139` 个通过，`0` 失败。
+- 跳过测试打包和 `git diff --check` 通过。
+- live smoke 通过：`GraphRuntime / MCP health / 工具路由 / RAG 证据 / PostgreSQL session checkpoint` 均完成验收。
+- MCP 预热后 `/actuator/health/mcpClients` 返回 `UP`：`5` 个 MCP Client 全部进入 `READY`，且未暴露 header、env、command 或 API key。

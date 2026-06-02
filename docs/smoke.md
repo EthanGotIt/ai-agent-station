@@ -54,7 +54,9 @@
 - MCP ToolCallback 在 GraphRuntime 组装时注入，由模型执行阶段自主决定是否调用
 - MCP 客户端在装配阶段只登记配置，后台并发预热；请求命中路由时按需初始化并复用缓存
 - MCP 初始化超过请求期等待上限时，本轮回退为无外部工具执行，不阻塞 GraphRuntime
-- 调用异常由 `GuardedToolCallback` 归一化
+- `/actuator/health/mcpClients` 可查看安全生命周期快照；部分 MCP 失败只标记 `DEGRADED`
+- `graph_lifecycle.payload` 包含工具解析耗时、注入工具数和本轮 MCP 状态摘要
+- `GuardedToolCallback` 负责调用期授权；查询类 MCP 工具瞬态失败最多重试一次，最终异常统一结构化返回
 
 ## 场景三：RAG evidence
 
@@ -89,7 +91,7 @@
 
 ## 边界
 
-- `SummarizationHook` 使用近似 token 估算，不等同于模型精确 tokenizer。
+- `SummarizationHook` 使用 `TokenCounter.approximateMsgCounter(charsPerToken)` 做可校准近似 token 估算，不等同于模型精确 tokenizer。
 - 当前 checkpoint 是 session 短期记忆，不是跨 session 长期用户画像。
 - 当前是单 Agent GraphRuntime，不演示多 Agent handoff。
 - PGVector 语义召回异常时，`rag_search` 会记录告警并降级到 Elasticsearch BM25；Markdown 重导入仍需要可用的百炼 embedding 服务。

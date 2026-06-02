@@ -2,7 +2,10 @@ package cn.ethan.ai.infrastructure.adapter.port;
 
 import cn.ethan.ai.domain.agent.adapter.port.IMcpClientLifecyclePort;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientToolMcpVO;
+import cn.ethan.ai.domain.agent.model.valobj.McpClientLifecycleSnapshotVO;
+import cn.ethan.ai.domain.agent.model.valobj.McpClientStateVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingDecisionVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.McpClientLifecycleStatusEnumVO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -21,6 +24,7 @@ import org.springframework.stereotype.Service;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -39,6 +43,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Pattern;
 
 /**
  * MCP 客户端生命周期管理器。
@@ -52,11 +57,21 @@ public class McpClientLifecycleManager implements IMcpClientLifecyclePort {
 
     private static final int DEFAULT_MCP_TIMEOUT_SECONDS = 60;
 
+    private static final int MAX_ERROR_SUMMARY_LENGTH = 240;
+
+    private static final Pattern SENSITIVE_VALUE_PATTERN = Pattern.compile(
+            "(?i)(api[-_ ]?key|authorization|token|secret|password)(\\s*[:=]\\s*|\\\"\\s*:\\s*\\\")([^,;\\s\\\"]+)"
+    );
+
+    private static final Pattern BEARER_PATTERN = Pattern.compile("(?i)bearer\\s+\\S+");
+
     private final Map<String, AiClientToolMcpVO> configurations = new ConcurrentHashMap<>();
 
     private final Map<String, CompletableFuture<List<ToolCallback>>> callbackFutures = new ConcurrentHashMap<>();
 
     private final Map<String, McpSyncClient> clients = new ConcurrentHashMap<>();
+
+    private final Map<String, McpClientRuntimeState> states = new ConcurrentHashMap<>();
 
     private final boolean prewarmEnabled;
 
@@ -99,6 +114,8 @@ public class McpClientLifecycleManager implements IMcpClientLifecyclePort {
                 evict(entry.getKey());
                 configurations.put(entry.getKey(), entry.getValue());
             }
+            states.computeIfAbsent(entry.getKey(), ignored -> new McpClientRuntimeState(entry.getValue()))
+                    .markRegistered(entry.getValue());
         }
 
         log.info("MCP 配置登记完成，配置数：{}，后台预热：{}", configurations.size(), prewarmEnabled);
@@ -147,10 +164,30 @@ public class McpClientLifecycleManager implements IMcpClientLifecyclePort {
                 log.warn("等待 MCP 客户端初始化时线程被中断，本轮按无外部工具继续执行。");
                 break;
             } catch (ExecutionException e) {
-                log.warn("MCP 客户端初始化失败，本轮跳过该工具，原因：{}", rootMessage(e));
+                log.warn("MCP 客户端初始化失败，本轮跳过该工具，原因：{}", sanitizeError(e));
             }
         }
         return callbacks;
+    }
+
+    @Override
+    public McpClientLifecycleSnapshotVO snapshot() {
+        return snapshot(configurations.keySet());
+    }
+
+    @Override
+    public McpClientLifecycleSnapshotVO snapshot(Set<String> mcpIds) {
+        if (mcpIds == null || mcpIds.isEmpty()) {
+            return McpClientLifecycleSnapshotVO.from(List.of());
+        }
+        List<McpClientStateVO> clientStates = mcpIds.stream()
+                .filter(StringUtils::isNotBlank)
+                .map(states::get)
+                .filter(state -> state != null)
+                .map(McpClientRuntimeState::snapshot)
+                .sorted(java.util.Comparator.comparing(McpClientStateVO::getMcpId))
+                .toList();
+        return McpClientLifecycleSnapshotVO.from(clientStates);
     }
 
     protected List<ToolCallback> initializeToolCallbacks(AiClientToolMcpVO configuration) {
@@ -192,13 +229,25 @@ public class McpClientLifecycleManager implements IMcpClientLifecyclePort {
         String mcpId = configuration.getMcpId();
         CompletableFuture<List<ToolCallback>> future = callbackFutures.computeIfAbsent(
                 mcpId,
-                ignored -> CompletableFuture.supplyAsync(() -> initializeToolCallbacks(configuration), initializationExecutor)
+                ignored -> CompletableFuture.supplyAsync(() -> {
+                    McpClientRuntimeState state = states.computeIfAbsent(mcpId, key -> new McpClientRuntimeState(configuration));
+                    long startedAt = System.nanoTime();
+                    state.markInitializing(configuration);
+                    try {
+                        List<ToolCallback> callbacks = initializeToolCallbacks(configuration);
+                        state.markReady(callbacks.size(), elapsedMillis(startedAt));
+                        return callbacks;
+                    } catch (Exception e) {
+                        state.markFailed(elapsedMillis(startedAt), sanitizeError(e));
+                        throw e;
+                    }
+                }, initializationExecutor)
         );
         future.whenComplete((callbacks, error) -> {
             if (error != null) {
                 callbackFutures.remove(mcpId, future);
                 if (!closed.get() && !(rootCause(error) instanceof CancellationException)) {
-                    log.warn("MCP 后台初始化失败，可在后续路由命中时重试，mcpId：{}，原因：{}", mcpId, rootMessage(error));
+                    log.warn("MCP 后台初始化失败，可在后续路由命中时重试，mcpId：{}，原因：{}", mcpId, sanitizeError(error));
                 }
             }
         });
@@ -317,6 +366,7 @@ public class McpClientLifecycleManager implements IMcpClientLifecyclePort {
             future.cancel(true);
         }
         closeQuietly(clients.remove(mcpId));
+        states.remove(mcpId);
     }
 
     private void closeQuietly(McpSyncClient client) {
@@ -334,9 +384,19 @@ public class McpClientLifecycleManager implements IMcpClientLifecyclePort {
         }
     }
 
-    private String rootMessage(Throwable throwable) {
-        Throwable current = rootCause(throwable);
-        return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
+    private long elapsedMillis(long startedAt) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+    }
+
+    private String sanitizeError(Throwable throwable) {
+        Throwable root = rootCause(throwable);
+        String message = root.getMessage() == null ? root.getClass().getSimpleName() : root.getMessage();
+        String sanitized = BEARER_PATTERN.matcher(message).replaceAll("Bearer ***");
+        sanitized = SENSITIVE_VALUE_PATTERN.matcher(sanitized).replaceAll("$1$2***");
+        if (sanitized.length() > MAX_ERROR_SUMMARY_LENGTH) {
+            sanitized = sanitized.substring(0, MAX_ERROR_SUMMARY_LENGTH) + "...";
+        }
+        return root.getClass().getSimpleName() + ": " + sanitized;
     }
 
     private Throwable rootCause(Throwable throwable) {
@@ -351,6 +411,73 @@ public class McpClientLifecycleManager implements IMcpClientLifecyclePort {
     }
 
     private record StdioCommand(String command, List<String> args) {
+    }
+
+    private static class McpClientRuntimeState {
+
+        private String mcpId;
+
+        private String mcpName;
+
+        private McpClientLifecycleStatusEnumVO status;
+
+        private int initializationAttempts;
+
+        private int toolCount;
+
+        private long lastInitializationMillis;
+
+        private LocalDateTime lastFailureAt;
+
+        private String lastError;
+
+        private McpClientRuntimeState(AiClientToolMcpVO configuration) {
+            markRegistered(configuration);
+        }
+
+        private synchronized void markRegistered(AiClientToolMcpVO configuration) {
+            this.mcpId = configuration.getMcpId();
+            this.mcpName = configuration.getMcpName();
+            if (this.status == null || this.status == McpClientLifecycleStatusEnumVO.FAILED) {
+                this.status = McpClientLifecycleStatusEnumVO.REGISTERED;
+            }
+        }
+
+        private synchronized void markInitializing(AiClientToolMcpVO configuration) {
+            this.mcpId = configuration.getMcpId();
+            this.mcpName = configuration.getMcpName();
+            this.status = McpClientLifecycleStatusEnumVO.INITIALIZING;
+            this.initializationAttempts++;
+        }
+
+        private synchronized void markReady(int toolCount, long elapsedMillis) {
+            this.status = McpClientLifecycleStatusEnumVO.READY;
+            this.toolCount = toolCount;
+            this.lastInitializationMillis = elapsedMillis;
+            this.lastFailureAt = null;
+            this.lastError = null;
+        }
+
+        private synchronized void markFailed(long elapsedMillis, String error) {
+            this.status = McpClientLifecycleStatusEnumVO.FAILED;
+            this.toolCount = 0;
+            this.lastInitializationMillis = elapsedMillis;
+            this.lastFailureAt = LocalDateTime.now();
+            this.lastError = error;
+        }
+
+        private synchronized McpClientStateVO snapshot() {
+            return McpClientStateVO.builder()
+                    .mcpId(mcpId)
+                    .mcpName(mcpName)
+                    .status(status)
+                    .initializationAttempts(initializationAttempts)
+                    .toolCount(toolCount)
+                    .lastInitializationMillis(lastInitializationMillis)
+                    .lastFailureAt(lastFailureAt)
+                    .lastError(lastError)
+                    .build();
+        }
     }
 
     private static class McpInitializationThreadFactory implements ThreadFactory {

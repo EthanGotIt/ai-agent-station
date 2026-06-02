@@ -1,10 +1,12 @@
 package cn.ethan.ai.domain.agent.adapter.port;
 
 import cn.ethan.ai.domain.agent.model.valobj.AiClientToolMcpVO;
+import cn.ethan.ai.domain.agent.model.valobj.McpClientLifecycleSnapshotVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingDecisionVO;
 import org.springframework.ai.tool.ToolCallback;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * MCP 客户端生命周期端口。
@@ -15,5 +17,9 @@ public interface IMcpClientLifecyclePort {
     void registerConfigurations(List<AiClientToolMcpVO> configurations);
 
     List<ToolCallback> resolveToolCallbacks(ToolRoutingDecisionVO routingDecision);
+
+    McpClientLifecycleSnapshotVO snapshot();
+
+    McpClientLifecycleSnapshotVO snapshot(Set<String> mcpIds);
 
 }

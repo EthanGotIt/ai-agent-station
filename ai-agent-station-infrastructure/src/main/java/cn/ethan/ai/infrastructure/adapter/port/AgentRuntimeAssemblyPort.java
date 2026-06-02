@@ -20,7 +20,6 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -82,7 +81,7 @@ public class AgentRuntimeAssemblyPort implements IAgentRuntimeAssemblyPort {
                     || StringUtils.isBlank(callback.getToolDefinition().name())) {
                 continue;
             }
-            String toolName = callback.getToolDefinition().name().trim().toLowerCase(Locale.ROOT);
+            String toolName = ToolGuardPolicy.normalize(callback.getToolDefinition().name());
             if (!allowedNames.contains(toolName) || ToolGuardPolicy.isBlocked(toolName)) {
                 continue;
             }
@@ -98,7 +97,7 @@ public class AgentRuntimeAssemblyPort implements IAgentRuntimeAssemblyPort {
         }
         for (String toolName : toolNames) {
             if (StringUtils.isNotBlank(toolName)) {
-                allowedNames.add(toolName.trim().toLowerCase(Locale.ROOT));
+                allowedNames.add(ToolGuardPolicy.normalize(toolName));
             }
         }
         return allowedNames;

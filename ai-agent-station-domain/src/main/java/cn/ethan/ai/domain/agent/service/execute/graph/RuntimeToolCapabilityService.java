@@ -14,7 +14,6 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -25,6 +24,20 @@ import java.util.stream.Collectors;
  */
 @Service
 public class RuntimeToolCapabilityService {
+
+    private static final int MAX_SELECTED_MCP_SERVERS = 3;
+
+    private static final String TAG_DOCS = "docs";
+
+    private static final String TAG_SEARCH = "search";
+
+    private static final String TAG_REASONING = "reasoning";
+
+    private static final String TAG_MEMORY = "memory";
+
+    private static final String TAG_NOTIFY = "notify";
+
+    private static final String TAG_GENERAL = "general";
 
     private static final List<String> SIMPLE_TASK_HINTS = List.of(
             "润色", "改写", "翻译", "总结", "解释", "写一段", "写一篇", "生成文案", "优化这段"
@@ -78,7 +91,7 @@ public class RuntimeToolCapabilityService {
             );
         }
 
-        String normalizedMessage = normalize(userMessage);
+        String normalizedMessage = ToolGuardPolicy.normalize(userMessage);
         boolean needExternalSearch = containsAny(normalizedMessage, EXTERNAL_TOOL_HINTS) || normalizedMessage.contains("mcp");
         boolean needReasoning = containsAny(normalizedMessage, REASONING_HINTS);
         boolean needMemory = containsAny(normalizedMessage, MEMORY_HINTS);
@@ -94,7 +107,7 @@ public class RuntimeToolCapabilityService {
 
         if (scoredItems.isEmpty() && needExternalSearch) {
             for (ToolRoutingItemVO item : candidates) {
-                if (item.getRouteTags().contains("docs") || item.getRouteTags().contains("search")) {
+                if (item.getRouteTags().contains(TAG_DOCS) || item.getRouteTags().contains(TAG_SEARCH)) {
                     scoredItems.add(new ScoredRouteItem(item, 1));
                 }
             }
@@ -105,16 +118,21 @@ public class RuntimeToolCapabilityService {
         }
 
         List<ToolRoutingItemVO> selectedItems = scoredItems.stream()
-                .sorted(Comparator.comparingInt(ScoredRouteItem::score).reversed())
+                .sorted(Comparator.comparingInt(ScoredRouteItem::score)
+                        .reversed()
+                        .thenComparing(item -> StringUtils.defaultString(item.item().getMcpId())))
                 .map(ScoredRouteItem::item)
                 .distinct()
-                .limit(3)
+                .limit(MAX_SELECTED_MCP_SERVERS)
                 .toList();
+        selectedItems.forEach(item -> item.setSelectedReason(resolveSelectedReason(
+                item, normalizedMessage, needExternalSearch, needReasoning, needMemory, needNotify
+        )));
 
         Set<String> allowedToolNames = selectedItems.stream()
                 .flatMap(item -> item.getToolNames().stream())
                 .filter(StringUtils::isNotBlank)
-                .map(this::normalize)
+                .map(ToolGuardPolicy::normalize)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         Set<String> selectedMcpIds = selectedItems.stream()
                 .map(ToolRoutingItemVO::getMcpId)
@@ -178,7 +196,7 @@ public class RuntimeToolCapabilityService {
     }
 
     private boolean shouldSkipExternalTools(String userMessage) {
-        String normalizedMessage = normalize(userMessage);
+        String normalizedMessage = ToolGuardPolicy.normalize(userMessage);
         return containsAny(normalizedMessage, SIMPLE_TASK_HINTS) && !containsAny(normalizedMessage, EXTERNAL_TOOL_HINTS);
     }
 
@@ -250,71 +268,96 @@ public class RuntimeToolCapabilityService {
                                boolean needNotify) {
         int score = 0;
         List<String> tags = item.getRouteTags();
-        if (tags.contains("docs") && (message.contains("spring ai") || message.contains("sdk") || message.contains("文档"))) {
+        if (tags.contains(TAG_DOCS) && (message.contains("spring ai") || message.contains("sdk") || message.contains("文档"))) {
             score += 5;
         }
-        if (tags.contains("search") && needExternalSearch) {
+        if (tags.contains(TAG_SEARCH) && needExternalSearch) {
             score += 4;
         }
-        if (tags.contains("reasoning") && needReasoning) {
+        if (tags.contains(TAG_REASONING) && needReasoning) {
             score += 3;
         }
-        if (tags.contains("memory") && needMemory) {
+        if (tags.contains(TAG_MEMORY) && needMemory) {
             score += 3;
         }
-        if (tags.contains("notify") && needNotify) {
+        if (tags.contains(TAG_NOTIFY) && needNotify) {
             score += 3;
         }
-        if (tags.contains("search") && message.contains("最新")) {
+        if (tags.contains(TAG_SEARCH) && message.contains("最新")) {
             score += 2;
         }
-        if (tags.contains("docs") && message.contains("mcp")) {
+        if (tags.contains(TAG_DOCS) && message.contains("mcp")) {
             score += 2;
         }
         return score;
     }
 
     private List<String> inferRouteTags(String mcpName, List<String> toolNames) {
-        String merged = normalize((StringUtils.defaultString(mcpName) + " " + String.join(" ", toolNames)));
+        String merged = ToolGuardPolicy.normalize(StringUtils.defaultString(mcpName) + " " + String.join(" ", toolNames));
         List<String> tags = new ArrayList<>();
         if (containsAny(merged, List.of("context7", "resolve-library", "get-library-docs", "docs"))) {
-            tags.add("docs");
+            tags.add(TAG_DOCS);
         }
         if (containsAny(merged, List.of("search", "fetch", "exa", "web_"))) {
-            tags.add("search");
+            tags.add(TAG_SEARCH);
         }
         if (containsAny(merged, List.of("sequential", "thinking"))) {
-            tags.add("reasoning");
+            tags.add(TAG_REASONING);
         }
         if (containsAny(merged, List.of("memory", "graph", "node", "relation"))) {
-            tags.add("memory");
+            tags.add(TAG_MEMORY);
         }
         if (containsAny(merged, List.of("notify", "notification", "reminder"))) {
-            tags.add("notify");
+            tags.add(TAG_NOTIFY);
         }
         if (tags.isEmpty()) {
-            tags.add("general");
+            tags.add(TAG_GENERAL);
         }
         return tags;
     }
 
     private String resolveDefaultReason(List<String> routeTags) {
-        if (routeTags.contains("docs")) {
+        if (routeTags.contains(TAG_DOCS)) {
             return "适合文档检索与官方资料查询";
         }
-        if (routeTags.contains("search")) {
+        if (routeTags.contains(TAG_SEARCH)) {
             return "适合联网搜索与信息补充";
         }
-        if (routeTags.contains("reasoning")) {
+        if (routeTags.contains(TAG_REASONING)) {
             return "适合复杂任务拆解与顺序推理";
         }
-        if (routeTags.contains("memory")) {
+        if (routeTags.contains(TAG_MEMORY)) {
             return "适合知识记忆与关系追踪";
         }
-        if (routeTags.contains("notify")) {
+        if (routeTags.contains(TAG_NOTIFY)) {
             return "适合任务完成提醒";
         }
         return "适合通用外部能力补充";
+    }
+
+    private String resolveSelectedReason(ToolRoutingItemVO item,
+                                         String message,
+                                         boolean needExternalSearch,
+                                         boolean needReasoning,
+                                         boolean needMemory,
+                                         boolean needNotify) {
+        List<String> tags = item.getRouteTags();
+        if (tags.contains(TAG_DOCS) && (message.contains("spring ai") || message.contains("sdk") || message.contains("文档") || message.contains("mcp"))) {
+            return "本轮命中文档资料查询";
+        }
+        if (tags.contains(TAG_SEARCH) && needExternalSearch) {
+            return "本轮命中联网检索";
+        }
+        if (tags.contains(TAG_REASONING) && needReasoning) {
+            return "本轮命中任务拆解";
+        }
+        if (tags.contains(TAG_MEMORY) && needMemory) {
+            return "本轮命中记忆追踪";
+        }
+        if (tags.contains(TAG_NOTIFY) && needNotify) {
+            return "本轮命中通知提醒";
+        }
+        return resolveDefaultReason(tags);
     }
 
     private List<String> normalizeToolNames(List<String> toolNames) {
@@ -323,7 +366,7 @@ public class RuntimeToolCapabilityService {
         }
         return toolNames.stream()
                 .filter(StringUtils::isNotBlank)
-                .map(this::normalize)
+                .map(ToolGuardPolicy::normalize)
                 .distinct()
                 .toList();
     }
@@ -333,15 +376,11 @@ public class RuntimeToolCapabilityService {
             return false;
         }
         for (String keyword : keywords) {
-            if (StringUtils.isNotBlank(keyword) && text.contains(normalize(keyword))) {
+            if (StringUtils.isNotBlank(keyword) && text.contains(ToolGuardPolicy.normalize(keyword))) {
                 return true;
             }
         }
         return false;
-    }
-
-    private String normalize(String text) {
-        return StringUtils.defaultString(text).trim().toLowerCase(Locale.ROOT);
     }
 
     private record ScoredRouteItem(ToolRoutingItemVO item, int score) {

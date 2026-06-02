@@ -159,6 +159,13 @@ function Assert-RunSucceeded {
 }
 
 Assert-HttpOk -Url ($BaseUrl.TrimEnd('/') + '/actuator/health') -TimeoutSeconds 180
+$mcpHealth = Invoke-RestMethod -Uri ($BaseUrl.TrimEnd('/') + '/actuator/health/mcpClients') -Method Get -TimeoutSec 30
+if ($mcpHealth.status -ne 'UP') {
+    throw "MCP health 端点状态异常，status=$($mcpHealth.status)"
+}
+if (-not $mcpHealth.details -or -not ($mcpHealth.details.PSObject.Properties.Name -contains 'availability')) {
+    throw 'MCP health 端点未返回 availability 明细。'
+}
 
 $vectorTotal = [int](Get-PgScalar -Sql "SELECT COUNT(1) FROM vector_store_openai;")
 $vectorParentChild = [int](Get-PgScalar -Sql "SELECT COUNT(1) FROM vector_store_openai WHERE metadata::jsonb ->> 'rag_id' = '7001';")
@@ -207,7 +214,17 @@ $toolResult = Invoke-AgentExecuteWithRetry -Label '工具路由 smoke' -Payload 
 }
 $toolEvents = $toolResult.Events
 Assert-EventPresent -Events $toolEvents -Value 'tool_routing'
+Assert-EventPresent -Events $toolEvents -Value 'graph_lifecycle'
 Assert-EventPresent -Events $toolEvents -Value 'complete'
+$toolLifecycle = $toolEvents | Where-Object {
+    $_ -and ($_.PSObject.Properties.Name -contains 'subType') -and $_.subType -eq 'graph_lifecycle'
+} | Select-Object -First 1
+if (-not $toolLifecycle.payload -or
+    -not ($toolLifecycle.payload.PSObject.Properties.Name -contains 'toolResolutionMillis') -or
+    -not ($toolLifecycle.payload.PSObject.Properties.Name -contains 'injectedToolCount') -or
+    -not ($toolLifecycle.payload.PSObject.Properties.Name -contains 'mcpClients')) {
+    throw 'graph_lifecycle 未返回 MCP 工具解析摘要。'
+}
 $toolRun = $toolResult.RunDetail
 Assert-RunSucceeded -RunDetail $toolRun -Label '工具路由 smoke'
 
@@ -278,4 +295,4 @@ if ($graphThreadCount -le 0 -or $graphCheckpointCount -le 0) {
     throw "Graph checkpoint 未写入，threads=$graphThreadCount checkpoints=$graphCheckpointCount"
 }
 
-Write-Host '本地 smoke 验证完成：GraphRuntime / 工具路由 / RAG 证据 / PostgreSQL session checkpoint 均已通过。'
+Write-Host '本地 smoke 验证完成：GraphRuntime / MCP health / 工具路由 / RAG 证据 / PostgreSQL session checkpoint 均已通过。'

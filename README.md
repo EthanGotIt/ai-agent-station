@@ -15,9 +15,10 @@ AI Agent Station 是一个基于 Spring AI 和 Spring AI Alibaba 的轻量受控
 
 - GraphRuntime：使用 Spring AI Alibaba `ReactAgent` 替换旧 FlowRuntime，统一模型决策、工具调用、Todo 规划和运行终止。
 - Session 短期记忆：使用官方 `PostgresSaver` 将同一 `sessionId` 映射为 Graph thread，并持久化 checkpoint；当前不实现跨 session 长期画像。
-- 上下文治理：使用官方 `SummarizationHook` 做会话摘要压缩，并保留最近消息；它使用近似 token 估算，不宣传为精确 tokenizer。
-- MCP Tool Guard：请求期动态路由 MCP 工具，注入前再次按 allowed set 和风险规则过滤，调用期使用 `GuardedToolCallback` 归一化参数错误、越权和工具异常。
-- MCP 生命周期治理：装配阶段只登记配置，客户端后台并发预热；请求命中路由时按需初始化并复用缓存，初始化超时则本轮回退为无外部工具执行。
+- 上下文治理：使用官方 `SummarizationHook` 做会话摘要压缩，并通过 `TokenCounter.approximateMsgCounter` 提供可校准的近似 token 估算；不宣传为精确 tokenizer。
+- MCP Tool Guard：请求期稳定规则路由 MCP 工具，注入前再次按 allowed set 和风险规则过滤，调用期拒绝越权与危险工具，最终异常统一返回结构化结果。
+- MCP 生命周期治理：装配阶段只登记配置，客户端后台并发预热；请求命中路由时按需初始化并复用缓存，初始化超时则本轮回退为无外部工具执行。Actuator health、结构化日志和 `graph_lifecycle` 事件可观测初始化状态与解析耗时。
+- MCP 有限重试：仅对低风险、幂等查询类 MCP 工具启用一次有限重试；写操作、通知工具和本地 `rag_search` 不自动重试。
 - Agentic RAG：向 GraphRuntime 注入本地 `rag_search` 工具；保留 Query Rewrite、PGVector + Elasticsearch BM25、RRF、Small-to-Big 和 evidence 去重，并输出 `rag_evidence`。
 - RAG 降级：PGVector 语义召回异常时记录告警并继续 Elasticsearch BM25，避免单路外部依赖故障中断 Agent 执行。
 - 文档导入：使用 Spring AI Alibaba `MarkdownDocumentParser` 替换自定义 Markdown 加载层；针对其 `InputStreamReader` 默认字符集行为增加无损适配，Parent-Child 分块和索引策略保持不变。
@@ -34,7 +35,8 @@ HTTP execute
        - PostgresSaver
        - SummarizationHook
        - ModelCallLimitHook / ToolCallLimitHook
-       - TodoListInterceptor / ToolErrorInterceptor
+       - TodoListInterceptor
+       - StructuredToolErrorInterceptor / ToolRetryInterceptor
        - filtered MCP ToolCallback
        - rag_search
   -> sessionId 映射 Graph threadId
@@ -58,6 +60,10 @@ HTTP execute
 - `summary`
 - `complete`
 
+MCP readiness：
+
+- `GET /actuator/health/mcpClients`
+
 ## 记忆边界
 
 - PostgreSQL `GraphThread / GraphCheckpoint` 是 session 短期记忆和可重入上下文的唯一来源。
@@ -65,6 +71,7 @@ HTTP execute
 - 已删除 `ai_agent_conversation_message` 双写链和自研 `ContextWindowGuard`。
 - 已删除不再参与执行的旧 advisor 动态装配；记忆由 Graph checkpoint 管理，RAG 由 `rag_search` 显式触发。
 - `SummarizationHook` 在上下文过长时生成摘要并保留最近消息。
+- `ai-agent.graph.summarization.chars-per-token` 默认值为 `4`，用于校准官方近似 token 估算。
 - Store 型长期记忆、用户画像、跨 session 偏好合并暂不实现。
 
 ## RAG 链路
@@ -167,4 +174,5 @@ PostgreSQL：
 
 - `docs/agent-runtime-phase8.md`
 - `docs/agent-runtime-phase9.md`
+- `docs/agent-runtime-phase10.md`
 - `docs/smoke.md`

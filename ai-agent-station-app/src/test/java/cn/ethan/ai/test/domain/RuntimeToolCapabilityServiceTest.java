@@ -16,6 +16,7 @@ import org.junit.Test;
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public class RuntimeToolCapabilityServiceTest {
 
@@ -72,6 +73,33 @@ public class RuntimeToolCapabilityServiceTest {
         Assert.assertFalse(decision.isEnabled());
         Assert.assertTrue(decision.getBlockedToolNames().contains("execute_shell"));
         Assert.assertTrue(decision.getBlockedToolNames().contains("delete_file"));
+    }
+
+    @Test
+    public void shouldSelectAtMostThreeServersWithStableOrderWhenScoresTie() throws Exception {
+        RuntimeToolCapabilityService service = serviceWith(List.of(
+                buildMcp("5004", "search-four", List.of("web_search_four")),
+                buildMcp("5002", "search-two", List.of("web_search_two")),
+                buildMcp("5003", "search-three", List.of("web_search_three")),
+                buildMcp("5001", "search-one", List.of("web_search_one"))
+        ));
+
+        ToolRoutingDecisionVO decision = service.routeTools(List.of("2103"), "请联网搜索最新资料");
+
+        Assert.assertEquals(List.of("5001", "5002", "5003"), decision.getSelectedTools().stream()
+                .map(item -> item.getMcpId())
+                .collect(Collectors.toList()));
+    }
+
+    @Test
+    public void shouldDescribeActualMatchedRouteReason() throws Exception {
+        RuntimeToolCapabilityService service = serviceWith(List.of(
+                buildMcp("5002", "exa-search", List.of("web_search_exa"))
+        ));
+
+        ToolRoutingDecisionVO decision = service.routeTools(List.of("2103"), "请联网搜索最新资料");
+
+        Assert.assertEquals("本轮命中联网检索", decision.getSelectedTools().get(0).getSelectedReason());
     }
 
     private RuntimeToolCapabilityService serviceWith(List<AiClientToolMcpVO> tools) throws Exception {
