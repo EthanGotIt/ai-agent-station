@@ -1,5 +1,7 @@
 # Agent Runtime Phase 1：Run / Step 执行模型
 
+> 历史阶段记录：当前执行内核已在 Phase 8 替换为 Spring AI Alibaba ReactAgent GraphRuntime。
+
 状态：已完成。
 
 ## 技术评估

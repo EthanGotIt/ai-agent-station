@@ -19,7 +19,7 @@ public class AiAgentVectorStoreProperties {
     /**
      * 向量模型接口基地址。
      */
-    private String baseUrl = "https://api.jina.ai/v1";
+    private String baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
     /**
      * 向量模型密钥。
@@ -30,7 +30,7 @@ public class AiAgentVectorStoreProperties {
     /**
      * 向量模型名称。
      */
-    private String model = "jina-embeddings-v5-text-small";
+    private String model = "text-embedding-v4";
 
     /**
      * 向量维度。

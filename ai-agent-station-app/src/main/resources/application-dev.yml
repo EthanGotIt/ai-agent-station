@@ -48,20 +48,26 @@ spring:
       api-key: ${OPENAI_API_KEY:}
     agent:
       auto-config:
-        enabled: true
-        client-ids: 2101,2102,2103
+        enabled: ${AI_AGENT_AUTO_CONFIG_ENABLED:true}
+        client-ids: 2103
 
 ai-agent:
-  context:
-    max-chars: ${AI_AGENT_CONTEXT_MAX_CHARS:12000}
-    compress-threshold: ${AI_AGENT_CONTEXT_COMPRESS_THRESHOLD:0.80}
-    stop-threshold: ${AI_AGENT_CONTEXT_STOP_THRESHOLD:0.95}
-    summary-max-chars: ${AI_AGENT_CONTEXT_SUMMARY_MAX_CHARS:1500}
+  graph:
+    checkpoint:
+      enabled: ${AI_AGENT_GRAPH_CHECKPOINT_ENABLED:true}
+      initialize-schema: ${AI_AGENT_GRAPH_CHECKPOINT_INITIALIZE_SCHEMA:true}
+    summarization:
+      max-tokens-before-summary: ${AI_AGENT_GRAPH_SUMMARY_MAX_TOKENS:6000}
+      messages-to-keep: ${AI_AGENT_GRAPH_SUMMARY_MESSAGES_TO_KEEP:6}
+  mcp:
+    prewarm-enabled: ${AI_AGENT_MCP_PREWARM_ENABLED:true}
+    prewarm-concurrency: ${AI_AGENT_MCP_PREWARM_CONCURRENCY:4}
+    resolve-timeout-seconds: ${AI_AGENT_MCP_RESOLVE_TIMEOUT_SECONDS:5}
   vector-store:
     enabled: ${AI_AGENT_VECTOR_STORE_ENABLED:false}
-    base-url: ${AI_AGENT_VECTOR_STORE_BASE_URL:https://api.jina.ai/v1}
-    api-key: ${JINA_API_KEY:}
-    model: ${AI_AGENT_VECTOR_STORE_MODEL:jina-embeddings-v5-text-small}
+    base-url: ${AI_AGENT_VECTOR_STORE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+    api-key: ${OPENAI_API_KEY:}
+    model: ${AI_AGENT_VECTOR_STORE_MODEL:text-embedding-v4}
     dimensions: ${AI_AGENT_VECTOR_STORE_DIMENSIONS:1024}
   hybrid-retrieval:
     es-base-url: ${AI_AGENT_ES_BASE_URL:http://127.0.0.1:9200}

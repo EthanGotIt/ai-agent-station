@@ -43,7 +43,7 @@ public class AiAgentConfig {
         String embeddingModel = vectorStoreProperties.getModel();
         Integer embeddingDimensions = vectorStoreProperties.getDimensions();
         if (!StringUtils.hasText(apiKey)) {
-            throw new IllegalStateException("启用 PgVector 向量库时必须配置向量模型密钥，请检查 JINA_API_KEY 或 ai-agent.vector-store.api-key");
+            throw new IllegalStateException("启用 PgVector 向量库时必须配置百炼模型密钥，请检查 OPENAI_API_KEY 或 ai-agent.vector-store.api-key");
         }
 
         OpenAiApi openAiApi = OpenAiApi.builder()

@@ -6,13 +6,10 @@ param(
 
 $repoRoot = Get-RepoRoot
 Set-LocalAppEnvironment -JavaHome $JavaHome
+$env:AI_AGENT_AUTO_CONFIG_ENABLED = 'false'
 
 if ([string]::IsNullOrWhiteSpace($env:OPENAI_API_KEY)) {
     throw '未检测到 OPENAI_API_KEY，应用启动仍需要真实对话模型密钥。'
-}
-
-if ([string]::IsNullOrWhiteSpace($env:JINA_API_KEY)) {
-    throw '未检测到 JINA_API_KEY，Markdown Parent-Child 导入需要真实 embedding 能力。'
 }
 
 Push-Location $repoRoot

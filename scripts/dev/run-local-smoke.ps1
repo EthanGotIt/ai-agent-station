@@ -187,16 +187,17 @@ if ($esChildOnly -le 0) {
 }
 
 $timestamp = [DateTimeOffset]::Now.ToUnixTimeMilliseconds()
-$flowResult = Invoke-AgentExecuteWithRetry -Label 'Flow smoke' -Payload @{
+$graphResult = Invoke-AgentExecuteWithRetry -Label 'GraphRuntime smoke' -Payload @{
     aiAgentId = '1'
     sessionId = "smoke-flow-$timestamp"
     message = '请把 AI Agent Station 当前主链路整理成 5 条可写进周报的总结。'
     maxStep = 3
 }
-$flowEvents = $flowResult.Events
-Assert-EventPresent -Events $flowEvents -Value 'complete'
-$flowRun = $flowResult.RunDetail
-Assert-RunSucceeded -RunDetail $flowRun -Label 'Flow smoke'
+$graphEvents = $graphResult.Events
+Assert-EventPresent -Events $graphEvents -Value 'graph_lifecycle'
+Assert-EventPresent -Events $graphEvents -Value 'complete'
+$graphRun = $graphResult.RunDetail
+Assert-RunSucceeded -RunDetail $graphRun -Label 'GraphRuntime smoke'
 
 $toolResult = Invoke-AgentExecuteWithRetry -Label '工具路由 smoke' -Payload @{
     aiAgentId = '1'
@@ -213,7 +214,7 @@ Assert-RunSucceeded -RunDetail $toolRun -Label '工具路由 smoke'
 $ragResult = Invoke-AgentExecuteWithRetry -Label 'RAG smoke' -Payload @{
     aiAgentId = '1'
     sessionId = "smoke-rag-$timestamp"
-    message = '请仅基于已导入的 Markdown 知识完成回答，不要调用外部 MCP 搜索工具。请回答 Spring AI MCP Client 常见接入方式，并按结论、证据、落地建议输出。'
+    message = '请仅基于已导入的 Markdown 知识完成回答，不要调用外部 MCP 搜索工具。请调用 rag_search 查询 Spring AI MCP Client 常见接入方式，并按结论、证据、落地建议输出。'
     maxStep = 3
 }
 $ragEvents = $ragResult.Events
@@ -242,20 +243,39 @@ $memorySecondResult = Invoke-AgentExecuteWithRetry -Label '记忆续轮 smoke' -
 Assert-EventPresent -Events $memorySecondResult.Events -Value 'context_boundary'
 Assert-EventPresent -Events $memorySecondResult.Events -Value 'complete'
 Assert-RunSucceeded -RunDetail $memorySecondResult.RunDetail -Label '记忆续轮 smoke'
-if ([string]::IsNullOrWhiteSpace($memorySecondResult.RunDetail.contextBoundary.sessionContextSummary)) {
-    throw '记忆续轮 smoke 未加载同一 session 的历史摘要。'
+$conversationScope = $memorySecondResult.RunDetail.contextBoundary.conversationScope
+if ($conversationScope -ne 'postgres_graph_checkpoint') {
+    throw "记忆续轮 smoke 未使用 PostgreSQL Graph checkpoint，conversationScope=$conversationScope"
 }
-
-$allEvents = @($flowEvents) + @($toolEvents) + @($ragEvents) + @($memoryFirstResult.Events) + @($memorySecondResult.Events)
-$contextGuardEvent = $allEvents | Where-Object {
-    $_ -and
-    ($_.PSObject.Properties.Name -contains 'subType') -and
-    $_.subType -eq 'context_guard'
-}
-if (-not $contextGuardEvent) {
-    Write-Warning '本轮 smoke 未触发 context_guard。该事件依赖实际模型输出长度，确定性行为由 AgentContextWindowServiceTest 覆盖。'
+$firstBoundary = $memoryFirstResult.Events | Where-Object {
+    $_ -and ($_.PSObject.Properties.Name -contains 'subType') -and $_.subType -eq 'context_boundary'
+} | Select-Object -First 1
+$secondBoundary = $memorySecondResult.Events | Where-Object {
+    $_ -and ($_.PSObject.Properties.Name -contains 'subType') -and $_.subType -eq 'context_boundary'
+} | Select-Object -First 1
+$firstThreadId = if ($firstBoundary -and
+    ($firstBoundary.PSObject.Properties.Name -contains 'payload') -and
+    ($firstBoundary.payload.PSObject.Properties.Name -contains 'threadId')) {
+    [string]$firstBoundary.payload.threadId
 } else {
-    Write-Host '本轮 smoke 已触发 context_guard。'
+    ''
+}
+$secondThreadId = if ($secondBoundary -and
+    ($secondBoundary.PSObject.Properties.Name -contains 'payload') -and
+    ($secondBoundary.payload.PSObject.Properties.Name -contains 'threadId')) {
+    [string]$secondBoundary.payload.threadId
+} else {
+    ''
+}
+if (-not $firstBoundary -or -not $secondBoundary -or
+    [string]::IsNullOrWhiteSpace($firstThreadId) -or
+    $firstThreadId -ne $secondThreadId) {
+    throw '记忆续轮 smoke 未复用同一 Graph threadId。'
+}
+$graphThreadCount = [int](Get-PgScalar -Sql 'SELECT COUNT(1) FROM GraphThread WHERE is_released = FALSE;')
+$graphCheckpointCount = [int](Get-PgScalar -Sql 'SELECT COUNT(1) FROM GraphCheckpoint;')
+if ($graphThreadCount -le 0 -or $graphCheckpointCount -le 0) {
+    throw "Graph checkpoint 未写入，threads=$graphThreadCount checkpoints=$graphCheckpointCount"
 }
 
-Write-Host '本地 smoke 验证完成：Flow / 工具路由 / RAG 证据 / session 短期记忆链路均已通过。'
+Write-Host '本地 smoke 验证完成：GraphRuntime / 工具路由 / RAG 证据 / PostgreSQL session checkpoint 均已通过。'

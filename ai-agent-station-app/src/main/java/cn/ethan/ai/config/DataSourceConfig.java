@@ -6,6 +6,7 @@ import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -69,7 +70,7 @@ public class DataSourceConfig {
     }
 
     @Bean("pgVectorDataSource")
-    @ConditionalOnProperty(name = "ai-agent.vector-store.enabled", havingValue = "true")
+    @ConditionalOnExpression("'${ai-agent.vector-store.enabled:false}' == 'true' || '${ai-agent.graph.checkpoint.enabled:true}' == 'true'")
     public DataSource pgVectorDataSource(@Value("${spring.datasource.pgvector.driver-class-name}") String driverClassName,
                                          @Value("${spring.datasource.pgvector.url}") String url,
                                          @Value("${spring.datasource.pgvector.username}") String username,
@@ -99,7 +100,7 @@ public class DataSourceConfig {
     }
 
     @Bean("pgVectorJdbcTemplate")
-    @ConditionalOnProperty(name = "ai-agent.vector-store.enabled", havingValue = "true")
+    @ConditionalOnExpression("'${ai-agent.vector-store.enabled:false}' == 'true' || '${ai-agent.graph.checkpoint.enabled:true}' == 'true'")
     public JdbcTemplate pgVectorJdbcTemplate(@Qualifier("pgVectorDataSource") DataSource dataSource) {
         return new JdbcTemplate(dataSource);
     }

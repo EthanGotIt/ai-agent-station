@@ -10,10 +10,6 @@ Set-LocalAppEnvironment -JavaHome $JavaHome
 if ([string]::IsNullOrWhiteSpace($env:OPENAI_API_KEY)) {
     throw '未检测到 OPENAI_API_KEY，请先在系统环境变量或当前终端中配置。'
 }
-if ([string]::IsNullOrWhiteSpace($env:JINA_API_KEY)) {
-    throw '未检测到 JINA_API_KEY，当前默认使用 Jina Embedding 作为向量模型。'
-}
-
 Push-Location $repoRoot
 try {
     Write-Host '已写入本地启动环境变量：MYSQL_URL / PGVECTOR_URL / AI_AGENT_ES_BASE_URL / AI_AGENT_VECTOR_STORE_ENABLED'

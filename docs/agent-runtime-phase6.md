@@ -1,5 +1,7 @@
 # Agent Runtime Phase 6：MCP、Prompt 与记忆治理收敛
 
+> 历史阶段记录：当前执行内核已在 Phase 8 替换为 Spring AI Alibaba ReactAgent GraphRuntime。
+
 ## 状态
 
 状态：已完成。代码、SQL seed、本地 DB Prompt、目标单测和完整回归已同步；真实 API/MCP smoke 未执行。

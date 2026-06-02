@@ -144,6 +144,9 @@
                     <includes>
                         <include>**/*Test.java</include>
                     </includes>
+                    <systemPropertyVariables>
+                        <ai-agent.mcp.prewarm-enabled>false</ai-agent.mcp.prewarm-enabled>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
             <plugin>

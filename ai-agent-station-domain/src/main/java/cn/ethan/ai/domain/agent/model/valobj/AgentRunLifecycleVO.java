@@ -89,25 +89,6 @@ public class AgentRunLifecycleVO {
             return AgentRunStatusEnumVO.INIT == status ? "CREATED" : "RUNNING";
         }
 
-        String stepId = StringUtils.defaultString(runningStep.getStepId());
-        if ("flow_root".equals(stepId)) {
-            return "INITIALIZING";
-        }
-        if ("flow_tool_routing".equals(stepId)) {
-            return "TOOL_ROUTING";
-        }
-        if ("flow_plan_generate".equals(stepId)) {
-            return "PLANNING";
-        }
-        if ("flow_plan_validate".equals(stepId)) {
-            return "VALIDATING";
-        }
-        if ("flow_supervision".equals(stepId)) {
-            return "SUPERVISING";
-        }
-        if ("flow_summary".equals(stepId)) {
-            return "SUMMARIZING";
-        }
         return "EXECUTING";
     }
 

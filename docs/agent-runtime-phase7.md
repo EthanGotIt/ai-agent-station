@@ -1,5 +1,7 @@
 # Agent Runtime Phase 7：持久化 Session 短期记忆
 
+> 历史阶段记录：当前执行内核已在 Phase 8 替换为 Spring AI Alibaba ReactAgent GraphRuntime，MySQL 消息双写已删除。
+
 ## 状态
 
 状态：已完成。代码、SQL seed、本地 MySQL 结构同步、目标单测、完整回归和真实双轮 API smoke 已完成。

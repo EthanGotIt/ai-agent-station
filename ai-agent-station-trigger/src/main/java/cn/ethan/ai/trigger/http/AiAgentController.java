@@ -17,8 +17,7 @@ import cn.ethan.ai.domain.agent.model.valobj.enums.AgentStepRunStatusEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.StreamTransportTypeEnumVO;
 import cn.ethan.ai.domain.agent.service.IAgentDispatchService;
 import cn.ethan.ai.domain.agent.service.IAgentRunService;
-import cn.ethan.ai.domain.agent.service.execute.flow.AgentContextBoundaryService;
-import cn.ethan.ai.domain.agent.service.execute.flow.AgentExecutionException;
+import cn.ethan.ai.domain.agent.service.execute.graph.AgentExecutionException;
 import cn.ethan.ai.trigger.http.adapter.ResponseBodyEmitterStreamPort;
 import com.alibaba.fastjson.JSON;
 import jakarta.annotation.Resource;
@@ -50,9 +49,6 @@ public class AiAgentController implements IAiAgentService {
 
     @Resource
     private IAgentRunService agentRunService;
-
-    @Resource
-    private AgentContextBoundaryService agentContextBoundaryService;
 
     @Override
     @RequestMapping(value = "execute", method = RequestMethod.POST)
@@ -215,13 +211,15 @@ public class AiAgentController implements IAiAgentService {
     }
 
     private AgentContextBoundaryVO buildPersistedContextBoundary(AgentRunDetailVO detail) {
-        AgentContextBoundaryVO boundary = agentContextBoundaryService.buildBoundary(
-                detail.getSessionId(),
-                detail.getUserMessage(),
-                detail.getSessionContextSummary()
-        );
-        AgentContextBoundaryService.attachRunSummary(boundary, detail.getContextSummary());
-        return boundary;
+        return AgentContextBoundaryVO.builder()
+                .sessionId(detail.getSessionId())
+                .projectRuleScope("agent_system_prompt")
+                .userPreferenceScope("session_checkpoint")
+                .conversationScope("postgres_graph_checkpoint")
+                .sessionContextSummary(detail.getSessionContextSummary())
+                .runContextSummary(detail.getContextSummary())
+                .longTermMemoryEnabled(false)
+                .build();
     }
 
     private String resolveStepTerminalReason(AgentStepRunRecordVO step) {

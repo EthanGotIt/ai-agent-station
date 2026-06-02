@@ -5,6 +5,8 @@ import cn.ethan.ai.domain.agent.adapter.repository.IRagParentChildIngestionRepos
 import cn.ethan.ai.domain.agent.model.valobj.RagIngestionChunkVO;
 import cn.ethan.ai.domain.agent.model.valobj.RagIngestionDocumentVO;
 import cn.ethan.ai.domain.agent.model.valobj.RagParentChildIngestionResultVO;
+import com.alibaba.cloud.ai.parser.markdown.MarkdownDocumentParser;
+import com.alibaba.cloud.ai.parser.markdown.config.MarkdownDocumentParserConfig;
 import com.alibaba.fastjson.JSON;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +17,9 @@ import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -36,6 +41,14 @@ public class RagParentChildIngestionService {
     private static final int MAX_PARENT_CHARS = 1800;
     private static final int DOC_SUMMARY_MAX_CHARS = 220;
     private static final int ENABLED_STATUS = 1;
+
+    private final MarkdownDocumentParser markdownDocumentParser = new MarkdownDocumentParser(
+            MarkdownDocumentParserConfig.builder()
+                    .withIncludeCodeBlock(true)
+                    .withIncludeBlockquote(true)
+                    .withHorizontalRuleCreateDocument(false)
+                    .build()
+    );
 
     private final TokenTextSplitter tokenTextSplitter;
     private final IRagParentChildIngestionRepository ragParentChildIngestionRepository;
@@ -155,20 +168,21 @@ public class RagParentChildIngestionService {
 
     private List<MarkdownSection> splitParentSections(String documentTitle, String markdownText) {
         List<MarkdownSection> sections = new ArrayList<>();
-        String currentSectionTitle = StringUtils.defaultIfBlank(documentTitle, "默认章节");
-        StringBuilder buffer = new StringBuilder();
-
-        String[] lines = markdownText.replace("\r\n", "\n").replace('\r', '\n').split("\n", -1);
-        for (String line : lines) {
-            Matcher matcher = MARKDOWN_HEADING_PATTERN.matcher(line.trim());
-            if (matcher.matches()) {
-                flushSection(sections, currentSectionTitle, buffer);
-                currentSectionTitle = matcher.group(2).trim();
+        Charset parserCharset = Charset.defaultCharset();
+        if (!parserCharset.newEncoder().canEncode(markdownText)) {
+            throw new IllegalArgumentException("当前 JVM 默认字符集无法无损解析 Markdown，请使用 UTF-8 启动应用");
+        }
+        // Alibaba MarkdownDocumentParser internally creates an InputStreamReader without a charset.
+        List<Document> parsedDocuments = markdownDocumentParser.parse(
+                new ByteArrayInputStream(markdownText.getBytes(parserCharset))
+        );
+        for (Document document : parsedDocuments) {
+            String content = normalizeSectionBody(document.getText());
+            if (StringUtils.isBlank(content)) {
                 continue;
             }
-            buffer.append(line).append(System.lineSeparator());
+            sections.add(new MarkdownSection(resolveSectionTitle(documentTitle, document), content));
         }
-        flushSection(sections, currentSectionTitle, buffer);
 
         List<MarkdownSection> normalizedSections = new ArrayList<>();
         for (MarkdownSection section : sections) {
@@ -177,14 +191,16 @@ public class RagParentChildIngestionService {
         return normalizedSections;
     }
 
-    private void flushSection(List<MarkdownSection> sections, String sectionTitle, StringBuilder buffer) {
-        String content = normalizeSectionBody(buffer.toString());
-        if (StringUtils.isBlank(content)) {
-            buffer.setLength(0);
-            return;
+    private String resolveSectionTitle(String documentTitle, Document document) {
+        if (document.getMetadata() != null) {
+            for (String key : List.of("title", "section_title", "sectionTitle", "heading")) {
+                Object value = document.getMetadata().get(key);
+                if (value != null && StringUtils.isNotBlank(value.toString())) {
+                    return value.toString().trim();
+                }
+            }
         }
-        sections.add(new MarkdownSection(StringUtils.defaultIfBlank(sectionTitle, "默认章节"), content));
-        buffer.setLength(0);
+        return StringUtils.defaultIfBlank(documentTitle, "默认章节");
     }
 
     private List<MarkdownSection> splitOversizedSection(MarkdownSection section) {
@@ -338,7 +354,7 @@ public class RagParentChildIngestionService {
     }
 
     private String buildVectorDocumentId(String docId, String chunkId) {
-        return UUID.nameUUIDFromBytes((docId + ":" + chunkId).getBytes()).toString();
+        return UUID.nameUUIDFromBytes((docId + ":" + chunkId).getBytes(StandardCharsets.UTF_8)).toString();
     }
 
     private String firstNonBlankLine(String markdownText) {

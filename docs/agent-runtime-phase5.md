@@ -1,5 +1,7 @@
 # Agent Runtime Phase 5：整体收口与最终验收
 
+> 历史阶段记录：当前执行内核已在 Phase 8 替换为 Spring AI Alibaba ReactAgent GraphRuntime。
+
 状态：已完成。文档与材料已收口，最终验证记录以本文件和总控方案为准。
 
 ## 技术评估
@@ -86,7 +88,7 @@ git diff --check
 Smoke 可行性检查：
 
 ```powershell
-# 检查 OPENAI_API_KEY / JINA_API_KEY / CONTEXT7_API_KEY / EXA_API_KEY 是否存在
+# 检查 OPENAI_API_KEY / CONTEXT7_API_KEY / EXA_API_KEY 是否存在
 # 检查 scripts/dev/up-local-stack.ps1、start-app-local.ps1、import-markdown-rag.ps1、run-local-smoke.ps1 是否存在
 ```
 

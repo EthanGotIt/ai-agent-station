@@ -95,8 +95,13 @@ public class HybridRagRetrievalPort implements IRagRetrievalPort {
         SearchRequest vectorRequest = SearchRequest.from(originalRequest)
                 .topK(Math.max(properties.getVectorRouteTopK(), originalRequest.getTopK()))
                 .build();
-        List<Document> raw = vectorStore.similaritySearch(vectorRequest);
-        return withEvidence(raw, "pgvector", originalRequest.getQuery());
+        try {
+            List<Document> raw = vectorStore.similaritySearch(vectorRequest);
+            return withEvidence(raw, "pgvector", originalRequest.getQuery());
+        } catch (Exception e) {
+            log.warn("PGVector 语义召回异常，已降级为 BM25。query:{}", originalRequest.getQuery(), e);
+            return List.of();
+        }
     }
 
     private List<Document> bm25Search(String query, int finalTopK) {

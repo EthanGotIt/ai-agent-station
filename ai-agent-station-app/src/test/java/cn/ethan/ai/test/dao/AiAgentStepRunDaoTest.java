@@ -45,4 +45,35 @@ public class AiAgentStepRunDaoTest {
         Assert.assertEquals("step_1", rows.get(0).getStepId());
         log.info("步骤运行记录查询结果：{}", rows.get(0));
     }
+
+    @Test
+    public void test_cancelRunningByRunId() {
+        String runId = "step-cancel-" + System.currentTimeMillis();
+        LocalDateTime startTime = LocalDateTime.now().minusSeconds(1);
+        aiAgentStepRunDao.insert(step(runId, "step_running", "RUNNING", startTime));
+        aiAgentStepRunDao.insert(step(runId, "step_success", "SUCCESS", startTime));
+
+        int updated = aiAgentStepRunDao.cancelRunningByRunId(runId, "测试取消", LocalDateTime.now());
+
+        List<AiAgentStepRun> rows = aiAgentStepRunDao.queryByRunId(runId);
+        Assert.assertEquals(1, updated);
+        Assert.assertEquals("CANCELLED", rows.get(0).getStatus());
+        Assert.assertEquals("测试取消", rows.get(0).getErrorMessage());
+        Assert.assertNotNull(rows.get(0).getEndTime());
+        Assert.assertEquals("SUCCESS", rows.get(1).getStatus());
+    }
+
+    private AiAgentStepRun step(String runId, String stepId, String status, LocalDateTime startTime) {
+        return AiAgentStepRun.builder()
+                .runId(runId)
+                .stepId(stepId)
+                .stepName(stepId)
+                .stepOrder("step_running".equals(stepId) ? 1 : 2)
+                .stepType("LLM")
+                .status(status)
+                .startTime(startTime)
+                .createTime(LocalDateTime.now())
+                .updateTime(LocalDateTime.now())
+                .build();
+    }
 }

@@ -1,5 +1,7 @@
 # Agent Runtime Phase 2：Tool Calling 治理
 
+> 历史阶段记录：当前执行内核已在 Phase 8 替换为 Spring AI Alibaba ReactAgent GraphRuntime。
+
 状态：核心代码已完成，目标单测已通过，真实 MCP smoke 待本地 key 与工具服务验证。
 
 ## 技术评估

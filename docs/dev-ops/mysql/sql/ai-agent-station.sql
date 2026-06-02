@@ -1,5 +1,5 @@
 -- AI Agent Station MySQL seed data
--- 当前数据保留单 Flow Plan 编排体，并内置通用问答更常用的 MCP 工具配置。
+-- 当前数据保留单 ReactAgent GraphRuntime，并内置通用问答更常用的 MCP 工具配置。
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -30,7 +30,7 @@ CREATE TABLE `ai_agent` (
 LOCK TABLES `ai_agent` WRITE;
 INSERT INTO `ai_agent` (`id`, `agent_id`, `agent_name`, `description`, `channel`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '1', 'Flow Plan 编排体', '结构化计划、运行时工具注入、顺序执行、质量监督与总结输出', 'agent', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, '1', 'ReactAgent GraphRuntime', '基于 Graph checkpoint 的单 Agent 执行、运行时工具注入、Todo 规划与摘要压缩', 'agent', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 对话客户端配置
@@ -50,9 +50,7 @@ CREATE TABLE `ai_client` (
 LOCK TABLES `ai_client` WRITE;
 INSERT INTO `ai_client` (`id`, `client_id`, `client_name`, `description`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '2101', '工具能力摘要客户端', '读取当前智能体可用 MCP 工具，并为执行阶段提供运行时工具策略上下文', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (2, '2102', '结构化计划客户端', '根据用户目标生成 JSON Plan，要求步骤、依赖和成功标准可校验', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (3, '2103', '计划执行客户端', '按已校验的 Plan 执行步骤，并承担质量监督和最终总结', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, '2103', 'GraphRuntime 执行客户端', '为 ReactAgent 提供模型和系统提示词，工具在请求期动态筛选后注入', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 模型 API 配置
@@ -76,29 +74,6 @@ LOCK TABLES `ai_client_api` WRITE;
 INSERT INTO `ai_client_api` (`id`, `api_id`, `base_url`, `api_key`, `completions_path`, `embeddings_path`, `status`, `create_time`, `update_time`)
 VALUES
     (1, '1001', 'https://dashscope.aliyuncs.com/compatible-mode/v1', '${OPENAI_API_KEY}', '/chat/completions', '/embeddings', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
-UNLOCK TABLES;
-
--- 顾问配置
-DROP TABLE IF EXISTS `ai_client_advisor`;
-CREATE TABLE `ai_client_advisor` (
-    `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-    `advisor_id` varchar(64) NOT NULL COMMENT '顾问业务ID',
-    `advisor_name` varchar(50) NOT NULL COMMENT '顾问名称',
-    `advisor_type` varchar(50) NOT NULL COMMENT '顾问类型',
-    `order_num` int DEFAULT '0' COMMENT '执行顺序',
-    `ext_param` varchar(2048) DEFAULT NULL COMMENT '扩展参数 JSON',
-    `status` tinyint(1) DEFAULT '1' COMMENT '状态：0禁用，1启用',
-    `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_advisor_id` (`advisor_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='模型顾问配置表';
-
-LOCK TABLES `ai_client_advisor` WRITE;
-INSERT INTO `ai_client_advisor` (`id`, `advisor_id`, `advisor_name`, `advisor_type`, `order_num`, `ext_param`, `status`, `create_time`, `update_time`)
-VALUES
-    (1, '4001', '会话记忆', 'ChatMemory', 1, '{\n  "maxMessages": 30\n}', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (2, '4002', '知识问答增强', 'RagAnswer', 2, '{\n  "topK": 4,\n  "queryRewriteEnabled": true,\n  "maxRewriteQueries": 3,\n  "routeTopK": 8,\n  "deduplicateEnabled": true,\n  "contentFingerprintLength": 180\n}', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 知识库配置表保留，当前不写入 RAG 种子数据
@@ -179,9 +154,7 @@ CREATE TABLE `ai_client_system_prompt` (
 LOCK TABLES `ai_client_system_prompt` WRITE;
 INSERT INTO `ai_client_system_prompt` (`id`, `prompt_id`, `prompt_name`, `prompt_content`, `description`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '6001', '工具能力摘要提示词', '你是 Flow Plan 编排体的工具能力整理助手。你的职责是理解当前可用 MCP 工具的用途和限制，为执行阶段的运行时工具注入提供简洁、准确的策略上下文。', '工具能力摘要', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (2, '6002', '结构化计划生成提示词', '你是 Flow Plan 编排体的计划生成器。请根据用户目标生成结构化 JSON Plan，计划只描述目标、步骤、依赖关系和成功标准，不输出 toolName 字段，也不提前绑定具体 MCP 工具。除 JSON 外不要输出额外解释。', 'JSON Plan 生成', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (3, '6003', '步骤执行与总结提示词', '你是 Flow Plan 编排体的执行助手。请严格依据已校验的 Plan 执行当前步骤；可用工具会由系统在执行阶段按权限注入，工具失败时不得编造结果，应说明失败并给出替代方案。输出要聚焦结果、过程可追踪，质量检查和最终总结要直接回应用户原始目标。', '步骤执行、质量监督、最终总结', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, '6003', 'GraphRuntime 系统提示词', '你是 AI Agent Station 的执行智能体。请直接解决用户目标。复杂任务先维护 Todo 清单再逐项完成；需要外部信息时按需调用已经过权限筛选的 MCP 工具；需要依据项目知识库时调用 rag_search。工具失败或证据不足时不得编造结果，应明确说明边界并给出替代方案。', 'ReactAgent 执行、工具治理和证据约束', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- MCP 工具配置
@@ -192,7 +165,7 @@ CREATE TABLE `ai_client_tool_mcp` (
     `mcp_name` varchar(50) NOT NULL COMMENT 'MCP 工具名称',
     `transport_type` varchar(20) NOT NULL COMMENT '传输协议：stdio 或 streamable_http',
     `transport_config` varchar(1024) DEFAULT NULL COMMENT '传输配置 JSON',
-    `request_timeout` int DEFAULT '3' COMMENT '请求及初始化超时时间，单位分钟',
+    `request_timeout` int DEFAULT '60' COMMENT '请求及初始化超时时间，单位秒',
     `status` tinyint(1) DEFAULT '1' COMMENT '状态：0禁用，1启用',
     `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -203,11 +176,11 @@ CREATE TABLE `ai_client_tool_mcp` (
 LOCK TABLES `ai_client_tool_mcp` WRITE;
 INSERT INTO `ai_client_tool_mcp` (`id`, `mcp_id`, `mcp_name`, `transport_type`, `transport_config`, `request_timeout`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '5001', 'context7-docs', 'stdio', '{\n  "context7-docs": {\n    "command": "npx.cmd",\n    "args": ["-y", "@upstash/context7-mcp@latest"],\n    "env": {\n      "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY:}"\n    },\n    "toolNames": ["context7-docs", "resolve-library-id", "get-library-docs"]\n  }\n}', 3, 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (2, '5002', 'exa-search', 'streamable_http', '{\n  "baseUri": "https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa,web_search_advanced_exa",\n  "headers": {\n    "x-api-key": "${EXA_API_KEY:}"\n  },\n  "toolNames": ["exa-search", "web_search_exa", "web_fetch_exa", "web_search_advanced_exa"]\n}', 1, 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (3, '5003', 'sequential-thinking', 'stdio', '{\n  "sequential-thinking": {\n    "command": "npx.cmd",\n    "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],\n    "toolNames": ["sequential-thinking", "sequential_thinking"]\n  }\n}', 3, 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (4, '5004', 'memory', 'stdio', '{\n  "memory": {\n    "command": "npx.cmd",\n    "args": ["-y", "@modelcontextprotocol/server-memory"],\n    "env": {\n      "MEMORY_FILE_PATH": "${AI_AGENT_MEMORY_FILE:./data/mcp-memory.jsonl}"\n    },\n    "toolNames": ["memory", "read_graph", "search_nodes", "open_nodes", "create_entities", "create_relations", "add_observations"]\n  }\n}', 3, 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (5, '5005', 'windows-notify', 'stdio', '{\n  "windows-notify": {\n    "command": "npx.cmd",\n    "args": ["-y", "mcp-windows-notify"],\n    "toolNames": ["windows-notify", "send_notification", "notify_task_complete", "notify_error", "notify_reminder"]\n  }\n}', 3, 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, '5001', 'context7-docs', 'stdio', '{\n  "context7-docs": {\n    "command": "cmd.exe",\n    "args": ["/c", "npx", "-y", "@upstash/context7-mcp@3.0.0"],\n    "env": {\n      "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY:}",\n      "npm_config_prefer_offline": "true"\n    },\n    "toolNames": ["context7-docs", "resolve-library-id", "get-library-docs"]\n  }\n}', 60, 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (2, '5002', 'exa-search', 'streamable_http', '{\n  "baseUri": "https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa,web_search_advanced_exa",\n  "headers": {\n    "x-api-key": "${EXA_API_KEY:}"\n  },\n  "requiredHeaders": ["x-api-key"],\n  "toolNames": ["exa-search", "web_search_exa", "web_fetch_exa", "web_search_advanced_exa"]\n}', 15, 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (3, '5003', 'sequential-thinking', 'stdio', '{\n  "sequential-thinking": {\n    "command": "cmd.exe",\n    "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-sequential-thinking@2025.12.18"],\n    "env": {\n      "npm_config_prefer_offline": "true"\n    },\n    "toolNames": ["sequential-thinking", "sequential_thinking"]\n  }\n}', 60, 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (4, '5004', 'memory', 'stdio', '{\n  "memory": {\n    "command": "cmd.exe",\n    "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-memory@2026.1.26"],\n    "env": {\n      "MEMORY_FILE_PATH": "${AI_AGENT_MEMORY_FILE:./data/mcp-memory.jsonl}",\n      "npm_config_prefer_offline": "true"\n    },\n    "toolNames": ["memory", "read_graph", "search_nodes", "open_nodes", "create_entities", "create_relations", "add_observations"]\n  }\n}', 60, 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (5, '5005', 'windows-notify', 'stdio', '{\n  "windows-notify": {\n    "command": "cmd.exe",\n    "args": ["/c", "npx", "-y", "mcp-windows-notify@1.0.1"],\n    "env": {\n      "npm_config_prefer_offline": "true"\n    },\n    "toolNames": ["windows-notify", "send_notification", "notify_task_complete", "notify_error", "notify_reminder"]\n  }\n}', 60, 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 聊天模型配置
@@ -261,10 +234,6 @@ CREATE TABLE `ai_agent_run` (
     `final_summary` mediumtext COMMENT '最终总结',
     `error_message` varchar(1024) DEFAULT NULL COMMENT '错误信息',
     `cancel_reason` varchar(255) DEFAULT NULL COMMENT '取消原因',
-    `session_context_summary` mediumtext COMMENT '执行前注入的 session 短期记忆快照',
-    `context_original_chars` int DEFAULT '0' COMMENT '压缩前上下文长度',
-    `context_compressed_chars` int DEFAULT '0' COMMENT '压缩后上下文长度',
-    `context_summary` mediumtext COMMENT '历史摘要',
     `start_time` datetime DEFAULT NULL COMMENT '开始时间',
     `end_time` datetime DEFAULT NULL COMMENT '结束时间',
     `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -274,22 +243,6 @@ CREATE TABLE `ai_agent_run` (
     KEY `idx_run_session` (`session_id`),
     KEY `idx_run_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='智能体运行主表';
-
--- Session 级短期记忆消息表
-DROP TABLE IF EXISTS `ai_agent_conversation_message`;
-CREATE TABLE `ai_agent_conversation_message` (
-    `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-    `session_id` varchar(128) NOT NULL COMMENT '会话ID',
-    `run_id` varchar(64) NOT NULL COMMENT '运行ID',
-    `role` varchar(32) NOT NULL COMMENT '消息角色：USER、ASSISTANT',
-    `content` mediumtext NOT NULL COMMENT '用户可见消息原文',
-    `content_summary` text COMMENT '轻量摘要，用于超预算压缩',
-    `context_units` int DEFAULT '0' COMMENT '轻量上下文预算估算值',
-    `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    PRIMARY KEY (`id`),
-    KEY `idx_conversation_session_id` (`session_id`, `id`),
-    UNIQUE KEY `uk_conversation_run_role` (`run_id`, `role`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Session级持久化短期记忆消息表';
 
 -- 智能体运行步骤表
 DROP TABLE IF EXISTS `ai_agent_step_run`;
@@ -313,39 +266,36 @@ CREATE TABLE `ai_agent_step_run` (
     KEY `idx_step_run_order` (`run_id`, `step_order`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='智能体运行步骤表';
 
--- Flow 节点配置
+-- 单 Agent GraphRuntime 配置
+DROP TABLE IF EXISTS `ai_agent_conversation_message`;
 DROP TABLE IF EXISTS `ai_agent_flow_config`;
-CREATE TABLE `ai_agent_flow_config` (
+DROP TABLE IF EXISTS `ai_client_advisor`;
+DROP TABLE IF EXISTS `ai_agent_runtime_config`;
+CREATE TABLE `ai_agent_runtime_config` (
     `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `agent_id` varchar(64) NOT NULL COMMENT '智能体业务ID',
     `client_id` varchar(64) NOT NULL COMMENT '客户端业务ID',
-    `client_name` varchar(64) DEFAULT NULL COMMENT 'Flow 节点名称',
-    `client_type` varchar(64) DEFAULT NULL COMMENT 'Flow 节点类型',
-    `sequence` int NOT NULL COMMENT '节点顺序',
-    `step_prompt` text COMMENT '节点说明',
+    `max_model_calls` int NOT NULL DEFAULT '8' COMMENT '单次运行最大模型调用数',
+    `max_tool_calls` int NOT NULL DEFAULT '8' COMMENT '单次运行最大工具调用数',
     `status` int DEFAULT '1' COMMENT '状态：0禁用，1启用',
     `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_agent_client_seq` (`agent_id`, `client_id`, `sequence`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='智能体 Flow 节点配置表';
+    UNIQUE KEY `uk_agent_id` (`agent_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='智能体 GraphRuntime 配置表';
 
-LOCK TABLES `ai_agent_flow_config` WRITE;
-INSERT INTO `ai_agent_flow_config` (`id`, `agent_id`, `client_id`, `client_name`, `client_type`, `sequence`, `step_prompt`, `status`, `create_time`)
+LOCK TABLES `ai_agent_runtime_config` WRITE;
+INSERT INTO `ai_agent_runtime_config` (`id`, `agent_id`, `client_id`, `max_model_calls`, `max_tool_calls`, `status`, `create_time`)
 VALUES
-    (1, '1', '2101', '工具能力摘要', 'TOOL_MCP_CLIENT', 1, '从客户端关联模型加载可用 MCP 工具，生成执行阶段工具策略上下文。', 1, '2025-09-01 00:00:00'),
-    (2, '1', '2102', '结构化计划生成', 'PLANNING_CLIENT', 2, '根据用户目标生成 JSON Plan，计划阶段不输出 toolName，也不提前绑定具体 MCP 工具。', 1, '2025-09-01 00:00:00'),
-    (3, '1', '2103', '步骤执行', 'EXECUTOR_CLIENT', 3, '按已校验的 Plan 顺序执行每个步骤。', 1, '2025-09-01 00:00:00'),
-    (4, '1', '2103', '质量监督', 'QUALITY_SUPERVISOR_CLIENT', 4, '检查步骤结果是否满足用户目标和成功标准。', 1, '2025-09-01 00:00:00'),
-    (5, '1', '2103', '总结输出', 'RESPONSE_ASSISTANT', 5, '汇总计划、执行记录和监督结果，生成最终回答。', 1, '2025-09-01 00:00:00');
+    (1, '1', '2103', 8, 8, 1, '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
--- 客户端、模型、提示词、顾问和工具的统一关联配置
+-- 客户端、模型、提示词和工具的统一关联配置
 DROP TABLE IF EXISTS `ai_client_config`;
 CREATE TABLE `ai_client_config` (
     `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `source_type` varchar(32) NOT NULL COMMENT '源类型：model 或 client',
     `source_id` varchar(64) NOT NULL COMMENT '源业务ID',
-    `target_type` varchar(32) NOT NULL COMMENT '目标类型：model、prompt、advisor、tool_mcp',
+    `target_type` varchar(32) NOT NULL COMMENT '目标类型：model、prompt、tool_mcp',
     `target_id` varchar(64) NOT NULL COMMENT '目标业务ID',
     `ext_param` varchar(1024) DEFAULT NULL COMMENT '扩展参数 JSON',
     `status` tinyint(1) DEFAULT '1' COMMENT '状态：0禁用，1启用',
@@ -359,16 +309,8 @@ CREATE TABLE `ai_client_config` (
 LOCK TABLES `ai_client_config` WRITE;
 INSERT INTO `ai_client_config` (`id`, `source_type`, `source_id`, `target_type`, `target_id`, `ext_param`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, 'client', '2101', 'model', '2001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (2, 'client', '2101', 'prompt', '6001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (3, 'client', '2101', 'advisor', '4001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (4, 'client', '2102', 'model', '2001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (5, 'client', '2102', 'prompt', '6002', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (6, 'client', '2102', 'advisor', '4001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (7, 'client', '2103', 'model', '2001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (8, 'client', '2103', 'prompt', '6003', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (9, 'client', '2103', 'advisor', '4001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (10, 'client', '2103', 'advisor', '4002', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (1, 'client', '2103', 'model', '2001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (2, 'client', '2103', 'prompt', '6003', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
     (11, 'model', '2001', 'tool_mcp', '5001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
     (12, 'model', '2001', 'tool_mcp', '5002', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
     (13, 'model', '2001', 'tool_mcp', '5003', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),

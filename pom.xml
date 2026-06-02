@@ -36,6 +36,7 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <skipTests>true</skipTests>
+        <spring-ai-alibaba.version>1.1.2.3</spring-ai-alibaba.version>
     </properties>
 
     <parent>
@@ -105,6 +106,21 @@
                 <version>1.1.7</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.cloud.ai</groupId>
+                <artifactId>spring-ai-alibaba-agent-framework</artifactId>
+                <version>${spring-ai-alibaba.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.cloud.ai</groupId>
+                <artifactId>spring-ai-alibaba-starter-document-parser-markdown</artifactId>
+                <version>${spring-ai-alibaba.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.cloud.ai</groupId>
+                <artifactId>spring-ai-alibaba-dashscope</artifactId>
+                <version>${spring-ai-alibaba.version}</version>
             </dependency>
             <dependency>
                 <groupId>cn.ethan.wrench</groupId>

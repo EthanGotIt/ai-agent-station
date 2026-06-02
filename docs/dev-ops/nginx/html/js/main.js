@@ -200,23 +200,23 @@ let selectedMaxStep = DEFAULT_MAX_STEP;
 const AGENT_CONFIGS = {
     '1': {
         id: '1',
-        name: 'Flow Plan 编排体',
-        description: '计划校验、动态工具、混合检索、质量监督',
-        capability: 'Flow Plan',
-        tags: ['Plan DSL', '动态工具路由', 'Parent-Child RAG', '流式追踪'],
+        name: 'ReactAgent GraphRuntime',
+        description: '执行图、动态工具、混合检索、checkpoint',
+        capability: 'GraphRuntime',
+        tags: ['ReactAgent', '动态工具路由', 'Parent-Child RAG', 'Session Checkpoint'],
         metrics: [
-            { label: '执行内核', value: '单 Flow' },
+            { label: '执行内核', value: 'ReactAgent' },
             { label: '工具路由', value: '按轮动态筛选' },
             { label: '检索链路', value: 'RRF + Small-to-Big' },
             { label: '接口', value: 'NDJSON' }
         ],
-        highlight: '将大模型生成的计划收敛为后端可校验、可执行、可监督的任务链路，并在知识问答场景中支持每轮动态工具选择、Parent-Child 导入、RRF 融合排序与 Small-to-Big 检索',
+        highlight: '使用 ReactAgent 承载任务执行、Todo 和 checkpoint，并在知识问答场景中支持每轮动态工具选择、Parent-Child 导入、RRF 融合排序与 Small-to-Big 检索',
         color: '#58d0b7',
         iconPath: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
         cases: [
             {
                 title: '检索 Spring AI 资料并形成落地建议',
-                content: `请围绕“Spring AI MCP Client 和 RAG Advisor 的使用方式”完成资料调研：
+            content: `请围绕“Spring AI MCP Client 和 Agentic RAG 的使用方式”完成资料调研：
 
 1. 使用可用 MCP 工具检索 Spring AI、MCP、RAG 相关资料。
 2. 提取关键实现步骤、注意事项和适用场景。
@@ -301,7 +301,7 @@ function updateAgentOverview() {
         overview.innerHTML = `
             <div class="agent-overview-label">当前未选择智能体</div>
             <div class="agent-overview-title">请选择智能编排体后再发起任务</div>
-            <div class="agent-overview-description">前端会按后端 Flow Plan 事件流展示工具摘要、结构化计划、执行过程、监督结果和最终总结。</div>
+            <div class="agent-overview-description">前端会按后端 GraphRuntime 事件流展示工具路由、Todo、执行过程、RAG 证据和最终总结。</div>
         `;
         return;
     }
@@ -309,7 +309,7 @@ function updateAgentOverview() {
     overview.innerHTML = `
         <div class="agent-overview-label">当前智能体</div>
         <div class="agent-overview-title">${escapeHtml(agent.name)} · ${escapeHtml(agent.capability)}</div>
-        <div class="agent-overview-description">${escapeHtml(agent.highlight)}。当前内置 ${agent.cases.length} 个示例，计划步数上限 maxStep=${escapeHtml(selectedMaxStep)}。</div>
+        <div class="agent-overview-description">${escapeHtml(agent.highlight)}。当前内置 ${agent.cases.length} 个示例，兼容参数 maxStep=${escapeHtml(selectedMaxStep)}，用于限制单次 GraphRuntime 的模型和工具调用次数。</div>
         <div class="agent-metrics">
             ${(agent.metrics || []).map(metric => `
                 <div class="agent-metric">

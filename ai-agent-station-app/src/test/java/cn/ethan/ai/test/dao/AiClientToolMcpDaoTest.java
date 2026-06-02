@@ -50,7 +50,7 @@ public class AiClientToolMcpDaoTest {
         try {
             aiClientToolMcp.setMcpName("DAO测试 MCP 更新");
             aiClientToolMcp.setTransportType("stdio");
-            aiClientToolMcp.setTransportConfig("{\"command\":\"npx.cmd\",\"args\":[\"-y\",\"test-mcp\"]}");
+        aiClientToolMcp.setTransportConfig("{\"command\":\"cmd.exe\",\"args\":[\"/c\",\"npx\",\"-y\",\"test-mcp\"]}");
             aiClientToolMcp.setRequestTimeout(300);
             aiClientToolMcp.setUpdateTime(LocalDateTime.now());
             int result = aiClientToolMcpDao.updateById(aiClientToolMcp);

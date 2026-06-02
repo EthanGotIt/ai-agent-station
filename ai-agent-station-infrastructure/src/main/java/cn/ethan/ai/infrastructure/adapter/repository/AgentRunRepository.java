@@ -14,6 +14,7 @@ import cn.ethan.ai.infrastructure.dao.po.AiAgentStepRun;
 import jakarta.annotation.Resource;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -42,10 +43,6 @@ public class AgentRunRepository implements IAgentRunRepository {
                 .finalSummary(record.getFinalSummary())
                 .errorMessage(record.getErrorMessage())
                 .cancelReason(record.getCancelReason())
-                .sessionContextSummary(record.getSessionContextSummary())
-                .contextOriginalChars(record.getContextOriginalChars())
-                .contextCompressedChars(record.getContextCompressedChars())
-                .contextSummary(record.getContextSummary())
                 .startTime(record.getStartTime())
                 .endTime(record.getEndTime())
                 .createTime(LocalDateTime.now())
@@ -61,10 +58,6 @@ public class AgentRunRepository implements IAgentRunRepository {
                 .finalSummary(record.getFinalSummary())
                 .errorMessage(record.getErrorMessage())
                 .cancelReason(record.getCancelReason())
-                .sessionContextSummary(record.getSessionContextSummary())
-                .contextOriginalChars(record.getContextOriginalChars())
-                .contextCompressedChars(record.getContextCompressedChars())
-                .contextSummary(record.getContextSummary())
                 .startTime(record.getStartTime())
                 .endTime(record.getEndTime())
                 .updateTime(LocalDateTime.now())
@@ -125,10 +118,6 @@ public class AgentRunRepository implements IAgentRunRepository {
                 .finalSummary(run.getFinalSummary())
                 .errorMessage(run.getErrorMessage())
                 .cancelReason(run.getCancelReason())
-                .sessionContextSummary(run.getSessionContextSummary())
-                .contextOriginalChars(run.getContextOriginalChars())
-                .contextCompressedChars(run.getContextCompressedChars())
-                .contextSummary(run.getContextSummary())
                 .startTime(run.getStartTime())
                 .endTime(run.getEndTime())
                 .createTime(run.getCreateTime())
@@ -137,9 +126,9 @@ public class AgentRunRepository implements IAgentRunRepository {
                         status,
                         run.getErrorMessage(),
                         run.getCancelReason(),
-                        run.getContextOriginalChars(),
-                        run.getContextCompressedChars(),
-                        run.getContextSummary(),
+                        null,
+                        null,
+                        null,
                         stepVos
                 ))
                 .steps(stepVos)
@@ -147,8 +136,15 @@ public class AgentRunRepository implements IAgentRunRepository {
     }
 
     @Override
+    @Transactional
     public boolean cancelRun(String runId, String reason) {
-        return aiAgentRunDao.cancelByRunId(runId, StringUtils.defaultIfBlank(reason, "用户主动取消"), LocalDateTime.now()) > 0;
+        String cancelReason = StringUtils.defaultIfBlank(reason, "用户主动取消");
+        LocalDateTime updateTime = LocalDateTime.now();
+        boolean cancelled = aiAgentRunDao.cancelByRunId(runId, cancelReason, updateTime) > 0;
+        if (cancelled) {
+            aiAgentStepRunDao.cancelRunningByRunId(runId, cancelReason, updateTime);
+        }
+        return cancelled;
     }
 
     @Override

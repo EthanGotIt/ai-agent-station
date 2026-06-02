@@ -41,7 +41,7 @@ public class AiClientToolMcp {
     private String transportConfig;
 
     /**
-     * 请求及初始化超时时间(分钟)
+     * 请求及初始化超时时间(秒)
      */
     private Integer requestTimeout;
 

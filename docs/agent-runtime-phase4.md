@@ -1,5 +1,7 @@
 # Agent Runtime Phase 4：上下文治理与轻量记忆边界
 
+> 历史阶段记录：当前执行内核已在 Phase 8 替换为 Spring AI Alibaba ReactAgent GraphRuntime。
+
 状态：核心代码已完成，目标单测已通过，真实 API smoke 待本地 key 与服务环境验证。
 
 ## 技术评估

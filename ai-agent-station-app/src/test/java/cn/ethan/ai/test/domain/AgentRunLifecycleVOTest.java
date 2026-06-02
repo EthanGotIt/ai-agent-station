@@ -12,7 +12,7 @@ import java.util.List;
 public class AgentRunLifecycleVOTest {
 
     @Test
-    public void shouldExposePlanningPhaseWhenPlanGenerationRunning() {
+    public void shouldExposeExecutingPhaseWhenGraphRuntimeRunning() {
         AgentRunLifecycleVO lifecycle = AgentRunLifecycleVO.from(
                 AgentRunStatusEnumVO.RUNNING,
                 null,
@@ -20,29 +20,29 @@ public class AgentRunLifecycleVOTest {
                 0,
                 0,
                 "",
-                List.of(step("flow_plan_generate", "结构化计划生成", AgentStepRunStatusEnumVO.RUNNING, null, null))
+                List.of(step("graph_runtime", "ReactAgent Graph Runtime", AgentStepRunStatusEnumVO.RUNNING, null, null))
         );
 
-        Assert.assertEquals("PLANNING", lifecycle.getRuntimePhase());
-        Assert.assertEquals("flow_plan_generate", lifecycle.getCurrentStepId());
+        Assert.assertEquals("EXECUTING", lifecycle.getRuntimePhase());
+        Assert.assertEquals("graph_runtime", lifecycle.getCurrentStepId());
         Assert.assertEquals(Integer.valueOf(1), lifecycle.getTrackedStepCount());
     }
 
     @Test
-    public void shouldExposePlanValidationFailureReason() {
+    public void shouldExposeGraphFailureReason() {
         AgentRunLifecycleVO lifecycle = AgentRunLifecycleVO.from(
                 AgentRunStatusEnumVO.FAILED,
-                "执行计划校验失败：重复的 stepId",
+                "Graph Runtime 调用失败",
                 null,
                 0,
                 0,
                 "",
-                List.of(step("flow_plan_validate", "执行计划校验", AgentStepRunStatusEnumVO.FAILED, null, "重复的 stepId"))
+                List.of(step("graph_runtime", "ReactAgent Graph Runtime", AgentStepRunStatusEnumVO.FAILED, null, "模型调用超时"))
         );
 
         Assert.assertEquals("FAILED", lifecycle.getRuntimePhase());
-        Assert.assertTrue(lifecycle.getTerminalReason().contains("执行计划校验"));
-        Assert.assertTrue(lifecycle.getTerminalReason().contains("重复的 stepId"));
+        Assert.assertTrue(lifecycle.getTerminalReason().contains("ReactAgent Graph Runtime"));
+        Assert.assertTrue(lifecycle.getTerminalReason().contains("模型调用超时"));
         Assert.assertEquals(Integer.valueOf(1), lifecycle.getFailedStepCount());
     }
 

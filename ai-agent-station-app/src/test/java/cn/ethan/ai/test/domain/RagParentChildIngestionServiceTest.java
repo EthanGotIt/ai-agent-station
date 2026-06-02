@@ -40,6 +40,9 @@ public class RagParentChildIngestionServiceTest {
         Assert.assertEquals(result.getDocId(), repository.document.getDocId());
         Assert.assertTrue(repository.chunks.stream().anyMatch(item -> item.getChunkLevel() == 1));
         Assert.assertTrue(repository.chunks.stream().anyMatch(item -> item.getChunkLevel() == 2));
+        Assert.assertTrue(repository.chunks.stream().anyMatch(item ->
+                item.getChunkText().contains("Flow Plan 会先生成结构化计划")
+        ));
         Assert.assertEquals(result.getChildChunkCount().intValue(), indexPort.indexedChildren.size());
         Assert.assertTrue(indexPort.indexedChildren.stream().allMatch(item ->
                 Integer.valueOf(2).equals(item.getMetadata().get("chunk_level")) &&

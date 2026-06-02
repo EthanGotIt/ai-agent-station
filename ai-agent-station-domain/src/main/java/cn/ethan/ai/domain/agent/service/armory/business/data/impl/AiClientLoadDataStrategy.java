@@ -2,7 +2,6 @@ package cn.ethan.ai.domain.agent.service.armory.business.data.impl;
 
 import cn.ethan.ai.domain.agent.adapter.repository.IAgentRepository;
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
-import cn.ethan.ai.domain.agent.model.valobj.AiClientAdvisorVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientApiVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientModelVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientSystemPromptVO;
@@ -60,24 +59,23 @@ public class AiClientLoadDataStrategy implements ILoadDataStrategy {
             return repository.queryAiClientSystemPromptVOByClientIds(clientIdList);
         }, threadPoolExecutor);
 
-        CompletableFuture<List<AiClientAdvisorVO>> aiClientAdvisorListFuture = CompletableFuture.supplyAsync(() -> {
-            log.info("查询顾问配置，客户端ID：{}", clientIdList);
-
-            return repository.queryAiClientAdvisorVOByClientIds(clientIdList);
-        }, threadPoolExecutor);
-
         CompletableFuture<List<AiClientVO>> aiClientListFuture = CompletableFuture.supplyAsync(() -> {
             log.info("查询对话客户端配置，客户端ID：{}", clientIdList);
 
             return repository.queryAiClientVOByClientIds(clientIdList);
         }, threadPoolExecutor);
 
-        CompletableFuture.allOf(aiClientApiListFuture).thenRun(() -> {
+        CompletableFuture.allOf(
+                aiClientApiListFuture,
+                aiClientModelListFuture,
+                aiClientToolMcpListFuture,
+                aiClientSystemPromptListFuture,
+                aiClientListFuture
+        ).thenRun(() -> {
             assemblyContext.setValue(AiAgentEnumVO.AI_CLIENT_API.getDataName(), aiClientApiListFuture.join());
             assemblyContext.setValue(AiAgentEnumVO.AI_CLIENT_MODEL.getDataName(), aiClientModelListFuture.join());
             assemblyContext.setValue(AiAgentEnumVO.AI_CLIENT_SYSTEM_PROMPT.getDataName(), aiClientSystemPromptListFuture.join());
             assemblyContext.setValue(AiAgentEnumVO.AI_CLIENT_TOOL_MCP.getDataName(), aiClientToolMcpListFuture.join());
-            assemblyContext.setValue(AiAgentEnumVO.AI_CLIENT_ADVISOR.getDataName(), aiClientAdvisorListFuture.join());
             assemblyContext.setValue(AiAgentEnumVO.AI_CLIENT.getDataName(), aiClientListFuture.join());
 
         }).join();

@@ -26,10 +26,7 @@ public class AgentRepository implements IAgentRepository {
     private IAiAgentDao aiAgentDao;
 
     @Resource
-    private IAiAgentFlowConfigDao aiAgentFlowConfigDao;
-
-    @Resource
-    private IAiClientAdvisorDao aiClientAdvisorDao;
+    private IAiAgentRuntimeConfigDao aiAgentRuntimeConfigDao;
 
     @Resource
     private IAiClientApiDao aiClientApiDao;
@@ -156,59 +153,6 @@ public class AgentRepository implements IAgentRepository {
     }
 
     @Override
-    public List<AiClientAdvisorVO> queryAiClientAdvisorVOByClientIds(List<String> clientIdList) {
-        if (isEmpty(clientIdList)) {
-            return List.of();
-        }
-
-        Map<String, AiClientAdvisorVO> advisorVOMap = new LinkedHashMap<>();
-        List<AiClientConfig> configs = aiClientConfigDao.queryBySourceTypeAndIds(AI_CLIENT.getCode(), clientIdList);
-        Set<String> advisorIdSet = new LinkedHashSet<>();
-        for (AiClientConfig config : configs) {
-            if (config.getStatus() != 1 || !"advisor".equals(config.getTargetType())) {
-                continue;
-            }
-            advisorIdSet.add(config.getTargetId());
-        }
-
-        for (String advisorId : advisorIdSet) {
-            AiClientAdvisor advisor = aiClientAdvisorDao.queryByAdvisorId(advisorId);
-            if (advisor == null || advisor.getStatus() != 1) {
-                continue;
-            }
-            advisorVOMap.put(advisorId, buildAdvisorVO(advisor));
-        }
-
-        return new ArrayList<>(advisorVOMap.values());
-    }
-
-    private AiClientAdvisorVO buildAdvisorVO(AiClientAdvisor advisor) {
-        AiClientAdvisorVO.ChatMemory chatMemory = null;
-        AiClientAdvisorVO.RagAnswer ragAnswer = null;
-
-        String extParam = advisor.getExtParam();
-        if (extParam != null && !extParam.trim().isEmpty()) {
-            try {
-                if ("ChatMemory".equals(advisor.getAdvisorType())) {
-                    chatMemory = new ObjectMapper().readValue(extParam, AiClientAdvisorVO.ChatMemory.class);
-                } else if ("RagAnswer".equals(advisor.getAdvisorType())) {
-                    ragAnswer = new ObjectMapper().readValue(extParam, AiClientAdvisorVO.RagAnswer.class);
-                }
-            } catch (Exception ignored) {
-            }
-        }
-
-        return AiClientAdvisorVO.builder()
-                .advisorId(advisor.getAdvisorId())
-                .advisorName(advisor.getAdvisorName())
-                .advisorType(advisor.getAdvisorType())
-                .orderNum(advisor.getOrderNum())
-                .chatMemory(chatMemory)
-                .ragAnswer(ragAnswer)
-                .build();
-    }
-
-    @Override
     public List<AiClientVO> queryAiClientVOByClientIds(List<String> clientIdList) {
         if (isEmpty(clientIdList)) {
             return List.of();
@@ -238,8 +182,6 @@ public class AgentRepository implements IAgentRepository {
 
         String modelId = null;
         List<String> promptIdList = new ArrayList<>();
-        List<String> mcpIdList = new ArrayList<>();
-        List<String> advisorIdList = new ArrayList<>();
 
         for (AiClientConfig config : configs) {
             if (config.getStatus() != 1) {
@@ -248,8 +190,6 @@ public class AgentRepository implements IAgentRepository {
             switch (config.getTargetType()) {
                 case "model" -> modelId = config.getTargetId();
                 case "prompt" -> promptIdList.add(config.getTargetId());
-                case "tool_mcp" -> mcpIdList.add(config.getTargetId());
-                case "advisor" -> advisorIdList.add(config.getTargetId());
             }
         }
 
@@ -259,8 +199,6 @@ public class AgentRepository implements IAgentRepository {
                 .description(aiClient.getDescription())
                 .modelId(modelId)
                 .promptIdList(promptIdList)
-                .mcpIdList(mcpIdList)
-                .advisorIdList(advisorIdList)
                 .build();
     }
 
@@ -319,36 +257,6 @@ public class AgentRepository implements IAgentRepository {
     }
 
     @Override
-    public Map<String, AiAgentClientFlowConfigVO> queryAiAgentClientFlowConfig(String aiAgentId) {
-        if (aiAgentId == null || aiAgentId.trim().isEmpty()) {
-            return Map.of();
-        }
-
-        try {
-            List<AiAgentFlowConfig> flowConfigs = aiAgentFlowConfigDao.queryByAgentId(aiAgentId);
-            if (isEmpty(flowConfigs)) {
-                return Map.of();
-            }
-
-            Map<String, AiAgentClientFlowConfigVO> result = new LinkedHashMap<>();
-            for (AiAgentFlowConfig config : flowConfigs) {
-                result.putIfAbsent(config.getClientType(),
-                        AiAgentClientFlowConfigVO.builder()
-                                .clientId(config.getClientId())
-                                .clientName(config.getClientName())
-                                .clientType(config.getClientType())
-                                .sequence(config.getSequence())
-                                .stepPrompt(config.getStepPrompt())
-                                .build());
-            }
-            return result;
-        } catch (Exception e) {
-            log.error("Query ai agent client flow config failed, aiAgentId: {}", aiAgentId, e);
-            return Map.of();
-        }
-    }
-
-    @Override
     public AiAgentVO queryAiAgentByAgentId(String aiAgentId) {
         AiAgent aiAgent = aiAgentDao.queryByAgentId(aiAgentId);
         if (aiAgent == null) {
@@ -365,23 +273,20 @@ public class AgentRepository implements IAgentRepository {
     }
 
     @Override
-    public List<AiAgentClientFlowConfigVO> queryAiAgentClientsByAgentId(String aiAgentId) {
-        List<AiAgentClientFlowConfigVO> aiAgentClientFlowConfigVOS = new ArrayList<>();
-
-        List<AiAgentFlowConfig> flowConfigs = aiAgentFlowConfigDao.queryByAgentId(aiAgentId);
-        for (AiAgentFlowConfig flowConfig : flowConfigs) {
-            AiAgentClientFlowConfigVO configVO = AiAgentClientFlowConfigVO.builder()
-                    .clientId(flowConfig.getClientId())
-                    .clientName(flowConfig.getClientName())
-                    .clientType(flowConfig.getClientType())
-                    .sequence(flowConfig.getSequence())
-                    .stepPrompt(flowConfig.getStepPrompt())
-                    .build();
-
-            aiAgentClientFlowConfigVOS.add(configVO);
+    public AiAgentRuntimeConfigVO queryAiAgentRuntimeConfig(String aiAgentId) {
+        if (aiAgentId == null || aiAgentId.trim().isEmpty()) {
+            return null;
         }
-
-        return aiAgentClientFlowConfigVOS;
+        AiAgentRuntimeConfig config = aiAgentRuntimeConfigDao.queryByAgentId(aiAgentId);
+        if (config == null) {
+            return null;
+        }
+        return AiAgentRuntimeConfigVO.builder()
+                .agentId(config.getAgentId())
+                .clientId(config.getClientId())
+                .maxModelCalls(config.getMaxModelCalls())
+                .maxToolCalls(config.getMaxToolCalls())
+                .build();
     }
 
     /**

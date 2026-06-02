@@ -1,5 +1,7 @@
 # Agent Runtime Phase 3：Agentic RAG 执行链路
 
+> 历史阶段记录：当前执行内核已在 Phase 8 替换为 Spring AI Alibaba ReactAgent GraphRuntime。
+
 状态：核心代码已完成，目标单测已通过，真实向量库/ES smoke 待本地环境与 key 验证。
 
 ## 技术评估

@@ -3,6 +3,7 @@ package cn.ethan.ai.domain.agent.service.run;
 import cn.ethan.ai.domain.agent.adapter.repository.IAgentRunRepository;
 import cn.ethan.ai.domain.agent.model.valobj.AgentRunDetailVO;
 import cn.ethan.ai.domain.agent.service.IAgentRunService;
+import cn.ethan.ai.domain.agent.service.execute.graph.AgentGraphRunRegistry;
 import jakarta.annotation.Resource;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -15,6 +16,9 @@ public class AgentRunService implements IAgentRunService {
 
     @Resource
     private IAgentRunRepository agentRunRepository;
+
+    @Resource
+    private AgentGraphRunRegistry agentGraphRunRegistry;
 
     @Override
     public AgentRunDetailVO queryRun(String runId) {
@@ -29,7 +33,9 @@ public class AgentRunService implements IAgentRunService {
         if (StringUtils.isBlank(runId)) {
             return false;
         }
-        return agentRunRepository.cancelRun(runId, reason);
+        boolean cancelled = agentRunRepository.cancelRun(runId, reason);
+        boolean interrupted = agentGraphRunRegistry.cancel(runId);
+        return cancelled || interrupted;
     }
 
 }

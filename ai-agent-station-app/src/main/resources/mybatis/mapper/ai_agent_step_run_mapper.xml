@@ -38,6 +38,20 @@
           AND step_id = #{stepId}
     </update>
 
+    <update id="cancelRunningByRunId">
+        UPDATE ai_agent_step_run
+        SET status        = 'CANCELLED',
+            error_message = #{cancelReason},
+            cost_millis   = CASE
+                                WHEN start_time IS NULL THEN cost_millis
+                                ELSE TIMESTAMPDIFF(MICROSECOND, start_time, #{updateTime}) DIV 1000
+                            END,
+            end_time      = COALESCE(end_time, #{updateTime}),
+            update_time   = #{updateTime}
+        WHERE run_id = #{runId}
+          AND status = 'RUNNING'
+    </update>
+
     <select id="queryByRunId" parameterType="java.lang.String" resultMap="AiAgentStepRunMap">
         SELECT id,
                run_id,

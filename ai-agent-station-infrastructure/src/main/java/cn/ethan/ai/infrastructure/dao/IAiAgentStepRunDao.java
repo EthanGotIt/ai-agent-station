@@ -13,6 +13,10 @@ public interface IAiAgentStepRunDao {
 
     int updateByRunIdAndStepId(AiAgentStepRun aiAgentStepRun);
 
+    int cancelRunningByRunId(@Param("runId") String runId,
+                             @Param("cancelReason") String cancelReason,
+                             @Param("updateTime") java.time.LocalDateTime updateTime);
+
     List<AiAgentStepRun> queryByRunId(@Param("runId") String runId);
 
 }

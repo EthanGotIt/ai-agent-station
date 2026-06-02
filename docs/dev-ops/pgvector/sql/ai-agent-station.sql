@@ -28,3 +28,37 @@ CREATE TABLE public.vector_store_openai (
 CREATE INDEX IF NOT EXISTS idx_vector_store_openai_embedding_hnsw
     ON public.vector_store_openai
     USING hnsw (embedding vector_cosine_ops);
+
+-- Spring AI Alibaba PostgresSaver checkpoint tables.
+-- 开发环境允许 PostgresSaver 自动执行同样的 CREATE IF NOT EXISTS；
+-- 生产环境应预建表并将 saver createOption 调整为 CREATE_NONE。
+CREATE TABLE IF NOT EXISTS public.GraphThread (
+    thread_id UUID PRIMARY KEY,
+    thread_name VARCHAR(255),
+    is_released BOOLEAN DEFAULT FALSE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.GraphCheckpoint (
+    checkpoint_id UUID PRIMARY KEY,
+    parent_checkpoint_id UUID,
+    thread_id UUID NOT NULL,
+    node_id VARCHAR(255),
+    next_node_id VARCHAR(255),
+    state_data JSONB NOT NULL,
+    state_content_type VARCHAR(100) NOT NULL,
+    saved_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_thread
+        FOREIGN KEY(thread_id)
+        REFERENCES public.GraphThread(thread_id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_lg4jcheckpoint_thread_id
+    ON public.GraphCheckpoint(thread_id);
+
+CREATE INDEX IF NOT EXISTS idx_lg4jcheckpoint_thread_id_saved_at_desc
+    ON public.GraphCheckpoint(thread_id, saved_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_lg4jthread_thread_name_unreleased
+    ON public.GraphThread(thread_name)
+    WHERE is_released = FALSE;
