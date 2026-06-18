@@ -1,26 +1,22 @@
 package cn.ethan.ai.infrastructure.adapter.port;
 
 import cn.ethan.ai.domain.agent.adapter.port.IAgentModelPort;
-import cn.ethan.ai.domain.agent.adapter.repository.IAgentRepository;
 import cn.ethan.ai.domain.agent.model.entity.AgentModelCallResultEntity;
 import cn.ethan.ai.domain.agent.model.entity.AgentRunEventEntity;
 import cn.ethan.ai.domain.agent.model.entity.AgentRunTraceEntity;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
-import cn.ethan.ai.domain.agent.model.valobj.AiClientVO;
-import cn.ethan.ai.domain.agent.model.valobj.AiAgentClientFlowConfigVO;
+import cn.ethan.ai.domain.agent.model.valobj.AiAgentClientHarnessConfigVO;
 import cn.ethan.ai.domain.agent.model.valobj.ContextWindowGuardVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingDecisionVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiClientTypeEnumVO;
-import cn.ethan.ai.domain.agent.service.execute.flow.ToolGuardPolicy;
+import cn.ethan.ai.domain.agent.service.execute.runtime.ToolGuardPolicy;
 import io.modelcontextprotocol.client.McpSyncClient;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClientResponse;
-import org.springframework.ai.chat.client.advisor.api.Advisor;
-import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
 import org.springframework.ai.tool.ToolCallback;
@@ -28,7 +24,6 @@ import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Service;
 
-import java.lang.reflect.Method;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -47,10 +42,10 @@ import java.util.Set;
 public class AgentModelPort implements IAgentModelPort {
 
     private static final List<String> RAG_CONTEXT_METADATA_KEYS = List.of(
+            "qa_agentic_rag_trace",
             "qa_retrieved_documents",
             "qa_retrieval_queries",
             "question_answer_context",
-            "qa_retrieval_pipeline",
             "qa_retrieval_no_evidence",
             "qa_retrieval_skipped_reason"
     );
@@ -58,16 +53,13 @@ public class AgentModelPort implements IAgentModelPort {
     @Resource
     private ApplicationContext applicationContext;
 
-    @Resource
-    private IAgentRepository repository;
-
     @Override
-    public boolean hasAvailableModelClient(Map<String, AiAgentClientFlowConfigVO> flowConfigMap, AiClientTypeEnumVO... clientTypes) {
-        return firstAvailableConfig(flowConfigMap, clientTypes) != null;
+    public boolean hasAvailableModelClient(Map<String, AiAgentClientHarnessConfigVO> harnessConfigMap, AiClientTypeEnumVO... clientTypes) {
+        return firstAvailableConfig(harnessConfigMap, clientTypes) != null;
     }
 
     @Override
-    public String callModel(Map<String, AiAgentClientFlowConfigVO> flowConfigMap,
+    public String callModel(Map<String, AiAgentClientHarnessConfigVO> harnessConfigMap,
                             ExecuteCommandEntity command,
                             ContextWindowGuardVO contextWindowGuard,
                             AgentRunTraceEntity trace,
@@ -78,7 +70,7 @@ public class AgentModelPort implements IAgentModelPort {
                             ToolRoutingDecisionVO toolRoutingDecision,
                             AiClientTypeEnumVO... clientTypes) {
         return callModelResult(
-                flowConfigMap,
+                harnessConfigMap,
                 command,
                 contextWindowGuard,
                 trace,
@@ -92,7 +84,7 @@ public class AgentModelPort implements IAgentModelPort {
     }
 
     @Override
-    public AgentModelCallResultEntity callModelResult(Map<String, AiAgentClientFlowConfigVO> flowConfigMap,
+    public AgentModelCallResultEntity callModelResult(Map<String, AiAgentClientHarnessConfigVO> harnessConfigMap,
                                                       ExecuteCommandEntity command,
                                                       ContextWindowGuardVO contextWindowGuard,
                                                       AgentRunTraceEntity trace,
@@ -113,7 +105,7 @@ public class AgentModelPort implements IAgentModelPort {
         }
 
         try {
-            AiAgentClientFlowConfigVO selectedConfig = firstAvailableConfig(flowConfigMap, clientTypes);
+            AiAgentClientHarnessConfigVO selectedConfig = firstAvailableConfig(harnessConfigMap, clientTypes);
             ChatClient baseChatClient = resolve(selectedConfig);
             if (baseChatClient == null) {
                 String message = "未找到可用的模型客户端：" + eventType;
@@ -124,14 +116,12 @@ public class AgentModelPort implements IAgentModelPort {
                         .build();
             }
 
-            List<Advisor> advisors = AgentRuntimeAdvisorPolicy.filterInternalRuntimeAdvisors(resolveAdvisors(selectedConfig));
             List<ToolCallback> callbacks = resolveToolCallbacks(toolRoutingDecision);
-            ChatClient runtimeChatClient = buildRuntimeChatClient(baseChatClient, selectedConfig, advisors, callbacks, eventType);
+            ChatClient runtimeChatClient = buildRuntimeChatClient(baseChatClient, selectedConfig, callbacks, eventType);
 
             contextWindowGuard.record(prompt);
             ChatClient.ChatClientRequestSpec requestSpec = runtimeChatClient.prompt(prompt)
                     .system(s -> s.param("current_date", LocalDate.now().toString()));
-            logCallAdvisorChain(requestSpec, eventType, selectedConfig.getClientId());
             ChatClient.CallResponseSpec responseSpec = requestSpec.call();
             ChatClientResponse chatClientResponse = responseSpec.chatClientResponse();
             ChatResponse chatResponse = chatClientResponse == null ? responseSpec.chatResponse() : chatClientResponse.chatResponse();
@@ -151,7 +141,7 @@ public class AgentModelPort implements IAgentModelPort {
         }
     }
 
-    private ChatClient resolve(AiAgentClientFlowConfigVO config) {
+    private ChatClient resolve(AiAgentClientHarnessConfigVO config) {
         if (config == null) {
             return null;
         }
@@ -159,39 +149,31 @@ public class AgentModelPort implements IAgentModelPort {
     }
 
     private ChatClient buildRuntimeChatClient(ChatClient baseChatClient,
-                                              AiAgentClientFlowConfigVO config,
-                                              List<Advisor> advisors,
+                                              AiAgentClientHarnessConfigVO config,
                                               List<ToolCallback> callbacks,
                                               String eventType) {
         ChatClient.Builder builder = baseChatClient.mutate();
-        if (advisors.isEmpty()) {
-            log.info("运行时未装配顾问，继续直接调用模型。eventType：{}，clientId：{}", eventType,
-                    config == null ? "" : config.getClientId());
-        } else {
-            log.info("运行时装配顾问完成，eventType：{}，clientId：{}，advisorCount：{}", eventType,
-                    config == null ? "" : config.getClientId(), advisors.size());
-            builder.defaultAdvisors(advisors);
-        }
-
         if (!callbacks.isEmpty()) {
+            log.info("运行时装配工具回调完成，eventType：{}，clientId：{}，toolCount：{}", eventType,
+                    config == null ? "" : config.getClientId(), callbacks.size());
             builder.defaultToolCallbacks(callbacks);
         }
 
         return builder.build();
     }
 
-    private AiAgentClientFlowConfigVO firstAvailableConfig(Map<String, AiAgentClientFlowConfigVO> flowConfigMap,
+    private AiAgentClientHarnessConfigVO firstAvailableConfig(Map<String, AiAgentClientHarnessConfigVO> harnessConfigMap,
                                                           AiClientTypeEnumVO... clientTypes) {
-        if (flowConfigMap == null || flowConfigMap.isEmpty()) {
+        if (harnessConfigMap == null || harnessConfigMap.isEmpty()) {
             return null;
         }
         for (AiClientTypeEnumVO clientType : clientTypes) {
-            AiAgentClientFlowConfigVO config = flowConfigMap.get(clientType.getCode());
+            AiAgentClientHarnessConfigVO config = harnessConfigMap.get(clientType.getCode());
             if (config != null && StringUtils.isNotBlank(config.getClientId())) {
                 return config;
             }
         }
-        return flowConfigMap.values().stream()
+        return harnessConfigMap.values().stream()
                 .filter(item -> item != null && StringUtils.isNotBlank(item.getClientId()))
                 .findFirst()
                 .orElse(null);
@@ -207,38 +189,6 @@ public class AgentModelPort implements IAgentModelPort {
         } catch (BeansException e) {
             throw new IllegalStateException("ChatClient Bean 不存在，clientId=" + clientId + "，beanName=" + beanName, e);
         }
-    }
-
-    private List<Advisor> resolveAdvisors(AiAgentClientFlowConfigVO config) {
-        if (config == null || StringUtils.isBlank(config.getClientId())) {
-            return Collections.emptyList();
-        }
-
-        List<AiClientVO> clients = repository.queryAiClientVOByClientIds(List.of(config.getClientId()));
-        if (clients == null || clients.isEmpty()) {
-            log.info("运行时未查询到客户端顾问配置，clientId：{}", config.getClientId());
-            return Collections.emptyList();
-        }
-
-        AiClientVO client = clients.get(0);
-        if (client.getAdvisorIdList() == null || client.getAdvisorIdList().isEmpty()) {
-            log.info("运行时客户端未绑定顾问，clientId：{}", config.getClientId());
-            return Collections.emptyList();
-        }
-
-        List<Advisor> advisors = new ArrayList<>();
-        for (String advisorId : client.getAdvisorIdList()) {
-            if (StringUtils.isBlank(advisorId)) {
-                continue;
-            }
-            String beanName = AiAgentEnumVO.AI_CLIENT_ADVISOR.getBeanName(advisorId);
-            try {
-                advisors.add(applicationContext.getBean(beanName, Advisor.class));
-            } catch (BeansException e) {
-                log.debug("运行时未找到顾问 Bean，advisorId：{}，beanName：{}", advisorId, beanName);
-            }
-        }
-        return advisors;
     }
 
     private String limit(String content, int maxLength) {
@@ -340,33 +290,4 @@ public class AgentModelPort implements IAgentModelPort {
         return chatResponse.getResult().getOutput().getText();
     }
 
-    /**
-     * 输出 Spring AI 真实构建出的调用顾问链，便于定位请求期顾问顺序问题。
-     */
-    private void logCallAdvisorChain(ChatClient.ChatClientRequestSpec requestSpec, String eventType, String clientId) {
-        if (!log.isDebugEnabled() || requestSpec == null) {
-            return;
-        }
-        try {
-            Method buildAdvisorChainMethod = requestSpec.getClass().getDeclaredMethod("buildAdvisorChain");
-            buildAdvisorChainMethod.setAccessible(true);
-            Object advisorChain = buildAdvisorChainMethod.invoke(requestSpec);
-            Method getCallAdvisorsMethod = advisorChain.getClass().getMethod("getCallAdvisors");
-            @SuppressWarnings("unchecked")
-            List<CallAdvisor> callAdvisors = (List<CallAdvisor>) getCallAdvisorsMethod.invoke(advisorChain);
-            if (callAdvisors == null || callAdvisors.isEmpty()) {
-                log.debug("运行时调用顾问链为空，eventType：{}，clientId：{}", eventType, clientId);
-                return;
-            }
-
-            List<String> advisorSummary = callAdvisors.stream()
-                    .map(advisor -> advisor.getName() + "(" + advisor.getOrder() + ")")
-                    .toList();
-            log.debug("运行时调用顾问链，eventType：{}，clientId：{}，callAdvisors：{}",
-                    eventType, clientId, advisorSummary);
-        } catch (Exception e) {
-            log.debug("读取运行时调用顾问链失败，eventType：{}，clientId：{}，原因：{}",
-                    eventType, clientId, e.getMessage());
-        }
-    }
 }

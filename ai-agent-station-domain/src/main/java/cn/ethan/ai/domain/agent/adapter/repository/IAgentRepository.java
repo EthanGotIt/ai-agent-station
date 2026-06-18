@@ -18,18 +18,16 @@ public interface IAgentRepository {
 
     Map<String, AiClientSystemPromptVO> queryAiClientSystemPromptVOByClientIds(List<String> clientIdList);
 
-    List<AiClientAdvisorVO> queryAiClientAdvisorVOByClientIds(List<String> clientIdList);
-
     List<AiClientVO> queryAiClientVOByClientIds(List<String> clientIdList);
 
     List<AiClientApiVO> queryAiClientApiVOListByModelIds(List<String> modelIdList);
 
     List<AiClientModelVO> queryAiClientModelVOByModelIds(List<String> modelIdList);
 
-    Map<String, AiAgentClientFlowConfigVO> queryAiAgentClientFlowConfig(String aiAgentId);
+    Map<String, AiAgentClientHarnessConfigVO> queryAiAgentClientHarnessConfig(String aiAgentId);
 
     AiAgentVO queryAiAgentByAgentId(String aiAgentId);
 
-    List<AiAgentClientFlowConfigVO> queryAiAgentClientsByAgentId(String aiAgentId);
+    List<AiAgentClientHarnessConfigVO> queryAiAgentClientsByAgentId(String aiAgentId);
 
 }

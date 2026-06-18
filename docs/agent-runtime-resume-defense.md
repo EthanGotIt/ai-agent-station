@@ -2,28 +2,28 @@
 
 ## 简历描述
 
-AI Agent Station 通用智能体编排平台
+AI Agent Station 通用智能体平台
 2025.09 - 2025.12
 技术栈：Spring AI、Spring Boot、MyBatis、MySQL、PGVector、Elasticsearch、MCP、RAG
 
 项目简述：
 
-基于 Spring AI 搭建轻量受控 Agent Runtime，围绕 `Run -> Plan -> Step -> Result` 执行模型，提供 Prompt 组装、模型调用、MCP Tool 接入、Agentic RAG、结构化任务编排、运行态追踪、上下文治理和流式响应能力，支持内容生成、资料调研、知识问答等 AI 能力可配置化落地。
+基于 Spring AI 搭建面向企业知识助手和技术资料调研的通用智能体平台，提供 Prompt 组装、模型调用、MCP Tool 接入、Agentic RAG、受控 Action Loop、运行态追踪、上下文治理和流式响应能力，支持资料调研、知识问答、内容生成等 AI 能力可配置化落地。
 
 项目亮点：
 
-- 设计轻量 Agent Runtime 执行模型：基于 JSON Plan DSL 描述任务目标、执行步骤、依赖关系和成功条件，并落库记录 run/step 状态、失败原因、取消/跳过原因和上下文压缩摘要，使执行链路可追踪、可终止、可复盘。
-- 实现 MCP Tool Guard 治理：在动态工具路由基础上增加工具风险分级、运行时 ToolCallback 注入、危险工具拦截和工具异常统一返回，形成路由筛选、注入前过滤、调用期兜底的治理链路，降低模型误调工具和危险工具暴露风险。
-- 显式化 Agentic RAG 执行链路：将 Query Rewrite、PGVector 语义召回、Elasticsearch BM25、多路召回、RRF 融合排序、Small-to-Big 父块扩展和证据去重纳入 Flow Plan `RAG` 步骤，并输出结构化 `rag_evidence`，提升知识问答的可解释性和可复盘性。
-- 建立持久化 Session 短期记忆与上下文治理：只落库用户输入和最终回答，显式区分项目规则、session 历史、用户偏好和当前 Run 压缩摘要作用域；session 历史超预算时使用较早消息摘要和最近消息原文，当前 Run 超预算时使用 `history_summary` 和最近步骤输出。
+- 设计 Controlled Agent Harness 执行内核：将请求生命周期抽象为 `Run -> HarnessContext -> Action -> Observation -> Evaluation -> Final`，用受控 Action Loop 替代固定工作流节点，并通过最大轮次、上下文预算、取消和终止策略限制模型无限循环。
+- 实现 MCP 只读工具治理：按企业知识助手场景动态筛选 docs/search 类工具，并在 RAG 子链路中只允许 `search / docs / fetch / read / get / open` 等只读 evidence 工具，避免写入、通知、记忆和命令类工具暴露给模型。
+- 收敛 Agentic RAG 3.0 链路：以 `AgenticRagRuntime` 作为 RAG 唯一主入口，支持检索规划、PGVector/BM25 本地召回、证据评估、最多一次二次检索、MCP 只读 evidence 融合和真实 `rag_evidence` trace。
+- 建立持久化 Session 短期记忆与上下文治理：只落库用户输入和最终回答，显式区分项目规则、session 历史、用户偏好和当前 Run 压缩摘要作用域，避免内部 prompt 污染用户记忆。
 
 ## 一句话定位
 
-这是一个从 Spring AI 组件装配平台渐进升级出来的轻量受控 Agent Runtime，核心价值不是堆功能，而是把模型、工具、RAG、记忆都纳入可规划、可校验、可追踪、可复盘的执行链路。
+这是一个基于 Spring AI 的轻量受控 Agent Runtime。项目价值不是模拟一个大而全的多 Agent 框架，而是围绕“企业知识助手 / 技术资料调研 / 知识库问答”场景，把模型、工具、RAG 和记忆放进可控、可追踪、可复盘的执行链路。
 
 ## 三条演示链路
 
-### 1. 普通 Flow Plan
+### 1. Controlled Agent Harness
 
 输入：
 
@@ -33,15 +33,15 @@ AI Agent Station 通用智能体编排平台
 
 演示重点：
 
-- 流式事件中出现 `context_boundary`、`plan`、`execution`、`supervision`、`summary`、`complete`。
-- `GET /api/v1/agent/run/{runId}` 返回 `lifecycle`。
-- `steps` 中能看到 `flow_plan_generate`、`flow_plan_validate`、计划执行步骤和最终总结步骤。
+- 流式事件中出现 `context_boundary`、`tool_routing`、`harness_observation`、`summary`、`complete`。
+- `GET /api/v1/agent/run/{runId}` 返回 `lifecycle` 和 `contextBoundary`。
+- `steps` 中能看到 `harness_root`、`harness_tool_routing`、`harness_action_*`。
 
-讲法：
+面试回答稿：
 
-> 这条链路证明项目不是单次 ChatClient 调用，而是有 Run、Plan、Step、Result 的运行态模型，失败、取消、跳过和上下文压缩都能被追踪。
+> 我没有把它继续做成固定流程，因为固定节点会让项目看起来像流程编排工具。现在主入口是 Controlled Agent Harness，模型每轮只能输出一个受控 action，比如 `RAG_RETRIEVE`、`MCP_READ`、`LLM_RESPOND` 或 `FINAL`。系统会校验 action 类型、最大轮次、上下文预算和取消状态，所以它具备 Agent 的动态决策能力，但又不是完全放任模型自由循环。
 
-### 2. MCP Tool Guard
+### 2. MCP 只读工具治理
 
 输入：
 
@@ -51,58 +51,61 @@ AI Agent Station 通用智能体编排平台
 
 演示重点：
 
-- `tool_routing.allowedToolNames` 不包含危险命令类工具。
-- `tool_routing.blockedToolNames` / `blockedToolReasons` 能说明拦截原因。
-- Plan 不再提前绑定具体工具，实际执行时只注入本轮筛选后的安全 ToolCallback。
+- `tool_routing.allowedToolNames` 只包含 docs/search 类工具。
+- `blockedToolNames / blockedToolReasons` 能说明危险工具或写入工具为什么不能进 RAG evidence 子链路。
+- 默认 seed 只保留 `context7-docs` 和 `exa-search`。
 
-讲法：
+面试回答稿：
 
-> 模型不能直接决定自己可以调用什么工具。系统会先做动态工具路由，执行阶段只注入本轮授权的 ToolCallback，最后在 ToolCallback 调用层统一兜底，工具失败也会返回结构化错误。
+> 我把 MCP 的定位收敛成资料调研和 evidence 补充，不再默认接通知、记忆、顺序推理这类和场景关系不强的工具。模型不能自己决定可以调用什么工具，系统先按场景做路由，再按工具名做只读校验，最后 ToolCallback 调用期还有兜底。这样能解释为什么工具治理是生产级 Agent 必须考虑的点。
 
-### 3. Agentic RAG Evidence
+### 3. Agentic RAG 3.0 Trace
 
 输入：
 
 ```text
-请仅基于已导入的 Markdown 知识回答 Spring AI MCP Client 常见的接入方式，不要调用外部 MCP 搜索工具。
+请仅基于已导入的 Markdown 知识回答 Spring AI MCP Client 常见的接入方式，不要编造证据外内容。
 ```
 
 演示重点：
 
-- Flow Plan 中出现 `type=RAG`。
-- `rag_evidence.pipeline` 包含 Query Rewrite、Hybrid Recall、RRF、Small-to-Big、Deduplicate。
-- `rag_evidence.evidences` 包含来源、召回 query、父块扩展、分数和内容预览。
-- 无召回时输出 `noEvidence=true`，最终回答说明无法从知识库确认。
+- Action 决策进入 `RAG_RETRIEVE`。
+- `rag_evidence` 不再是固定 pipeline 文案，而是 `AgenticRagTraceVO` 的真实执行轨迹。
+- trace 包含 intent、plannedQueries、retrievalRounds、是否触发二次检索、finalEvidences 和 noEvidenceReason。
 
-讲法：
+面试回答稿：
 
-> 这里不是单纯把 RAG 放到模型调用前，而是让检索成为 Agent 可规划、可解释、可追踪的步骤。
+> 旧版更接近 Advanced RAG，是把 Query Rewrite、PGVector、BM25、RRF、Small-to-Big 串起来。新版我没有继续堆算法，而是把 RAG 收敛成 `AgenticRagRuntime`，先判断意图和改写 query，再检索本地知识，证据不足时最多二次检索，必要时融合 MCP 只读资料，最后基于证据回答。重点是检索决策闭环和证据评估闭环，而不是把所有 RAG 技术每次都强制跑一遍。
 
 ## 高频追问
 
 这个项目能算 Agent 项目吗？
 
-可以算轻量受控 Agent Runtime。它具备任务规划、步骤执行、工具调用、RAG、上下文治理和运行态追踪，但不是完整多 Agent 协作框架。
+可以算轻量受控 Agent Runtime。它不是单次 ChatClient 调用，也不是固定流程；它有 action 决策、工具治理、RAG 子链路、上下文预算、取消终止和运行态复盘。但它不是完整多 Agent 协作系统，也没有长期记忆画像和危险工具沙箱。
 
-为什么不直接用 LangGraph 或 OpenAI Agents SDK？
+为什么不用固定计划式工作流？
 
-本项目目标是基于现有 Spring AI 工程渐进升级，已有 Flow Plan、MCP、RAG、运行态表和业务配置能力。引入新框架会带来执行模型、工具协议、持久化和测试的大范围迁移，当前收益不如在现有 Runtime 上补治理能力。
+旧版计划式执行更像工作流：先让模型生成计划，再按节点执行，优点是稳定，缺点是过于固定，面试时容易被问成“这是不是只是固定流程”。Harness 的思路是把模型输出收敛成少量 action，让系统控制边界，让模型负责选择下一步，这更接近 Agent Runtime。
+
+为什么不直接用 LangGraph、OpenHarness 或 OpenAI Agents SDK？
+
+这个项目基于 Spring AI、MyBatis、MySQL、PGVector 和现有运行态表已经形成了工程闭环，引入新框架会带来执行模型、工具协议、持久化和测试的大范围迁移。当前选择是借鉴 harness 思想，不引入依赖，先把执行边界、工具治理和 RAG trace 做扎实。
 
 工具调用失败怎么办？
 
-工具注入前有 allowed set 和风险校验，调用时由 `GuardedToolCallback` 包装，参数错误、执行异常、危险工具都会返回统一结构化错误，避免直接把异常抛给模型链路。
+工具路由阶段只选 docs/search 类工具，RAG 子链路再过滤只读工具，调用期由 ToolCallback 包装做异常兜底。参数错误、工具不可用或执行异常不会被模型当成真实结果使用，最终回答要说明失败或证据不足。
 
 上下文过长怎么办？
 
-项目有两层轻量压缩：`SessionContextAssembler` 对数据库中的同 session 历史做预算估算，超过阈值后保留较早消息摘要和最近 4 条消息原文；context guard 对当前 Run 的步骤输出做预算估算，超过阈值后生成 `history_summary` 并保留最近 2 个步骤输出。当前 Run 超过停止阈值后跳过新的模型调用，转本地总结或跳过后续步骤。
+有两层压缩。session 历史从数据库加载时会按预算保留摘要和最近消息；当前 Run 的 action observation 超预算后会生成 `history_summary` 并保留最近两个输出。当前只是轻量估算，不宣称精确 tokenizer。
 
-用户偏好和项目规则怎么隔离？
+RAG 为什么不继续堆 PGVector、BM25、RRF、Small-to-Big？
 
-项目规则是固定运行策略，所有 session 共享；用户偏好只从当前请求轻量识别，并标记为 `session:{sessionId}:preferences`，不跨 session 复用，也不写入长期记忆。
+这些能力仍可用，但不再作为简历主亮点堆叠。真正更像 Agentic RAG 的地方是系统会决定何时检索、证据是否足够、是否需要二次检索、是否需要 MCP 只读 evidence 补充，以及最终回答是否能被证据支撑。
 
-RAG 已死这个说法怎么回应？
+为什么用 PGVector 而不是更重的向量数据库？
 
-项目没有继续堆单点 RAG 算法，而是把检索显式纳入 Agent Runtime，让 Query Rewrite、混合召回、RRF、Small-to-Big、证据去重和无召回状态都能被规划和复盘。这更接近 Agentic RAG 的工程落地。
+这个项目的数据规模和演示目标更适合轻量部署闭环。PGVector 能和 PostgreSQL 一起提供语义召回能力，减少额外组件和运维成本；如果后续进入更大规模文档、多租户隔离或高并发向量检索，再评估专门向量数据库。
 
 ## 明确边界
 
@@ -112,12 +115,12 @@ RAG 已死这个说法怎么回应？
 - 长期记忆系统
 - 危险工具沙箱
 - 完整工作流引擎
-- 已接入 LangGraph / OpenAI Agents SDK
+- 已接入 LangGraph / OpenHarness / OpenAI Agents SDK
 
 可以写成：
 
+- Controlled Agent Harness
 - 轻量受控 Agent Runtime
-- Agent 编排与执行平台
-- MCP Tool Guard 治理
-- Agentic RAG evidence
-- 上下文治理与轻量记忆边界
+- MCP 只读工具治理
+- Agentic RAG 证据评估闭环
+- 上下文治理与 session 短期记忆

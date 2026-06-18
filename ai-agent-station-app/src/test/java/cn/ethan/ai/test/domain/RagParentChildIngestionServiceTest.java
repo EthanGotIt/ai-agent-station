@@ -49,7 +49,7 @@ public class RagParentChildIngestionServiceTest {
     }
 
     private String buildMarkdown() {
-        String repeatedParagraph = "Flow Plan 会先生成结构化计划，再按步骤执行，并在执行阶段结合工具路由、证据上下文和质量监督结果逐步完成任务。";
+        String repeatedParagraph = "Controlled Agent Harness 会约束模型输出受控 action，并在执行阶段结合工具路由、证据上下文和证据评估结果逐步完成任务。";
         StringBuilder builder = new StringBuilder();
         builder.append("# Spring AI MCP Client 使用指南\n\n");
         builder.append("## 接入方式\n\n");

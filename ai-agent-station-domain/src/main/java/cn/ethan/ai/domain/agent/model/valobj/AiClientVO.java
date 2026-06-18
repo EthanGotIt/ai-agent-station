@@ -48,11 +48,6 @@ public class AiClientVO {
      */
     private List<String> mcpIdList;
 
-    /**
-     * 顾问ID List
-     */
-    private List<String> advisorIdList;
-
     public String getModelBeanName() {
         return AiAgentEnumVO.AI_CLIENT_MODEL.getBeanName(modelId);
     }
@@ -63,14 +58,6 @@ public class AiClientVO {
             mcpBeanNameList.add(AiAgentEnumVO.AI_CLIENT_TOOL_MCP.getBeanName(mcpId));
         }
         return mcpBeanNameList;
-    }
-
-    public List<String> getAdvisorBeanNameList() {
-        List<String> advisorBeanNameList = new ArrayList<>();
-        for (String advisorId : advisorIdList) {
-            advisorBeanNameList.add(AiAgentEnumVO.AI_CLIENT_ADVISOR.getBeanName(advisorId));
-        }
-        return advisorBeanNameList;
     }
 
 }

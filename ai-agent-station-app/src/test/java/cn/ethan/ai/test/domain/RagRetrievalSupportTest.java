@@ -38,7 +38,7 @@ public class RagRetrievalSupportTest {
                 .build();
         Document second = Document.builder()
                 .id("doc-2")
-                .text("第二段 Flow Plan 执行说明")
+                .text("第二段 Harness 执行说明")
                 .metadata(Map.of("doc_id", "agent", "chunk_id", "2"))
                 .score(0.80)
                 .build();
@@ -71,8 +71,8 @@ public class RagRetrievalSupportTest {
     @Test
     public void formatEvidenceContextShouldIncludeCitationNumberAndSource() {
         Document document = Document.builder()
-                .text("Flow Plan 负责任务编排。")
-                .metadata(Map.of("source", "agent-doc.md", "section_title", "运行时编排", "qa_retrieval_query", "flow plan 编排"))
+                .text("Controlled Agent Harness 负责受控动作执行。")
+                .metadata(Map.of("source", "agent-doc.md", "section_title", "运行时执行", "qa_retrieval_query", "harness 执行"))
                 .score(0.88)
                 .build();
 
@@ -80,10 +80,10 @@ public class RagRetrievalSupportTest {
 
         Assert.assertTrue(context.contains("[证据1]"));
         Assert.assertTrue(context.contains("agent-doc.md"));
-        Assert.assertTrue(context.contains("运行时编排"));
-        Assert.assertTrue(context.contains("flow plan 编排"));
+        Assert.assertTrue(context.contains("运行时执行"));
+        Assert.assertTrue(context.contains("harness 执行"));
         Assert.assertTrue(context.contains("0.88"));
-        Assert.assertTrue(context.contains("Flow Plan"));
+        Assert.assertTrue(context.contains("Controlled Agent Harness"));
     }
 
     @Test
@@ -102,7 +102,7 @@ public class RagRetrievalSupportTest {
                 .build();
         Document secondRouteTop2 = Document.builder()
                 .id("doc-2")
-                .text("Flow Plan 质量监督")
+                .text("Harness 证据评估")
                 .metadata(Map.of("doc_id", "doc", "chunk_id", "2"))
                 .score(0.70)
                 .build();

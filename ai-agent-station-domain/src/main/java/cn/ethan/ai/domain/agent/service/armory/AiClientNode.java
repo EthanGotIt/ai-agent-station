@@ -61,7 +61,7 @@ public class AiClientNode extends AbstractArmorySupport {
             }
             OpenAiChatModel chatModel = modelObjectMap.get(aiClientVO.getModelId());
 
-            // 3. 构建对话客户端。顾问在运行时按请求装配，避免启动期固定绑定导致重复注入。
+            // 3. 构建对话客户端。Session 记忆、RAG 和工具注入由 Harness 执行期显式管理。
             ChatClient chatClient = ChatClient.builder(chatModel)
                     .defaultSystem(defaultSystem.toString())
                     .build();

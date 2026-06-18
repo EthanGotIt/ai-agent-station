@@ -12,7 +12,7 @@ import java.util.List;
 public class AgentRunLifecycleVOTest {
 
     @Test
-    public void shouldExposePlanningPhaseWhenPlanGenerationRunning() {
+    public void shouldExposeDecidingPhaseWhenHarnessActionRunning() {
         AgentRunLifecycleVO lifecycle = AgentRunLifecycleVO.from(
                 AgentRunStatusEnumVO.RUNNING,
                 null,
@@ -20,29 +20,29 @@ public class AgentRunLifecycleVOTest {
                 0,
                 0,
                 "",
-                List.of(step("flow_plan_generate", "结构化计划生成", AgentStepRunStatusEnumVO.RUNNING, null, null))
+                List.of(step("harness_action_1", "Harness Action 1", AgentStepRunStatusEnumVO.RUNNING, null, null))
         );
 
-        Assert.assertEquals("PLANNING", lifecycle.getRuntimePhase());
-        Assert.assertEquals("flow_plan_generate", lifecycle.getCurrentStepId());
+        Assert.assertEquals("DECIDING", lifecycle.getRuntimePhase());
+        Assert.assertEquals("harness_action_1", lifecycle.getCurrentStepId());
         Assert.assertEquals(Integer.valueOf(1), lifecycle.getTrackedStepCount());
     }
 
     @Test
-    public void shouldExposePlanValidationFailureReason() {
+    public void shouldExposeHarnessActionFailureReason() {
         AgentRunLifecycleVO lifecycle = AgentRunLifecycleVO.from(
                 AgentRunStatusEnumVO.FAILED,
-                "执行计划校验失败：重复的 stepId",
+                "Action 类型为空，拒绝执行。",
                 null,
                 0,
                 0,
                 "",
-                List.of(step("flow_plan_validate", "执行计划校验", AgentStepRunStatusEnumVO.FAILED, null, "重复的 stepId"))
+                List.of(step("harness_action_1", "Harness Action 1", AgentStepRunStatusEnumVO.FAILED, null, "Action 类型为空"))
         );
 
         Assert.assertEquals("FAILED", lifecycle.getRuntimePhase());
-        Assert.assertTrue(lifecycle.getTerminalReason().contains("执行计划校验"));
-        Assert.assertTrue(lifecycle.getTerminalReason().contains("重复的 stepId"));
+        Assert.assertTrue(lifecycle.getTerminalReason().contains("Harness Action 1"));
+        Assert.assertTrue(lifecycle.getTerminalReason().contains("Action 类型为空"));
         Assert.assertEquals(Integer.valueOf(1), lifecycle.getFailedStepCount());
     }
 

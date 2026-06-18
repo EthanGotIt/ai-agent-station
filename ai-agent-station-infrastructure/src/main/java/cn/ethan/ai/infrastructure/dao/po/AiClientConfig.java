@@ -34,7 +34,7 @@ public class AiClientConfig {
     private String targetType;
 
     /**
-     * 目标ID（如 openAiApiId、chatModelId、systemPromptId、advisorId 等）
+     * 目标ID（如 modelId、systemPromptId、mcpId 等）
      */
     private String targetId;
 

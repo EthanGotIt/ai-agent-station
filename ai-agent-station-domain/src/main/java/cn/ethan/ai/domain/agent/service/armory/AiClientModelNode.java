@@ -26,7 +26,7 @@ import java.util.Map;
 public class AiClientModelNode extends AbstractArmorySupport {
 
     @Resource
-    private AiClientAdvisorNode aiClientAdvisorNode;
+    private AiClientNode aiClientNode;
 
     @Override
     protected String doApply(ArmoryCommandEntity requestParameter, ArmoryAssemblyContextVO assemblyContext) throws Exception {
@@ -79,7 +79,7 @@ public class AiClientModelNode extends AbstractArmorySupport {
 
     @Override
     public StrategyHandler<ArmoryCommandEntity, ArmoryAssemblyContextVO, String> get(ArmoryCommandEntity requestParameter, ArmoryAssemblyContextVO assemblyContext) throws Exception {
-        return aiClientAdvisorNode;
+        return aiClientNode;
     }
 
     @Override

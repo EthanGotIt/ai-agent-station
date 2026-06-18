@@ -59,9 +59,9 @@ ai-agent:
     summary-max-chars: ${AI_AGENT_CONTEXT_SUMMARY_MAX_CHARS:1500}
   vector-store:
     enabled: ${AI_AGENT_VECTOR_STORE_ENABLED:false}
-    base-url: ${AI_AGENT_VECTOR_STORE_BASE_URL:https://api.jina.ai/v1}
-    api-key: ${JINA_API_KEY:}
-    model: ${AI_AGENT_VECTOR_STORE_MODEL:jina-embeddings-v5-text-small}
+    base-url: ${AI_AGENT_VECTOR_STORE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+    api-key: ${OPENAI_API_KEY:}
+    model: ${AI_AGENT_VECTOR_STORE_MODEL:text-embedding-v4}
     dimensions: ${AI_AGENT_VECTOR_STORE_DIMENSIONS:1024}
   hybrid-retrieval:
     es-base-url: ${AI_AGENT_ES_BASE_URL:http://127.0.0.1:9200}

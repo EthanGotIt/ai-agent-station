@@ -4,7 +4,7 @@ import cn.ethan.ai.domain.agent.model.valobj.AgentConversationMessageVO;
 import cn.ethan.ai.domain.agent.model.valobj.HeuristicContextUnitEstimator;
 import cn.ethan.ai.domain.agent.model.valobj.SessionContextSnapshotVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AgentConversationMessageRoleEnumVO;
-import cn.ethan.ai.domain.agent.service.execute.flow.SessionContextAssembler;
+import cn.ethan.ai.domain.agent.service.execute.runtime.SessionContextAssembler;
 import org.junit.Assert;
 import org.junit.Test;
 

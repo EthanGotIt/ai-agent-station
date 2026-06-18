@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Agent 单次执行上下文，承载 Flow Plan 各节点之间共享的运行状态。
+ * Agent 单次执行上下文，承载 Harness 执行过程中的共享运行状态。
  * 继承扳手树路由上下文仅用于满足框架泛型约束，业务代码统一使用本类字段。
  */
 @EqualsAndHashCode(callSuper = true)
@@ -42,7 +42,7 @@ public class AgentExecutionContextVO extends cn.ethan.wrench.design.framework.tr
 
     private IAgentStreamPort streamPort;
 
-    private Map<String, AiAgentClientFlowConfigVO> aiAgentClientFlowConfigVOMap;
+    private Map<String, AiAgentClientHarnessConfigVO> aiAgentClientHarnessConfigVOMap;
 
     private AgentRunAggregate agentRunAggregate;
 

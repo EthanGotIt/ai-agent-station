@@ -61,8 +61,8 @@ function Set-LocalAppEnvironment {
     $env:PGVECTOR_PASSWORD = if ($env:PGVECTOR_PASSWORD) { $env:PGVECTOR_PASSWORD } else { 'postgres' }
     $env:AI_AGENT_ES_BASE_URL = if ($env:AI_AGENT_ES_BASE_URL) { $env:AI_AGENT_ES_BASE_URL } else { 'http://127.0.0.1:9200' }
     $env:AI_AGENT_VECTOR_STORE_ENABLED = 'true'
-    $env:AI_AGENT_VECTOR_STORE_BASE_URL = if ($env:AI_AGENT_VECTOR_STORE_BASE_URL) { $env:AI_AGENT_VECTOR_STORE_BASE_URL } else { 'https://api.jina.ai/v1' }
-    $env:AI_AGENT_VECTOR_STORE_MODEL = if ($env:AI_AGENT_VECTOR_STORE_MODEL) { $env:AI_AGENT_VECTOR_STORE_MODEL } else { 'jina-embeddings-v5-text-small' }
+    $env:AI_AGENT_VECTOR_STORE_BASE_URL = if ($env:AI_AGENT_VECTOR_STORE_BASE_URL) { $env:AI_AGENT_VECTOR_STORE_BASE_URL } else { 'https://dashscope.aliyuncs.com/compatible-mode/v1' }
+    $env:AI_AGENT_VECTOR_STORE_MODEL = if ($env:AI_AGENT_VECTOR_STORE_MODEL) { $env:AI_AGENT_VECTOR_STORE_MODEL } else { 'text-embedding-v4' }
     $env:AI_AGENT_VECTOR_STORE_DIMENSIONS = if ($env:AI_AGENT_VECTOR_STORE_DIMENSIONS) { $env:AI_AGENT_VECTOR_STORE_DIMENSIONS } else { '1024' }
     $env:AI_AGENT_CONTEXT_MAX_CHARS = if ($env:AI_AGENT_CONTEXT_MAX_CHARS) { $env:AI_AGENT_CONTEXT_MAX_CHARS } else { '4000' }
     $env:AI_AGENT_CONTEXT_COMPRESS_THRESHOLD = if ($env:AI_AGENT_CONTEXT_COMPRESS_THRESHOLD) { $env:AI_AGENT_CONTEXT_COMPRESS_THRESHOLD } else { '0.70' }

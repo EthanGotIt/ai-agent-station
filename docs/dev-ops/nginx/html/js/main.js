@@ -200,34 +200,34 @@ let selectedMaxStep = DEFAULT_MAX_STEP;
 const AGENT_CONFIGS = {
     '1': {
         id: '1',
-        name: 'Flow Plan 编排体',
-        description: '计划校验、动态工具、混合检索、质量监督',
-        capability: 'Flow Plan',
-        tags: ['Plan DSL', '动态工具路由', 'Parent-Child RAG', '流式追踪'],
+        name: 'Controlled Agent Harness',
+        description: '受控动作循环、只读工具治理、Agentic RAG 证据闭环',
+        capability: 'Agent Harness',
+        tags: ['Action 协议', 'MCP 只读治理', 'Agentic RAG', '流式追踪'],
         metrics: [
-            { label: '执行内核', value: '单 Flow' },
+            { label: '执行内核', value: 'Harness' },
             { label: '工具路由', value: '按轮动态筛选' },
-            { label: '检索链路', value: 'RRF + Small-to-Big' },
+            { label: '检索链路', value: 'Agentic RAG' },
             { label: '接口', value: 'NDJSON' }
         ],
-        highlight: '将大模型生成的计划收敛为后端可校验、可执行、可监督的任务链路，并在知识问答场景中支持每轮动态工具选择、Parent-Child 导入、RRF 融合排序与 Small-to-Big 检索',
+        highlight: '将固定 Flow Plan 收敛为受控 Action Loop，并在知识问答场景中通过检索规划、证据评估、有限二次检索和只读 MCP evidence 融合提升回答可追踪性',
         color: '#58d0b7',
         iconPath: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
         cases: [
             {
                 title: '检索 Spring AI 资料并形成落地建议',
-                content: `请围绕“Spring AI MCP Client 和 RAG Advisor 的使用方式”完成资料调研：
+                content: `请围绕“Spring AI MCP Client 和 Agentic RAG 的使用方式”完成资料调研：
 
-1. 使用可用 MCP 工具检索 Spring AI、MCP、RAG 相关资料。
+1. 使用可用只读 MCP 工具检索 Spring AI、MCP、RAG 相关资料。
 2. 提取关键实现步骤、注意事项和适用场景。
 3. 按“结论、证据、落地建议”结构输出。
-4. 如果可以发送通知，请在完成后发送任务完成提醒。
+4. 如果证据不足，请说明缺口并给出可继续检索的方向。
 
-请按照以上步骤依次执行，并返回清晰的执行结果。`
+请基于证据回答，并返回清晰的执行结果。`
             },
             {
                 title: '梳理 RAG 多路召回升级方案并整理项目亮点',
-                content: `请分析 AI Agent Station 的 RAG 升级思路，重点说明 Markdown Parent-Child 导入、Query Rewrite、多路召回、RRF 融合、父块回查和证据上下文注入如何提升回答质量，并整理成可以写进简历的 3 条项目亮点。`
+                content: `请分析 AI Agent Station 从 Advanced RAG 收敛到 Agentic RAG 3.0 的升级思路，重点说明检索规划、动态通道选择、证据评估、有限二次检索和 rag_evidence trace 如何提升回答可信度，并整理成可以写进简历的 3 条项目亮点。`
             }
         ]
     }
@@ -300,8 +300,8 @@ function updateAgentOverview() {
     if (!agent) {
         overview.innerHTML = `
             <div class="agent-overview-label">当前未选择智能体</div>
-            <div class="agent-overview-title">请选择智能编排体后再发起任务</div>
-            <div class="agent-overview-description">前端会按后端 Flow Plan 事件流展示工具摘要、结构化计划、执行过程、监督结果和最终总结。</div>
+            <div class="agent-overview-title">请选择智能体后再发起任务</div>
+            <div class="agent-overview-description">前端会按后端 Harness 事件流展示 action、observation、MCP 只读证据、Agentic RAG trace 和最终回答。</div>
         `;
         return;
     }

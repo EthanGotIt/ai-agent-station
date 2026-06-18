@@ -2,7 +2,7 @@ package cn.ethan.ai.test.domain;
 
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AgentContextBoundaryVO;
-import cn.ethan.ai.domain.agent.service.execute.flow.AgentContextBoundaryService;
+import cn.ethan.ai.domain.agent.service.execute.runtime.AgentContextBoundaryService;
 import org.junit.Assert;
 import org.junit.Test;
 

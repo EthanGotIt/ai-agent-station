@@ -5,8 +5,8 @@ import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AgentContextBoundaryVO;
 import cn.ethan.ai.domain.agent.model.valobj.ContextBudgetPolicyVO;
 import cn.ethan.ai.domain.agent.model.valobj.ContextGuardResultVO;
-import cn.ethan.ai.domain.agent.service.execute.flow.AgentContextBoundaryService;
-import cn.ethan.ai.domain.agent.service.execute.flow.AgentContextWindowService;
+import cn.ethan.ai.domain.agent.service.execute.runtime.AgentContextBoundaryService;
+import cn.ethan.ai.domain.agent.service.execute.runtime.AgentContextWindowService;
 import org.junit.Assert;
 import org.junit.Test;
 

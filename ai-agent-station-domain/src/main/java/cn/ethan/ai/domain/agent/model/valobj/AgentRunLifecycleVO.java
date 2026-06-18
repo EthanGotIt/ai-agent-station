@@ -90,23 +90,17 @@ public class AgentRunLifecycleVO {
         }
 
         String stepId = StringUtils.defaultString(runningStep.getStepId());
-        if ("flow_root".equals(stepId)) {
+        if ("harness_root".equals(stepId)) {
             return "INITIALIZING";
         }
-        if ("flow_tool_routing".equals(stepId)) {
+        if ("harness_tool_routing".equals(stepId)) {
             return "TOOL_ROUTING";
         }
-        if ("flow_plan_generate".equals(stepId)) {
-            return "PLANNING";
+        if (stepId.startsWith("harness_action_")) {
+            return "DECIDING";
         }
-        if ("flow_plan_validate".equals(stepId)) {
-            return "VALIDATING";
-        }
-        if ("flow_supervision".equals(stepId)) {
-            return "SUPERVISING";
-        }
-        if ("flow_summary".equals(stepId)) {
-            return "SUMMARIZING";
+        if (stepId.startsWith("rag_")) {
+            return "RAG_RETRIEVING";
         }
         return "EXECUTING";
     }
