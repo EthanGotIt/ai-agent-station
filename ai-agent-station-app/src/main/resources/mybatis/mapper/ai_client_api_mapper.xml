@@ -7,8 +7,6 @@
         <result column="api_id" property="apiId"/>
         <result column="base_url" property="baseUrl"/>
         <result column="api_key" property="apiKey"/>
-        <result column="completions_path" property="completionsPath"/>
-        <result column="embeddings_path" property="embeddingsPath"/>
         <result column="status" property="status"/>
         <result column="create_time" property="createTime"/>
         <result column="update_time" property="updateTime"/>
@@ -16,9 +14,9 @@
 
     <insert id="insert" parameterType="cn.ethan.ai.infrastructure.dao.po.AiClientApi" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO ai_client_api (
-            api_id, base_url, api_key, completions_path, embeddings_path, status, create_time, update_time
+            api_id, base_url, api_key, status, create_time, update_time
         ) VALUES (
-            #{apiId}, #{baseUrl}, #{apiKey}, #{completionsPath}, #{embeddingsPath}, #{status}, #{createTime}, #{updateTime}
+            #{apiId}, #{baseUrl}, #{apiKey}, #{status}, #{createTime}, #{updateTime}
         )
     </insert>
 
@@ -27,8 +25,6 @@
             api_id = #{apiId},
             base_url = #{baseUrl},
             api_key = #{apiKey},
-            completions_path = #{completionsPath},
-            embeddings_path = #{embeddingsPath},
             status = #{status},
             update_time = #{updateTime}
         WHERE id = #{id}
@@ -38,8 +34,6 @@
         UPDATE ai_client_api SET
             base_url = #{baseUrl},
             api_key = #{apiKey},
-            completions_path = #{completionsPath},
-            embeddings_path = #{embeddingsPath},
             status = #{status},
             update_time = #{updateTime}
         WHERE api_id = #{apiId}
@@ -54,26 +48,26 @@
     </delete>
 
     <select id="queryById" parameterType="java.lang.Long" resultMap="AiClientApiMap">
-        SELECT id, api_id, base_url, api_key, completions_path, embeddings_path, status, create_time, update_time
+        SELECT id, api_id, base_url, api_key, status, create_time, update_time
         FROM ai_client_api
         WHERE id = #{id}
     </select>
 
     <select id="queryByApiId" parameterType="java.lang.String" resultMap="AiClientApiMap">
-        SELECT id, api_id, base_url, api_key, completions_path, embeddings_path, status, create_time, update_time
+        SELECT id, api_id, base_url, api_key, status, create_time, update_time
         FROM ai_client_api
         WHERE api_id = #{apiId}
     </select>
 
     <select id="queryEnabledApis" resultMap="AiClientApiMap">
-        SELECT id, api_id, base_url, api_key, completions_path, embeddings_path, status, create_time, update_time
+        SELECT id, api_id, base_url, api_key, status, create_time, update_time
         FROM ai_client_api
         WHERE status = 1
         ORDER BY create_time DESC
     </select>
 
     <select id="queryAll" resultMap="AiClientApiMap">
-        SELECT id, api_id, base_url, api_key, completions_path, embeddings_path, status, create_time, update_time
+        SELECT id, api_id, base_url, api_key, status, create_time, update_time
         FROM ai_client_api
         ORDER BY create_time DESC
     </select>

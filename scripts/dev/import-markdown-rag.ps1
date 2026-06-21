@@ -5,7 +5,11 @@ param(
 . (Join-Path $PSScriptRoot 'common.ps1')
 
 $repoRoot = Get-RepoRoot
+Assert-DockerReady
+Assert-LocalPostgresStopped
 Set-LocalAppEnvironment -JavaHome $JavaHome
+Assert-TcpPortReady -TargetHost '127.0.0.1' -Port 5432 -TimeoutSeconds 15
+Assert-TcpPortReady -TargetHost '127.0.0.1' -Port 9200 -TimeoutSeconds 15
 
 if ([string]::IsNullOrWhiteSpace($env:OPENAI_API_KEY)) {
     throw '未检测到 OPENAI_API_KEY，应用启动仍需要真实对话模型密钥。'

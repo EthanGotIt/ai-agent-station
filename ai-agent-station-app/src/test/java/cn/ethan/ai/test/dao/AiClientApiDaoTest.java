@@ -33,8 +33,6 @@ public class AiClientApiDaoTest {
                 .apiId("test_api_001")
                 .baseUrl("https://api.openai.com")
                 .apiKey("test-api-key")
-                .completionsPath("/v1/chat/completions")
-                .embeddingsPath("/v1/embeddings")
                 .status(1)
                 .createTime(LocalDateTime.now())
                 .updateTime(LocalDateTime.now())
@@ -51,8 +49,6 @@ public class AiClientApiDaoTest {
                 .apiId("test_api_001")
                 .baseUrl("https://api.openai.com")
                 .apiKey("updated-test-api-key")
-                .completionsPath("/v1/chat/completions")
-                .embeddingsPath("/v1/embeddings")
                 .status(1)
                 .updateTime(LocalDateTime.now())
                 .build();
@@ -67,8 +63,6 @@ public class AiClientApiDaoTest {
                 .apiId("test_api_001")
                 .baseUrl("https://api.openai.com")
                 .apiKey("updated-by-api-id")
-                .completionsPath("/v1/chat/completions")
-                .embeddingsPath("/v1/embeddings")
                 .status(1)
                 .updateTime(LocalDateTime.now())
                 .build();

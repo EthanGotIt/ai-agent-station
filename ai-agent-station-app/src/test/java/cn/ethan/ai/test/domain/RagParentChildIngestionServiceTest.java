@@ -21,7 +21,7 @@ public class RagParentChildIngestionServiceTest {
         RecordingRepository repository = new RecordingRepository();
         RecordingIndexPort indexPort = new RecordingIndexPort();
         RagParentChildIngestionService service = new RagParentChildIngestionService(
-                new TokenTextSplitter(),
+                TokenTextSplitter.builder().build(),
                 repository,
                 indexPort
         );

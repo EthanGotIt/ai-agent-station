@@ -4,6 +4,9 @@ param(
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 
+Assert-DockerReady
+Assert-LocalPostgresStopped
+
 function Invoke-AgentExecute {
     param(
         [Parameter(Mandatory = $true)][hashtable]$Payload

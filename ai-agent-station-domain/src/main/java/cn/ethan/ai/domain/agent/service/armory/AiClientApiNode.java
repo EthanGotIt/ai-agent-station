@@ -9,7 +9,7 @@ import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import com.alibaba.fastjson.JSON;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -38,10 +38,10 @@ public class AiClientApiNode extends AbstractArmorySupport {
             return router(requestParameter, assemblyContext);
         }
 
-        Map<String, OpenAiApi> apiObjectMap = assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_API_OBJECT_MAP_KEY.getCode());
-        if (apiObjectMap == null) {
-            apiObjectMap = new HashMap<>();
-            assemblyContext.setValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_API_OBJECT_MAP_KEY.getCode(), apiObjectMap);
+        Map<String, OpenAiChatOptions> apiOptionsMap = assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_API_OPTIONS_MAP_KEY.getCode());
+        if (apiOptionsMap == null) {
+            apiOptionsMap = new HashMap<>();
+            assemblyContext.setValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_API_OPTIONS_MAP_KEY.getCode(), apiOptionsMap);
         }
 
         for (AiClientApiVO aiClientApiVO : aiClientApiList) {
@@ -50,17 +50,14 @@ public class AiClientApiNode extends AbstractArmorySupport {
                         aiClientApiVO.getApiId(), aiClientApiVO.getBaseUrl());
             }
 
-            // 仅在装配上下文中组装接口对象，避免动态注册带来的并发问题。
-            OpenAiApi openAiApi = OpenAiApi.builder()
+            OpenAiChatOptions apiOptions = OpenAiChatOptions.builder()
                     .baseUrl(aiClientApiVO.getBaseUrl())
                     .apiKey(aiClientApiVO.getApiKey())
-                    .completionsPath(aiClientApiVO.getCompletionsPath())
-                    .embeddingsPath(aiClientApiVO.getEmbeddingsPath())
                     .build();
-            apiObjectMap.put(aiClientApiVO.getApiId(), openAiApi);
+            apiOptionsMap.put(aiClientApiVO.getApiId(), apiOptions);
 
-            // 向 Spring 容器注册：保证后续阶段可以按名称获取接口对象。
-            registerBean(beanName(aiClientApiVO.getApiId()), OpenAiApi.class, openAiApi);
+            // Spring AI 2.0 将连接配置收敛到不可变 Options，模型节点通过 mutate() 追加模型参数。
+            registerBean(beanName(aiClientApiVO.getApiId()), OpenAiChatOptions.class, apiOptions);
         }
 
         return router(requestParameter, assemblyContext);

@@ -117,11 +117,14 @@ public class AgentModelPort implements IAgentModelPort {
             }
 
             List<ToolCallback> callbacks = resolveToolCallbacks(toolRoutingDecision);
-            ChatClient runtimeChatClient = buildRuntimeChatClient(baseChatClient, selectedConfig, callbacks, eventType);
-
             contextWindowGuard.record(prompt);
-            ChatClient.ChatClientRequestSpec requestSpec = runtimeChatClient.prompt(prompt)
+            ChatClient.ChatClientRequestSpec requestSpec = baseChatClient.prompt(prompt)
                     .system(s -> s.param("current_date", LocalDate.now().toString()));
+            if (!callbacks.isEmpty()) {
+                log.info("运行时注入工具回调完成，eventType：{}，clientId：{}，toolCount：{}", eventType,
+                        selectedConfig.getClientId(), callbacks.size());
+                requestSpec.tools(callbacks);
+            }
             ChatClient.CallResponseSpec responseSpec = requestSpec.call();
             ChatClientResponse chatClientResponse = responseSpec.chatClientResponse();
             ChatResponse chatResponse = chatClientResponse == null ? responseSpec.chatResponse() : chatClientResponse.chatResponse();
@@ -146,20 +149,6 @@ public class AgentModelPort implements IAgentModelPort {
             return null;
         }
         return getChatClient(config.getClientId());
-    }
-
-    private ChatClient buildRuntimeChatClient(ChatClient baseChatClient,
-                                              AiAgentClientHarnessConfigVO config,
-                                              List<ToolCallback> callbacks,
-                                              String eventType) {
-        ChatClient.Builder builder = baseChatClient.mutate();
-        if (!callbacks.isEmpty()) {
-            log.info("运行时装配工具回调完成，eventType：{}，clientId：{}，toolCount：{}", eventType,
-                    config == null ? "" : config.getClientId(), callbacks.size());
-            builder.defaultToolCallbacks(callbacks);
-        }
-
-        return builder.build();
     }
 
     private AiAgentClientHarnessConfigVO firstAvailableConfig(Map<String, AiAgentClientHarnessConfigVO> harnessConfigMap,

@@ -226,8 +226,6 @@ public class AgentRepository implements IAgentRepository {
                                 .apiId(apiConfig.getApiId())
                                 .baseUrl(resolveConfigValue(apiConfig.getBaseUrl()))
                                 .apiKey(resolveConfigValue(apiConfig.getApiKey()))
-                                .completionsPath(resolveConfigValue(apiConfig.getCompletionsPath()))
-                                .embeddingsPath(resolveConfigValue(apiConfig.getEmbeddingsPath()))
                                 .build());
             }
         }

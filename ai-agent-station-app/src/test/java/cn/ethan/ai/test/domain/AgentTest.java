@@ -16,7 +16,7 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatModel;
-import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.junit4.SpringRunner;
@@ -48,9 +48,9 @@ public class AgentTest {
                         .build(),
                 new ArmoryAssemblyContextVO());
 
-        OpenAiApi openAiApi = (OpenAiApi) applicationContext.getBean(AiAgentEnumVO.AI_CLIENT_API.getBeanName("1001"));
+        OpenAiChatOptions apiOptions = (OpenAiChatOptions) applicationContext.getBean(AiAgentEnumVO.AI_CLIENT_API.getBeanName("1001"));
 
-        log.info("测试结果：{}", openAiApi);
+        log.info("测试结果：baseUrl={}", apiOptions.getBaseUrl());
     }
 
     @Test

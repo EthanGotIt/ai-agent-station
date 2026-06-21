@@ -2,6 +2,14 @@
 
 ## 前置步骤
 
+框架基线为 JDK `17`、Spring Boot `4.1.0` 和 Spring AI `2.0.0`。首次升级或依赖变更后，先执行兼容性测试：
+
+```powershell
+$env:JAVA_HOME='D:\Environment\JDK17'
+$env:Path="$env:JAVA_HOME\bin;$env:Path"
+mvn -q -pl ai-agent-station-app -am "-DskipTests=false" "-Dsurefire.failIfNoSpecifiedTests=false" "-Dtest=SpringAi2CompatibilityTest" test
+```
+
 1. 启动核心依赖：
 
 ```powershell
@@ -13,6 +21,8 @@
 - 本机 MySQL `3306`
 - Docker 容器 `pgvector`（`5432`）
 - Docker 容器 `elasticsearch`（`9200`）
+
+Windows 本地 PostgreSQL 必须保持停止，避免与 Docker pgvector 同时监听 `5432`。`up-local-stack.ps1`、`start-app-local.ps1`、导入脚本和 smoke 脚本都会主动检查该冲突。
 
 2. 启动 Spring Boot：
 

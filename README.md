@@ -4,11 +4,14 @@ AI Agent Station 是一个面向企业知识助手、技术资料调研和知识
 
 当前基础版本：
 
-- Spring Boot `3.5.14`
-- Spring AI `1.1.7`
+- Spring Boot `4.1.0`
+- Spring AI `2.0.0`
+- MyBatis Spring Boot Starter `4.0.1`
 - JDK `17`
 - 默认 Chat 模型：`qwen3.7-max`
 - 默认 Embedding 模型：`text-embedding-v4`，维度 `1024`
+
+Spring AI 2 适配遵循当前官方 API：模型连接参数使用不可变 `OpenAiChatOptions`，运行时 MCP 工具通过请求级 `tools(...)` 注入并由 `ChatClient` 的工具调用 Advisor 完成调用循环，MCP SDK 使用 Jackson 3 mapper。详细迁移记录见 [Spring AI 2.0 升级说明](docs/spring-ai-2-upgrade.md)。
 
 ## 项目亮点
 
@@ -102,8 +105,8 @@ RAG evidence 子链路只允许只读工具名：
 - Maven 3.8+
 - Docker Desktop
 - MySQL 8.x
-- PostgreSQL + PGVector
-- Elasticsearch 7.17.x
+- Docker 容器 PostgreSQL + PGVector
+- Docker 容器 Elasticsearch 7.17.x
 
 常用环境变量：
 
@@ -120,6 +123,8 @@ RAG evidence 子链路只允许只读工具名：
 ```powershell
 .\scripts\dev\up-local-stack.ps1
 ```
+
+项目默认由 Docker `pgvector` 独占宿主机 `5432`。如果 Windows 本地 PostgreSQL 服务仍在运行，开发脚本会直接报错，避免应用误连到本地空库；需要本地 PostgreSQL 时再手工启动对应服务。
 
 启动应用：
 

@@ -44,6 +44,8 @@ public class AgentHarnessExecuteService {
 
     private static final int DEFAULT_MAX_STEP = 4;
 
+    private static final String RAG_EVIDENCE_SUB_TYPE = "rag_evidence";
+
     @Resource
     private IAgentRepository repository;
 
@@ -213,7 +215,7 @@ public class AgentHarnessExecuteService {
                     observations.add(observation);
                     finalAnswer = policyResult.reason();
                     markStepFailed(run, stepId, policyResult.reason(), startTime);
-                    sendObservation(command, executionContext, run, round, observation);
+                    sendObservation(command, executionContext, run, observation);
                     break;
                 }
 
@@ -224,7 +226,7 @@ public class AgentHarnessExecuteService {
                 observations.add(observation);
                 run.recordStepOutput(stepId, observation.getMessage());
                 markStepSuccess(run, stepId, observation.getMessage(), startTime);
-                sendObservation(command, executionContext, run, round, observation);
+                sendObservation(command, executionContext, run, observation);
                 if (observation.isTerminal()) {
                     finalAnswer = observation.getMessage();
                     break;
@@ -304,9 +306,11 @@ public class AgentHarnessExecuteService {
                 executionContext.getToolRoutingDecision(),
                 executionContext.nextStreamStepCursor()
         );
-        Map<String, Object> payload = new LinkedHashMap<>(result.getMetadata());
+        Map<String, Object> payload = new LinkedHashMap<>();
         Object trace = result.getMetadata().get(AgenticRagRuntime.METADATA_TRACE);
-        payload.put("rag_evidence", trace);
+        payload.put(RAG_EVIDENCE_SUB_TYPE, trace);
+        payload.put("retrievalQueries", result.getMetadata().get("qa_retrieval_queries"));
+        payload.put("noEvidence", result.getMetadata().get("qa_retrieval_no_evidence"));
         return HarnessObservationVO.success(action, result.getContent(), payload, true);
     }
 
@@ -432,13 +436,35 @@ public class AgentHarnessExecuteService {
     private void sendObservation(ExecuteCommandEntity command,
                                  AgentExecutionContextVO executionContext,
                                  AgentRunAggregate run,
-                                 int round,
                                  HarnessObservationVO observation) {
+        HarnessObservationVO streamObservation = observation;
+        Object ragEvidence = observation.getPayload() == null ? null : observation.getPayload().get(RAG_EVIDENCE_SUB_TYPE);
+        if (ragEvidence != null) {
+            sendStreamResult(executionContext, AgentExecuteResultEntity.createExecutionSubResult(
+                    executionContext.nextStreamStepCursor(),
+                    RAG_EVIDENCE_SUB_TYPE,
+                    "Agentic RAG 证据轨迹已生成。",
+                    ragEvidence,
+                    command.getSessionId(),
+                    run.runId()
+            ));
+
+            Map<String, Object> compactPayload = new LinkedHashMap<>(observation.getPayload());
+            compactPayload.remove(RAG_EVIDENCE_SUB_TYPE);
+            streamObservation = HarnessObservationVO.builder()
+                    .actionId(observation.getActionId())
+                    .actionType(observation.getActionType())
+                    .success(observation.isSuccess())
+                    .terminal(observation.isTerminal())
+                    .message(observation.getMessage())
+                    .payload(compactPayload)
+                    .build();
+        }
         sendStreamResult(executionContext, AgentExecuteResultEntity.createExecutionSubResult(
                 executionContext.nextStreamStepCursor(),
                 "harness_observation",
-                observation.getMessage(),
-                observation,
+                streamObservation.getMessage(),
+                streamObservation,
                 command.getSessionId(),
                 run.runId()
         ));

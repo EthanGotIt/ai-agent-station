@@ -6,6 +6,7 @@
 | --- | --- | --- | --- | --- | --- |
 | Phase 1-7：轻量受控 Runtime、Tool Guard、RAG 显式化、上下文治理、持久化 session 短期记忆 | 已完成 | 已完成 | 已通过历史验收 | 已完成 | 已沉淀 |
 | 当前阶段：Controlled Agent Harness + Agentic RAG 3.0 | 已完成 | 主链路已切换 | 全量测试已通过 | README / smoke / defense 已更新 | 已更新 |
+| 框架基线：Spring AI 2.0 / Spring Boot 4.1 | 已完成 | 已完成 | 单测、打包、live smoke 已通过 | 升级说明已完成 | 不改变业务答辩主线 |
 
 ## 项目变化
 
@@ -19,6 +20,14 @@
 - 默认 embedding 切换为阿里百炼 `text-embedding-v4`，维度保持 `1024`，不再依赖第三方向量模型默认配置。
 
 当前项目仍不是完整多 Agent 通信框架、长期用户画像系统、危险工具沙箱或通用工作流引擎。
+
+## Spring AI 2 技术评估
+
+- Spring AI `2.0.0` 正式版基于 Spring Boot `4.1.0`，本项目同步升级 Boot 与 MyBatis Starter，避免跨代自动配置组合。
+- 旧 `OpenAiApi` 已移除，连接参数改由不可变 `OpenAiChatOptions` 持有，模型节点通过 `mutate()` 派生模型级配置。
+- 动态 MCP 工具仍按单次请求注入，使用 Spring AI 2 的统一 `tools(...)` API，由 `ChatClient` 默认工具调用 Advisor 负责模型、工具和后续模型响应的闭环。
+- MCP SDK 2 使用 Jackson 3 mapper；Actuator 健康组件同步迁移到 Boot 4 的 `org.springframework.boot.health.contributor` 包。
+- 数据库中的 `completions_path / embeddings_path` 对官方 OpenAI Java SDK 已无实际配置入口，因此从领域模型、Mapper 和原始 seed 中一并删除，不保留失效配置。
 
 ## 技术评估
 
@@ -72,7 +81,15 @@ mvn -q -pl ai-agent-station-app -am "-DskipTests=false" "-Dsurefire.failIfNoSpec
 
 待完成验收：
 
-- 本地 live smoke：`.\scripts\dev\run-local-smoke.ps1`
+- 无。
+
+Spring AI 2 框架升级验收：
+
+- `SpringAi2CompatibilityTest`：2 个测试通过，验证不可变 Options 派生和请求级工具调用循环。
+- `mvn -q clean "-DskipTests=false" test`：160 个测试，147 个实际执行，13 个手工门禁跳过，0 failures，0 errors。
+- `mvn -q "-DskipTests" package`：Boot 4 可执行 jar 打包通过。
+- `.\scripts\dev\run-local-smoke.ps1`：Harness、MCP 路由、Agentic RAG evidence 和 session 记忆链路通过。
+- live smoke 发现并修复独立 `rag_evidence` 事件缺失，流式 observation 不再重复携带完整 trace 和 Document 列表。
 
 ## 后续方向
 

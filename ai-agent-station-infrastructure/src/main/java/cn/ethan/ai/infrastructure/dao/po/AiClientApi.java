@@ -36,16 +36,6 @@ public class AiClientApi {
     private String apiKey;
 
     /**
-     * 对话补全路径
-     */
-    private String completionsPath;
-
-    /**
-     * 嵌入向量路径
-     */
-    private String embeddingsPath;
-
-    /**
      * 状态(0:禁用,1:启用)
      */
     private Integer status;

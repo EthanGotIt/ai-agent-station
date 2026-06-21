@@ -7,13 +7,12 @@ import cn.ethan.ai.domain.agent.model.valobj.AiClientToolMcpVO;
 import cn.ethan.ai.domain.agent.model.valobj.ArmoryAssemblyContextVO;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import com.alibaba.fastjson.JSON;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.client.transport.StdioClientTransport;
-import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
+import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapperSupplier;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -32,8 +31,6 @@ import java.util.Map;
 @Slf4j
 @Service
 public class AiClientToolMcpNode extends AbstractArmorySupport {
-
-    private static final ObjectMapper MCP_OBJECT_MAPPER = new ObjectMapper();
 
     @Resource
     private AiClientModelNode aiClientModelNode;
@@ -100,7 +97,7 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
                         .env(transportConfigStdio.getEnv())
                         .build();
 
-                var mcpClient = McpClient.sync(new StdioClientTransport(stdioParams, new JacksonMcpJsonMapper(MCP_OBJECT_MAPPER)))
+                var mcpClient = McpClient.sync(new StdioClientTransport(stdioParams, new JacksonMcpJsonMapperSupplier().get()))
                         .requestTimeout(timeout)
                         .initializationTimeout(timeout)
                         .build();
@@ -125,7 +122,8 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
 
                 Map<String, String> streamableHeaders = transportConfig.getHeaders();
                 if (streamableHeaders != null && !streamableHeaders.isEmpty()) {
-                    streamableBuilder.customizeRequest(requestBuilder -> applyHeaders(requestBuilder, streamableHeaders));
+                    streamableBuilder.httpRequestCustomizer(
+                            (requestBuilder, method, uri, body, context) -> applyHeaders(requestBuilder, streamableHeaders));
                 }
 
                 HttpClientStreamableHttpTransport streamableHttpTransport = streamableBuilder

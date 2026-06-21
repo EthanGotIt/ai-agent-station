@@ -31,14 +31,4 @@ public class AiClientApiVO {
     @ToString.Exclude
     private String apiKey;
 
-    /**
-     * 对话补全路径
-     */
-    private String completionsPath;
-
-    /**
-     * 嵌入向量路径
-     */
-    private String embeddingsPath;
-
 }

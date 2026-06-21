@@ -62,8 +62,6 @@ CREATE TABLE `ai_client_api` (
     `api_id` varchar(64) NOT NULL COMMENT '模型接口业务ID',
     `base_url` varchar(255) NOT NULL COMMENT 'API 基础地址',
     `api_key` varchar(255) NOT NULL COMMENT 'API 密钥占位符，运行时从环境变量解析',
-    `completions_path` varchar(255) NOT NULL COMMENT '对话补全路径',
-    `embeddings_path` varchar(255) NOT NULL COMMENT '向量嵌入路径',
     `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态：0禁用，1启用',
     `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -73,9 +71,9 @@ CREATE TABLE `ai_client_api` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='模型 API 配置表';
 
 LOCK TABLES `ai_client_api` WRITE;
-INSERT INTO `ai_client_api` (`id`, `api_id`, `base_url`, `api_key`, `completions_path`, `embeddings_path`, `status`, `create_time`, `update_time`)
+INSERT INTO `ai_client_api` (`id`, `api_id`, `base_url`, `api_key`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '1001', 'https://dashscope.aliyuncs.com/compatible-mode/v1', '${OPENAI_API_KEY}', '/chat/completions', '/embeddings', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, '1001', 'https://dashscope.aliyuncs.com/compatible-mode/v1', '${OPENAI_API_KEY}', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 知识库配置表保留，当前不写入 RAG 种子数据

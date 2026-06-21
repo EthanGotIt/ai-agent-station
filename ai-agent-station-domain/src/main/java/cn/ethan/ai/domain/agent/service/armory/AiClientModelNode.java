@@ -11,7 +11,6 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
-import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
@@ -39,7 +38,7 @@ public class AiClientModelNode extends AbstractArmorySupport {
             return router(requestParameter, assemblyContext);
         }
 
-        Map<String, OpenAiApi> apiObjectMap = assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_API_OBJECT_MAP_KEY.getCode());
+        Map<String, OpenAiChatOptions> apiOptionsMap = assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_API_OPTIONS_MAP_KEY.getCode());
         Map<String, OpenAiChatModel> modelObjectMap = assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_MODEL_OBJECT_MAP_KEY.getCode());
         if (modelObjectMap == null) {
             modelObjectMap = new HashMap<>();
@@ -48,23 +47,20 @@ public class AiClientModelNode extends AbstractArmorySupport {
 
         for (AiClientModelVO modelVO : aiClientModelList) {
 
-            if (apiObjectMap == null) {
-                throw new RuntimeException("模型接口对象为空，无法装配对话模型");
+            if (apiOptionsMap == null) {
+                throw new RuntimeException("模型接口选项为空，无法装配对话模型");
             }
 
-            // 获取当前模型关联的 API 对象（来自装配上下文）
-            OpenAiApi openAiApi = apiObjectMap.get(modelVO.getApiId());
-            if (null == openAiApi) {
-                throw new RuntimeException("模型关联的接口对象不存在，modelId=" + modelVO.getModelId() + "，apiId=" + modelVO.getApiId());
+            OpenAiChatOptions apiOptions = apiOptionsMap.get(modelVO.getApiId());
+            if (null == apiOptions) {
+                throw new RuntimeException("模型关联的接口选项不存在，modelId=" + modelVO.getModelId() + "，apiId=" + modelVO.getApiId());
             }
 
             // 实例化对话模型，其他模型可通过 OpenAI 兼容接口接入。
             OpenAiChatModel chatModel = OpenAiChatModel.builder()
-                    .openAiApi(openAiApi)
-                    .defaultOptions(
-                            OpenAiChatOptions.builder()
-                                    .model(modelVO.getModelName())
-                                    .build())
+                    .options(apiOptions.mutate()
+                            .model(modelVO.getModelName())
+                            .build())
                     .build();
 
             // 放入装配上下文，供后续对话客户端装配。

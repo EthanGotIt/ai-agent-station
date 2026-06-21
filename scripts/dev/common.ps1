@@ -77,6 +77,18 @@ function Assert-DockerReady {
     }
 }
 
+function Assert-LocalPostgresStopped {
+    $runningServices = Get-Service -Name 'postgresql*' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Status -eq [System.ServiceProcess.ServiceControllerStatus]::Running }
+    $runningProcesses = Get-Process -Name 'postgres' -ErrorAction SilentlyContinue
+
+    if ($runningServices -or $runningProcesses) {
+        $serviceNames = ($runningServices | Select-Object -ExpandProperty Name) -join ', '
+        $detail = if ([string]::IsNullOrWhiteSpace($serviceNames)) { '检测到 Windows postgres 进程' } else { "运行中的服务：$serviceNames" }
+        throw "本地 PostgreSQL 会与 Docker pgvector 的 5432 端口冲突，$detail。请在管理员 PowerShell 中停止本地 PostgreSQL 后重试。"
+    }
+}
+
 function Assert-TcpPortReady {
     param(
         [Parameter(Mandatory = $true)][string]$TargetHost,

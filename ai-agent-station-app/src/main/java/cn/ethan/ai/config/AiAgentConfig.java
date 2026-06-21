@@ -3,7 +3,6 @@ package cn.ethan.ai.config;
 import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.ai.openai.OpenAiEmbeddingOptions;
-import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -46,18 +45,15 @@ public class AiAgentConfig {
             throw new IllegalStateException("启用 PgVector 向量库时必须配置向量模型密钥，请检查 OPENAI_API_KEY 或 ai-agent.vector-store.api-key");
         }
 
-        OpenAiApi openAiApi = OpenAiApi.builder()
-                .baseUrl(normalizeEmbeddingBaseUrl(baseUrl))
+        OpenAiEmbeddingOptions embeddingOptions = OpenAiEmbeddingOptions.builder()
+                .baseUrl(baseUrl)
                 .apiKey(apiKey)
+                .model(embeddingModel)
+                .dimensions(embeddingDimensions)
                 .build();
 
-        return PgVectorStore.builder(jdbcTemplate, new OpenAiEmbeddingModel(
-                        openAiApi,
-                        MetadataMode.EMBED,
-                        OpenAiEmbeddingOptions.builder()
-                                .model(embeddingModel)
-                                .dimensions(embeddingDimensions)
-                                .build()))
+        return PgVectorStore.builder(jdbcTemplate,
+                        new OpenAiEmbeddingModel(MetadataMode.EMBED, embeddingOptions))
                 .vectorTableName("vector_store_openai")
                 .dimensions(embeddingDimensions)
                 .build();
@@ -65,26 +61,7 @@ public class AiAgentConfig {
 
     @Bean
     public TokenTextSplitter tokenTextSplitter() {
-        return new TokenTextSplitter();
-    }
-
-    /**
-     * Spring AI 的 OpenAiApi 会自行补齐 v1 路径。
-     * DashScope 兼容模式配置若直接写到 /compatible-mode/v1，
-     * OpenAiApi 会在 embeddings 场景下自行补齐 /v1。
-     */
-    private String normalizeEmbeddingBaseUrl(String rawBaseUrl) {
-        if (!StringUtils.hasText(rawBaseUrl)) {
-            return rawBaseUrl;
-        }
-        String normalized = rawBaseUrl.trim();
-        if (normalized.endsWith("/v1")) {
-            return normalized.substring(0, normalized.length() - 3);
-        }
-        if (normalized.endsWith("/v1/")) {
-            return normalized.substring(0, normalized.length() - 4);
-        }
-        return normalized;
+        return TokenTextSplitter.builder().build();
     }
 
 }
