@@ -11,7 +11,12 @@ public interface IAiAgentConversationMessageDao {
 
     int insert(AiAgentConversationMessage message);
 
-    List<AiAgentConversationMessage> queryRecentBySessionId(@Param("sessionId") String sessionId,
-                                                            @Param("limit") int limit);
+    List<AiAgentConversationMessage> queryCompleteTurnMessages(@Param("sessionId") String sessionId,
+                                                               @Param("afterMessageId") long afterMessageId,
+                                                               @Param("limit") int limit);
+
+    int deleteBySessionId(@Param("sessionId") String sessionId);
+
+    int deleteExpiredSessionMessages(@Param("now") java.time.LocalDateTime now);
 
 }

@@ -6,7 +6,6 @@ import cn.ethan.ai.domain.agent.model.valobj.enums.StreamTransportTypeEnumVO;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
-import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 import java.util.Map;
@@ -14,14 +13,12 @@ import java.util.Set;
 
 /**
  * Agent 单次执行上下文，承载 Harness 执行过程中的共享运行状态。
- * 继承扳手树路由上下文仅用于满足框架泛型约束，业务代码统一使用本类字段。
  */
-@EqualsAndHashCode(callSuper = true)
 @Data
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class AgentExecutionContextVO extends cn.ethan.wrench.design.framework.tree.DynamicContext {
+public class AgentExecutionContextVO {
 
     /**
      * 当前流式展示步骤游标。
@@ -30,7 +27,7 @@ public class AgentExecutionContextVO extends cn.ethan.wrench.design.framework.tr
     private int streamStepCursor = 1;
 
     /**
-     * 本次计划允许的最大步骤数。
+     * 请求给出的 Harness 软轮次上限，服务端仍持有硬上限。
      */
     @Builder.Default
     private int maxStep = 3;
@@ -54,9 +51,8 @@ public class AgentExecutionContextVO extends cn.ethan.wrench.design.framework.tr
 
     private AgentContextBoundaryVO contextBoundary;
 
-    private String supervisionResult;
-
-    private boolean planValid;
+    @Builder.Default
+    private EvidenceBoardVO evidenceBoard = new EvidenceBoardVO();
 
     private boolean cancelled;
 

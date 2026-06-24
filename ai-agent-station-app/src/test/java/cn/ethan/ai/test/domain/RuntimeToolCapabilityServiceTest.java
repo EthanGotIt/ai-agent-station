@@ -9,9 +9,10 @@ import cn.ethan.ai.domain.agent.model.valobj.AiClientSystemPromptVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientToolMcpVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingDecisionVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.EvidenceSourceTypeEnumVO;
 import cn.ethan.ai.domain.agent.service.execute.harness.RuntimeToolCapabilityService;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.util.List;
@@ -28,26 +29,27 @@ public class RuntimeToolCapabilityServiceTest {
                 buildMcp("5005", "notify-service", "stdio", List.of("notify_task_complete", "send_notification"))
         )));
 
-        ToolRoutingDecisionVO decision = service.routeTools(harnessConfigMap(), "请检索 Spring AI 文档，完成后通知我");
+        ToolRoutingDecisionVO decision = service.routeForEvidenceSource(harnessConfigMap(), EvidenceSourceTypeEnumVO.OFFICIAL_DOCS);
 
-        Assert.assertTrue(decision.isEnabled());
-        Assert.assertTrue(decision.getAllowedToolNames().contains("web_search_exa"));
-        Assert.assertFalse(decision.getAllowedToolNames().contains("notify_task_complete"));
-        Assert.assertEquals(2, decision.getSelectedTools().size());
+        Assertions.assertTrue(decision.isEnabled());
+        Assertions.assertTrue(decision.getAllowedToolNames().contains("get-library-docs"));
+        Assertions.assertFalse(decision.getAllowedToolNames().contains("web_search_exa"));
+        Assertions.assertFalse(decision.getAllowedToolNames().contains("notify_task_complete"));
+        Assertions.assertEquals(1, decision.getSelectedTools().size());
     }
 
     @Test
-    public void shouldDisableToolsForSimpleWritingTask() throws Exception {
+    public void shouldDisableToolsForProjectKnowledgeSource() throws Exception {
         RuntimeToolCapabilityService service = new RuntimeToolCapabilityService();
         injectRepository(service, new StubRepository(List.of(
                 buildMcp("5002", "exa-search", "streamable_http", List.of("web_search_exa")),
                 buildMcp("5005", "notify-service", "stdio", List.of("notify_task_complete"))
         )));
 
-        ToolRoutingDecisionVO decision = service.routeTools(harnessConfigMap(), "帮我润色这段项目描述");
+        ToolRoutingDecisionVO decision = service.routeForEvidenceSource(harnessConfigMap(), EvidenceSourceTypeEnumVO.PROJECT_KNOWLEDGE);
 
-        Assert.assertFalse(decision.isEnabled());
-        Assert.assertTrue(decision.getAllowedToolNames().isEmpty());
+        Assertions.assertFalse(decision.isEnabled());
+        Assertions.assertTrue(decision.getAllowedToolNames().isEmpty());
     }
 
     @Test
@@ -57,13 +59,13 @@ public class RuntimeToolCapabilityServiceTest {
                 buildMcp("5006", "mixed-search-shell", "stdio", List.of("web_search_exa", "execute_shell"))
         )));
 
-        ToolRoutingDecisionVO decision = service.routeTools(harnessConfigMap(), "请联网搜索 Spring AI MCP 文档");
+        ToolRoutingDecisionVO decision = service.routeForEvidenceSource(harnessConfigMap(), EvidenceSourceTypeEnumVO.WEB_RESEARCH);
 
-        Assert.assertTrue(decision.isEnabled());
-        Assert.assertTrue(decision.getAllowedToolNames().contains("web_search_exa"));
-        Assert.assertFalse(decision.getAllowedToolNames().contains("execute_shell"));
-        Assert.assertTrue(decision.getBlockedToolNames().contains("execute_shell"));
-        Assert.assertTrue(decision.getBlockedToolReasons().get("execute_shell").contains("Tool Guard"));
+        Assertions.assertTrue(decision.isEnabled());
+        Assertions.assertTrue(decision.getAllowedToolNames().contains("web_search_exa"));
+        Assertions.assertFalse(decision.getAllowedToolNames().contains("execute_shell"));
+        Assertions.assertTrue(decision.getBlockedToolNames().contains("execute_shell"));
+        Assertions.assertTrue(decision.getBlockedToolReasons().get("execute_shell").contains("Tool Guard"));
     }
 
     @Test
@@ -73,12 +75,12 @@ public class RuntimeToolCapabilityServiceTest {
                 buildMcp("5007", "shell-tools", "stdio", List.of("execute_shell", "delete_file"))
         )));
 
-        ToolRoutingDecisionVO decision = service.routeTools(harnessConfigMap(), "请执行系统命令");
+        ToolRoutingDecisionVO decision = service.routeForEvidenceSource(harnessConfigMap(), EvidenceSourceTypeEnumVO.WEB_RESEARCH);
 
-        Assert.assertFalse(decision.isEnabled());
-        Assert.assertTrue(decision.getAllowedToolNames().isEmpty());
-        Assert.assertTrue(decision.getBlockedToolNames().contains("execute_shell"));
-        Assert.assertTrue(decision.getBlockedToolNames().contains("delete_file"));
+        Assertions.assertFalse(decision.isEnabled());
+        Assertions.assertTrue(decision.getAllowedToolNames().isEmpty());
+        Assertions.assertTrue(decision.getBlockedToolNames().contains("execute_shell"));
+        Assertions.assertTrue(decision.getBlockedToolNames().contains("delete_file"));
     }
 
     private void injectRepository(RuntimeToolCapabilityService service, IAgentRepository repository) throws Exception {
@@ -156,6 +158,11 @@ public class RuntimeToolCapabilityServiceTest {
 
         @Override
         public List<AiAgentClientHarnessConfigVO> queryAiAgentClientsByAgentId(String aiAgentId) {
+            return List.of();
+        }
+
+        @Override
+        public List<String> queryRagIdsByClientIds(List<String> clientIds) {
             return List.of();
         }
     }

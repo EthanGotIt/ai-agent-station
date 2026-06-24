@@ -32,6 +32,10 @@ import java.util.Map;
 @Service
 public class AiClientToolMcpNode extends AbstractArmorySupport {
 
+    private static final int MAX_INITIALIZATION_ATTEMPTS = 2;
+
+    private static final long INITIALIZATION_RETRY_DELAY_MILLIS = 500L;
+
     @Resource
     private AiClientModelNode aiClientModelNode;
 
@@ -85,6 +89,24 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
     }
 
     private McpSyncClient createMcpSyncClient(AiClientToolMcpVO aiClientToolMcpVO) {
+        RuntimeException lastFailure = null;
+        for (int attempt = 1; attempt <= MAX_INITIALIZATION_ATTEMPTS; attempt++) {
+            try {
+                return createMcpSyncClientOnce(aiClientToolMcpVO);
+            } catch (RuntimeException e) {
+                lastFailure = e;
+                if (attempt == MAX_INITIALIZATION_ATTEMPTS) {
+                    break;
+                }
+                log.warn("MCP 客户端初始化失败，准备有限重试，mcpId：{}，attempt：{}/{}，原因：{}",
+                        aiClientToolMcpVO.getMcpId(), attempt, MAX_INITIALIZATION_ATTEMPTS, e.getMessage());
+                waitBeforeInitializationRetry();
+            }
+        }
+        throw lastFailure == null ? new IllegalStateException("MCP 客户端初始化失败") : lastFailure;
+    }
+
+    private McpSyncClient createMcpSyncClientOnce(AiClientToolMcpVO aiClientToolMcpVO) {
         String transportType = aiClientToolMcpVO.getTransportType();
 
         switch (transportType) {
@@ -101,7 +123,7 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
                         .requestTimeout(timeout)
                         .initializationTimeout(timeout)
                         .build();
-                mcpClient.initialize();
+                initializeOrClose(mcpClient);
 
                 log.info("Stdio MCP 客户端初始化完成，mcpId：{}，mcpName：{}",
                         aiClientToolMcpVO.getMcpId(), aiClientToolMcpVO.getMcpName());
@@ -133,7 +155,7 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
                         .requestTimeout(timeout)
                         .initializationTimeout(timeout)
                         .build();
-                mcpSyncClient.initialize();
+                initializeOrClose(mcpSyncClient);
 
                 log.info("Streamable HTTP MCP 客户端初始化完成，mcpId：{}，mcpName：{}",
                         aiClientToolMcpVO.getMcpId(), aiClientToolMcpVO.getMcpName());
@@ -142,6 +164,28 @@ public class AiClientToolMcpNode extends AbstractArmorySupport {
         }
 
         throw new RuntimeException("不支持的 MCP 传输协议：" + transportType);
+    }
+
+    private void initializeOrClose(McpSyncClient client) {
+        try {
+            client.initialize();
+        } catch (RuntimeException e) {
+            try {
+                client.close();
+            } catch (Exception closeFailure) {
+                log.debug("关闭初始化失败的 MCP 客户端时发生异常", closeFailure);
+            }
+            throw e;
+        }
+    }
+
+    private void waitBeforeInitializationRetry() {
+        try {
+            Thread.sleep(INITIALIZATION_RETRY_DELAY_MILLIS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("MCP 客户端初始化重试被中断", e);
+        }
     }
 
     private Duration resolveTimeout(AiClientToolMcpVO aiClientToolMcpVO) {

@@ -1,0 +1,32 @@
+{"evidenceId":"doc:harness-protocol","title":"Harness 高层动作协议","content":"当前 Controlled Agent Harness 只保留 RETRIEVE、ASK_CLARIFY、FINALIZE 三个高层动作。它避免把固定步骤工作流伪装成 Agent，并由服务端策略控制检索次数、取消和终止。"}
+{"evidenceId":"doc:evidence-board","title":"Evidence Board 职责","content":"Evidence Board 是单次 Run 内的证据工作区，保存检索历史、规范化证据、来源、充分性评估、缺失信息和重复检索键。证据按来源与内容去重，并且不会写入 Session 长期上下文。"}
+{"evidenceId":"doc:grounded-answer","title":"后端统一生成最终回答","content":"FINALIZE 动作不能携带自由答案。后端 GroundedAnswerService 根据 Evidence Board 统一生成回答并校验 E1、E2 等引用，防止动作决策模型绕过证据治理。"}
+{"evidenceId":"doc:action-policy","title":"Action Loop 有限终止","content":"服务端最多允许四轮 Harness 决策、两次 evidence retrieval 和一次外部检索。相同来源与 query 的重复检索键会被拒绝，达到上限后由 Policy 强制终止。"}
+{"evidenceId":"doc:mcp-routing","title":"MCP 按来源延迟路由","content":"MCP 不在请求开始时全量注入。只有 OFFICIAL_DOCS 或 WEB_RESEARCH 动作发生后，RuntimeToolCapabilityService 才按 evidence source 选择 Context7 或 Exa，减少工具噪声。"}
+{"evidenceId":"doc:rag-scope","title":"知识库范围隔离","content":"执行客户端通过 ai_client_config 的 client 到 rag 关联得到允许的 ragId。PGVector filterExpression 必须携带这些 ragId，禁止跨知识库召回。"}
+{"evidenceId":"doc:memory-boundary","title":"Session 与 Evidence Board 边界","content":"Session 记忆只保存成功的完整 USER 和 ASSISTANT Turn、滚动结构化摘要和回答偏好。Evidence Board、工具原始结果与 Run 中间 observation 只属于当前 Run，不进入 Session。"}
+{"evidenceId":"doc:complete-turn","title":"完整 Turn 过滤","content":"后续上下文只加载同时存在 USER 和 ASSISTANT 的成功完整 Turn。失败或取消 Run 产生的孤立 USER 消息缺少 ASSISTANT 配对，因此被 SQL 完整 Turn 查询排除。"}
+{"evidenceId":"doc:prompt-budget","title":"单次 Prompt Budget","content":"上下文预算按每次实际组装的 Prompt 独立估算，不累计多次模型调用字符数。当前使用 context-units 启发式近似值，并明确不等同于精确 tokenizer。"}
+{"evidenceId":"doc:citation-policy","title":"引用校验策略","content":"最终回答中的每个 E 编号都必须存在于当前 Evidence Board。引用校验失败时最多进行一次纠正，再次失败就返回证据不足，不能编造 Evidence ID。"}
+{"evidenceId":"doc:architecture-boundary","title":"不引入多 Agent 的边界","content":"企业 Java 项目知识与技术资料助手当前不需要多 Agent 协商。单 Harness 加确定性 Policy 已覆盖来源选择、证据核验和有限终止，引入多 Agent 只会增加通信和死循环复杂度。"}
+{"evidenceId":"doc:adaptive-retrieval","title":"证据驱动的检索决策","content":"项目知识统一使用 PGVector 语义召回。Harness 根据 Evidence Board 的来源覆盖和信息缺口决定是否追加一次新 query，模型只能选高层 evidence source，底层检索和终止由服务端策略控制。项目没有训练或生成 Self-RAG 的 reflection tokens。"}
+{"evidenceId":"eval:retrieval-ablation","title":"检索能力消融结论","content":"当前生产检索链路只保留 PGVector。BM25 与 RRF 在精确术语子集上没有达到预设保留门槛，Small-to-Big 也没有证明独立收益，因此相关生产实现已删除。固定 Advanced RAG 仅保留在测试代码中作为历史对照，不参与线上执行。"}
+{"evidenceId":"doc:tool-context","title":"真实 MCP evidence 采集","content":"AgentModelPort 通过 Spring AI toolContext 传入 ToolInvocationCollector。GuardedToolCallback 在真实工具执行后记录工具名、脱敏参数、成功状态和受限原始结果，McpEvidenceNormalizer 再将原始结果转换为 evidence。"}
+{"evidenceId":"doc:agentic-rag","title":"受控 Agentic RAG 证据闭环","content":"固定 Advanced RAG 每次执行预设检索链。当前受控 Agentic RAG 根据问题按需选择 PROJECT_KNOWLEDGE、OFFICIAL_DOCS 或 WEB_RESEARCH，评估证据充分性，并在缺口明确时进行有限二次检索。"}
+{"evidenceId":"code:AgentActionPolicy","title":"AgentActionPolicy 常量","content":"AgentActionPolicy.DEFAULT_MAX_EVIDENCE_RETRIEVALS 的值是 2。策略还限制外部 evidence retrieval 最多一次，并拒绝重复来源和 query。"}
+{"evidenceId":"code:AgentConversationMemoryService","title":"自定义会话记忆服务","content":"移除 PromptChatMemoryAdvisor 后，项目使用 AgentConversationMemoryService 管理成功完整 Turn、Session 结构化摘要、偏好即时合并、乐观锁和 30 天过期时间。"}
+{"evidenceId":"config:application-dev","title":"上下文默认配置","content":"application-dev.yml 中 ai-agent.context.max-context-units 的默认值是 12000，stop-threshold 默认是 0.95。context-units 是启发式预算，不是精确 token。"}
+{"evidenceId":"code:GuardedToolCallback","title":"工具授权错误","content":"GuardedToolCallback 在工具不属于本轮 allowed set 时拒绝调用并返回 TOOL_NOT_AUTHORIZED。危险或写入类工具也不会进入 RAG 只读 evidence 子链路。"}
+{"evidenceId":"code:McpEvidenceNormalizer","title":"MCP evidence 归一化","content":"qa_evidence_attributable 表示 MCP 结果能否提取可核验来源。McpEvidenceNormalizer 最多保留 6 条 evidence，没有 URI 或来源的内容只能作为低可信补充。"}
+{"evidenceId":"sql:conversation-message","title":"会话消息唯一约束","content":"ai_agent_conversation_message 的 uk_conversation_run_role 唯一键约束 conversation_id、run_id 和 role，避免同一个 Run 的同一角色消息重复持久化。"}
+{"evidenceId":"code:ContextWindowGuardVO","title":"上下文停止判断","content":"ContextWindowGuardVO.shouldStopNewLlmCall 根据当前单次 Prompt 的 context-units 估算值与 stopThreshold 判断是否停止新模型调用，不跨多次调用累计字符数。"}
+{"evidenceId":"sql:conversation-session","title":"Session 乐观锁","content":"ai_agent_conversation_session.version 是结构化摘要更新的乐观锁版本。更新冲突时服务重试一次，避免并发请求静默覆盖 Session 摘要。"}
+{"evidenceId":"code:EvidenceSourceTypeEnumVO","title":"Evidence 来源枚举","content":"EvidenceSourceTypeEnumVO 只包含 PROJECT_KNOWLEDGE、OFFICIAL_DOCS、WEB_RESEARCH 三个高层来源。模型不能选择具体检索实现或 MCP 工具，避免绕过服务端治理。"}
+{"evidenceId":"code:AgentModelPort","title":"AgentModelPort toolContext 用法","content":"AgentModelPort 在注入只读 ToolCallback 后调用 requestSpec.toolContext，将 ToolInvocationCollector 作为不暴露给模型的运行时对象传给 GuardedToolCallback。"}
+{"evidenceId":"code:SessionContextAssembler","title":"完整 Turn 上下文组装","content":"SessionContextAssembler 注入滚动结构化摘要和最近四个成功完整 Turn。它使用自定义数据库持久化，而不是直接包装 MessageWindowChatMemory。"}
+{"evidenceId":"config:model","title":"百炼模型配置","content":"项目聊天模型配置为 qwen3.7-max，并通过百炼 OpenAI 兼容接口调用。向量模型使用 text-embedding-v4，PGVector 维度保持 1024。"}
+{"evidenceId":"code:PgVectorEvidenceRetrievalPort","title":"PGVector 过滤表达式","content":"PgVectorEvidenceRetrievalPort 为每个允许 ragId 构造 rag_id == '值'，多个范围使用 OR 组合后传给 SearchRequest.filterExpression。"}
+{"evidenceId":"sql:mcp-seed","title":"MCP 默认种子","content":"默认只保留 context7-docs 与 exa-search 两个只读资料工具。Context7 提供 resolve-library-id、query-docs，Exa 提供 search、fetch 类读取能力。"}
+{"evidenceId":"code:GroundedAnswerService","title":"引用存在性校验","content":"GroundedAnswerService 校验回答引用的 Evidence ID 是否真实存在于当前 Evidence Board。它解决引用存在性问题，不等同于评测回答陈述是否完全受证据支持的 Faithfulness 指标。"}
+{"evidenceId":"pom:enforcer","title":"Java 版本约束","content":"根 pom.xml 使用 Maven Enforcer 要求 Java 17，并将 maven.compiler.release 配置为 17。这与 Spring Boot 4 的最低 Java 17 要求一致。"}
+{"evidenceId":"code:AgentHarnessExecuteService","title":"Harness 服务端硬上限","content":"AgentHarnessExecuteService 的服务端默认最大 Action 轮次和硬上限都是 4。请求 maxStep 只作为 2 到 4 之间的软上限，不能突破服务端限制。"}

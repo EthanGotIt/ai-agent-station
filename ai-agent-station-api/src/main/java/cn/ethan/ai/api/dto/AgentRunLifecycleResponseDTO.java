@@ -27,5 +27,4 @@ public class AgentRunLifecycleResponseDTO {
 
     private Integer cancelledStepCount;
 
-    private Boolean contextCompacted;
 }

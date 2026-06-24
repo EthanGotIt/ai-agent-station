@@ -8,17 +8,17 @@ import cn.ethan.ai.domain.agent.model.valobj.AgentExecutionContextVO;
 import cn.ethan.ai.domain.agent.model.valobj.AgentActionVO;
 import cn.ethan.ai.domain.agent.model.valobj.AgenticRagTraceVO;
 import cn.ethan.ai.domain.agent.model.valobj.ContextBudgetPolicyVO;
+import cn.ethan.ai.domain.agent.model.valobj.EvidenceBoardVO;
 import cn.ethan.ai.domain.agent.model.valobj.HarnessObservationVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingDecisionVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingItemVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AgentActionTypeEnumVO;
 import cn.ethan.ai.domain.agent.service.execute.harness.AgentActionParser;
 import cn.ethan.ai.domain.agent.service.execute.harness.AgentActionPolicy;
-import cn.ethan.ai.domain.agent.service.execute.harness.AgentHarnessExecuteService;
-import org.junit.Assert;
-import org.junit.Test;
+import cn.ethan.ai.domain.agent.service.execute.harness.HarnessEventPublisher;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -35,25 +35,26 @@ public class AgentHarnessSupportTest {
         AgentActionVO action = parser.parse("""
                 ```json
                 {
-                  "actionType": "RAG_RETRIEVE",
-                  "query": "Spring AI MCP 如何接入",
+                  "actionType": "RETRIEVE",
+                  "sourceType": "OFFICIAL_DOCS",
+                  "queries": ["Spring AI MCP 如何接入"],
                   "reason": "需要证据"
                 }
                 ```
                 """, "fallback");
 
-        Assert.assertEquals(AgentActionTypeEnumVO.RAG_RETRIEVE, action.getType());
-        Assert.assertEquals("Spring AI MCP 如何接入", action.getQuery());
-        Assert.assertFalse(action.hasParseError());
+        Assertions.assertEquals(AgentActionTypeEnumVO.RETRIEVE, action.getType());
+        Assertions.assertEquals("Spring AI MCP 如何接入", action.getQuery());
+        Assertions.assertFalse(action.hasParseError());
     }
 
     @Test
-    public void shouldFallbackToLlmRespondWhenActionInvalid() {
-        AgentActionVO action = parser.parse("not json", "请总结项目");
+    public void shouldFallbackToFinalizeForModelOnlyTaskWhenActionInvalid() {
+        AgentActionVO action = parser.parse("not json", "请润色项目描述");
 
-        Assert.assertEquals(AgentActionTypeEnumVO.LLM_RESPOND, action.getType());
-        Assert.assertEquals("请总结项目", action.getQuery());
-        Assert.assertTrue(action.hasParseError());
+        Assertions.assertEquals(AgentActionTypeEnumVO.FINALIZE, action.getType());
+        Assertions.assertEquals("请润色项目描述", action.getQuery());
+        Assertions.assertTrue(action.hasParseError());
     }
 
     @Test
@@ -81,30 +82,38 @@ public class AgentHarnessSupportTest {
 
         ToolRoutingDecisionVO filtered = policy.readOnlyEvidenceDecision(original);
 
-        Assert.assertTrue(filtered.isEnabled());
-        Assert.assertTrue(filtered.getAllowedToolNames().contains("web_search_exa"));
-        Assert.assertTrue(filtered.getAllowedToolNames().contains("get-library-docs"));
-        Assert.assertFalse(filtered.getAllowedToolNames().contains("send_notification"));
-        Assert.assertFalse(filtered.getAllowedToolNames().contains("create_memory"));
-        Assert.assertTrue(filtered.getBlockedToolNames().contains("send_notification"));
+        Assertions.assertTrue(filtered.isEnabled());
+        Assertions.assertTrue(filtered.getAllowedToolNames().contains("web_search_exa"));
+        Assertions.assertTrue(filtered.getAllowedToolNames().contains("get-library-docs"));
+        Assertions.assertFalse(filtered.getAllowedToolNames().contains("send_notification"));
+        Assertions.assertFalse(filtered.getAllowedToolNames().contains("create_memory"));
+        Assertions.assertTrue(filtered.getBlockedToolNames().contains("send_notification"));
     }
 
     @Test
     public void shouldRejectWhenActionLoopExceedsLimit() {
         AgentActionPolicy.PolicyCheckResult result = policy.validate(
-                AgentActionVO.builder().type(AgentActionTypeEnumVO.LLM_RESPOND).build(),
+                AgentActionVO.builder().type(AgentActionTypeEnumVO.FINALIZE).build(),
                 AgentActionPolicy.DEFAULT_MAX_ACTION_ROUNDS + 1,
                 0,
-                null
+                new EvidenceBoardVO()
         );
 
-        Assert.assertFalse(result.accepted());
-        Assert.assertTrue(result.reason().contains("最大 Action Loop"));
+        Assertions.assertFalse(result.accepted());
+        Assertions.assertTrue(result.reason().contains("最大 Action Loop"));
+    }
+
+    @Test
+    void shouldContinueAfterRejectedFinalizationWhileRetrievalBudgetRemains() {
+        Assertions.assertTrue(policy.canContinueAfterRejectedFinalization(2, 4, 1));
+        Assertions.assertFalse(policy.canContinueAfterRejectedFinalization(4, 4, 1));
+        Assertions.assertFalse(policy.canContinueAfterRejectedFinalization(
+                2, 4, AgentActionPolicy.DEFAULT_MAX_EVIDENCE_RETRIEVALS));
     }
 
     @Test
     public void shouldEmitDedicatedRagEvidenceEventWithoutDuplicatingTraceInObservation() throws Exception {
-        AgentHarnessExecuteService service = new AgentHarnessExecuteService();
+        HarnessEventPublisher publisher = new HarnessEventPublisher();
         ExecuteCommandEntity command = ExecuteCommandEntity.builder()
                 .aiAgentId("1")
                 .sessionId("session-rag-event")
@@ -120,7 +129,7 @@ public class AgentHarnessSupportTest {
                 .build();
         HarnessObservationVO observation = HarnessObservationVO.builder()
                 .actionId("action-1")
-                .actionType(AgentActionTypeEnumVO.RAG_RETRIEVE)
+                .actionType(AgentActionTypeEnumVO.RETRIEVE)
                 .success(true)
                 .terminal(true)
                 .message("基于证据的回答")
@@ -130,26 +139,18 @@ public class AgentHarnessSupportTest {
                 ))
                 .build();
 
-        Method method = AgentHarnessExecuteService.class.getDeclaredMethod(
-                "sendObservation",
-                ExecuteCommandEntity.class,
-                AgentExecutionContextVO.class,
-                AgentRunAggregate.class,
-                HarnessObservationVO.class
-        );
-        method.setAccessible(true);
-        method.invoke(service, command, executionContext, run, observation);
+        publisher.observation(command, executionContext, run, observation);
 
-        Assert.assertEquals(2, streamPort.results.size());
+        Assertions.assertEquals(2, streamPort.results.size());
         AgentExecuteResultEntity evidenceEvent = streamPort.results.get(0);
-        Assert.assertEquals("rag_evidence", evidenceEvent.getSubType());
-        Assert.assertSame(trace, evidenceEvent.getPayload());
+        Assertions.assertEquals("rag_evidence", evidenceEvent.getSubType());
+        Assertions.assertSame(trace, evidenceEvent.getPayload());
 
         AgentExecuteResultEntity observationEvent = streamPort.results.get(1);
-        Assert.assertEquals("harness_observation", observationEvent.getSubType());
+        Assertions.assertEquals("harness_observation", observationEvent.getSubType());
         HarnessObservationVO streamedObservation = (HarnessObservationVO) observationEvent.getPayload();
-        Assert.assertFalse(streamedObservation.getPayload().containsKey("rag_evidence"));
-        Assert.assertEquals(List.of("Spring AI MCP 如何接入"), streamedObservation.getPayload().get("retrievalQueries"));
+        Assertions.assertFalse(streamedObservation.getPayload().containsKey("rag_evidence"));
+        Assertions.assertEquals(List.of("Spring AI MCP 如何接入"), streamedObservation.getPayload().get("retrievalQueries"));
     }
 
     private static class CapturingStreamPort implements IAgentStreamPort {

@@ -3,8 +3,8 @@ package cn.ethan.ai.test.domain;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AgentContextBoundaryVO;
 import cn.ethan.ai.domain.agent.service.execute.runtime.AgentContextBoundaryService;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 public class AgentContextBoundaryServiceTest {
 
@@ -27,11 +27,11 @@ public class AgentContextBoundaryServiceTest {
                 null
         );
 
-        Assert.assertNotEquals(sessionA.getSessionId(), sessionB.getSessionId());
-        Assert.assertNotEquals(sessionA.getUserPreferenceScope(), sessionB.getUserPreferenceScope());
-        Assert.assertNotEquals(sessionA.getConversationScope(), sessionB.getConversationScope());
-        Assert.assertEquals("session:session-a:preferences", sessionA.getUserPreferenceScope());
-        Assert.assertEquals("session:session-b:conversation_memory", sessionB.getConversationScope());
+        Assertions.assertNotEquals(sessionA.getSessionId(), sessionB.getSessionId());
+        Assertions.assertNotEquals(sessionA.getUserPreferenceScope(), sessionB.getUserPreferenceScope());
+        Assertions.assertNotEquals(sessionA.getConversationScope(), sessionB.getConversationScope());
+        Assertions.assertEquals("session:session-a:preferences", sessionA.getUserPreferenceScope());
+        Assertions.assertEquals("session:session-b:conversation_memory", sessionB.getConversationScope());
     }
 
     @Test
@@ -47,9 +47,9 @@ public class AgentContextBoundaryServiceTest {
                 null
         );
 
-        Assert.assertFalse(withPreference.getUserPreferences().isEmpty());
-        Assert.assertTrue(withoutPreference.getUserPreferences().isEmpty());
-        Assert.assertEquals(withPreference.getUserPreferenceScope(), withoutPreference.getUserPreferenceScope());
+        Assertions.assertFalse(withPreference.getUserPreferences().isEmpty());
+        Assertions.assertTrue(withoutPreference.getUserPreferences().isEmpty());
+        Assertions.assertEquals(withPreference.getUserPreferenceScope(), withoutPreference.getUserPreferenceScope());
     }
 
     @Test
@@ -60,24 +60,21 @@ public class AgentContextBoundaryServiceTest {
                 "以下为历史消息摘要：上一轮最终回答"
         );
 
-        Assert.assertEquals("以下为历史消息摘要：上一轮最终回答", boundary.getSessionContextSummary());
-        Assert.assertTrue(AgentContextBoundaryService.buildPromptSection(boundary).contains("以下为历史消息摘要：上一轮最终回答"));
+        Assertions.assertEquals("以下为历史消息摘要：上一轮最终回答", boundary.getSessionContextSummary());
+        Assertions.assertTrue(AgentContextBoundaryService.buildPromptSection(boundary).contains("以下为历史消息摘要：上一轮最终回答"));
     }
 
     @Test
-    public void shouldKeepSessionHistoryWhenRunSummaryIsAttached() {
+    public void shouldKeepSessionHistoryWithoutRunStepOutputs() {
         AgentContextBoundaryVO boundary = agentContextBoundaryService.buildBoundary(
                 "session-summary",
                 "总结资料",
                 "上一轮用户输入和最终回答"
         );
 
-        AgentContextBoundaryService.attachRunSummary(boundary, "当前 Run 的步骤压缩摘要");
-
-        Assert.assertEquals("上一轮用户输入和最终回答", boundary.getSessionContextSummary());
-        Assert.assertEquals("当前 Run 的步骤压缩摘要", boundary.getRunContextSummary());
-        Assert.assertTrue(AgentContextBoundaryService.buildPromptSection(boundary).contains("上一轮用户输入和最终回答"));
-        Assert.assertTrue(AgentContextBoundaryService.buildPromptSection(boundary).contains("当前 Run 的步骤压缩摘要"));
+        Assertions.assertEquals("上一轮用户输入和最终回答", boundary.getSessionContextSummary());
+        Assertions.assertTrue(AgentContextBoundaryService.buildPromptSection(boundary).contains("上一轮用户输入和最终回答"));
+        Assertions.assertFalse(AgentContextBoundaryService.buildPromptSection(boundary).contains("步骤压缩摘要"));
     }
 
     @Test
@@ -88,9 +85,9 @@ public class AgentContextBoundaryServiceTest {
                 ""
         );
 
-        Assert.assertEquals("project:ai-agent-station", boundary.getProjectRuleScope());
-        Assert.assertFalse(boundary.isLongTermMemoryEnabled());
-        Assert.assertTrue(boundary.getProjectRules().stream().anyMatch(rule -> rule.contains("不得把其他 session")));
-        Assert.assertTrue(AgentContextBoundaryService.buildPromptSection(boundary).contains("不得跨 session"));
+        Assertions.assertEquals("project:ai-agent-station", boundary.getProjectRuleScope());
+        Assertions.assertFalse(boundary.isLongTermMemoryEnabled());
+        Assertions.assertTrue(boundary.getProjectRules().stream().anyMatch(rule -> rule.contains("不得把其他 session")));
+        Assertions.assertTrue(AgentContextBoundaryService.buildPromptSection(boundary).contains("不得跨 session"));
     }
 }

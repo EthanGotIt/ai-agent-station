@@ -1,7 +1,8 @@
 package cn.ethan.ai.domain.agent.service.execute.harness;
 
 import cn.ethan.ai.domain.agent.model.valobj.AgentActionVO;
-import cn.ethan.ai.domain.agent.model.valobj.ContextWindowGuardVO;
+import cn.ethan.ai.domain.agent.model.valobj.EvidenceBoardVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.AgentActionTypeEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingDecisionVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingItemVO;
 import cn.ethan.ai.domain.agent.service.execute.runtime.ToolGuardPolicy;
@@ -23,25 +24,43 @@ public class AgentActionPolicy {
 
     public static final int DEFAULT_MAX_ACTION_ROUNDS = 4;
 
-    public static final int DEFAULT_MAX_RAG_RETRIEVAL_ROUNDS = 2;
+    public static final int DEFAULT_MAX_EVIDENCE_RETRIEVALS = 2;
+
+    public static final int DEFAULT_MAX_EXTERNAL_RETRIEVALS = 1;
 
     public PolicyCheckResult validate(AgentActionVO action,
                                       int round,
-                                      int ragRetrievalRounds,
-                                      ContextWindowGuardVO contextWindowGuard) {
+                                      int retrievalRounds,
+                                      EvidenceBoardVO evidenceBoard) {
         if (round > DEFAULT_MAX_ACTION_ROUNDS) {
             return PolicyCheckResult.reject("已达到最大 Action Loop 轮次，停止继续执行。");
         }
         if (action == null || action.getType() == null) {
             return PolicyCheckResult.reject("Action 类型为空，拒绝执行。");
         }
-        if (contextWindowGuard != null && contextWindowGuard.shouldStopNewLlmCall()) {
-            return PolicyCheckResult.reject("上下文预算已接近上限，拒绝继续发起新动作。");
-        }
-        if (action.getType().name().startsWith("RAG") && ragRetrievalRounds >= DEFAULT_MAX_RAG_RETRIEVAL_ROUNDS) {
-            return PolicyCheckResult.reject("RAG 检索轮次已达到上限。");
+        if (action.getType() == AgentActionTypeEnumVO.RETRIEVE) {
+            if (retrievalRounds >= DEFAULT_MAX_EVIDENCE_RETRIEVALS) {
+                return PolicyCheckResult.reject("Evidence 检索轮次已达到上限，应基于已有证据收口。");
+            }
+            if (action.getSourceType() == null) {
+                return PolicyCheckResult.reject("RETRIEVE 缺少 sourceType。");
+            }
+            if (action.getQueries() == null || action.getQueries().isEmpty() || action.getQueries().size() > 2) {
+                return PolicyCheckResult.reject("RETRIEVE 必须包含 1-2 个 query。");
+            }
+            if (action.getSourceType().isExternal() && evidenceBoard != null
+                    && evidenceBoard.getExternalRetrievalCount() >= DEFAULT_MAX_EXTERNAL_RETRIEVALS) {
+                return PolicyCheckResult.reject("外部 evidence 检索次数已达到上限。");
+            }
         }
         return PolicyCheckResult.accept();
+    }
+
+    public boolean canContinueAfterRejectedFinalization(int round,
+                                                        int maxRounds,
+                                                        int retrievalRounds) {
+        return round < Math.min(maxRounds, DEFAULT_MAX_ACTION_ROUNDS)
+                && retrievalRounds < DEFAULT_MAX_EVIDENCE_RETRIEVALS;
     }
 
     public ToolRoutingDecisionVO readOnlyEvidenceDecision(ToolRoutingDecisionVO original) {

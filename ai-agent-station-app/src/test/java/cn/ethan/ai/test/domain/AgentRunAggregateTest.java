@@ -4,8 +4,8 @@ import cn.ethan.ai.domain.agent.model.aggregate.AgentRunAggregate;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.ContextBudgetPolicyVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AgentRunStatusEnumVO;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 public class AgentRunAggregateTest {
 
@@ -22,14 +22,11 @@ public class AgentRunAggregateTest {
         );
         run.markRunning();
         run.bindSessionContextSummary("previous session summary");
-        run.getContextWindowGuard().updateHistorySnapshot(3000, 1200, "history summary");
         run.markSuccess("final summary");
 
-        Assert.assertEquals(AgentRunStatusEnumVO.SUCCESS, run.toRecord().getStatus());
-        Assert.assertEquals("final summary", run.toRecord().getFinalSummary());
-        Assert.assertEquals(Integer.valueOf(3000), run.toRecord().getContextOriginalChars());
-        Assert.assertEquals(Integer.valueOf(1200), run.toRecord().getContextCompressedChars());
-        Assert.assertEquals("previous session summary", run.toRecord().getSessionContextSummary());
+        Assertions.assertEquals(AgentRunStatusEnumVO.SUCCESS, run.toRecord().getStatus());
+        Assertions.assertEquals("final summary", run.toRecord().getFinalSummary());
+        Assertions.assertEquals("previous session summary", run.toRecord().getSessionContextSummary());
     }
 
     @Test
@@ -41,8 +38,8 @@ public class AgentRunAggregateTest {
         failedRun.markRunning();
         failedRun.markFailed("计划校验失败");
 
-        Assert.assertEquals(AgentRunStatusEnumVO.FAILED, failedRun.toRecord().getStatus());
-        Assert.assertEquals("计划校验失败", failedRun.toRecord().getErrorMessage());
+        Assertions.assertEquals(AgentRunStatusEnumVO.FAILED, failedRun.toRecord().getStatus());
+        Assertions.assertEquals("计划校验失败", failedRun.toRecord().getErrorMessage());
 
         AgentRunAggregate cancelledRun = AgentRunAggregate.create(
                 command(),
@@ -51,8 +48,8 @@ public class AgentRunAggregateTest {
         cancelledRun.markRunning();
         cancelledRun.markCancelled("用户主动取消");
 
-        Assert.assertEquals(AgentRunStatusEnumVO.CANCELLED, cancelledRun.toRecord().getStatus());
-        Assert.assertEquals("用户主动取消", cancelledRun.toRecord().getCancelReason());
+        Assertions.assertEquals(AgentRunStatusEnumVO.CANCELLED, cancelledRun.toRecord().getStatus());
+        Assertions.assertEquals("用户主动取消", cancelledRun.toRecord().getCancelReason());
     }
 
     private ExecuteCommandEntity command() {

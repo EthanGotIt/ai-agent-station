@@ -43,5 +43,13 @@ public class RagEvidenceVO {
     private Double score;
 
     private String contentPreview;
+
+    private String uri;
+
+    private String toolName;
+
+    private String retrievedAt;
+
+    private Boolean attributable;
 }
 

@@ -1,8 +1,11 @@
 package cn.ethan.ai.infrastructure.adapter.port;
 
 import cn.ethan.ai.domain.agent.service.execute.runtime.ToolGuardPolicy;
+import cn.ethan.ai.domain.agent.model.valobj.ToolInvocationCollector;
+import cn.ethan.ai.domain.agent.model.valobj.ToolInvocationRecordVO;
 import com.alibaba.fastjson.JSON;
 import org.apache.commons.lang3.StringUtils;
+import org.jspecify.annotations.NonNull;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
@@ -33,23 +36,60 @@ public class GuardedToolCallback implements ToolCallback {
     }
 
     @Override
-    public ToolDefinition getToolDefinition() {
+    public @NonNull ToolDefinition getToolDefinition() {
         return delegate.getToolDefinition();
     }
 
     @Override
-    public ToolMetadata getToolMetadata() {
+    public @NonNull ToolMetadata getToolMetadata() {
         return delegate.getToolMetadata();
     }
 
     @Override
-    public String call(String toolInput) {
+    public @NonNull String call(@NonNull String toolInput) {
         return guardedCall(() -> delegate.call(toolInput));
     }
 
     @Override
-    public String call(String toolInput, ToolContext toolContext) {
-        return guardedCall(() -> delegate.call(toolInput, toolContext));
+    public @NonNull String call(@NonNull String toolInput, ToolContext toolContext) {
+        long start = System.currentTimeMillis();
+        String result = guardedCall(() -> delegate.call(toolInput, toolContext));
+        ToolInvocationCollector collector = resolveCollector(toolContext);
+        if (collector != null) {
+            boolean success = !result.contains("\"success\":false");
+            collector.add(ToolInvocationRecordVO.builder()
+                    .toolName(resolveToolName())
+                    .inputPreview(redactAndLimit(toolInput, 500))
+                    .success(success)
+                    .output(redactAndLimit(result, 12000))
+                    .errorType(success ? "" : extractErrorType(result))
+                    .costMillis(System.currentTimeMillis() - start)
+                    .build());
+        }
+        return result;
+    }
+
+    private ToolInvocationCollector resolveCollector(ToolContext toolContext) {
+        if (toolContext == null || toolContext.getContext() == null) {
+            return null;
+        }
+        Object collector = toolContext.getContext().get(ToolInvocationCollector.TOOL_CONTEXT_KEY);
+        return collector instanceof ToolInvocationCollector actual ? actual : null;
+    }
+
+    private String extractErrorType(String result) {
+        try {
+            Object value = JSON.parseObject(result).get("errorType");
+            return value == null ? "TOOL_CALL_FAILED" : value.toString();
+        } catch (Exception ignored) {
+            return "TOOL_CALL_FAILED";
+        }
+    }
+
+    private String redactAndLimit(String value, int maxLength) {
+        String redacted = StringUtils.defaultString(value)
+                .replaceAll("(?i)(api[_-]?key|authorization|token|secret)\\s*[:=]\\s*[^,}\\s]+", "$1=***");
+        return redacted.length() <= maxLength ? redacted : redacted.substring(0, maxLength) + "...";
     }
 
     private String guardedCall(Supplier<String> invocation) {

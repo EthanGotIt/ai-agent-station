@@ -2,7 +2,7 @@ package cn.ethan.ai.domain.agent.service.armory.factory;
 
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.ArmoryAssemblyContextVO;
-import cn.ethan.ai.domain.agent.service.armory.RootNode;
+import cn.ethan.ai.domain.agent.service.armory.ArmoryRootNode;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import org.springframework.stereotype.Service;
 
@@ -12,9 +12,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class DefaultArmoryStrategyFactory {
 
-    private final RootNode rootNode;
+    private final ArmoryRootNode rootNode;
 
-    public DefaultArmoryStrategyFactory(RootNode rootNode) {
+    public DefaultArmoryStrategyFactory(ArmoryRootNode rootNode) {
         this.rootNode = rootNode;
     }
 

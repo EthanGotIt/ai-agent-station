@@ -30,7 +30,7 @@ CREATE TABLE `ai_agent` (
 LOCK TABLES `ai_agent` WRITE;
 INSERT INTO `ai_agent` (`id`, `agent_id`, `agent_name`, `description`, `channel`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '1', 'Controlled Agent Harness', '受控 Action Loop、只读 MCP evidence、Agentic RAG 证据评估闭环与运行态复盘', 'agent', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, '1', 'Evidence-Governed Agent Harness', '面向 Java 项目知识与技术资料调研的受控 Agentic RAG 证据闭环', 'agent', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 对话客户端配置
@@ -50,9 +50,8 @@ CREATE TABLE `ai_client` (
 LOCK TABLES `ai_client` WRITE;
 INSERT INTO `ai_client` (`id`, `client_id`, `client_name`, `description`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '2101', '工具能力路由客户端', '读取当前智能体可用 MCP 工具，并为 Harness 执行阶段提供只读 evidence 工具策略上下文', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (2, '2102', 'Action 决策客户端', '根据用户目标和 observation 输出受控 action JSON，不生成固定步骤清单', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (3, '2103', 'Harness 执行客户端', '执行 RAG、MCP_READ、LLM_RESPOND 等受控动作，并生成最终回答', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, '2102', 'Action 决策客户端', '根据当前问题和 Evidence Board 输出三类受控 action JSON', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (2, '2103', 'Evidence 执行客户端', '执行外部只读 evidence 获取与带引用的最终回答', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 模型 API 配置
@@ -154,9 +153,8 @@ CREATE TABLE `ai_client_system_prompt` (
 LOCK TABLES `ai_client_system_prompt` WRITE;
 INSERT INTO `ai_client_system_prompt` (`id`, `prompt_id`, `prompt_name`, `prompt_content`, `description`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '6001', '工具能力路由提示词', '你是 Controlled Agent Harness 的工具能力整理助手。你的职责是理解当前可用 MCP 工具的用途、风险和只读边界，为执行阶段提供简洁、准确的工具策略上下文。', '工具能力路由', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (2, '6002', 'Action 决策提示词', '你是 Controlled Agent Harness 的动作决策器。请只输出一个 JSON action，可选 RAG_RETRIEVE、MCP_READ、LLM_RESPOND、ASK_CLARIFY、FINAL，不要生成固定步骤清单，不要指定未授权工具。', 'Action JSON 决策', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (3, '6003', 'Harness 执行提示词', '你是 Controlled Agent Harness 的执行助手。请基于 observation、只读工具结果和 Agentic RAG evidence 回答问题；工具失败或证据不足时不得编造，应说明失败原因和可替代路径。', 'Action 执行与最终回答', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, '6002', 'Action 决策提示词', '你是 Controlled Agent Harness 的动作决策器。请只输出一个 JSON action，可选 RETRIEVE、ASK_CLARIFY、FINALIZE。RETRIEVE 只能选择 PROJECT_KNOWLEDGE、OFFICIAL_DOCS 或 WEB_RESEARCH 高层来源，不得指定底层算法或具体工具。', 'Action JSON 决策', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (2, '6003', 'Evidence 回答提示词', '你是证据约束回答助手。最终事实结论只能基于 Evidence Board，并使用 E1、E2 等证据编号引用；工具失败、证据冲突或证据不足时不得编造。', '证据约束回答', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- MCP 工具配置
@@ -178,7 +176,7 @@ CREATE TABLE `ai_client_tool_mcp` (
 LOCK TABLES `ai_client_tool_mcp` WRITE;
 INSERT INTO `ai_client_tool_mcp` (`id`, `mcp_id`, `mcp_name`, `transport_type`, `transport_config`, `request_timeout`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '5001', 'context7-docs', 'stdio', '{\n  "context7-docs": {\n    "command": "npx.cmd",\n    "args": ["-y", "@upstash/context7-mcp@latest"],\n    "env": {\n      "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY:}"\n    },\n    "toolNames": ["context7-docs", "resolve-library-id", "get-library-docs"]\n  }\n}', 3, 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (1, '5001', 'context7-docs', 'stdio', '{\n  "context7-docs": {\n    "command": "npx.cmd",\n    "args": ["-y", "@upstash/context7-mcp@latest"],\n    "env": {\n      "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY:}"\n    },\n    "toolNames": ["resolve-library-id", "query-docs"]\n  }\n}', 3, 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
     (2, '5002', 'exa-search', 'streamable_http', '{\n  "baseUri": "https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa,web_search_advanced_exa",\n  "headers": {\n    "x-api-key": "${EXA_API_KEY:}"\n  },\n  "toolNames": ["exa-search", "web_search_exa", "web_fetch_exa", "web_search_advanced_exa"]\n}', 1, 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
@@ -234,9 +232,6 @@ CREATE TABLE `ai_agent_run` (
     `error_message` varchar(1024) DEFAULT NULL COMMENT '错误信息',
     `cancel_reason` varchar(255) DEFAULT NULL COMMENT '取消原因',
     `session_context_summary` mediumtext COMMENT '执行前注入的 session 短期记忆快照',
-    `context_original_chars` int DEFAULT '0' COMMENT '压缩前上下文长度',
-    `context_compressed_chars` int DEFAULT '0' COMMENT '压缩后上下文长度',
-    `context_summary` mediumtext COMMENT '历史摘要',
     `start_time` datetime DEFAULT NULL COMMENT '开始时间',
     `end_time` datetime DEFAULT NULL COMMENT '结束时间',
     `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -255,13 +250,24 @@ CREATE TABLE `ai_agent_conversation_message` (
     `run_id` varchar(64) NOT NULL COMMENT '运行ID',
     `role` varchar(32) NOT NULL COMMENT '消息角色：USER、ASSISTANT',
     `content` mediumtext NOT NULL COMMENT '用户可见消息原文',
-    `content_summary` text COMMENT '轻量摘要，用于超预算压缩',
-    `context_units` int DEFAULT '0' COMMENT '轻量上下文预算估算值',
     `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (`id`),
     KEY `idx_conversation_session_id` (`session_id`, `id`),
     UNIQUE KEY `uk_conversation_run_role` (`run_id`, `role`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Session级持久化短期记忆消息表';
+
+-- Session 级结构化摘要和过期状态
+DROP TABLE IF EXISTS `ai_agent_conversation_session`;
+CREATE TABLE `ai_agent_conversation_session` (
+    `session_id` varchar(128) NOT NULL COMMENT '会话ID',
+    `summary_json` json NOT NULL COMMENT '目标、约束、决策、未解决问题和回答偏好',
+    `summarized_message_id` bigint NOT NULL DEFAULT '0' COMMENT '已滚动进摘要的消息游标',
+    `version` int NOT NULL DEFAULT '0' COMMENT '乐观锁版本',
+    `expires_at` datetime NOT NULL COMMENT '过期时间',
+    `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`session_id`),
+    KEY `idx_conversation_session_expires` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Session级短期记忆状态表';
 
 -- 智能体运行步骤表
 DROP TABLE IF EXISTS `ai_agent_step_run`;
@@ -304,10 +310,9 @@ CREATE TABLE `ai_agent_harness_config` (
 LOCK TABLES `ai_agent_harness_config` WRITE;
 INSERT INTO `ai_agent_harness_config` (`id`, `agent_id`, `client_id`, `client_name`, `client_type`, `sequence`, `step_prompt`, `status`, `create_time`)
 VALUES
-    (1, '1', '2101', '工具能力路由', 'TOOL_MCP_CLIENT', 1, '按企业知识助手场景筛选 docs/search 类只读 MCP 工具。', 1, '2025-09-01 00:00:00'),
-    (2, '1', '2102', 'Action 决策', 'TASK_ANALYZER_CLIENT', 2, '根据用户输入、上下文和 observation 输出单个受控 action JSON。', 1, '2025-09-01 00:00:00'),
-    (3, '1', '2103', 'Action 执行', 'EXECUTOR_CLIENT', 3, '执行 RAG_RETRIEVE、MCP_READ、LLM_RESPOND 等受控动作。', 1, '2025-09-01 00:00:00'),
-    (4, '1', '2103', '最终回答', 'RESPONSE_ASSISTANT', 4, '基于 observation 和 Agentic RAG evidence 生成最终回答。', 1, '2025-09-01 00:00:00');
+    (1, '1', '2102', 'Action 决策', 'TASK_ANALYZER_CLIENT', 1, '根据用户输入、上下文和 Evidence Board 输出单个受控 action JSON。', 1, '2025-09-01 00:00:00'),
+    (2, '1', '2103', 'Evidence 检索', 'EXECUTOR_CLIENT', 2, '按高层来源执行本地或 MCP 只读 evidence 检索。', 1, '2025-09-01 00:00:00'),
+    (3, '1', '2103', '最终回答', 'RESPONSE_ASSISTANT', 3, '基于 Evidence Board 生成带证据编号引用的最终回答。', 1, '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 客户端、模型、提示词和工具的统一关联配置
@@ -316,7 +321,7 @@ CREATE TABLE `ai_client_config` (
     `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `source_type` varchar(32) NOT NULL COMMENT '源类型：model 或 client',
     `source_id` varchar(64) NOT NULL COMMENT '源业务ID',
-    `target_type` varchar(32) NOT NULL COMMENT '目标类型：model、prompt、tool_mcp',
+    `target_type` varchar(32) NOT NULL COMMENT '目标类型：model、prompt、tool_mcp、rag',
     `target_id` varchar(64) NOT NULL COMMENT '目标业务ID',
     `ext_param` varchar(1024) DEFAULT NULL COMMENT '扩展参数 JSON',
     `status` tinyint(1) DEFAULT '1' COMMENT '状态：0禁用，1启用',
@@ -330,14 +335,13 @@ CREATE TABLE `ai_client_config` (
 LOCK TABLES `ai_client_config` WRITE;
 INSERT INTO `ai_client_config` (`id`, `source_type`, `source_id`, `target_type`, `target_id`, `ext_param`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, 'client', '2101', 'model', '2001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (2, 'client', '2101', 'prompt', '6001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (3, 'client', '2102', 'model', '2001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (4, 'client', '2102', 'prompt', '6002', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (5, 'client', '2103', 'model', '2001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (6, 'client', '2103', 'prompt', '6003', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (7, 'model', '2001', 'tool_mcp', '5001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (8, 'model', '2001', 'tool_mcp', '5002', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, 'client', '2102', 'model', '2001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (2, 'client', '2102', 'prompt', '6002', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (3, 'client', '2103', 'model', '2001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (4, 'client', '2103', 'prompt', '6003', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (5, 'model', '2001', 'tool_mcp', '5001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (6, 'model', '2001', 'tool_mcp', '5002', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (7, 'client', '2103', 'rag', '7001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

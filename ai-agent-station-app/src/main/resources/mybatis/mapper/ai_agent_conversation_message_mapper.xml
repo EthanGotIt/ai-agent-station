@@ -8,26 +8,20 @@
         <result column="run_id" property="runId"/>
         <result column="role" property="role"/>
         <result column="content" property="content"/>
-        <result column="content_summary" property="contentSummary"/>
-        <result column="context_units" property="contextUnits"/>
         <result column="create_time" property="createTime"/>
     </resultMap>
 
     <insert id="insert" parameterType="cn.ethan.ai.infrastructure.dao.po.AiAgentConversationMessage" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO ai_agent_conversation_message (session_id, run_id, role, content, content_summary, context_units,
-                                                   create_time)
-        VALUES (#{sessionId}, #{runId}, #{role}, #{content}, #{contentSummary}, #{contextUnits},
-                #{createTime})
+        INSERT INTO ai_agent_conversation_message (session_id, run_id, role, content, create_time)
+        VALUES (#{sessionId}, #{runId}, #{role}, #{content}, #{createTime})
     </insert>
 
-    <select id="queryRecentBySessionId" resultMap="AiAgentConversationMessageMap">
+    <select id="queryCompleteTurnMessages" resultMap="AiAgentConversationMessageMap">
         SELECT id,
                session_id,
                run_id,
                role,
                content,
-               content_summary,
-               context_units,
                create_time
         FROM (
             SELECT id,
@@ -35,15 +29,32 @@
                    run_id,
                    role,
                    content,
-                   content_summary,
-                   context_units,
                    create_time
-            FROM ai_agent_conversation_message
-            WHERE session_id = #{sessionId}
+            FROM ai_agent_conversation_message message
+            WHERE message.session_id = #{sessionId}
+              AND message.id &gt; #{afterMessageId}
+              AND EXISTS (
+                  SELECT 1 FROM ai_agent_conversation_message user_message
+                  WHERE user_message.run_id = message.run_id AND user_message.role = 'USER'
+              )
+              AND EXISTS (
+                  SELECT 1 FROM ai_agent_conversation_message assistant_message
+                  WHERE assistant_message.run_id = message.run_id AND assistant_message.role = 'ASSISTANT'
+              )
             ORDER BY id DESC
             LIMIT #{limit}
         ) recent_messages
         ORDER BY id ASC
     </select>
+
+    <delete id="deleteBySessionId">
+        DELETE FROM ai_agent_conversation_message WHERE session_id = #{sessionId}
+    </delete>
+
+    <delete id="deleteExpiredSessionMessages">
+        DELETE message FROM ai_agent_conversation_message message
+        INNER JOIN ai_agent_conversation_session session ON session.session_id = message.session_id
+        WHERE session.expires_at &lt; #{now}
+    </delete>
 
 </mapper>

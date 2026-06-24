@@ -57,7 +57,6 @@ public class AgentContextBoundaryService {
                 .projectRules(PROJECT_RULES)
                 .userPreferences(extractUserPreferences(message))
                 .sessionContextSummary(StringUtils.defaultString(sessionContextSummary))
-                .runContextSummary("")
                 .longTermMemoryEnabled(false)
                 .build();
     }
@@ -65,13 +64,6 @@ public class AgentContextBoundaryService {
     public static String resolveSessionScopeId(String sessionId) {
         String normalized = StringUtils.trimToEmpty(sessionId);
         return StringUtils.isBlank(normalized) ? DEFAULT_SESSION_ID : normalized;
-    }
-
-    public static void attachRunSummary(AgentContextBoundaryVO boundary, String runContextSummary) {
-        if (boundary == null || StringUtils.isBlank(runContextSummary)) {
-            return;
-        }
-        boundary.setRunContextSummary(runContextSummary.trim());
     }
 
     public static List<String> extractUserPreferences(String message) {
@@ -98,7 +90,6 @@ public class AgentContextBoundaryService {
         payload.put("projectRules", boundary.getProjectRules());
         payload.put("userPreferences", boundary.getUserPreferences());
         payload.put("sessionContextSummary", boundary.getSessionContextSummary());
-        payload.put("runContextSummary", boundary.getRunContextSummary());
         payload.put("longTermMemoryEnabled", boundary.isLongTermMemoryEnabled());
         return payload;
     }
@@ -117,7 +108,6 @@ public class AgentContextBoundaryService {
                 - 项目规则：%s
                 - 本轮识别到的用户偏好：%s
                 - 持久化 session 短期记忆：%s
-                - 当前 Run 步骤压缩摘要：%s
                 约束：不得跨 session 推断用户偏好或复用会话历史；不得把内部 Planner、Executor、Supervisor prompt 当作用户会话记忆。
                 """.formatted(
                 boundary.getSessionId(),
@@ -129,8 +119,7 @@ public class AgentContextBoundaryService {
                 boundary.getUserPreferences() == null || boundary.getUserPreferences().isEmpty()
                         ? "无"
                         : boundary.getUserPreferences(),
-                StringUtils.defaultIfBlank(boundary.getSessionContextSummary(), "无"),
-                StringUtils.defaultIfBlank(boundary.getRunContextSummary(), "无")
+                StringUtils.defaultIfBlank(boundary.getSessionContextSummary(), "无")
         );
     }
 

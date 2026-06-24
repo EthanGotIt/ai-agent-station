@@ -15,7 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.util.StringUtils;
 
 @Configuration
-@EnableConfigurationProperties({AiAgentVectorStoreProperties.class, AiAgentHybridRetrievalProperties.class})
+@EnableConfigurationProperties({AiAgentVectorStoreProperties.class, AiAgentEvidenceRetrievalProperties.class})
 public class AiAgentConfig {
 
     /**

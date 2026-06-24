@@ -33,8 +33,6 @@ public class AgentContextBoundaryVO {
 
     private String sessionContextSummary;
 
-    private String runContextSummary;
-
     @Builder.Default
     private boolean longTermMemoryEnabled = false;
 

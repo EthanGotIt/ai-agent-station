@@ -36,6 +36,8 @@ public class AgenticRagTraceVO {
 
     private String noEvidenceReason;
 
+    private String policyResult;
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -48,12 +50,14 @@ public class AgenticRagTraceVO {
 
         private String channel;
 
+        private String sourceType;
+
         private int hitCount;
 
-        private boolean rrfApplied;
-
-        private boolean smallToBigApplied;
-
         private String reason;
+
+        private String policyResult;
+
+        private long costMillis;
     }
 }

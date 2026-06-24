@@ -15,15 +15,9 @@ import lombok.NoArgsConstructor;
 public class ContextBudgetPolicyVO {
 
     @Builder.Default
-    private int maxChars = 12000;
-
-    @Builder.Default
-    private double compressThreshold = 0.80D;
+    private int maxContextUnits = 12000;
 
     @Builder.Default
     private double stopThreshold = 0.95D;
-
-    @Builder.Default
-    private int summaryMaxChars = 1500;
 
 }

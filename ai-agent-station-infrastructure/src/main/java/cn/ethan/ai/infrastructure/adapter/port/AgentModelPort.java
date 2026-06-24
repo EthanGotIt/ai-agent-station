@@ -8,6 +8,7 @@ import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AiAgentClientHarnessConfigVO;
 import cn.ethan.ai.domain.agent.model.valobj.ContextWindowGuardVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingDecisionVO;
+import cn.ethan.ai.domain.agent.model.valobj.ToolInvocationCollector;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiClientTypeEnumVO;
 import cn.ethan.ai.domain.agent.service.execute.runtime.ToolGuardPolicy;
@@ -19,6 +20,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
@@ -95,8 +97,9 @@ public class AgentModelPort implements IAgentModelPort {
                                                       ToolRoutingDecisionVO toolRoutingDecision,
                             AiClientTypeEnumVO... clientTypes) {
         long start = System.currentTimeMillis();
-        if (contextWindowGuard.shouldStopNewLlmCall()) {
-            String message = "上下文较长，已跳过新的模型调用。";
+        ToolInvocationCollector toolInvocationCollector = new ToolInvocationCollector();
+        if (contextWindowGuard.shouldStopNewLlmCall(prompt)) {
+            String message = "当前单次 Prompt 超过近似上下文预算，已跳过模型调用。";
             AgentRunEventEntity event = trace.record(eventType, stepId, step, start, message, null);
             log.info("Agent 模型调用跳过追踪事件：{}", event);
             return AgentModelCallResultEntity.builder()
@@ -116,21 +119,27 @@ public class AgentModelPort implements IAgentModelPort {
                         .build();
             }
 
-            List<ToolCallback> callbacks = resolveToolCallbacks(toolRoutingDecision);
-            contextWindowGuard.record(prompt);
+            List<ToolCallback> callbacks = resolveToolCallbacks(toolRoutingDecision, requiresToolCall(eventType));
             ChatClient.ChatClientRequestSpec requestSpec = baseChatClient.prompt(prompt)
                     .system(s -> s.param("current_date", LocalDate.now().toString()));
             if (!callbacks.isEmpty()) {
                 log.info("运行时注入工具回调完成，eventType：{}，clientId：{}，toolCount：{}", eventType,
                         selectedConfig.getClientId(), callbacks.size());
                 requestSpec.tools(callbacks);
+            requestSpec.toolContext(Map.of(ToolInvocationCollector.TOOL_CONTEXT_KEY, toolInvocationCollector));
+            if (requiresToolCall(eventType)) {
+                requestSpec.options(externalEvidenceOptions());
+            }
             }
             ChatClient.CallResponseSpec responseSpec = requestSpec.call();
             ChatClientResponse chatClientResponse = responseSpec.chatClientResponse();
             ChatResponse chatResponse = chatClientResponse == null ? responseSpec.chatResponse() : chatClientResponse.chatResponse();
             String content = extractContent(chatResponse);
             Map<String, Object> metadata = extractMetadata(chatClientResponse, chatResponse);
-            contextWindowGuard.record(content);
+            if (!toolInvocationCollector.snapshot().isEmpty()) {
+                metadata = new LinkedHashMap<>(metadata);
+                metadata.put(ToolInvocationCollector.METADATA_KEY, toolInvocationCollector.snapshot());
+            }
             AgentRunEventEntity event = trace.record(eventType, stepId, step, start, limit(content, 300), null);
             log.info("Agent 模型调用追踪事件：{}", event);
             return AgentModelCallResultEntity.builder()
@@ -138,6 +147,14 @@ public class AgentModelPort implements IAgentModelPort {
                     .metadata(metadata)
                     .build();
         } catch (Exception e) {
+            AgentModelCallResultEntity toolFallback = fallbackFromToolInvocations(
+                    eventType, toolInvocationCollector.snapshot());
+            if (toolFallback != null) {
+                AgentRunEventEntity event = trace.record(eventType, stepId, step, start,
+                        "工具调用已完成，模型后处理失败，保留原始工具证据。", null);
+                log.warn("Agent 模型后处理失败但工具证据已保留，event：{}，error：{}", event, e.getMessage());
+                return toolFallback;
+            }
             AgentRunEventEntity event = trace.record(eventType, stepId, step, start, null, e.getMessage());
             log.warn("Agent 模型调用异常追踪事件：{}", event);
             throw new IllegalStateException(eventType + " 调用失败：" + e.getMessage(), e);
@@ -149,6 +166,28 @@ public class AgentModelPort implements IAgentModelPort {
             return null;
         }
         return getChatClient(config.getClientId());
+    }
+
+    static boolean requiresToolCall(String eventType) {
+        return "harness_external_evidence".equals(eventType);
+    }
+
+    static OpenAiChatOptions.Builder externalEvidenceOptions() {
+        return OpenAiChatOptions.builder()
+                .toolChoice("auto")
+                .parallelToolCalls(false)
+                .extraBody(Map.of("enable_thinking", false));
+    }
+
+    static AgentModelCallResultEntity fallbackFromToolInvocations(
+            String eventType, List<cn.ethan.ai.domain.agent.model.valobj.ToolInvocationRecordVO> invocations) {
+        if (!requiresToolCall(eventType) || invocations == null || invocations.isEmpty()) {
+            return null;
+        }
+        return AgentModelCallResultEntity.builder()
+                .content("")
+                .metadata(Map.of(ToolInvocationCollector.METADATA_KEY, List.copyOf(invocations)))
+                .build();
     }
 
     private AiAgentClientHarnessConfigVO firstAvailableConfig(Map<String, AiAgentClientHarnessConfigVO> harnessConfigMap,
@@ -187,7 +226,8 @@ public class AgentModelPort implements IAgentModelPort {
         return content.length() <= maxLength ? content : content.substring(0, maxLength) + "...";
     }
 
-    private List<ToolCallback> resolveToolCallbacks(ToolRoutingDecisionVO toolRoutingDecision) {
+    private List<ToolCallback> resolveToolCallbacks(ToolRoutingDecisionVO toolRoutingDecision,
+                                                    boolean readOnlyEvidenceOnly) {
         if (toolRoutingDecision == null || !toolRoutingDecision.isEnabled()
                 || toolRoutingDecision.getSelectedMcpIds() == null
                 || toolRoutingDecision.getSelectedMcpIds().isEmpty()) {
@@ -215,6 +255,8 @@ public class AgentModelPort implements IAgentModelPort {
                 .build()
                 .getToolCallbacks();
         if (rawCallbacks == null || rawCallbacks.length == 0) {
+            log.warn("已选择 MCP Server，但未发现可注入的 ToolCallback，mcpIds：{}",
+                    toolRoutingDecision.getSelectedMcpIds());
             return Collections.emptyList();
         }
 
@@ -231,22 +273,48 @@ public class AgentModelPort implements IAgentModelPort {
             return Collections.emptyList();
         }
 
-        List<ToolCallback> filtered = new ArrayList<>();
+        List<ToolCallback> permitted = new ArrayList<>();
+        Set<String> effectiveAllowedNames = new LinkedHashSet<>();
+        Set<String> discoveredNames = new LinkedHashSet<>();
         for (ToolCallback callback : rawCallbacks) {
             if (callback == null || callback.getToolDefinition() == null || StringUtils.isBlank(callback.getToolDefinition().name())) {
                 continue;
             }
             String toolName = callback.getToolDefinition().name().trim().toLowerCase(Locale.ROOT);
-            if (!allowedNames.contains(toolName)) {
+            discoveredNames.add(toolName);
+            if (!isToolAuthorized(toolName, allowedNames, readOnlyEvidenceOnly)) {
                 continue;
             }
             if (ToolGuardPolicy.isBlocked(toolName)) {
                 log.warn("Tool Guard 拦截危险工具注入，toolName：{}", toolName);
                 continue;
             }
-            filtered.add(new GuardedToolCallback(callback, allowedNames));
+            permitted.add(callback);
+            effectiveAllowedNames.add(toolName);
         }
-        return filtered;
+        if (permitted.isEmpty()) {
+            log.warn("MCP ToolCallback 均未通过本轮授权，configuredNames：{}，discoveredNames：{}，readOnlyEvidenceOnly：{}",
+                    allowedNames, discoveredNames, readOnlyEvidenceOnly);
+            return Collections.emptyList();
+        }
+        return permitted.stream()
+                .map(callback -> (ToolCallback) new GuardedToolCallback(callback, effectiveAllowedNames))
+                .toList();
+    }
+
+    static boolean isToolAuthorized(String toolName,
+                                    Set<String> configuredAllowedNames,
+                                    boolean readOnlyEvidenceOnly) {
+        String normalized = ToolGuardPolicy.normalize(toolName);
+        if (StringUtils.isBlank(normalized) || ToolGuardPolicy.isBlocked(normalized)) {
+            return false;
+        }
+        if (configuredAllowedNames != null && configuredAllowedNames.contains(normalized)) {
+            return !readOnlyEvidenceOnly || ToolGuardPolicy.isReadOnlyEvidenceTool(normalized);
+        }
+        // MCP Server upgrades can rename read-only tools. For an evidence-only route,
+        // the selected server boundary plus the risk policy is the source of truth.
+        return readOnlyEvidenceOnly && ToolGuardPolicy.isReadOnlyEvidenceTool(normalized);
     }
 
     private Map<String, Object> extractMetadata(ChatClientResponse chatClientResponse, ChatResponse chatResponse) {

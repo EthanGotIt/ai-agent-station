@@ -109,19 +109,6 @@ function Get-PgScalar {
     return (($result | Select-Object -First 1) ?? '').Trim()
 }
 
-function Get-EsCount {
-    param(
-        [string]$Body = '{"query":{"match_all":{}}}'
-    )
-
-    $response = Invoke-RestMethod -Uri 'http://127.0.0.1:9200/ai_rag_chunk/_count' `
-        -Method Post `
-        -ContentType 'application/json' `
-        -Body $Body `
-        -TimeoutSec 30
-    return [int]$response.count
-}
-
 function Get-RunDetail {
     param(
         [Parameter(Mandatory = $true)][string]$RunId
@@ -176,48 +163,33 @@ if ($vectorChildOnly -le 0) {
     throw 'PGVector 中未检测到 rag_id=7001 的 child chunk 向量记录。'
 }
 
-$esTotal = Get-EsCount
-$esParentChild = Get-EsCount -Body '{"query":{"term":{"rag_id":"7001"}}}'
-$esChildOnly = Get-EsCount -Body '{"query":{"bool":{"filter":[{"term":{"rag_id":"7001"}},{"term":{"chunk_level":2}}]}}}'
-if ($esTotal -le 0) {
-    throw 'Elasticsearch 当前未检测到 ai_rag_chunk 索引数据，请先执行 Markdown 导入。'
-}
-if ($esParentChild -le 0) {
-    throw 'Elasticsearch 中未检测到 rag_id=7001 的 Parent-Child 子块文档。'
-}
-if ($esChildOnly -le 0) {
-    throw 'Elasticsearch 中未检测到 rag_id=7001 的 child chunk 文档。'
-}
-
 $timestamp = [DateTimeOffset]::Now.ToUnixTimeMilliseconds()
-$flowResult = Invoke-AgentExecuteWithRetry -Label 'Flow smoke' -Payload @{
+$harnessResult = Invoke-AgentExecuteWithRetry -Label 'Harness smoke' -Payload @{
     aiAgentId = '1'
-    sessionId = "smoke-flow-$timestamp"
-    message = '请把 AI Agent Station 当前主链路整理成 5 条可写进周报的总结。'
-    maxStep = 3
+    sessionId = "smoke-harness-$timestamp"
+    message = '请把这句话润色得更简洁：受控 Harness 负责限制 Agent 行为。'
+    maxStep = 2
 }
-$flowEvents = $flowResult.Events
-Assert-EventPresent -Events $flowEvents -Value 'complete'
-$flowRun = $flowResult.RunDetail
-Assert-RunSucceeded -RunDetail $flowRun -Label 'Flow smoke'
+$harnessEvents = $harnessResult.Events
+Assert-EventPresent -Events $harnessEvents -Value 'harness_observation'
+Assert-EventPresent -Events $harnessEvents -Value 'complete'
+Assert-RunSucceeded -RunDetail $harnessResult.RunDetail -Label 'Harness smoke'
 
-$toolResult = Invoke-AgentExecuteWithRetry -Label '工具路由 smoke' -Payload @{
+$officialResult = Invoke-AgentExecuteWithRetry -Label '官方文档 evidence smoke' -Payload @{
     aiAgentId = '1'
-    sessionId = "smoke-tool-$timestamp"
-    message = '请调研 Spring AI MCP Client 的使用方式，并给出 3 条落地建议。'
-    maxStep = 3
+    sessionId = "smoke-official-$timestamp"
+    message = '请核验 Spring AI toolContext 的官方用法，并说明当前项目如何使用。'
+    maxStep = 4
 }
-$toolEvents = $toolResult.Events
-Assert-EventPresent -Events $toolEvents -Value 'tool_routing'
-Assert-EventPresent -Events $toolEvents -Value 'complete'
-$toolRun = $toolResult.RunDetail
-Assert-RunSucceeded -RunDetail $toolRun -Label '工具路由 smoke'
+Assert-EventPresent -Events $officialResult.Events -Value 'rag_evidence'
+Assert-EventPresent -Events $officialResult.Events -Value 'complete'
+Assert-RunSucceeded -RunDetail $officialResult.RunDetail -Label '官方文档 evidence smoke'
 
 $ragResult = Invoke-AgentExecuteWithRetry -Label 'RAG smoke' -Payload @{
     aiAgentId = '1'
     sessionId = "smoke-rag-$timestamp"
     message = '请仅基于已导入的 Markdown 知识完成回答，不要调用外部 MCP 搜索工具。请回答 Spring AI MCP Client 常见接入方式，并按结论、证据、落地建议输出。'
-    maxStep = 3
+    maxStep = 4
 }
 $ragEvents = $ragResult.Events
 Assert-EventPresent -Events $ragEvents -Value 'rag_evidence'
@@ -249,16 +221,21 @@ if ([string]::IsNullOrWhiteSpace($memorySecondResult.RunDetail.contextBoundary.s
     throw '记忆续轮 smoke 未加载同一 session 的历史摘要。'
 }
 
-$allEvents = @($flowEvents) + @($toolEvents) + @($ragEvents) + @($memoryFirstResult.Events) + @($memorySecondResult.Events)
-$contextGuardEvent = $allEvents | Where-Object {
-    $_ -and
-    ($_.PSObject.Properties.Name -contains 'subType') -and
-    $_.subType -eq 'context_guard'
-}
-if (-not $contextGuardEvent) {
-    Write-Warning '本轮 smoke 未触发 context_guard。该事件依赖实际模型输出长度，确定性行为由 AgentContextWindowServiceTest 覆盖。'
-} else {
-    Write-Host '本轮 smoke 已触发 context_guard。'
+$legacyEvents = @($harnessEvents) + @($officialResult.Events) + @($ragEvents) |
+    Where-Object {
+        $_ -and ($_.PSObject.Properties.Name -contains 'subType') -and
+            ($_.subType -eq 'tool_routing' -or $_.subType -eq 'context_guard')
+    }
+if ($legacyEvents) {
+    throw '检测到已删除的 tool_routing/context_guard 旧事件。'
 }
 
-Write-Host '本地 smoke 验证完成：Flow / 工具路由 / RAG 证据 / session 短期记忆链路均已通过。'
+$currentArchitectureResults = @($ragResult, $memoryFirstResult, $memorySecondResult)
+foreach ($result in $currentArchitectureResults) {
+    $summary = [string]$result.RunDetail.finalSummary
+    if ($summary -match 'GraphRuntime|Flow Plan') {
+        throw "检测到旧架构知识污染：$summary"
+    }
+}
+
+Write-Host '本地 smoke 验证完成：三动作 Harness / 按来源 evidence / 引用回答 / 完整 Turn 记忆均已通过。'

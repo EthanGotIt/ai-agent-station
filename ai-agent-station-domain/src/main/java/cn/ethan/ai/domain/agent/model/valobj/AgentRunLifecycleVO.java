@@ -36,14 +36,9 @@ public class AgentRunLifecycleVO {
 
     private Integer cancelledStepCount;
 
-    private Boolean contextCompacted;
-
     public static AgentRunLifecycleVO from(AgentRunStatusEnumVO status,
                                            String errorMessage,
                                            String cancelReason,
-                                           Integer contextOriginalChars,
-                                           Integer contextCompressedChars,
-                                           String contextSummary,
                                            List<AgentStepRunRecordVO> steps) {
         List<AgentStepRunRecordVO> safeSteps = steps == null ? Collections.emptyList() : steps;
         AgentStepRunRecordVO runningStep = firstStepByStatus(safeSteps, AgentStepRunStatusEnumVO.RUNNING);
@@ -58,7 +53,6 @@ public class AgentRunLifecycleVO {
                 .failedStepCount(countByStatus(safeSteps, AgentStepRunStatusEnumVO.FAILED))
                 .skippedStepCount(countByStatus(safeSteps, AgentStepRunStatusEnumVO.SKIPPED))
                 .cancelledStepCount(countByStatus(safeSteps, AgentStepRunStatusEnumVO.CANCELLED))
-                .contextCompacted(isContextCompacted(contextOriginalChars, contextCompressedChars, contextSummary))
                 .build();
     }
 
@@ -93,14 +87,8 @@ public class AgentRunLifecycleVO {
         if ("harness_root".equals(stepId)) {
             return "INITIALIZING";
         }
-        if ("harness_tool_routing".equals(stepId)) {
-            return "TOOL_ROUTING";
-        }
         if (stepId.startsWith("harness_action_")) {
             return "DECIDING";
-        }
-        if (stepId.startsWith("rag_")) {
-            return "RAG_RETRIEVING";
         }
         return "EXECUTING";
     }
@@ -121,13 +109,4 @@ public class AgentRunLifecycleVO {
         return "";
     }
 
-    private static boolean isContextCompacted(Integer originalChars, Integer compressedChars, String contextSummary) {
-        if (StringUtils.isNotBlank(contextSummary)) {
-            return true;
-        }
-        if (originalChars == null || compressedChars == null) {
-            return false;
-        }
-        return originalChars > 0 && compressedChars > 0 && compressedChars < originalChars;
-    }
 }

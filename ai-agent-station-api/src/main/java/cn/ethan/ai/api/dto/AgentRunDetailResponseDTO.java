@@ -31,12 +31,6 @@ public class AgentRunDetailResponseDTO {
 
     private String cancelReason;
 
-    private Integer contextOriginalChars;
-
-    private Integer contextCompressedChars;
-
-    private String contextSummary;
-
     private LocalDateTime startTime;
 
     private LocalDateTime endTime;

@@ -18,8 +18,6 @@ public class AgentExecuteResultEntity {
 
     private static final String TYPE_EXECUTION = "execution";
 
-    private static final String TYPE_SUPERVISION = "supervision";
-
     private static final String TYPE_SUMMARY = "summary";
 
     private static final String TYPE_ERROR = "error";
@@ -66,14 +64,6 @@ public class AgentExecuteResultEntity {
 
     public static AgentExecuteResultEntity createExecutionSubResult(Integer step, String subType, String content, Object payload, String sessionId, String runId) {
         return create(TYPE_EXECUTION, subType, step, content, payload, false, sessionId, runId);
-    }
-
-    public static AgentExecuteResultEntity createSupervisionResult(Integer step, String content, String sessionId, String runId) {
-        return create(TYPE_SUPERVISION, null, step, content, null, false, sessionId, runId);
-    }
-
-    public static AgentExecuteResultEntity createSupervisionSubResult(Integer step, String subType, String content, String sessionId, String runId) {
-        return create(TYPE_SUPERVISION, subType, step, content, null, false, sessionId, runId);
     }
 
     public static AgentExecuteResultEntity createSummarySubResult(String subType, String content, String sessionId, String runId) {

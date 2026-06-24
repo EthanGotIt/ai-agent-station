@@ -43,9 +43,6 @@ public class AgentRunRepository implements IAgentRunRepository {
                 .errorMessage(record.getErrorMessage())
                 .cancelReason(record.getCancelReason())
                 .sessionContextSummary(record.getSessionContextSummary())
-                .contextOriginalChars(record.getContextOriginalChars())
-                .contextCompressedChars(record.getContextCompressedChars())
-                .contextSummary(record.getContextSummary())
                 .startTime(record.getStartTime())
                 .endTime(record.getEndTime())
                 .createTime(LocalDateTime.now())
@@ -62,9 +59,6 @@ public class AgentRunRepository implements IAgentRunRepository {
                 .errorMessage(record.getErrorMessage())
                 .cancelReason(record.getCancelReason())
                 .sessionContextSummary(record.getSessionContextSummary())
-                .contextOriginalChars(record.getContextOriginalChars())
-                .contextCompressedChars(record.getContextCompressedChars())
-                .contextSummary(record.getContextSummary())
                 .startTime(record.getStartTime())
                 .endTime(record.getEndTime())
                 .updateTime(LocalDateTime.now())
@@ -126,9 +120,6 @@ public class AgentRunRepository implements IAgentRunRepository {
                 .errorMessage(run.getErrorMessage())
                 .cancelReason(run.getCancelReason())
                 .sessionContextSummary(run.getSessionContextSummary())
-                .contextOriginalChars(run.getContextOriginalChars())
-                .contextCompressedChars(run.getContextCompressedChars())
-                .contextSummary(run.getContextSummary())
                 .startTime(run.getStartTime())
                 .endTime(run.getEndTime())
                 .createTime(run.getCreateTime())
@@ -137,9 +128,6 @@ public class AgentRunRepository implements IAgentRunRepository {
                         status,
                         run.getErrorMessage(),
                         run.getCancelReason(),
-                        run.getContextOriginalChars(),
-                        run.getContextCompressedChars(),
-                        run.getContextSummary(),
                         stepVos
                 ))
                 .steps(stepVos)

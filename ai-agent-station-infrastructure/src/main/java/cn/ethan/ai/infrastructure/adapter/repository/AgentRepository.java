@@ -271,6 +271,7 @@ public class AgentRepository implements IAgentRepository {
 
             Map<String, AiAgentClientHarnessConfigVO> result = new LinkedHashMap<>();
             for (AiAgentHarnessConfig config : harnessConfigs) {
+                List<String> ragIds = queryRagIdsByClientIds(List.of(config.getClientId()));
                 result.putIfAbsent(config.getClientType(),
                         AiAgentClientHarnessConfigVO.builder()
                                 .clientId(config.getClientId())
@@ -278,6 +279,7 @@ public class AgentRepository implements IAgentRepository {
                                 .clientType(config.getClientType())
                                 .sequence(config.getSequence())
                                 .stepPrompt(config.getStepPrompt())
+                                .ragIds(new LinkedHashSet<>(ragIds))
                                 .build());
             }
             return result;
@@ -285,6 +287,20 @@ public class AgentRepository implements IAgentRepository {
             log.error("Query ai agent client harness config failed, aiAgentId: {}", aiAgentId, e);
             return Map.of();
         }
+    }
+
+    @Override
+    public List<String> queryRagIdsByClientIds(List<String> clientIds) {
+        if (isEmpty(clientIds)) {
+            return List.of();
+        }
+        return aiClientConfigDao.queryBySourceTypeAndIds("client", clientIds).stream()
+                .filter(config -> config != null && Integer.valueOf(1).equals(config.getStatus()))
+                .filter(config -> "rag".equalsIgnoreCase(config.getTargetType()))
+                .map(AiClientConfig::getTargetId)
+                .filter(id -> id != null && !id.isBlank())
+                .distinct()
+                .toList();
     }
 
     @Override

@@ -2,7 +2,6 @@ package cn.ethan.ai.domain.agent.model.aggregate;
 
 import cn.ethan.ai.domain.agent.model.entity.AgentRunTraceEntity;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
-import cn.ethan.ai.domain.agent.model.valobj.AgentPlanVO;
 import cn.ethan.ai.domain.agent.model.valobj.AgentRunRecordVO;
 import cn.ethan.ai.domain.agent.model.valobj.ContextBudgetPolicyVO;
 import cn.ethan.ai.domain.agent.model.valobj.ContextWindowGuardVO;
@@ -28,9 +27,6 @@ public class AgentRunAggregate {
     private final ContextWindowGuardVO contextWindowGuard;
 
     private final Map<String, String> stepOutputs = new LinkedHashMap<>();
-
-    @Getter
-    private AgentPlanVO plan;
 
     @Getter
     private AgentRunStatusEnumVO status;
@@ -71,10 +67,6 @@ public class AgentRunAggregate {
     public int maxStepOrDefault(int defaultMaxStep) {
         Integer maxStep = command.getMaxStep();
         return maxStep == null || maxStep <= 0 ? defaultMaxStep : maxStep;
-    }
-
-    public void bindExecutionPlan(AgentPlanVO plan) {
-        this.plan = plan;
     }
 
     public void bindSessionContextSummary(String sessionContextSummary) {
@@ -127,9 +119,6 @@ public class AgentRunAggregate {
                 .errorMessage(errorMessage)
                 .cancelReason(cancelReason)
                 .sessionContextSummary(sessionContextSummary)
-                .contextOriginalChars(contextWindowGuard.getLatestOriginalChars())
-                .contextCompressedChars(contextWindowGuard.getLatestCompressedChars())
-                .contextSummary(contextWindowGuard.getHistorySummary())
                 .startTime(startTime)
                 .endTime(endTime)
                 .build();

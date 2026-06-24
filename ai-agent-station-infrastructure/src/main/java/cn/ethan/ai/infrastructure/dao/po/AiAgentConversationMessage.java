@@ -26,10 +26,6 @@ public class AiAgentConversationMessage {
 
     private String content;
 
-    private String contentSummary;
-
-    private Integer contextUnits;
-
     private LocalDateTime createTime;
 
 }

@@ -11,8 +11,10 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,8 +26,20 @@ import java.util.Map;
 @Service
 public class AiClientModelNode extends AbstractArmorySupport {
 
+    private static final int MIN_REQUEST_TIMEOUT_SECONDS = 10;
+
+    private static final int MAX_REQUEST_TIMEOUT_SECONDS = 300;
+
+    private static final int MAX_MODEL_RETRIES = 2;
+
     @Resource
     private AiClientNode aiClientNode;
+
+    @Value("${ai-agent.model.request-timeout-seconds:60}")
+    private int requestTimeoutSeconds;
+
+    @Value("${ai-agent.model.max-retries:1}")
+    private int maxRetries;
 
     @Override
     protected String doApply(ArmoryCommandEntity requestParameter, ArmoryAssemblyContextVO assemblyContext) throws Exception {
@@ -60,7 +74,9 @@ public class AiClientModelNode extends AbstractArmorySupport {
             OpenAiChatModel chatModel = OpenAiChatModel.builder()
                     .options(apiOptions.mutate()
                             .model(modelVO.getModelName())
+                            .maxRetries(resolveMaxRetries(maxRetries))
                             .build())
+                    .httpClientBuilderCustomizer(builder -> builder.timeout(resolveRequestTimeout(requestTimeoutSeconds)))
                     .build();
 
             // 放入装配上下文，供后续对话客户端装配。
@@ -86,6 +102,15 @@ public class AiClientModelNode extends AbstractArmorySupport {
     @Override
     protected String dataName() {
         return AiAgentEnumVO.AI_CLIENT_MODEL.getDataName();
+    }
+
+    static Duration resolveRequestTimeout(int seconds) {
+        return Duration.ofSeconds(Math.max(MIN_REQUEST_TIMEOUT_SECONDS,
+                Math.min(MAX_REQUEST_TIMEOUT_SECONDS, seconds)));
+    }
+
+    static int resolveMaxRetries(int retries) {
+        return Math.max(0, Math.min(MAX_MODEL_RETRIES, retries));
     }
 
 }

@@ -1,98 +1,94 @@
-# AI Agent Station 升级总控方案
+# Evidence-Governed Harness 升级总控
 
 ## 当前进度
 
-| 阶段 | 状态 | 代码 | 测试 | 文档 | 答辩材料 |
-| --- | --- | --- | --- | --- | --- |
-| Phase 1-7：轻量受控 Runtime、Tool Guard、RAG 显式化、上下文治理、持久化 session 短期记忆 | 已完成 | 已完成 | 已通过历史验收 | 已完成 | 已沉淀 |
-| 当前阶段：Controlled Agent Harness + Agentic RAG 3.0 | 已完成 | 主链路已切换 | 全量测试已通过 | README / smoke / defense 已更新 | 已更新 |
-| 框架基线：Spring AI 2.0 / Spring Boot 4.1 | 已完成 | 已完成 | 单测、打包、live smoke 已通过 | 升级说明已完成 | 不改变业务答辩主线 |
-
-## 项目变化
-
-项目主线已经从固定计划式执行收敛为 Controlled Agent Harness：
-
-- `AgentDispatchService` 改为调用 `AgentHarnessExecuteService`。
-- 单次请求生命周期改为 `Run -> HarnessContext -> Action -> Observation -> Evaluation -> Final`。
-- 旧计划生成、计划校验、Step1-6 主执行链路和低价值旧测试已删除。
-- `RuntimeToolCapabilityService` 只面向企业知识助手场景筛选 docs/search 类 MCP 工具。
-- `AgenticRagRuntime` 成为 RAG 唯一主入口，旧隐式 RAG Advisor 已删除，避免同一检索能力存在两套入口。
-- 默认 embedding 切换为阿里百炼 `text-embedding-v4`，维度保持 `1024`，不再依赖第三方向量模型默认配置。
-
-当前项目仍不是完整多 Agent 通信框架、长期用户画像系统、危险工具沙箱或通用工作流引擎。
-
-## Spring AI 2 技术评估
-
-- Spring AI `2.0.0` 正式版基于 Spring Boot `4.1.0`，本项目同步升级 Boot 与 MyBatis Starter，避免跨代自动配置组合。
-- 旧 `OpenAiApi` 已移除，连接参数改由不可变 `OpenAiChatOptions` 持有，模型节点通过 `mutate()` 派生模型级配置。
-- 动态 MCP 工具仍按单次请求注入，使用 Spring AI 2 的统一 `tools(...)` API，由 `ChatClient` 默认工具调用 Advisor 负责模型、工具和后续模型响应的闭环。
-- MCP SDK 2 使用 Jackson 3 mapper；Actuator 健康组件同步迁移到 Boot 4 的 `org.springframework.boot.health.contributor` 包。
-- 数据库中的 `completions_path / embeddings_path` 对官方 OpenAI Java SDK 已无实际配置入口，因此从领域模型、Mapper 和原始 seed 中一并删除，不保留失效配置。
+| 阶段 | 状态 | 已落地 | 未完成验收 |
+|---|---|---|---|
+| Phase 0 基线与测试隔离 | 已完成 | Java 17 Enforcer、Jupiter、默认单测隔离、`*IT` + integration Profile | 无 |
+| Phase 1 Harness 协议 | 已完成 | `RETRIEVE / ASK_CLARIFY / FINALIZE`、Evidence Board、双层 Policy、2-4 轮软上限、live action trace | 无 |
+| Phase 2 Evidence Retrieval | 代码与集成完成 | 唯一入口、ragId scope、按需 BM25/RRF/父块扩展、按来源 MCP、真实 ToolCallback 采集、引用校验 | 百炼额度恢复后补完整外部 evidence smoke |
+| Phase 3 评测驱动精简 | 框架完成 | 60 条冻结数据、三种对照模式、指标计算和保留门槛 | 三组 live evaluation 和消融结论 |
+| Phase 4 Session 记忆 | 已完成 | 完整 Turn、结构化摘要、最近四 Turn、偏好、乐观锁、TTL、dev 清除、MySQL integration | 无 |
+| Phase 5 收口验收 | 代码验收完成 | 删除旧 Plan/RAG Runtime、错误累计预算和失效字段，README 已同步 | live evaluation 与消融结论 |
 
 ## 技术评估
 
-本阶段不引入 OpenHarness、LangGraph、OpenAI Agents SDK 或 Spring AI Alibaba 图执行运行时。
+- 保留 Spring AI 2.0、Spring Boot 4.1、PGVector、MCP 和自研轻量 Harness。
+- 不引入 OpenHarness、LangGraph、Spring AI Alibaba Graph、精确 tokenizer、reranker、多 Agent 或长期向量记忆。
+- 借鉴 Agent Harness 的“动作、观测、策略、终止”边界，不引入另一套执行框架。
+- 对外使用“受控 Agentic RAG 证据闭环”，不把 Agentic RAG 3.0 描述成行业标准。
 
-原因：
+## 当前执行模型
 
-- 当前代码已经有 Spring AI、MCP ToolCallback、MyBatis、运行态表、PGVector/ES 检索和本地 smoke 脚本，直接迁移框架会扩大改造面。
-- OpenHarness 的价值主要是 harness 思想：受控动作、观测、评估、终止和可复盘 trace，本阶段已通过自研轻量服务吸收。
-- Agentic RAG 的关键不是继续叠算法，而是检索规划、证据评估、有限二次检索、MCP 只读 evidence 融合和评测闭环。
-- `text-embedding-v4` 通过 DashScope OpenAI compatible 模式接入，能复用现有 Spring AI OpenAI embedding 适配，避免新增额外向量模型依赖和 schema 变更。
+```text
+Run
+-> Harness decision
+-> RETRIEVE(sourceType, queries) | ASK_CLARIFY | FINALIZE
+-> EvidenceRetrievalService
+-> Evidence Board
+-> deterministic Evidence Policy
+-> Grounded answer with [E1] citations
+```
 
-## 代码健康规则
+模型只选择高层来源，不控制 PGVector、BM25、RRF、Small-to-Big 或具体 MCP 工具。最终回答不来自 Action JSON。
 
-- 一个能力只保留一个主入口：Harness 执行只走 `AgentHarnessExecuteService`，RAG 只走 `AgenticRagRuntime`。
-- 一个概念只保留一个命名：Action 决策使用 `AgentActionParser / AgentActionPolicy`，不再新增 Planner/IntentAgent 等相近类名。
-- MCP 默认工具只保留 docs/search 场景，避免无关工具让项目看起来像技术堆砌。
-- 不新增数据库表，不新增碎片化 SQL 文件，直接更新原 seed。
-- 不提交真实 API key，配置和 SQL 只保留占位符。
+## 唯一入口与已删除冗余
 
-## 代码冗余与后续清理
+- Harness 主入口：`AgentHarnessExecuteService`
+- 动作副作用：`HarnessActionExecutor`
+- 检索主入口：`EvidenceRetrievalService`
+- 本地检索端口：`ILocalEvidenceRetrievalPort`，当前实现 `AdaptiveLocalEvidenceRetrievalPort`
+- 最终回答：`GroundedAnswerService`
 
-当前仍需跟踪的观察项：
+已删除：
 
-- Harness 客户端配置已完成命名收口，后续不再使用旧流程配置叙事。
-- 旧隐式 RAG Advisor 已删除，RAG 只通过 `AgenticRagRuntime` 主入口执行。
-- `HybridRagRetrievalPort` 内部仍封装 PGVector、BM25、RRF、Small-to-Big，当前由 `AgenticRagRuntime` 控制何时检索和是否二次检索；后续如果要更细粒度评测，可拆成本地检索通道接口。
-- `AgentHarnessExecuteService` 目前承担 run 初始化、工具路由、action loop 和流式输出，后续若继续扩展 resume/handoff，可再拆 action executor。
-- 上下文预算仍是轻量估算，不是精确 tokenizer。
+- `AgenticRagRuntime`
+- `HybridRagRetrievalPort` 和 `IRagRetrievalPort`
+- `AgentPlanVO`、Plan 校验 VO 和 Aggregate plan 字段
+- 旧 step-output 压缩服务与累计多次调用的上下文预算
+- Run 表中失去语义的 context chars/summary 字段
+- 旧 RAG Runtime 测试和默认 JUnit 4/Vintage
 
-## 阶段验收记录
+## 自适应检索边界
 
-已通过目标单测：
+- `PROJECT_KNOWLEDGE` 默认 PGVector。
+- 类名、方法名、配置键、异常文本或向量无结果时启用 BM25。
+- 两个本地通道都有结果时才执行 RRF。
+- Evidence Board gap 为 `CONTEXT_INCOMPLETE` 时才允许父块扩展。
+- `OFFICIAL_DOCS` 只路由 docs MCP，`WEB_RESEARCH` 只路由 search MCP。
+- 外部 evidence 必须来自真实 ToolCallback 结果；无 URI 文本是低可信补充。
+
+BM25/RRF、Small-to-Big 和二次检索是否保留，由 [评测门槛](evaluation/rag-evaluation-v1.md) 决定，不由架构偏好决定。
+
+## Session 记忆边界
+
+- 消息表只保存原文。
+- Session 表只保存结构化摘要、游标、版本和过期状态。
+- 只加载成功完整 Turn；孤立 USER 不注入。
+- 摘要不保存外部事实和工具输出。
+- 30 天 TTL，每日清理；乐观锁冲突重试一次。
+- 清除 API 仅在 dev Profile 注册。
+
+## 验收命令
 
 ```powershell
 $env:JAVA_HOME='D:\Environment\JDK17'
 $env:Path="$env:JAVA_HOME\bin;$env:Path"
-mvn -q -pl ai-agent-station-app -am "-DskipTests=false" "-Dsurefire.failIfNoSpecifiedTests=false" "-Dtest=AgentHarnessSupportTest,AgenticRagRuntimeTest,RuntimeToolCapabilityServiceTest,AgentRunLifecycleVOTest" test
+
+mvn -q "-DskipTests=false" test
+mvn -q -Pintegration "-DskipTests=false" verify
+mvn -q "-DskipTests" package
+git diff --check
+.\scripts\dev\run-local-smoke.ps1
 ```
 
-结果：15 个测试通过，0 failures，0 errors。
+默认 `mvn test` 不得访问 Docker、API key、网络或启动 MCP 子进程。live evaluation 使用百炼、PGVector、可选 ES 和 MCP，结果必须写入独立报告后才能更新 README/简历中的效果表述。
 
-已通过回归验收：
+## 2026-06-23 验收记录
 
-- `mvn -q clean -pl ai-agent-station-app -am "-DskipTests=false" test`
-  - 结果：173 个测试通过，0 failures，0 errors。
-- `mvn -q "-DskipTests" package`
-  - 结果：打包通过。
-- `git diff --check`
-  - 结果：通过，仅有 Windows 工作区换行转换提示。
-
-待完成验收：
-
-- 无。
-
-Spring AI 2 框架升级验收：
-
-- `SpringAi2CompatibilityTest`：2 个测试通过，验证不可变 Options 派生和请求级工具调用循环。
-- `mvn -q clean "-DskipTests=false" test`：160 个测试，147 个实际执行，13 个手工门禁跳过，0 failures，0 errors。
-- `mvn -q "-DskipTests" package`：Boot 4 可执行 jar 打包通过。
-- `.\scripts\dev\run-local-smoke.ps1`：Harness、MCP 路由、Agentic RAG evidence 和 session 记忆链路通过。
-- live smoke 发现并修复独立 `rag_evidence` 事件缺失，流式 observation 不再重复携带完整 trace 和 Document 列表。
-
-## 后续方向
-
-- 为 Agentic RAG 增加 20-30 条企业知识助手 QA case，覆盖单跳、多跳、无证据、歧义和 MCP 外部资料补充。
-- 如果评测证明 `HybridRagRetrievalPort` 的固定混合策略限制效果，再拆分 PGVector、BM25、MCP evidence source 和后处理链。
-- 如果 action loop 继续复杂化，再考虑引入更正式的 harness trace/evaluation 结构，而不是回到固定流程。
+- 默认测试：41 个测试套件，187 个测试，0 failures，0 errors，13 skipped。
+- integration Profile：17 个测试套件，108 个测试，0 failures，0 errors，12 skipped。
+- Docker 下 MySQL、PGVector、Elasticsearch、Context7 Stdio MCP 和 Exa Streamable HTTP MCP 均完成启动与集成回归。
+- live 已验证普通 Harness、项目知识检索、引用回答、当前架构知识样本和 2 个只读 MCP ToolCallback 注入。
+- 外部 evidence 调用已处理百炼“思考模式不支持 required tool choice”的兼容边界；关闭该次调用的思考模式后，最终受账户 `free quota exhausted` 阻塞。
+- 未运行三组 live evaluation，不产生或宣称任何效果提升数字。

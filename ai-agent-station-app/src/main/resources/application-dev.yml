@@ -49,30 +49,23 @@ spring:
     agent:
       auto-config:
         enabled: true
-        client-ids: 2101,2102,2103
+        client-ids: 2102,2103
 
 ai-agent:
+  model:
+    request-timeout-seconds: ${AI_AGENT_MODEL_REQUEST_TIMEOUT_SECONDS:60}
+    max-retries: ${AI_AGENT_MODEL_MAX_RETRIES:1}
   context:
-    max-chars: ${AI_AGENT_CONTEXT_MAX_CHARS:12000}
-    compress-threshold: ${AI_AGENT_CONTEXT_COMPRESS_THRESHOLD:0.80}
+    max-context-units: ${AI_AGENT_CONTEXT_MAX_UNITS:12000}
     stop-threshold: ${AI_AGENT_CONTEXT_STOP_THRESHOLD:0.95}
-    summary-max-chars: ${AI_AGENT_CONTEXT_SUMMARY_MAX_CHARS:1500}
   vector-store:
     enabled: ${AI_AGENT_VECTOR_STORE_ENABLED:false}
     base-url: ${AI_AGENT_VECTOR_STORE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
     api-key: ${OPENAI_API_KEY:}
     model: ${AI_AGENT_VECTOR_STORE_MODEL:text-embedding-v4}
     dimensions: ${AI_AGENT_VECTOR_STORE_DIMENSIONS:1024}
-  hybrid-retrieval:
-    es-base-url: ${AI_AGENT_ES_BASE_URL:http://127.0.0.1:9200}
-    es-index-name: ${AI_AGENT_ES_INDEX_NAME:ai_rag_chunk}
-    es-template-name: ${AI_AGENT_ES_TEMPLATE_NAME:ai_rag_chunk_template}
-    initialize-es-on-startup: ${AI_AGENT_ES_INIT_ON_STARTUP:true}
+  evidence-retrieval:
     vector-route-top-k: ${AI_AGENT_VECTOR_ROUTE_TOP_K:12}
-    bm25-route-top-k: ${AI_AGENT_BM25_ROUTE_TOP_K:12}
-    rrf-rank-constant: ${AI_AGENT_RRF_RANK_CONSTANT:60}
-    small-to-big-enabled: ${AI_AGENT_SMALL_TO_BIG_ENABLED:true}
-    http-timeout-millis: ${AI_AGENT_ES_HTTP_TIMEOUT_MILLIS:3000}
 
 logging:
   level:

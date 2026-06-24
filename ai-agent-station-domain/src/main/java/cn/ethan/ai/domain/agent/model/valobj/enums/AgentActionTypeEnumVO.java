@@ -9,13 +9,9 @@ import java.util.Locale;
  */
 public enum AgentActionTypeEnumVO {
 
-    RAG_PLAN,
-    RAG_RETRIEVE,
-    MCP_READ,
-    EVALUATE_EVIDENCE,
-    LLM_RESPOND,
+    RETRIEVE,
     ASK_CLARIFY,
-    FINAL;
+    FINALIZE;
 
     public static AgentActionTypeEnumVO from(String value) {
         if (StringUtils.isBlank(value)) {

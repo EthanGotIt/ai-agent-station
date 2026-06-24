@@ -1,0 +1,11 @@
+spring:
+  ai:
+    agent:
+      auto-config:
+        enabled: false
+
+ai-agent:
+  vector-store:
+    enabled: false
+  evidence-retrieval:
+    initialize-es-on-startup: false

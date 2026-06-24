@@ -30,4 +30,6 @@ public interface IAgentRepository {
 
     List<AiAgentClientHarnessConfigVO> queryAiAgentClientsByAgentId(String aiAgentId);
 
+    List<String> queryRagIdsByClientIds(List<String> clientIds);
+
 }

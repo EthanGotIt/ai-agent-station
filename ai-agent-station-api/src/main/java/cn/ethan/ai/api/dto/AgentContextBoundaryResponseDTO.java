@@ -30,8 +30,6 @@ public class AgentContextBoundaryResponseDTO {
 
     private String sessionContextSummary;
 
-    private String runContextSummary;
-
     private boolean longTermMemoryEnabled;
 
 }

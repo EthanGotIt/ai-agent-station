@@ -36,6 +36,7 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <skipTests>true</skipTests>
+        <test.spring.profile>test</test.spring.profile>
     </properties>
 
     <parent>
@@ -157,6 +158,27 @@
                 <artifactId>versions-maven-plugin</artifactId>
                 <version>2.7</version>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.6.2</version>
+                <executions>
+                    <execution>
+                        <id>enforce-java</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[17,)</version>
+                                    <message>AI Agent Station requires JDK 17 or newer. Configure JAVA_HOME before running Maven.</message>
+                                </requireJavaVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 
@@ -176,6 +198,12 @@
             <properties>
                 <java_jvm>-Xms1G -Xmx1G -server -Xss256K -Dspring.profiles.active=test -XX:+DisableExplicitGC -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/export/Logs/ai-agent-station-boot -Xlog:gc*:file=/export/Logs/ai-agent-station-boot/gc-ai-agent-station-boot.log:time,uptime,level,tags</java_jvm>
                 <profileActive>test</profileActive>
+            </properties>
+        </profile>
+        <profile>
+            <id>integration</id>
+            <properties>
+                <test.spring.profile>dev</test.spring.profile>
             </properties>
         </profile>
         <profile>

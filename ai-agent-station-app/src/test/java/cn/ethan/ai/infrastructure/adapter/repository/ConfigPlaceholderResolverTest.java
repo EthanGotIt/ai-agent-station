@@ -1,7 +1,7 @@
 package cn.ethan.ai.infrastructure.adapter.repository;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 import org.springframework.mock.env.MockEnvironment;
 
 public class ConfigPlaceholderResolverTest {
@@ -13,7 +13,7 @@ public class ConfigPlaceholderResolverTest {
 
         String value = ConfigPlaceholderResolver.resolve("${OPENAI_API_KEY}", environment);
 
-        Assert.assertEquals("test-key", value);
+        Assertions.assertEquals("test-key", value);
     }
 
     @Test
@@ -22,7 +22,7 @@ public class ConfigPlaceholderResolverTest {
 
         String value = ConfigPlaceholderResolver.resolve("${OPENAI_API_KEY}", environment);
 
-        Assert.assertEquals("${OPENAI_API_KEY}", value);
+        Assertions.assertEquals("${OPENAI_API_KEY}", value);
     }
 
     @Test
@@ -32,7 +32,7 @@ public class ConfigPlaceholderResolverTest {
 
         String value = ConfigPlaceholderResolver.resolve("{\"ES_API_KEY\":\"${ES_API_KEY}\"}", environment);
 
-        Assert.assertEquals("{\"ES_API_KEY\":\"es-key\"}", value);
+        Assertions.assertEquals("{\"ES_API_KEY\":\"es-key\"}", value);
     }
 
 }

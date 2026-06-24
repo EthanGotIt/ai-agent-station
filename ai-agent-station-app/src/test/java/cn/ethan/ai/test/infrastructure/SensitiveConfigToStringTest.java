@@ -5,8 +5,8 @@ import cn.ethan.ai.domain.agent.model.valobj.AiClientApiVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientToolMcpVO;
 import cn.ethan.ai.infrastructure.dao.po.AiClientApi;
 import cn.ethan.ai.infrastructure.dao.po.AiClientToolMcp;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
@@ -37,6 +37,6 @@ public class SensitiveConfigToStringTest {
     }
 
     private void assertNotExposed(Object value, String secret) {
-        Assert.assertFalse(value.toString().contains(secret));
+        Assertions.assertFalse(value.toString().contains(secret));
     }
 }

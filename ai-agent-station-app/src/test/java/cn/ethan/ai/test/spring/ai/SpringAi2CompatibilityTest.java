@@ -1,7 +1,7 @@
 package cn.ethan.ai.test.spring.ai;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
@@ -28,9 +28,9 @@ public class SpringAi2CompatibilityTest {
                 .model("qwen3.7-max")
                 .build();
 
-        Assert.assertEquals(connectionOptions.getBaseUrl(), modelOptions.getBaseUrl());
-        Assert.assertEquals(connectionOptions.getApiKey(), modelOptions.getApiKey());
-        Assert.assertEquals("qwen3.7-max", modelOptions.getModel());
+        Assertions.assertEquals(connectionOptions.getBaseUrl(), modelOptions.getBaseUrl());
+        Assertions.assertEquals(connectionOptions.getApiKey(), modelOptions.getApiKey());
+        Assertions.assertEquals("qwen3.7-max", modelOptions.getModel());
     }
 
     @Test
@@ -47,9 +47,9 @@ public class SpringAi2CompatibilityTest {
                 .call()
                 .content();
 
-        Assert.assertEquals("tool completed", result);
-        Assert.assertEquals(2, modelCalls.get());
-        Assert.assertEquals(1, toolCalls.get());
+        Assertions.assertEquals("tool completed", result);
+        Assertions.assertEquals(2, modelCalls.get());
+        Assertions.assertEquals(1, toolCalls.get());
     }
 
     private static class ScriptedToolCallingChatModel implements ChatModel {

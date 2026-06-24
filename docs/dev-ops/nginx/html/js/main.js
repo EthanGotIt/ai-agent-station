@@ -334,131 +334,6 @@ function syncCurrentChatMeta() {
     }
 }
 
-function renderPlanContent(content) {
-    try {
-        const plan = JSON.parse(content);
-        const steps = Array.isArray(plan.steps) ? plan.steps : [];
-        return `
-            <div class="plan-view">
-                <div class="plan-goal">
-                    <span class="plan-label">目标</span>
-                    <span>${escapeHtml(plan.goal || '未提供目标')}</span>
-                </div>
-                <div class="plan-step-list">
-                    ${steps.map((item, index) => `
-                        <div class="plan-step-row">
-                            <div class="plan-step-index">${index + 1}</div>
-                            <div class="plan-step-body">
-                                <div class="plan-step-title">${escapeHtml(item.name || item.stepId || '未命名步骤')}</div>
-                                <div class="plan-step-meta">
-                                    <span>${escapeHtml(item.type || 'LLM')}</span>
-                                    ${item.dependsOn && item.dependsOn.length ? `<span>依赖：${escapeHtml(item.dependsOn.join(', '))}</span>` : ''}
-                                </div>
-                                ${item.successCriteria ? `<div class="plan-step-criteria">${escapeHtml(item.successCriteria)}</div>` : ''}
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        `;
-    } catch (e) {
-        return renderMarkdown(content);
-    }
-}
-
-function renderToolSummaryContent(content) {
-    const prefix = '可用工具白名单：';
-    if (!content || !content.startsWith(prefix)) {
-        return renderMarkdown(content);
-    }
-
-    const tools = content.substring(prefix.length)
-        .split(',')
-        .map(item => item.trim())
-        .filter(Boolean);
-    return `
-        <div class="tool-summary">
-            <div class="tool-summary-title">本轮授权工具</div>
-            <div class="tool-chip-list">
-                ${tools.map(tool => `<span class="tool-chip">${escapeHtml(tool)}</span>`).join('')}
-            </div>
-        </div>
-    `;
-}
-
-function renderToolRoutingContent(content, payload) {
-    if (!payload) {
-        return renderMarkdown(content);
-    }
-
-    if (Array.isArray(payload.selectedTools)) {
-        const selectedTools = payload.selectedTools;
-        const allowedToolNames = Array.isArray(payload.allowedToolNames) ? payload.allowedToolNames : [];
-        const routeReason = payload.routeReason || payload.summary || '';
-        const disabledReason = payload.disabledReason || '';
-        return `
-            <div class="route-panel">
-                <div class="route-panel-summary">${escapeHtml(content || '本轮工具路由')}</div>
-                ${routeReason ? `<div class="route-panel-footnote">路由说明：${escapeHtml(routeReason)}</div>` : ''}
-                ${selectedTools.length ? `
-                    <div class="route-card-list">
-                        ${selectedTools.map(item => `
-                            <div class="route-card">
-                                <div class="route-card-title">${escapeHtml(item.mcpName || item.mcpId || '未命名工具')}</div>
-                                <div class="route-card-reason">${escapeHtml(item.selectedReason || '匹配当前问题')}</div>
-                                <div class="route-chip-list">
-                                    ${Array.isArray(item.toolNames) ? item.toolNames.map(tool => `<span class="route-chip">${escapeHtml(tool)}</span>`).join('') : ''}
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                ` : `<div class="route-panel-muted">${escapeHtml(disabledReason || '本轮未选择任何 MCP 工具')}</div>`}
-                ${allowedToolNames.length ? `
-                    <div class="route-panel-footnote">
-                        本轮授权工具：${escapeHtml(allowedToolNames.join(', '))}
-                    </div>
-                ` : ''}
-            </div>
-        `;
-    }
-
-    const allowedToolNames = Array.isArray(payload.allowedToolNames) ? payload.allowedToolNames : [];
-    return `
-        <div class="route-panel">
-            <div class="route-panel-summary">${escapeHtml(content || '步骤工具路由')}</div>
-            <div class="route-card compact">
-                <div class="route-card-title">${escapeHtml(payload.stepName || '当前步骤')}</div>
-                <div class="route-card-reason">执行方式：${escapeHtml(payload.stepType || 'LLM')}</div>
-                ${payload.routeReason ? `<div class="route-panel-footnote">路由说明：${escapeHtml(payload.routeReason)}</div>` : ''}
-                ${allowedToolNames.length ? `
-                    <div class="route-chip-list">
-                        ${allowedToolNames.map(tool => `<span class="route-chip">${escapeHtml(tool)}</span>`).join('')}
-                    </div>
-                ` : ''}
-            </div>
-        </div>
-    `;
-}
-
-function renderContextGuardContent(content, payload) {
-    if (!payload) {
-        return renderMarkdown(content);
-    }
-
-    return `
-        <div class="route-panel">
-            <div class="route-panel-summary">${escapeHtml(content || '上下文预算保护')}</div>
-            <div class="route-card compact">
-                <div class="route-card-title">上下文压缩</div>
-                <div class="route-card-reason">
-                    原始长度 ${escapeHtml(String(payload.originalChars || 0))} / 压缩后 ${escapeHtml(String(payload.compressedChars || 0))}
-                </div>
-                ${payload.historySummary ? `<div class="evidence-card-body">${escapeHtml(payload.historySummary)}</div>` : ''}
-            </div>
-        </div>
-    `;
-}
-
 function renderRagEvidenceContent(content, payload) {
     if (!payload) {
         return renderMarkdown(content);
@@ -500,18 +375,6 @@ function renderRagEvidenceContent(content, payload) {
 }
 
 function renderStreamContent(type, subType, content, payload) {
-    if (subType === 'analysis_plan') {
-        return renderPlanContent(content);
-    }
-    if (subType === 'analysis_tools') {
-        return renderToolSummaryContent(content);
-    }
-    if (subType === 'tool_routing') {
-        return renderToolRoutingContent(content, payload);
-    }
-    if (subType === 'context_guard') {
-        return renderContextGuardContent(content, payload);
-    }
     if (subType === 'rag_evidence') {
         return renderRagEvidenceContent(content, payload);
     }
@@ -606,28 +469,9 @@ const stageTypeMap = {
 };
 
 const subTypeMap = {
-    analysis_status: '任务状态',
-    analysis_history: '历史评估',
-    analysis_tools: '工具能力摘要',
-    analysis_plan: '结构化计划',
-    analysis_progress: '完成度',
-    analysis_task_status: '任务状态',
-    tool_routing: '工具路由',
-    context_guard: '上下文保护',
-    execution_target: '执行目标',
-    execution_process: '执行过程',
-    execution_result: '执行结果',
-    execution_quality: '质量检查',
     rag_evidence: '证据面板',
-    assessment: '质量评估',
-    issues: '问题识别',
-    suggestions: '改进建议',
-    score: '质量评分',
-    pass: '检查结果',
-    completed_work: '已完成工作',
-    incomplete_reasons: '未完成原因',
-    evaluation: '效果评估',
-    summary_overview: '总结概览'
+    harness_observation: 'Harness 观测',
+    context_boundary: '上下文边界'
 };
 
 function sendMessage() {

@@ -54,16 +54,6 @@
             <artifactId>guava</artifactId>
         </dependency>
         <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.vintage</groupId>
-            <artifactId>junit-vintage-engine</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt</artifactId>
         </dependency>
@@ -140,7 +130,34 @@
                     <includes>
                         <include>**/*Test.java</include>
                     </includes>
+                    <excludes>
+                        <exclude>**/*IT.java</exclude>
+                    </excludes>
+                    <systemPropertyVariables>
+                        <spring.profiles.active>${test.spring.profile}</spring.profiles.active>
+                    </systemPropertyVariables>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                        <configuration>
+                            <skipITs>${skipTests}</skipITs>
+                            <includes>
+                                <include>**/*IT.java</include>
+                            </includes>
+                            <systemPropertyVariables>
+                                <spring.profiles.active>${test.spring.profile}</spring.profiles.active>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

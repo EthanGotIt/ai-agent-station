@@ -6,6 +6,7 @@ import cn.ethan.ai.domain.agent.model.valobj.AiClientToolMcpVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingDecisionVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingItemVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.ToolRiskLevelEnumVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.EvidenceSourceTypeEnumVO;
 import cn.ethan.ai.domain.agent.service.execute.runtime.ToolGuardPolicy;
 import jakarta.annotation.Resource;
 import org.apache.commons.lang3.StringUtils;
@@ -45,7 +46,7 @@ public class RuntimeToolCapabilityService {
     @Resource
     private IAgentRepository repository;
 
-    public ToolRoutingDecisionVO routeTools(Map<String, AiAgentClientHarnessConfigVO> harnessConfigMap, String userMessage) {
+    private ToolRoutingDecisionVO routeCandidates(Map<String, AiAgentClientHarnessConfigVO> harnessConfigMap, String userMessage) {
         List<AiClientToolMcpVO> mcpTools = loadMcpTools(harnessConfigMap);
         if (mcpTools.isEmpty()) {
             return ToolRoutingDecisionVO.disabled("当前智能体未配置可用 MCP 工具，本轮仅使用模型能力。");
@@ -127,7 +128,7 @@ public class RuntimeToolCapabilityService {
                 .build();
     }
 
-    public String buildToolCapabilitySummary(List<ToolRoutingItemVO> selectedItems) {
+    private String buildToolCapabilitySummary(List<ToolRoutingItemVO> selectedItems) {
         if (selectedItems == null || selectedItems.isEmpty()) {
             return "本轮没有选择任何 MCP 工具。";
         }
@@ -257,6 +258,45 @@ public class RuntimeToolCapabilityService {
             score += 2;
         }
         return score;
+    }
+
+    public ToolRoutingDecisionVO routeForEvidenceSource(Map<String, AiAgentClientHarnessConfigVO> harnessConfigMap,
+                                                        EvidenceSourceTypeEnumVO sourceType) {
+        if (sourceType == null || !sourceType.isExternal()) {
+            return ToolRoutingDecisionVO.disabled("项目知识检索不注入外部 MCP 工具。");
+        }
+        String routingHint = sourceType == EvidenceSourceTypeEnumVO.OFFICIAL_DOCS
+                ? "查询官网官方文档 SDK MCP"
+                : "联网搜索最新技术资料";
+        ToolRoutingDecisionVO original = routeCandidates(harnessConfigMap, routingHint);
+        if (!original.isEnabled() || original.getSelectedTools() == null) {
+            return original;
+        }
+        String requiredTag = sourceType == EvidenceSourceTypeEnumVO.OFFICIAL_DOCS ? TAG_DOCS : TAG_SEARCH;
+        List<ToolRoutingItemVO> selected = original.getSelectedTools().stream()
+                .filter(item -> item.getRouteTags() != null && item.getRouteTags().contains(requiredTag))
+                .toList();
+        if (selected.isEmpty()) {
+            return ToolRoutingDecisionVO.disabled("当前没有匹配 " + sourceType + " 的只读 MCP 工具。",
+                    original.getBlockedToolNames(), original.getBlockedToolReasons());
+        }
+        Set<String> toolNames = selected.stream()
+                .flatMap(item -> item.getToolNames().stream())
+                .map(ToolGuardPolicy::normalize)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> mcpIds = selected.stream()
+                .map(ToolRoutingItemVO::getMcpId)
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        return ToolRoutingDecisionVO.builder()
+                .enabled(true)
+                .summary("已按 evidence source=" + sourceType + " 选择只读 MCP 工具。")
+                .allowedToolNames(toolNames)
+                .selectedMcpIds(mcpIds)
+                .selectedTools(selected)
+                .blockedToolNames(original.getBlockedToolNames())
+                .blockedToolReasons(original.getBlockedToolReasons())
+                .build();
     }
 
     private List<String> inferRouteTags(String mcpName, List<String> toolNames) {

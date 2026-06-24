@@ -5,6 +5,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.LinkedHashSet;
+import java.util.Set;
+
 /**
  * 客户端配置
  */
@@ -38,5 +41,8 @@ public class AiAgentClientHarnessConfigVO {
      * 执行步骤提示词
      */
     private String stepPrompt;
+
+    @Builder.Default
+    private Set<String> ragIds = new LinkedHashSet<>();
 
 }

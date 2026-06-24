@@ -27,10 +27,6 @@ public class AgentConversationMessageVO {
 
     private String content;
 
-    private String contentSummary;
-
-    private Integer contextUnits;
-
     private LocalDateTime createTime;
 
 }

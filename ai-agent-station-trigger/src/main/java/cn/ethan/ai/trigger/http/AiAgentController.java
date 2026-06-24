@@ -105,9 +105,6 @@ public class AiAgentController implements IAiAgentService {
                 .finalSummary(detail.getFinalSummary())
                 .errorMessage(detail.getErrorMessage())
                 .cancelReason(detail.getCancelReason())
-                .contextOriginalChars(detail.getContextOriginalChars())
-                .contextCompressedChars(detail.getContextCompressedChars())
-                .contextSummary(detail.getContextSummary())
                 .startTime(detail.getStartTime())
                 .endTime(detail.getEndTime())
                 .createTime(detail.getCreateTime())
@@ -193,7 +190,6 @@ public class AiAgentController implements IAiAgentService {
                 .failedStepCount(lifecycle.getFailedStepCount())
                 .skippedStepCount(lifecycle.getSkippedStepCount())
                 .cancelledStepCount(lifecycle.getCancelledStepCount())
-                .contextCompacted(lifecycle.getContextCompacted())
                 .build();
     }
 
@@ -209,19 +205,16 @@ public class AiAgentController implements IAiAgentService {
                 .projectRules(boundary.getProjectRules())
                 .userPreferences(boundary.getUserPreferences())
                 .sessionContextSummary(boundary.getSessionContextSummary())
-                .runContextSummary(boundary.getRunContextSummary())
                 .longTermMemoryEnabled(boundary.isLongTermMemoryEnabled())
                 .build();
     }
 
     private AgentContextBoundaryVO buildPersistedContextBoundary(AgentRunDetailVO detail) {
-        AgentContextBoundaryVO boundary = agentContextBoundaryService.buildBoundary(
+        return agentContextBoundaryService.buildBoundary(
                 detail.getSessionId(),
                 detail.getUserMessage(),
                 detail.getSessionContextSummary()
         );
-        AgentContextBoundaryService.attachRunSummary(boundary, detail.getContextSummary());
-        return boundary;
     }
 
     private String resolveStepTerminalReason(AgentStepRunRecordVO step) {

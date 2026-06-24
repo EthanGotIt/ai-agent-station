@@ -36,12 +36,6 @@ public class AiAgentRun {
 
     private String sessionContextSummary;
 
-    private Integer contextOriginalChars;
-
-    private Integer contextCompressedChars;
-
-    private String contextSummary;
-
     private LocalDateTime startTime;
 
     private LocalDateTime endTime;

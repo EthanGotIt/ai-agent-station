@@ -2,8 +2,9 @@ package cn.ethan.ai.test.infrastructure;
 
 import cn.ethan.ai.infrastructure.adapter.port.AgentModelPort;
 import cn.ethan.ai.infrastructure.adapter.port.GuardedToolCallback;
-import org.junit.Assert;
-import org.junit.Test;
+import cn.ethan.ai.domain.agent.model.valobj.ToolInvocationRecordVO;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -33,9 +34,9 @@ public class AgentModelPortTest {
         method.setAccessible(true);
         Map<String, Object> metadata = (Map<String, Object>) method.invoke(agentModelPort, chatClientResponse, chatResponse);
 
-        Assert.assertEquals(List.of("doc-1"), metadata.get("qa_retrieved_documents"));
-        Assert.assertEquals(List.of("query-1"), metadata.get("qa_retrieval_queries"));
-        Assert.assertEquals("[证据1] doc-1", metadata.get("question_answer_context"));
+        Assertions.assertEquals(List.of("doc-1"), metadata.get("qa_retrieved_documents"));
+        Assertions.assertEquals(List.of("query-1"), metadata.get("qa_retrieval_queries"));
+        Assertions.assertEquals("[证据1] doc-1", metadata.get("question_answer_context"));
     }
 
     @Test
@@ -47,9 +48,9 @@ public class AgentModelPortTest {
 
         String result = callback.call("{}");
 
-        Assert.assertTrue(result.contains("\"success\":false"));
-        Assert.assertTrue(result.contains("TOOL_ARGUMENT_INVALID"));
-        Assert.assertTrue(result.contains("keyword required"));
+        Assertions.assertTrue(result.contains("\"success\":false"));
+        Assertions.assertTrue(result.contains("TOOL_ARGUMENT_INVALID"));
+        Assertions.assertTrue(result.contains("keyword required"));
     }
 
     @Test
@@ -61,7 +62,7 @@ public class AgentModelPortTest {
 
         String result = callback.call("{}");
 
-        Assert.assertTrue(result.contains("TOOL_NOT_AUTHORIZED"));
+        Assertions.assertTrue(result.contains("TOOL_NOT_AUTHORIZED"));
     }
 
     @Test
@@ -73,8 +74,50 @@ public class AgentModelPortTest {
 
         String result = callback.call("{\"command\":\"del\"}");
 
-        Assert.assertTrue(result.contains("TOOL_FORBIDDEN"));
-        Assert.assertTrue(result.contains("execute_shell"));
+        Assertions.assertTrue(result.contains("TOOL_FORBIDDEN"));
+        Assertions.assertTrue(result.contains("execute_shell"));
+    }
+
+    @Test
+    public void onlyExternalEvidenceStageShouldRequireARealToolCall() throws Exception {
+        Method method = AgentModelPort.class.getDeclaredMethod("requiresToolCall", String.class);
+        method.setAccessible(true);
+
+        Assertions.assertEquals(true, method.invoke(null, "harness_external_evidence"));
+        Assertions.assertEquals(false, method.invoke(null, "harness_action_decision"));
+        Assertions.assertEquals(false, method.invoke(null, "harness_grounded_answer"));
+    }
+
+    @Test
+    public void evidenceRouteShouldAcceptDiscoveredReadOnlyToolAfterServerRename() throws Exception {
+        Method method = AgentModelPort.class.getDeclaredMethod(
+                "isToolAuthorized", String.class, Set.class, boolean.class);
+        method.setAccessible(true);
+
+        Assertions.assertEquals(true,
+                method.invoke(null, "query-docs", Set.of("get-library-docs"), true));
+        Assertions.assertEquals(false,
+                method.invoke(null, "create_document", Set.of("get-library-docs"), true));
+        Assertions.assertEquals(false,
+                method.invoke(null, "query-docs", Set.of("get-library-docs"), false));
+    }
+
+    @Test
+    public void externalEvidenceShouldKeepCompletedToolRecordsWhenModelPostProcessingFails() throws Exception {
+        Method method = AgentModelPort.class.getDeclaredMethod(
+                "fallbackFromToolInvocations", String.class, List.class);
+        method.setAccessible(true);
+        ToolInvocationRecordVO record = ToolInvocationRecordVO.builder()
+                .toolName("query-docs")
+                .success(true)
+                .output("evidence")
+                .build();
+
+        Object fallback = method.invoke(null, "harness_external_evidence", List.of(record));
+        Object ordinary = method.invoke(null, "harness_grounded_answer", List.of(record));
+
+        Assertions.assertNotNull(fallback);
+        Assertions.assertNull(ordinary);
     }
 
     private static class StubToolCallback implements ToolCallback {
