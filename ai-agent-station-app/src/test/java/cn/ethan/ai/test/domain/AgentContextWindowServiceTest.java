@@ -84,7 +84,7 @@ public class AgentContextWindowServiceTest {
         run.recordStepOutput("step_3", "丙".repeat(360));
 
         ContextGuardResultVO firstResult = agentContextWindowService.prepareStepOutputs(run);
-        AgentContextBoundaryVO boundary = agentContextBoundaryService.buildBoundary(run.getCommand(), null);
+        AgentContextBoundaryVO boundary = agentContextBoundaryService.buildBoundary(run.getCommand());
         AgentContextBoundaryService.attachRunSummary(boundary, firstResult.getHistorySummary());
         run.recordStepOutput("step_4", "压缩后继续执行的步骤输出");
 

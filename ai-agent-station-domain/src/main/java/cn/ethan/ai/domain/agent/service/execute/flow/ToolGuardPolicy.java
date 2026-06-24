@@ -59,7 +59,7 @@ public final class ToolGuardPolicy {
     }
 
     public static String normalize(String toolName) {
-        return StringUtils.defaultString(toolName).trim().toLowerCase(Locale.ROOT);
+        return cn.ethan.ai.types.util.TextUtils.normalizeForMatch(toolName);
     }
 
     public static ToolRiskLevelEnumVO max(ToolRiskLevelEnumVO left, ToolRiskLevelEnumVO right) {
@@ -73,11 +73,6 @@ public final class ToolGuardPolicy {
     }
 
     private static boolean containsAny(String text, List<String> hints) {
-        for (String hint : hints) {
-            if (text.contains(hint)) {
-                return true;
-            }
-        }
-        return false;
+        return cn.ethan.ai.types.util.TextUtils.containsAny(text, hints);
     }
 }

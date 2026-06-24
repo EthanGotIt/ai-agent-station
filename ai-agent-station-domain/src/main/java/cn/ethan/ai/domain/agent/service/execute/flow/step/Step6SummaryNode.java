@@ -7,9 +7,9 @@ import cn.ethan.ai.domain.agent.model.valobj.ContextGuardResultVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiClientTypeEnumVO;
 import cn.ethan.ai.domain.agent.service.execute.flow.AgentContextBoundaryService;
 import cn.ethan.ai.domain.agent.service.execute.flow.AgentContextWindowService;
-import cn.ethan.ai.domain.agent.service.execute.flow.AgentConversationMemoryService;
 import cn.ethan.ai.domain.agent.service.execute.flow.plan.AgentPlanPromptFactory;
 import cn.ethan.ai.domain.agent.model.valobj.AgentExecutionContextVO;
+import cn.ethan.ai.types.enums.StepIdEnum;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -28,16 +28,13 @@ public class Step6SummaryNode extends AbstractExecuteSupport {
     @Resource
     private AgentContextWindowService agentContextWindowService;
 
-    @Resource
-    private AgentConversationMemoryService agentConversationMemoryService;
-
     @Override
     protected String doApply(ExecuteCommandEntity requestParameter, AgentExecutionContextVO executionContext) {
         log.info("步骤6：生成最终总结");
-        if (executionContext.isCancelled()) {
+        if (stopIfCancelled(executionContext, "任务已取消，停止最终总结。")) {
             return "任务已取消";
         }
-        long startTime = markStepRunning(executionContext, "flow_summary", "最终总结", 201, "SYSTEM");
+        long startTime = markStepRunning(executionContext, StepIdEnum.FLOW_SUMMARY.value(), "最终总结", 201, "SYSTEM");
 
         try {
             AgentRunAggregate run = currentRun(executionContext);
@@ -87,20 +84,15 @@ public class Step6SummaryNode extends AbstractExecuteSupport {
 
             run.markSuccess(summary);
             syncRunState(executionContext);
-            agentConversationMemoryService.recordAssistantMessage(
-                    requestParameter.getSessionId(),
-                    run.runId(),
-                    summary
-            );
             sendStreamResult(executionContext, AgentExecuteResultEntity.createSummaryResult(
                     summary,
                     requestParameter.getSessionId(),
                     run.runId()
             ));
             sendCompleteResult(executionContext);
-            markStepSuccess(executionContext, "flow_summary", summary, startTime);
+            markStepSuccess(executionContext, StepIdEnum.FLOW_SUMMARY.value(), summary, startTime);
         } catch (Exception e) {
-            markStepFailed(executionContext, "flow_summary", e.getMessage(), startTime);
+            markStepFailed(executionContext, StepIdEnum.FLOW_SUMMARY.value(), e.getMessage(), startTime);
             throw e;
         }
         return "Flow Plan 执行完成";

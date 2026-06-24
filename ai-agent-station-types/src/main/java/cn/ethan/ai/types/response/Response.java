@@ -1,4 +1,4 @@
-package cn.ethan.ai.api.response;
+package cn.ethan.ai.types.response;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

@@ -344,7 +344,7 @@ public class FlowToolCapabilityService {
     }
 
     private String normalize(String text) {
-        return StringUtils.defaultString(text).trim().toLowerCase(Locale.ROOT);
+        return cn.ethan.ai.types.util.TextUtils.normalizeForMatch(text);
     }
 
     private record ScoredRouteItem(ToolRoutingItemVO item, int score) {

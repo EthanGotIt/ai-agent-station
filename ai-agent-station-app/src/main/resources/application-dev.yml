@@ -16,7 +16,7 @@ spring:
     mysql:
       username: ${MYSQL_USERNAME:root}
       password: ${MYSQL_PASSWORD:123456}
-      url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3306/ai-agent-station?useUnicode=true&characterEncoding=utf8&autoReconnect=true&zeroDateTimeBehavior=convertToNull&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+      url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3306/ai-agent-station-phase8?useUnicode=true&characterEncoding=utf8&autoReconnect=true&zeroDateTimeBehavior=convertToNull&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
       driver-class-name: com.mysql.cj.jdbc.Driver
       hikari:
         minimum-idle: 15

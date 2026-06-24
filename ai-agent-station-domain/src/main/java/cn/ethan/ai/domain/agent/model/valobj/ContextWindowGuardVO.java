@@ -3,7 +3,7 @@ package cn.ethan.ai.domain.agent.model.valobj;
 import lombok.Getter;
 
 /**
- * 运行上下文窗口保护值对象，默认使用轻量估算器，后续可替换为模型 tokenizer 实现。
+ * 运行上下文窗口保护值对象，使用字符数估算上下文用量，后续可替换为模型 tokenizer 实现。
  */
 @Getter
 public class ContextWindowGuardVO {
@@ -17,8 +17,6 @@ public class ContextWindowGuardVO {
     private final double stopLlmCallThreshold;
 
     private final int summaryMaxChars;
-
-    private final ContextUnitEstimator contextUnitEstimator;
 
     private int usedContextUnits;
 
@@ -35,25 +33,22 @@ public class ContextWindowGuardVO {
     }
 
     public ContextWindowGuardVO(ContextBudgetPolicyVO policy) {
-        this(policy, HeuristicContextUnitEstimator.INSTANCE);
-    }
-
-    public ContextWindowGuardVO(ContextBudgetPolicyVO policy, ContextUnitEstimator contextUnitEstimator) {
         ContextBudgetPolicyVO actualPolicy = policy == null ? ContextBudgetPolicyVO.builder().build() : policy;
         this.maxContextUnits = actualPolicy.getMaxChars() <= 0 ? DEFAULT_MAX_CONTEXT_UNITS : actualPolicy.getMaxChars();
         this.compactHistoryThreshold = actualPolicy.getCompressThreshold() <= 0 ? 0.80D : actualPolicy.getCompressThreshold();
         this.stopLlmCallThreshold = actualPolicy.getStopThreshold() <= 0 ? 0.95D : actualPolicy.getStopThreshold();
         this.summaryMaxChars = actualPolicy.getSummaryMaxChars() <= 0 ? 1500 : actualPolicy.getSummaryMaxChars();
-        this.contextUnitEstimator = contextUnitEstimator == null ? HeuristicContextUnitEstimator.INSTANCE : contextUnitEstimator;
     }
 
     public void record(String text) {
-        int contextUnits = estimate(text);
-        this.usedContextUnits += contextUnits;
+        this.usedContextUnits += estimate(text);
     }
 
     public int estimate(String text) {
-        return contextUnitEstimator.estimate(text);
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        return text.length();
     }
 
     public boolean shouldCompactHistory() {

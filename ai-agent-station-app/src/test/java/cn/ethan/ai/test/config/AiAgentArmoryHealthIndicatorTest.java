@@ -4,7 +4,7 @@ import cn.ethan.ai.config.AiAgentArmoryHealthIndicator;
 import cn.ethan.ai.config.AiAgentArmoryReadyState;
 import org.junit.Assert;
 import org.junit.Test;
-import org.springframework.boot.actuate.health.Status;
+import org.springframework.boot.health.contributor.Status;
 import org.springframework.mock.env.MockEnvironment;
 
 import java.util.List;

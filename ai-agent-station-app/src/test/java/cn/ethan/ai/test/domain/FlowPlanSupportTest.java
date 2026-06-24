@@ -5,7 +5,6 @@ import cn.ethan.ai.domain.agent.model.valobj.AgentPlanVO;
 import cn.ethan.ai.domain.agent.model.valobj.AgentPlanValidationResultVO;
 import cn.ethan.ai.domain.agent.model.valobj.ContextBudgetPolicyVO;
 import cn.ethan.ai.domain.agent.model.valobj.ContextWindowGuardVO;
-import cn.ethan.ai.domain.agent.model.valobj.HeuristicContextUnitEstimator;
 import cn.ethan.ai.domain.agent.service.execute.flow.plan.AgentPlanPromptFactory;
 import cn.ethan.ai.domain.agent.service.execute.flow.plan.AgentPlanParser;
 import cn.ethan.ai.domain.agent.service.execute.flow.plan.AgentPlanValidator;
@@ -217,34 +216,29 @@ public class FlowPlanSupportTest {
     }
 
     @Test
-    public void contextWindowGuardEstimateChineseMoreConservatively() {
+    public void contextWindowGuardEstimateWithCharCount() {
         ContextWindowGuardVO contextWindowGuard = new ContextWindowGuardVO();
-        Assert.assertTrue(contextWindowGuard.estimate("中文上下文保护") >= 6);
-        Assert.assertTrue(contextWindowGuard.estimate("context guard") < contextWindowGuard.estimate("中文上下文保护"));
+        Assert.assertEquals(0, contextWindowGuard.estimate(""));
+        Assert.assertEquals(7, contextWindowGuard.estimate("中文上下文保护"));
+        Assert.assertEquals(13, contextWindowGuard.estimate("context guard"));
     }
 
     @Test
-    public void heuristicContextUnitEstimatorShouldEstimateStableUnits() {
-        HeuristicContextUnitEstimator estimator = HeuristicContextUnitEstimator.INSTANCE;
-        Assert.assertEquals(0, estimator.estimate(""));
-        Assert.assertTrue(estimator.estimate("中文") >= 2);
-        Assert.assertTrue(estimator.estimate("context guard") < estimator.estimate("中文上下文保护"));
-        Assert.assertTrue(estimator.estimate("🙂") >= 1);
-    }
-
-    @Test
-    public void contextWindowGuardShouldUseInjectedEstimator() {
+    public void contextWindowGuardShouldTrackContextUnits() {
         ContextWindowGuardVO contextWindowGuard = new ContextWindowGuardVO(
                 ContextBudgetPolicyVO.builder()
                         .maxChars(10)
                         .compressThreshold(0.8D)
                         .stopThreshold(0.95D)
-                        .build(),
-                text -> text == null ? 0 : text.length() * 2
+                        .build()
         );
 
         contextWindowGuard.record("abcde");
 
+        Assert.assertEquals(5, contextWindowGuard.getUsedContextUnits());
+        Assert.assertFalse(contextWindowGuard.shouldStopNewLlmCall());
+
+        contextWindowGuard.record("abcde");
         Assert.assertEquals(10, contextWindowGuard.getUsedContextUnits());
         Assert.assertTrue(contextWindowGuard.shouldStopNewLlmCall());
     }

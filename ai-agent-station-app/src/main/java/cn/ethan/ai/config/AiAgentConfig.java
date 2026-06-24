@@ -1,9 +1,10 @@
 package cn.ethan.ai.config;
 
+import com.openai.client.OpenAIClient;
 import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.ai.openai.OpenAiEmbeddingOptions;
-import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.ai.openai.setup.OpenAiSetup;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -14,6 +15,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.util.StringUtils;
+
+import java.time.Duration;
+import java.util.Collections;
 
 @Configuration
 @EnableConfigurationProperties({AiAgentVectorStoreProperties.class, AiAgentHybridRetrievalProperties.class})
@@ -46,18 +50,34 @@ public class AiAgentConfig {
             throw new IllegalStateException("启用 PgVector 向量库时必须配置向量模型密钥，请检查 JINA_API_KEY 或 ai-agent.vector-store.api-key");
         }
 
-        OpenAiApi openAiApi = OpenAiApi.builder()
-                .baseUrl(normalizeEmbeddingBaseUrl(baseUrl))
-                .apiKey(apiKey)
-                .build();
+        OpenAIClient openAiClient = OpenAiSetup.setupSyncClient(
+                normalizeEmbeddingBaseUrl(baseUrl),
+                apiKey,
+                null,
+                null,
+                null,
+                null,
+                false,
+                false,
+                null,
+                Duration.ofSeconds(30),
+                2,
+                null,
+                Collections.emptyMap(),
+                null,
+                null,
+                Collections.emptyList()
+        );
 
-        return PgVectorStore.builder(jdbcTemplate, new OpenAiEmbeddingModel(
-                        openAiApi,
-                        MetadataMode.EMBED,
-                        OpenAiEmbeddingOptions.builder()
-                                .model(embeddingModel)
-                                .dimensions(embeddingDimensions)
-                                .build()))
+        return PgVectorStore.builder(jdbcTemplate,
+                        OpenAiEmbeddingModel.builder()
+                                .openAiClient(openAiClient)
+                                .metadataMode(MetadataMode.EMBED)
+                                .options(OpenAiEmbeddingOptions.builder()
+                                        .model(embeddingModel)
+                                        .dimensions(embeddingDimensions)
+                                        .build())
+                                .build())
                 .vectorTableName("vector_store_openai")
                 .dimensions(embeddingDimensions)
                 .build();

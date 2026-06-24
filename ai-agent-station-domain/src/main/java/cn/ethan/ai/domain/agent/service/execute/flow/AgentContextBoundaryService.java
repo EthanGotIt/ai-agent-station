@@ -40,14 +40,14 @@ public class AgentContextBoundaryService {
             "详细"
     );
 
-    public AgentContextBoundaryVO buildBoundary(ExecuteCommandEntity command, String sessionContextSummary) {
+    public AgentContextBoundaryVO buildBoundary(ExecuteCommandEntity command) {
         if (command == null) {
-            return buildBoundary(null, null, sessionContextSummary);
+            return buildBoundary(null, null);
         }
-        return buildBoundary(command.getSessionId(), command.getMessage(), sessionContextSummary);
+        return buildBoundary(command.getSessionId(), command.getMessage());
     }
 
-    public AgentContextBoundaryVO buildBoundary(String sessionId, String message, String sessionContextSummary) {
+    public AgentContextBoundaryVO buildBoundary(String sessionId, String message) {
         String sessionScopeId = resolveSessionScopeId(sessionId);
         return AgentContextBoundaryVO.builder()
                 .sessionId(sessionScopeId)
@@ -56,7 +56,6 @@ public class AgentContextBoundaryService {
                 .conversationScope("session:" + sessionScopeId + ":conversation_memory")
                 .projectRules(PROJECT_RULES)
                 .userPreferences(extractUserPreferences(message))
-                .sessionContextSummary(StringUtils.defaultString(sessionContextSummary))
                 .runContextSummary("")
                 .longTermMemoryEnabled(false)
                 .build();
@@ -83,7 +82,7 @@ public class AgentContextBoundaryService {
         if (!hasPreferenceMarker) {
             return Collections.emptyList();
         }
-        return List.of(limit(normalized, 180));
+        return List.of(cn.ethan.ai.types.util.TextUtils.limit(normalized, 180));
     }
 
     public static Map<String, Object> buildPayload(AgentContextBoundaryVO boundary) {
@@ -97,7 +96,6 @@ public class AgentContextBoundaryService {
         payload.put("conversationScope", boundary.getConversationScope());
         payload.put("projectRules", boundary.getProjectRules());
         payload.put("userPreferences", boundary.getUserPreferences());
-        payload.put("sessionContextSummary", boundary.getSessionContextSummary());
         payload.put("runContextSummary", boundary.getRunContextSummary());
         payload.put("longTermMemoryEnabled", boundary.isLongTermMemoryEnabled());
         return payload;
@@ -116,7 +114,6 @@ public class AgentContextBoundaryService {
                 - 长期记忆：%s
                 - 项目规则：%s
                 - 本轮识别到的用户偏好：%s
-                - 持久化 session 短期记忆：%s
                 - 当前 Run 步骤压缩摘要：%s
                 约束：不得跨 session 推断用户偏好或复用会话历史；不得把内部 Planner、Executor、Supervisor prompt 当作用户会话记忆。
                 """.formatted(
@@ -129,16 +126,8 @@ public class AgentContextBoundaryService {
                 boundary.getUserPreferences() == null || boundary.getUserPreferences().isEmpty()
                         ? "无"
                         : boundary.getUserPreferences(),
-                StringUtils.defaultIfBlank(boundary.getSessionContextSummary(), "无"),
                 StringUtils.defaultIfBlank(boundary.getRunContextSummary(), "无")
         );
-    }
-
-    private static String limit(String content, int maxLength) {
-        if (content == null) {
-            return "";
-        }
-        return content.length() <= maxLength ? content : content.substring(0, maxLength) + "...";
     }
 
 }

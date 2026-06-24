@@ -6,6 +6,7 @@ import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AiAgentClientFlowConfigVO;
 import cn.ethan.ai.domain.agent.model.valobj.AgentExecutionContextVO;
 import cn.ethan.ai.domain.agent.service.execute.flow.AgentContextBoundaryService;
+import cn.ethan.ai.types.enums.StepIdEnum;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -28,7 +29,7 @@ public class RootNode extends AbstractExecuteSupport {
         log.info("Flow Plan 根节点开始初始化，aiAgentId：{}", requestParameter.getAiAgentId());
 
         AgentRunAggregate run = currentRun(executionContext);
-        long startTime = markStepRunning(executionContext, "flow_root", "Flow 根节点初始化", 0, "SYSTEM");
+        long startTime = markStepRunning(executionContext, StepIdEnum.FLOW_ROOT.value(), "Flow 根节点初始化", 0, "SYSTEM");
         executionContext.setMaxStep(run.maxStepOrDefault(executionContext.getMaxStep()));
 
         Map<String, AiAgentClientFlowConfigVO> flowConfigMap = repository.queryAiAgentClientFlowConfig(requestParameter.getAiAgentId());
@@ -46,11 +47,11 @@ public class RootNode extends AbstractExecuteSupport {
         if (flowConfigMap == null || flowConfigMap.isEmpty()) {
             run.markFailed("智能体未配置 Flow 客户端，无法执行");
             syncRunState(executionContext);
-            markStepFailed(executionContext, "flow_root", "智能体未配置 Flow 客户端，无法执行", startTime);
+            markStepFailed(executionContext, StepIdEnum.FLOW_ROOT.value(), "智能体未配置 Flow 客户端，无法执行", startTime);
             sendErrorResult(executionContext, "智能体未配置 Flow 客户端，无法执行");
             return "智能体未配置 Flow 客户端";
         }
-        markStepSuccess(executionContext, "flow_root", "Flow 根节点初始化完成", startTime);
+        markStepSuccess(executionContext, StepIdEnum.FLOW_ROOT.value(), "Flow 根节点初始化完成", startTime);
 
         return router(requestParameter, executionContext);
     }

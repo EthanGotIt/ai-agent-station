@@ -12,6 +12,7 @@ import com.alibaba.fastjson.JSON;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
@@ -81,6 +82,10 @@ public class AiClientAdvisorNode extends AbstractArmorySupport {
     }
 
     private Advisor createAdvisor(AiClientAdvisorVO aiClientAdvisorVO, AiClientAdvisorTypeEnumVO advisorTypeEnum, IRagRetrievalPort ragRetrievalPort) {
+        if (advisorTypeEnum == AiClientAdvisorTypeEnumVO.CHAT_MEMORY) {
+            ChatMemory chatMemory = applicationContext.getBean(ChatMemory.class);
+            return advisorTypeEnum.createAdvisor(aiClientAdvisorVO, ragRetrievalPort, chatMemory);
+        }
         return advisorTypeEnum.createAdvisor(aiClientAdvisorVO, ragRetrievalPort);
     }
 

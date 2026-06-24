@@ -110,11 +110,7 @@ public class AgentContextWindowService {
     }
 
     private String limit(String text, int maxChars) {
-        if (StringUtils.isBlank(text)) {
-            return "";
-        }
-        String normalized = text.trim().replaceAll("\\s+", " ");
-        return normalized.length() <= maxChars ? normalized : normalized.substring(0, maxChars) + "...";
+        return cn.ethan.ai.types.util.TextUtils.limitClean(text, maxChars);
     }
 
 }

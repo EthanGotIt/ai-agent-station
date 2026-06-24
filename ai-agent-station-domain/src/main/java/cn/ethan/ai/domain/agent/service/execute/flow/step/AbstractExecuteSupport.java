@@ -4,6 +4,7 @@ import cn.ethan.ai.domain.agent.adapter.port.IAgentStreamPort;
 import cn.ethan.ai.domain.agent.adapter.port.IAgentModelPort;
 import cn.ethan.ai.domain.agent.adapter.repository.IAgentRunRepository;
 import cn.ethan.ai.domain.agent.adapter.repository.IAgentRepository;
+import cn.ethan.ai.types.util.TextUtils;
 import cn.ethan.ai.domain.agent.model.aggregate.AgentRunAggregate;
 import cn.ethan.ai.domain.agent.model.entity.AgentExecuteResultEntity;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
@@ -106,7 +107,7 @@ public abstract class AbstractExecuteSupport extends AbstractMultiThreadStrategy
                 .runId(run.runId())
                 .stepId(stepId)
                 .status(AgentStepRunStatusEnumVO.SUCCESS)
-                .outputSummary(limit(summary, 500))
+                .outputSummary(TextUtils.limit(summary, 500))
                 .costMillis(end - startTime)
                 .endTime(LocalDateTime.now())
                 .updateTime(LocalDateTime.now())
@@ -123,7 +124,7 @@ public abstract class AbstractExecuteSupport extends AbstractMultiThreadStrategy
                 .runId(run.runId())
                 .stepId(stepId)
                 .status(AgentStepRunStatusEnumVO.FAILED)
-                .errorMessage(limit(errorMessage, 500))
+                .errorMessage(TextUtils.limit(errorMessage, 500))
                 .costMillis(end - startTime)
                 .endTime(LocalDateTime.now())
                 .updateTime(LocalDateTime.now())
@@ -147,7 +148,7 @@ public abstract class AbstractExecuteSupport extends AbstractMultiThreadStrategy
                 .stepOrder(stepOrder)
                 .stepType(step.getType())
                 .status(status)
-                .outputSummary(limit(reason, 500))
+                .outputSummary(TextUtils.limit(reason, 500))
                 .costMillis(0L)
                 .startTime(now)
                 .endTime(now)
@@ -186,13 +187,6 @@ public abstract class AbstractExecuteSupport extends AbstractMultiThreadStrategy
         if (run != null) {
             agentRunRepository.updateRun(run.toRecord());
         }
-    }
-
-    protected String limit(String content, int maxLength) {
-        if (content == null) {
-            return "";
-        }
-        return content.length() <= maxLength ? content : content.substring(0, maxLength) + "...";
     }
 
 }

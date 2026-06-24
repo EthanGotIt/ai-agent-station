@@ -8,7 +8,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
-import org.springframework.ai.chat.memory.MessageWindowChatMemory;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.vectorstore.SearchRequest;
 
 import java.util.HashMap;
@@ -22,15 +22,15 @@ import java.util.Map;
 @NoArgsConstructor
 public enum AiClientAdvisorTypeEnumVO {
 
-    CHAT_MEMORY("ChatMemory", "上下文记忆（内存模式）", false) {
+    CHAT_MEMORY("ChatMemory", "上下文记忆（JDBC 持久化）", false) {
         @Override
         public Advisor createAdvisor(AiClientAdvisorVO aiClientAdvisorVO, IRagRetrievalPort ragRetrievalPort) {
-            AiClientAdvisorVO.ChatMemory chatMemory = aiClientAdvisorVO.getChatMemory();
-            return MessageChatMemoryAdvisor.builder(
-                    MessageWindowChatMemory.builder()
-                            .maxMessages(chatMemory.getMaxMessages())
-                            .build()
-            ).build();
+            throw new UnsupportedOperationException("CHAT_MEMORY 需要通过 createAdvisor(AiClientAdvisorVO, IRagRetrievalPort, ChatMemory) 创建");
+        }
+
+        @Override
+        public Advisor createAdvisor(AiClientAdvisorVO aiClientAdvisorVO, IRagRetrievalPort ragRetrievalPort, ChatMemory chatMemory) {
+            return MessageChatMemoryAdvisor.builder(chatMemory).build();
         }
     },
     
@@ -68,12 +68,19 @@ public enum AiClientAdvisorTypeEnumVO {
     }
     
     /**
-     * 策略方法：创建顾问对象
+     * 策略方法：创建顾问对象（无 ChatMemory 注入）
      * @param aiClientAdvisorVO 顾问配置对象
      * @param ragRetrievalPort RAG 检索端口
      * @return 顾问对象
      */
     public abstract Advisor createAdvisor(AiClientAdvisorVO aiClientAdvisorVO, IRagRetrievalPort ragRetrievalPort);
+
+    /**
+     * 策略方法：创建顾问对象（含 ChatMemory 注入，Spring AI 2.0.0 新 API）
+     */
+    public Advisor createAdvisor(AiClientAdvisorVO aiClientAdvisorVO, IRagRetrievalPort ragRetrievalPort, ChatMemory chatMemory) {
+        return createAdvisor(aiClientAdvisorVO, ragRetrievalPort);
+    }
     
     /**
      * 根据code 获取枚举

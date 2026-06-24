@@ -169,10 +169,6 @@ public class RagEvidenceAssembler {
     }
 
     private String clip(String text, int maxLength) {
-        if (StringUtils.isBlank(text)) {
-            return "";
-        }
-        String normalized = text.trim().replaceAll("\\s+", " ");
-        return normalized.length() <= maxLength ? normalized : normalized.substring(0, maxLength) + "...";
+        return cn.ethan.ai.types.util.TextUtils.limitClean(text, maxLength);
     }
 }

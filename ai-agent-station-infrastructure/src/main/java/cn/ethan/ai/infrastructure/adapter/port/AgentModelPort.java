@@ -242,10 +242,7 @@ public class AgentModelPort implements IAgentModelPort {
     }
 
     private String limit(String content, int maxLength) {
-        if (content == null) {
-            return "";
-        }
-        return content.length() <= maxLength ? content : content.substring(0, maxLength) + "...";
+        return cn.ethan.ai.types.util.TextUtils.limit(content, maxLength);
     }
 
     private List<ToolCallback> resolveToolCallbacks(ToolRoutingDecisionVO toolRoutingDecision) {

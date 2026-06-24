@@ -35,8 +35,6 @@ public class AgentRunDetailVO {
 
     private String cancelReason;
 
-    private String sessionContextSummary;
-
     private Integer contextOriginalChars;
 
     private Integer contextCompressedChars;

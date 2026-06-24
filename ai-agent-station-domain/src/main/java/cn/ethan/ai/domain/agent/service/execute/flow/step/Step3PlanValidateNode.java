@@ -6,6 +6,7 @@ import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AgentPlanValidationResultVO;
 import cn.ethan.ai.domain.agent.service.execute.flow.plan.AgentPlanValidator;
 import cn.ethan.ai.domain.agent.model.valobj.AgentExecutionContextVO;
+import cn.ethan.ai.types.enums.StepIdEnum;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import com.alibaba.fastjson.JSON;
 import jakarta.annotation.Resource;
@@ -31,7 +32,7 @@ public class Step3PlanValidateNode extends AbstractExecuteSupport {
         if (stopIfCancelled(executionContext, "任务已取消，停止校验执行计划。")) {
             return "任务已取消";
         }
-        long startTime = markStepRunning(executionContext, "flow_plan_validate", "执行计划校验", 3, "SYSTEM");
+        long startTime = markStepRunning(executionContext, StepIdEnum.FLOW_PLAN_VALIDATE.value(), "执行计划校验", 3, "SYSTEM");
 
         try {
             AgentRunAggregate run = currentRun(executionContext);
@@ -45,7 +46,7 @@ public class Step3PlanValidateNode extends AbstractExecuteSupport {
                 String errorMessage = "执行计划校验失败：" + validationResult.formatErrors();
                 run.markFailed(errorMessage);
                 syncRunState(executionContext);
-                markStepFailed(executionContext, "flow_plan_validate", validationResult.formatErrors(), startTime);
+                markStepFailed(executionContext, StepIdEnum.FLOW_PLAN_VALIDATE.value(), validationResult.formatErrors(), startTime);
                 sendErrorResult(executionContext, errorMessage);
                 sendCompleteResult(executionContext);
                 return "执行计划校验失败";
@@ -58,9 +59,9 @@ public class Step3PlanValidateNode extends AbstractExecuteSupport {
                     requestParameter.getSessionId(),
                     run.runId()
             ));
-            markStepSuccess(executionContext, "flow_plan_validate", "执行计划校验通过", startTime);
+            markStepSuccess(executionContext, StepIdEnum.FLOW_PLAN_VALIDATE.value(), "执行计划校验通过", startTime);
         } catch (Exception e) {
-            markStepFailed(executionContext, "flow_plan_validate", e.getMessage(), startTime);
+            markStepFailed(executionContext, StepIdEnum.FLOW_PLAN_VALIDATE.value(), e.getMessage(), startTime);
             throw e;
         }
 

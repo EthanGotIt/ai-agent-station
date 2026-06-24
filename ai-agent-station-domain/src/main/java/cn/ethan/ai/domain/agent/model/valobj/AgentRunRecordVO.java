@@ -33,8 +33,6 @@ public class AgentRunRecordVO {
 
     private String cancelReason;
 
-    private String sessionContextSummary;
-
     private Integer contextOriginalChars;
 
     private Integer contextCompressedChars;

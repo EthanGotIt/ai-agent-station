@@ -12,7 +12,6 @@
         <result column="final_summary" property="finalSummary"/>
         <result column="error_message" property="errorMessage"/>
         <result column="cancel_reason" property="cancelReason"/>
-        <result column="session_context_summary" property="sessionContextSummary"/>
         <result column="context_original_chars" property="contextOriginalChars"/>
         <result column="context_compressed_chars" property="contextCompressedChars"/>
         <result column="context_summary" property="contextSummary"/>
@@ -24,10 +23,10 @@
 
     <insert id="insert" parameterType="cn.ethan.ai.infrastructure.dao.po.AiAgentRun" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO ai_agent_run (run_id, agent_id, session_id, user_message, status, final_summary, error_message,
-                                  cancel_reason, session_context_summary, context_original_chars, context_compressed_chars, context_summary,
+                                  cancel_reason, context_original_chars, context_compressed_chars, context_summary,
                                   start_time, end_time, create_time, update_time)
         VALUES (#{runId}, #{agentId}, #{sessionId}, #{userMessage}, #{status}, #{finalSummary}, #{errorMessage},
-                #{cancelReason}, #{sessionContextSummary}, #{contextOriginalChars}, #{contextCompressedChars}, #{contextSummary},
+                #{cancelReason}, #{contextOriginalChars}, #{contextCompressedChars}, #{contextSummary},
                 #{startTime}, #{endTime}, #{createTime}, #{updateTime})
     </insert>
 
@@ -37,7 +36,6 @@
             final_summary            = #{finalSummary},
             error_message            = #{errorMessage},
             cancel_reason            = #{cancelReason},
-            session_context_summary  = #{sessionContextSummary},
             context_original_chars   = #{contextOriginalChars},
             context_compressed_chars = #{contextCompressedChars},
             context_summary          = #{contextSummary},
@@ -67,7 +65,6 @@
                final_summary,
                error_message,
                cancel_reason,
-               session_context_summary,
                context_original_chars,
                context_compressed_chars,
                context_summary,

@@ -16,15 +16,13 @@ public class AgentContextBoundaryServiceTest {
                 ExecuteCommandEntity.builder()
                         .sessionId("session-a")
                         .message("以后请用中文简洁回答")
-                        .build(),
-                null
+                        .build()
         );
         AgentContextBoundaryVO sessionB = agentContextBoundaryService.buildBoundary(
                 ExecuteCommandEntity.builder()
                         .sessionId("session-b")
                         .message("以后请用中文简洁回答")
-                        .build(),
-                null
+                        .build()
         );
 
         Assert.assertNotEquals(sessionA.getSessionId(), sessionB.getSessionId());
@@ -38,13 +36,11 @@ public class AgentContextBoundaryServiceTest {
     public void shouldNotCarryPreferenceWhenNextRequestHasNoPreferenceMarker() {
         AgentContextBoundaryVO withPreference = agentContextBoundaryService.buildBoundary(
                 "session-a",
-                "以后请用中文简洁回答",
-                null
+                "以后请用中文简洁回答"
         );
         AgentContextBoundaryVO withoutPreference = agentContextBoundaryService.buildBoundary(
                 "session-a",
-                "解释一下当前项目架构",
-                null
+                "解释一下当前项目架构"
         );
 
         Assert.assertFalse(withPreference.getUserPreferences().isEmpty());
@@ -53,30 +49,15 @@ public class AgentContextBoundaryServiceTest {
     }
 
     @Test
-    public void shouldInjectPersistedSessionSummaryWhenBoundaryIsBuilt() {
+    public void shouldKeepRunSummaryWhenAttached() {
         AgentContextBoundaryVO boundary = agentContextBoundaryService.buildBoundary(
                 "session-summary",
-                "总结资料",
-                "以下为历史消息摘要：上一轮最终回答"
-        );
-
-        Assert.assertEquals("以下为历史消息摘要：上一轮最终回答", boundary.getSessionContextSummary());
-        Assert.assertTrue(AgentContextBoundaryService.buildPromptSection(boundary).contains("以下为历史消息摘要：上一轮最终回答"));
-    }
-
-    @Test
-    public void shouldKeepSessionHistoryWhenRunSummaryIsAttached() {
-        AgentContextBoundaryVO boundary = agentContextBoundaryService.buildBoundary(
-                "session-summary",
-                "总结资料",
-                "上一轮用户输入和最终回答"
+                "总结资料"
         );
 
         AgentContextBoundaryService.attachRunSummary(boundary, "当前 Run 的步骤压缩摘要");
 
-        Assert.assertEquals("上一轮用户输入和最终回答", boundary.getSessionContextSummary());
         Assert.assertEquals("当前 Run 的步骤压缩摘要", boundary.getRunContextSummary());
-        Assert.assertTrue(AgentContextBoundaryService.buildPromptSection(boundary).contains("上一轮用户输入和最终回答"));
         Assert.assertTrue(AgentContextBoundaryService.buildPromptSection(boundary).contains("当前 Run 的步骤压缩摘要"));
     }
 
@@ -84,8 +65,7 @@ public class AgentContextBoundaryServiceTest {
     public void shouldExposeProjectRulesAndDisableLongTermMemoryByDefault() {
         AgentContextBoundaryVO boundary = agentContextBoundaryService.buildBoundary(
                 "session-rule",
-                "普通问答",
-                ""
+                "普通问答"
         );
 
         Assert.assertEquals("project:ai-agent-station", boundary.getProjectRuleScope());

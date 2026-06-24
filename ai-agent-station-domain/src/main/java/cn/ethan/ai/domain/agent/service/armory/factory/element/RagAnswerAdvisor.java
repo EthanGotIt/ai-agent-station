@@ -228,12 +228,7 @@ public class RagAnswerAdvisor implements BaseAdvisor {
     }
 
     private boolean containsAny(String text, String... candidates) {
-        for (String candidate : candidates) {
-            if (text.contains(candidate)) {
-                return true;
-            }
-        }
-        return false;
+        return cn.ethan.ai.types.util.TextUtils.containsAny(text, java.util.Arrays.asList(candidates));
     }
 
     private String extractSection(String text, String startMarker, String endMarker) {

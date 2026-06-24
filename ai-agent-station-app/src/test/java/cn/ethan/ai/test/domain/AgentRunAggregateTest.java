@@ -21,7 +21,6 @@ public class AgentRunAggregateTest {
                 ContextBudgetPolicyVO.builder().build()
         );
         run.markRunning();
-        run.bindSessionContextSummary("previous session summary");
         run.getContextWindowGuard().updateHistorySnapshot(3000, 1200, "history summary");
         run.markSuccess("final summary");
 
@@ -29,7 +28,6 @@ public class AgentRunAggregateTest {
         Assert.assertEquals("final summary", run.toRecord().getFinalSummary());
         Assert.assertEquals(Integer.valueOf(3000), run.toRecord().getContextOriginalChars());
         Assert.assertEquals(Integer.valueOf(1200), run.toRecord().getContextCompressedChars());
-        Assert.assertEquals("previous session summary", run.toRecord().getSessionContextSummary());
     }
 
     @Test

@@ -31,8 +31,6 @@ public class AgentContextBoundaryVO {
     @Builder.Default
     private List<String> userPreferences = Collections.emptyList();
 
-    private String sessionContextSummary;
-
     private String runContextSummary;
 
     @Builder.Default

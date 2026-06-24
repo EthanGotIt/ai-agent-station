@@ -208,7 +208,6 @@ public class AiAgentController implements IAiAgentService {
                 .conversationScope(boundary.getConversationScope())
                 .projectRules(boundary.getProjectRules())
                 .userPreferences(boundary.getUserPreferences())
-                .sessionContextSummary(boundary.getSessionContextSummary())
                 .runContextSummary(boundary.getRunContextSummary())
                 .longTermMemoryEnabled(boundary.isLongTermMemoryEnabled())
                 .build();
@@ -217,8 +216,7 @@ public class AiAgentController implements IAiAgentService {
     private AgentContextBoundaryVO buildPersistedContextBoundary(AgentRunDetailVO detail) {
         AgentContextBoundaryVO boundary = agentContextBoundaryService.buildBoundary(
                 detail.getSessionId(),
-                detail.getUserMessage(),
-                detail.getSessionContextSummary()
+                detail.getUserMessage()
         );
         AgentContextBoundaryService.attachRunSummary(boundary, detail.getContextSummary());
         return boundary;

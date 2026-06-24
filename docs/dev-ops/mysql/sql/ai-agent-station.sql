@@ -275,21 +275,17 @@ CREATE TABLE `ai_agent_run` (
     KEY `idx_run_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='智能体运行主表';
 
--- Session 级短期记忆消息表
-DROP TABLE IF EXISTS `ai_agent_conversation_message`;
-CREATE TABLE `ai_agent_conversation_message` (
-    `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-    `session_id` varchar(128) NOT NULL COMMENT '会话ID',
-    `run_id` varchar(64) NOT NULL COMMENT '运行ID',
-    `role` varchar(32) NOT NULL COMMENT '消息角色：USER、ASSISTANT',
-    `content` mediumtext NOT NULL COMMENT '用户可见消息原文',
-    `content_summary` text COMMENT '轻量摘要，用于超预算压缩',
-    `context_units` int DEFAULT '0' COMMENT '轻量上下文预算估算值',
-    `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    PRIMARY KEY (`id`),
-    KEY `idx_conversation_session_id` (`session_id`, `id`),
-    UNIQUE KEY `uk_conversation_run_role` (`run_id`, `role`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Session级持久化短期记忆消息表';
+-- Spring AI 标准 Chat Memory 表（替代自定义 ai_agent_conversation_message）
+DROP TABLE IF EXISTS `SPRING_AI_CHAT_MEMORY`;
+CREATE TABLE `SPRING_AI_CHAT_MEMORY` (
+    `conversation_id` varchar(36) NOT NULL COMMENT '会话ID',
+    `content` text NOT NULL COMMENT '消息内容',
+    `type` enum('USER','ASSISTANT','SYSTEM','TOOL') NOT NULL COMMENT '消息类型',
+    `timestamp` timestamp NOT NULL COMMENT '消息时间戳',
+    `sequence_id` bigint NOT NULL COMMENT '消息序号',
+    KEY `SPRING_AI_CHAT_MEMORY_CONVERSATION_ID_TIMESTAMP_IDX` (`conversation_id`, `timestamp`),
+    KEY `SPRING_AI_CHAT_MEMORY_CONVERSATION_ID_SEQUENCE_ID_IDX` (`conversation_id`, `sequence_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Spring AI Chat Memory 持久化表';
 
 -- 智能体运行步骤表
 DROP TABLE IF EXISTS `ai_agent_step_run`;

@@ -6,6 +6,7 @@ import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AgentExecutionContextVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolRoutingDecisionVO;
 import cn.ethan.ai.domain.agent.service.execute.flow.FlowToolCapabilityService;
+import cn.ethan.ai.types.enums.StepIdEnum;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -33,7 +34,7 @@ public class Step1ToolCapabilityNode extends AbstractExecuteSupport {
         if (stopIfCancelled(executionContext, "任务已取消，停止执行工具路由。")) {
             return "任务已取消";
         }
-        long startTime = markStepRunning(executionContext, "flow_tool_routing", "运行时工具路由", 1, "SYSTEM");
+        long startTime = markStepRunning(executionContext, StepIdEnum.FLOW_TOOL_ROUTING.value(), "运行时工具路由", 1, "SYSTEM");
 
         try {
             ToolRoutingDecisionVO toolRoutingDecision = flowToolCapabilityService.routeTools(
@@ -61,9 +62,9 @@ public class Step1ToolCapabilityNode extends AbstractExecuteSupport {
                     requestParameter.getSessionId(),
                     run.runId()
             ));
-            markStepSuccess(executionContext, "flow_tool_routing", toolRoutingDecision.getSummary(), startTime);
+            markStepSuccess(executionContext, StepIdEnum.FLOW_TOOL_ROUTING.value(), toolRoutingDecision.getSummary(), startTime);
         } catch (Exception e) {
-            markStepFailed(executionContext, "flow_tool_routing", e.getMessage(), startTime);
+            markStepFailed(executionContext, StepIdEnum.FLOW_TOOL_ROUTING.value(), e.getMessage(), startTime);
             throw e;
         }
 

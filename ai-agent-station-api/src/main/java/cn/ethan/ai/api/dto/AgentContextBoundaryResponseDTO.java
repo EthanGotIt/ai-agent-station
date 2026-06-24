@@ -28,8 +28,6 @@ public class AgentContextBoundaryResponseDTO {
     @Builder.Default
     private List<String> userPreferences = Collections.emptyList();
 
-    private String sessionContextSummary;
-
     private String runContextSummary;
 
     private boolean longTermMemoryEnabled;

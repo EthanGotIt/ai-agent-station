@@ -2,6 +2,7 @@ package cn.ethan.ai.domain.agent.model.valobj;
 
 import cn.ethan.ai.domain.agent.model.valobj.enums.AgentRunStatusEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AgentStepRunStatusEnumVO;
+import cn.ethan.ai.types.enums.StepIdEnum;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -90,25 +91,13 @@ public class AgentRunLifecycleVO {
         }
 
         String stepId = StringUtils.defaultString(runningStep.getStepId());
-        if ("flow_root".equals(stepId)) {
-            return "INITIALIZING";
-        }
-        if ("flow_tool_routing".equals(stepId)) {
-            return "TOOL_ROUTING";
-        }
-        if ("flow_plan_generate".equals(stepId)) {
-            return "PLANNING";
-        }
-        if ("flow_plan_validate".equals(stepId)) {
-            return "VALIDATING";
-        }
-        if ("flow_supervision".equals(stepId)) {
-            return "SUPERVISING";
-        }
-        if ("flow_summary".equals(stepId)) {
-            return "SUMMARIZING";
-        }
-        return "EXECUTING";
+        return StepIdEnum.FLOW_ROOT.value().equals(stepId) ? "INITIALIZING"
+                : StepIdEnum.FLOW_TOOL_ROUTING.value().equals(stepId) ? "TOOL_ROUTING"
+                : StepIdEnum.FLOW_PLAN_GENERATE.value().equals(stepId) ? "PLANNING"
+                : StepIdEnum.FLOW_PLAN_VALIDATE.value().equals(stepId) ? "VALIDATING"
+                : StepIdEnum.FLOW_SUPERVISION.value().equals(stepId) ? "SUPERVISING"
+                : StepIdEnum.FLOW_SUMMARY.value().equals(stepId) ? "SUMMARIZING"
+                : "EXECUTING";
     }
 
     private static String resolveTerminalReason(AgentRunStatusEnumVO status,

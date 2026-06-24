@@ -7,6 +7,7 @@ import cn.ethan.ai.domain.agent.model.valobj.AgentPlanVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiClientTypeEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.PlanStepTypeEnumVO;
 import cn.ethan.ai.domain.agent.service.execute.flow.plan.AgentPlanParser;
+import cn.ethan.ai.types.enums.StepIdEnum;
 import cn.ethan.ai.domain.agent.service.execute.flow.plan.AgentPlanPromptFactory;
 import cn.ethan.ai.domain.agent.model.valobj.AgentExecutionContextVO;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
@@ -39,7 +40,7 @@ public class Step2PlanGenerateNode extends AbstractExecuteSupport {
         if (stopIfCancelled(executionContext, "任务已取消，停止生成执行计划。")) {
             return "任务已取消";
         }
-        long startTime = markStepRunning(executionContext, "flow_plan_generate", "结构化计划生成", 2, "SYSTEM");
+        long startTime = markStepRunning(executionContext, StepIdEnum.FLOW_PLAN_GENERATE.value(), "结构化计划生成", 2, "SYSTEM");
 
         try {
             AgentRunAggregate run = currentRun(executionContext);
@@ -50,7 +51,7 @@ public class Step2PlanGenerateNode extends AbstractExecuteSupport {
                     AiClientTypeEnumVO.DEFAULT
             )) {
                 run.bindExecutionPlan(createFallbackPlan(requestParameter));
-                markStepSuccess(executionContext, "flow_plan_generate", "未找到规划模型，已使用兜底计划。", startTime);
+                markStepSuccess(executionContext, StepIdEnum.FLOW_PLAN_GENERATE.value(), "未找到规划模型，已使用兜底计划。", startTime);
                 return router(requestParameter, executionContext);
             }
 
@@ -97,9 +98,9 @@ public class Step2PlanGenerateNode extends AbstractExecuteSupport {
                 );
                 run.bindExecutionPlan(agentPlanParser.parse(repairedPlanText));
             }
-            markStepSuccess(executionContext, "flow_plan_generate", "结构化计划生成完成", startTime);
+            markStepSuccess(executionContext, StepIdEnum.FLOW_PLAN_GENERATE.value(), "结构化计划生成完成", startTime);
         } catch (Exception e) {
-            markStepFailed(executionContext, "flow_plan_generate", e.getMessage(), startTime);
+            markStepFailed(executionContext, StepIdEnum.FLOW_PLAN_GENERATE.value(), e.getMessage(), startTime);
             throw e;
         }
 

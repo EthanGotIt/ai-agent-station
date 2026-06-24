@@ -5,6 +5,7 @@ import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientApiVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientModelVO;
 import cn.ethan.ai.domain.agent.model.valobj.ArmoryAssemblyContextVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
 import cn.ethan.ai.domain.agent.service.armory.business.data.ILoadDataStrategy;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -43,6 +44,10 @@ public class AiClientModelLoadDataStrategy implements ILoadDataStrategy {
             return repository.queryAiClientModelVOByModelIds(modelIdList);
         }, threadPoolExecutor);
 
+        CompletableFuture.allOf(aiClientApiListFuture, aiClientModelListFuture).thenRun(() -> {
+            assemblyContext.setValue(AiAgentEnumVO.AI_CLIENT_API.getDataName(), aiClientApiListFuture.join());
+            assemblyContext.setValue(AiAgentEnumVO.AI_CLIENT_MODEL.getDataName(), aiClientModelListFuture.join());
+        }).join();
     }
 
 }

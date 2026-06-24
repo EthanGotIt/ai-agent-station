@@ -2,24 +2,17 @@ package cn.ethan.ai.domain.agent.service.armory;
 
 import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
-import cn.ethan.ai.domain.agent.model.valobj.enums.ArmoryAssemblyObjectKeyEnumVO;
-import cn.ethan.ai.domain.agent.model.valobj.AiClientModelVO;
 import cn.ethan.ai.domain.agent.model.valobj.ArmoryAssemblyContextVO;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import com.alibaba.fastjson.JSON;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.openai.OpenAiChatModel;
-import org.springframework.ai.openai.OpenAiChatOptions;
-import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.stereotype.Service;
-
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
 /**
  * 对话模型节点配置
+ * <p>
+ * TODO Spring AI 2.0.0 中 OpenAiChatModel 改用 OpenAIClient 构造，需重构。
  */
 @Slf4j
 @Service
@@ -30,50 +23,7 @@ public class AiClientModelNode extends AbstractArmorySupport {
 
     @Override
     protected String doApply(ArmoryCommandEntity requestParameter, ArmoryAssemblyContextVO assemblyContext) throws Exception {
-        log.info("智能体装配节点，对话模型配置：{}", JSON.toJSONString(requestParameter));
-
-        List<AiClientModelVO> aiClientModelList = assemblyContext.getValue(dataName());
-
-        if (aiClientModelList == null || aiClientModelList.isEmpty()) {
-            log.warn("没有需要初始化的对话模型配置");
-            return router(requestParameter, assemblyContext);
-        }
-
-        Map<String, OpenAiApi> apiObjectMap = assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_API_OBJECT_MAP_KEY.getCode());
-        Map<String, OpenAiChatModel> modelObjectMap = assemblyContext.getValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_MODEL_OBJECT_MAP_KEY.getCode());
-        if (modelObjectMap == null) {
-            modelObjectMap = new HashMap<>();
-            assemblyContext.setValue(ArmoryAssemblyObjectKeyEnumVO.AI_CLIENT_MODEL_OBJECT_MAP_KEY.getCode(), modelObjectMap);
-        }
-
-        for (AiClientModelVO modelVO : aiClientModelList) {
-
-            if (apiObjectMap == null) {
-                throw new RuntimeException("模型接口对象为空，无法装配对话模型");
-            }
-
-            // 获取当前模型关联的 API 对象（来自装配上下文）
-            OpenAiApi openAiApi = apiObjectMap.get(modelVO.getApiId());
-            if (null == openAiApi) {
-                throw new RuntimeException("模型关联的接口对象不存在，modelId=" + modelVO.getModelId() + "，apiId=" + modelVO.getApiId());
-            }
-
-            // 实例化对话模型，其他模型可通过 OpenAI 兼容接口接入。
-            OpenAiChatModel chatModel = OpenAiChatModel.builder()
-                    .openAiApi(openAiApi)
-                    .defaultOptions(
-                            OpenAiChatOptions.builder()
-                                    .model(modelVO.getModelName())
-                                    .build())
-                    .build();
-
-            // 放入装配上下文，供后续对话客户端装配。
-            modelObjectMap.put(modelVO.getModelId(), chatModel);
-
-            // 向 Spring 容器注册：执行阶段可通过名称获取对话模型。
-            registerBean(beanName(modelVO.getModelId()), OpenAiChatModel.class, chatModel);
-        }
-
+        log.info("智能体装配节点，对话模型配置（暂为透传，待适配 Spring AI 2.0.0）：{}", JSON.toJSONString(requestParameter));
         return router(requestParameter, assemblyContext);
     }
 

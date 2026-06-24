@@ -9,6 +9,7 @@ import cn.ethan.ai.domain.agent.service.execute.flow.AgentContextBoundaryService
 import cn.ethan.ai.domain.agent.service.execute.flow.AgentContextWindowService;
 import cn.ethan.ai.domain.agent.service.execute.flow.plan.AgentPlanPromptFactory;
 import cn.ethan.ai.domain.agent.model.valobj.AgentExecutionContextVO;
+import cn.ethan.ai.types.enums.StepIdEnum;
 import cn.ethan.wrench.design.framework.tree.StrategyHandler;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -36,7 +37,7 @@ public class Step5QualitySupervisorNode extends AbstractExecuteSupport {
         if (stopIfCancelled(executionContext, "任务已取消，跳过质量监督。")) {
             return "任务已取消";
         }
-        long startTime = markStepRunning(executionContext, "flow_supervision", "质量监督", 200, "SYSTEM");
+        long startTime = markStepRunning(executionContext, StepIdEnum.FLOW_SUPERVISION.value(), "质量监督", 200, "SYSTEM");
 
         try {
             AgentRunAggregate run = currentRun(executionContext);
@@ -79,9 +80,9 @@ public class Step5QualitySupervisorNode extends AbstractExecuteSupport {
                     requestParameter.getSessionId(),
                     run.runId()
             ));
-            markStepSuccess(executionContext, "flow_supervision", supervision, startTime);
+            markStepSuccess(executionContext, StepIdEnum.FLOW_SUPERVISION.value(), supervision, startTime);
         } catch (Exception e) {
-            markStepFailed(executionContext, "flow_supervision", e.getMessage(), startTime);
+            markStepFailed(executionContext, StepIdEnum.FLOW_SUPERVISION.value(), e.getMessage(), startTime);
             throw e;
         }
 
