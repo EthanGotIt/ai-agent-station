@@ -92,7 +92,7 @@ public class AiAgentController implements IAiAgentService {
     }
 
     @RequestMapping(value = "run/{runId}", method = RequestMethod.GET)
-    public AgentRunDetailResponseDTO queryRun(@PathVariable("runId") String runId) {
+    public AgentRunDetailResponseDTO queryRun(@PathVariable String runId) {
         AgentRunDetailVO detail = agentRunService.queryRun(runId);
         if (detail == null) {
             throw new IllegalArgumentException("运行记录不存在，runId=" + runId);
@@ -117,7 +117,7 @@ public class AiAgentController implements IAiAgentService {
     }
 
     @RequestMapping(value = "run/{runId}/cancel", method = RequestMethod.POST)
-    public AgentRunCancelResponseDTO cancelRun(@PathVariable("runId") String runId,
+    public AgentRunCancelResponseDTO cancelRun(@PathVariable String runId,
                                                @RequestParam(value = "reason", required = false) String reason) {
         boolean cancelled = agentRunService.cancelRun(runId, reason);
         return AgentRunCancelResponseDTO.builder()

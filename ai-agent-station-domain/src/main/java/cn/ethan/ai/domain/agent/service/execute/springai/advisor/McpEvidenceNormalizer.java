@@ -26,7 +26,7 @@ public class McpEvidenceNormalizer {
 
     private static final int MAX_EVIDENCE_PER_CALL = 6;
 
-    private static final Pattern URL_PATTERN = Pattern.compile("https?://[^\\s\\\"'<>]+", Pattern.CASE_INSENSITIVE);
+    private static final Pattern URL_PATTERN = Pattern.compile("https?://[^\\s\"'<>]+", Pattern.CASE_INSENSITIVE);
 
     private static final Pattern TITLE_PATTERN = Pattern.compile("(?im)^\\s*title\\s*:\\s*(.+)$");
 

@@ -70,7 +70,7 @@ public class GuardedToolCallback implements ToolCallback {
     }
 
     private ToolInvocationCollector resolveCollector(ToolContext toolContext) {
-        if (toolContext == null || toolContext.getContext() == null) {
+        if (toolContext == null) {
             return null;
         }
         Object collector = toolContext.getContext().get(ToolInvocationCollector.TOOL_CONTEXT_KEY);
@@ -116,8 +116,10 @@ public class GuardedToolCallback implements ToolCallback {
     }
 
     private String resolveToolName() {
-        if (delegate == null || delegate.getToolDefinition() == null) {
+        if (delegate == null) {
             return "";
+        } else {
+            delegate.getToolDefinition();
         }
         return delegate.getToolDefinition().name();
     }

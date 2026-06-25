@@ -53,7 +53,10 @@ public class AiAgentConfig {
                 .build();
 
         return PgVectorStore.builder(jdbcTemplate,
-                        new OpenAiEmbeddingModel(MetadataMode.EMBED, embeddingOptions))
+                        OpenAiEmbeddingModel.builder()
+                                .options(embeddingOptions)
+                                .metadataMode(MetadataMode.EMBED)
+                                .build())
                 .vectorTableName("vector_store_openai")
                 .dimensions(embeddingDimensions)
                 .build();

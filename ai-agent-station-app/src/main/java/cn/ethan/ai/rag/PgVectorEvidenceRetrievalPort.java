@@ -58,7 +58,7 @@ public class PgVectorEvidenceRetrievalPort implements ILocalEvidenceRetrievalPor
                 .build());
         List<Document> result = withEvidence(documents, request.getQuery(), request.getTopK());
         log.info("项目知识 evidence 检索完成，query：{}，ragIds：{}，vectorHits：{}，finalEvidence：{}",
-                request.getQuery(), request.getRagIds(), documents == null ? 0 : documents.size(), result.size());
+                request.getQuery(), request.getRagIds(), documents.size(), result.size());
         return result;
     }
 

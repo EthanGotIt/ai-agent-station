@@ -1,5 +1,6 @@
 package cn.ethan.ai.config;
 
+import lombok.Getter;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
@@ -15,8 +16,11 @@ public class AiAgentArmoryReadyState {
 
     private final AtomicBoolean ready = new AtomicBoolean(false);
 
+    @Getter
     private volatile String stage;
+    @Getter
     private volatile String message;
+    @Getter
     private volatile List<String> clientIds;
 
     public AiAgentArmoryReadyState(Environment environment) {
@@ -60,15 +64,4 @@ public class AiAgentArmoryReadyState {
         return ready.get();
     }
 
-    public String getStage() {
-        return stage;
-    }
-
-    public String getMessage() {
-        return message;
-    }
-
-    public List<String> getClientIds() {
-        return clientIds;
-    }
 }

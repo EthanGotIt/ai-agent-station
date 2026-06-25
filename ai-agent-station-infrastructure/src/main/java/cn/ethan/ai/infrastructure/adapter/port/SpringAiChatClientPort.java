@@ -87,7 +87,7 @@ public class SpringAiChatClientPort implements ISpringAiChatClientPort {
 
             ChatClient.CallResponseSpec responseSpec = requestSpec.call();
             ChatClientResponse chatClientResponse = responseSpec.chatClientResponse();
-            ChatResponse chatResponse = chatClientResponse == null ? responseSpec.chatResponse() : chatClientResponse.chatResponse();
+            ChatResponse chatResponse = chatClientResponse.chatResponse();
             String content = extractContent(chatResponse);
             Map<String, Object> metadata = extractMetadata(chatClientResponse, chatResponse);
             if (!collector.snapshot().isEmpty()) {
@@ -132,7 +132,7 @@ public class SpringAiChatClientPort implements ISpringAiChatClientPort {
             }
             ToolCallback[] callbacks = SyncMcpToolCallbackProvider.builder()
                     .mcpClients(client).build().getToolCallbacks();
-            if (callbacks != null && callbacks.length > 0) {
+            if (callbacks.length > 0) {
                 mcpGroups.add(List.of(callbacks));
             }
         }
@@ -183,19 +183,17 @@ public class SpringAiChatClientPort implements ISpringAiChatClientPort {
 
     private Map<String, Object> extractMetadata(ChatClientResponse chatClientResponse, ChatResponse chatResponse) {
         Map<String, Object> metadata = new LinkedHashMap<>();
-        if (chatResponse != null && chatResponse.getMetadata() != null && !chatResponse.getMetadata().isEmpty()) {
+        if (chatResponse != null && !chatResponse.getMetadata().isEmpty()) {
             chatResponse.getMetadata().entrySet().forEach(entry -> metadata.put(entry.getKey(), entry.getValue()));
         }
-        if (chatClientResponse != null && chatClientResponse.context() != null && !chatClientResponse.context().isEmpty()) {
+        if (chatClientResponse != null && !chatClientResponse.context().isEmpty()) {
             metadata.putAll(chatClientResponse.context());
         }
         return metadata.isEmpty() ? Map.of() : metadata;
     }
 
     private String extractContent(ChatResponse chatResponse) {
-        if (chatResponse == null || chatResponse.getResult() == null
-                || chatResponse.getResult().getOutput() == null
-                || chatResponse.getResult().getOutput().getText() == null) {
+        if (chatResponse == null || chatResponse.getResult() == null || chatResponse.getResult().getOutput().getText() == null) {
             return "";
         }
         return chatResponse.getResult().getOutput().getText();

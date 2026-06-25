@@ -1,6 +1,7 @@
 package cn.ethan.ai.infrastructure.adapter.port;
 
 import cn.ethan.ai.domain.agent.service.execute.runtime.ToolGuardPolicy;
+import org.jspecify.annotations.NonNull;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.resolution.DelegatingToolCallbackResolver;
 import org.springframework.ai.tool.resolution.StaticToolCallbackResolver;
@@ -33,9 +34,12 @@ public class GuardedToolCallbackResolver implements ToolCallbackResolver {
             }
             Set<String> allowedNames = safeToolNames(group);
             List<ToolCallback> guarded = group.stream()
-                    .filter(callback -> callback != null
-                            && callback.getToolDefinition() != null
-                            && callback.getToolDefinition().name() != null)
+                    .filter(callback -> {
+                        if (callback == null) return false;
+                        callback.getToolDefinition();
+                        callback.getToolDefinition().name();
+                        return true;
+                    })
                     .filter(callback -> {
                         String name = ToolGuardPolicy.normalize(callback.getToolDefinition().name());
                         return ToolGuardPolicy.isReadOnlyEvidenceTool(name)
@@ -51,15 +55,18 @@ public class GuardedToolCallbackResolver implements ToolCallbackResolver {
     }
 
     @Override
-    public ToolCallback resolve(String toolName) {
+    public ToolCallback resolve(@NonNull String toolName) {
         return delegate.resolve(toolName);
     }
 
     private static Set<String> safeToolNames(List<ToolCallback> callbacks) {
         return callbacks.stream()
-                .filter(callback -> callback != null
-                        && callback.getToolDefinition() != null
-                        && callback.getToolDefinition().name() != null)
+                .filter(callback -> {
+                    if (callback == null) return false;
+                    callback.getToolDefinition();
+                    callback.getToolDefinition().name();
+                    return true;
+                })
                 .map(callback -> callback.getToolDefinition().name().trim().toLowerCase(Locale.ROOT))
                 .map(ToolGuardPolicy::normalize)
                 .collect(Collectors.toSet());
