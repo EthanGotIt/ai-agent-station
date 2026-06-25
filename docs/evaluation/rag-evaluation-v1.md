@@ -5,8 +5,20 @@
 - Dataset: frozen at 60 cases in `ai-agent-station-app/src/test/resources/evaluation/rag-evaluation-v1.jsonl`.
 - SHA-256: `8D20DF2593CEBCC3A1C23827D2FEFD353CF12ADA8CE1698325BD6DB6C855CA97`.
 - Default unit-test validation: enabled and network-free.
-- Live baseline and adaptive comparison: not yet recorded. Do not claim numerical improvements before a live run produces the report.
+- Quick live regression: 6 representative cases for routine code changes.
+- Full live baseline and adaptive comparison: not yet recorded. Do not claim numerical improvements before a full live run produces the report.
 - 2026-06-23 live preflight reached Harness decisions, project retrieval and MCP ToolCallback injection. The three-mode run was not started because the configured DashScope account returned `free quota exhausted`.
+
+## Evaluation Tiers
+
+| Tier | Command | Purpose |
+|---|---|---|
+| Default tests | `mvn -q "-DskipTests=false" test` | Every code change, no Docker/API/network. |
+| Quick live | `.\scripts\dev\run-live-rag-evaluation.ps1` | Sampled end-to-end regression over `PS04,ET01,OD01,CS06,NR01,MF01`. |
+| Custom live | `.\scripts\dev\run-live-rag-evaluation.ps1 -Profile custom -CaseIds 'PS04,ET01,NR01'` | Focused verification for a touched capability. |
+| Full live | `.\scripts\dev\run-live-rag-evaluation.ps1 -Profile full` | Stage acceptance, retention gates, and resume-facing effect claims. |
+
+Quick and custom reports are useful for regression diagnosis, but they are not statistically meaningful retention-gate results.
 
 ## Comparison Modes
 

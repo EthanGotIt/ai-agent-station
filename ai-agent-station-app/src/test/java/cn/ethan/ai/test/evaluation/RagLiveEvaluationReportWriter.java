@@ -20,7 +20,10 @@ final class RagLiveEvaluationReportWriter {
     Path write(Map<RagEvaluationSupport.RetrievalMode, List<RagEvaluationSupport.EvaluationResult>> results,
                Map<String, Object> retention,
                String datasetHash,
-               String model) throws Exception {
+               String model,
+               String profile,
+               int selectedCaseCount,
+               int totalCaseCount) throws Exception {
         Path outputDir = Path.of(System.getProperty("evaluation.output", "target/evaluation")).toAbsolutePath();
         Files.createDirectories(outputDir);
 
@@ -28,6 +31,9 @@ final class RagLiveEvaluationReportWriter {
         payload.put("generatedAt", OffsetDateTime.now().toString());
         payload.put("datasetHash", datasetHash);
         payload.put("model", model);
+        payload.put("profile", profile);
+        payload.put("selectedCaseCount", selectedCaseCount);
+        payload.put("totalCaseCount", totalCaseCount);
         Map<String, Object> modes = new LinkedHashMap<>();
         results.forEach((mode, modeResults) -> modes.put(mode.name(), Map.of(
                 "metrics", RagEvaluationSupport.calculate(modeResults),
@@ -39,20 +45,30 @@ final class RagLiveEvaluationReportWriter {
         Path json = outputDir.resolve("rag-evaluation-v1-live.json");
         mapper.writeValue(json.toFile(), payload);
         Files.writeString(outputDir.resolve("rag-evaluation-v1-live.md"),
-                markdown(results, retention, datasetHash, model), StandardCharsets.UTF_8);
+                markdown(results, retention, datasetHash, model, profile, selectedCaseCount, totalCaseCount),
+                StandardCharsets.UTF_8);
         return json;
     }
 
     private String markdown(Map<RagEvaluationSupport.RetrievalMode, List<RagEvaluationSupport.EvaluationResult>> results,
                             Map<String, Object> retention,
                             String datasetHash,
-                            String model) {
+                            String model,
+                            String profile,
+                            int selectedCaseCount,
+                            int totalCaseCount) {
         StringBuilder text = new StringBuilder("# RAG Evaluation V1 Live Report\n\n");
         text.append("- Dataset SHA-256: `").append(datasetHash).append("`\n");
         text.append("- Model: `").append(model).append("`\n");
+        text.append("- Profile: `").append(profile).append("`\n");
+        text.append("- Selected cases: `").append(selectedCaseCount).append("/").append(totalCaseCount).append("`\n");
         text.append("- Generated at: `").append(OffsetDateTime.now()).append("`\n");
-        text.append("- Baselines are retrieval-only comparisons over the 25 local project cases.\n");
-        text.append("- Adaptive mode is an end-to-end live Harness run over all 60 cases.\n\n");
+        text.append("- Baselines are retrieval-only comparisons over selected local project cases.\n");
+        text.append("- Adaptive mode is an end-to-end live Harness run over the selected cases.\n");
+        if (selectedCaseCount < totalCaseCount) {
+            text.append("- This is a sampled regression report, not a full retention-gate evaluation.\n");
+        }
+        text.append("\n");
         text.append("| Mode | Cases | Route | Hit@5 | MRR | Refusal F1 | Citation | Key points | Faithfulness | Avg calls | P95 ms |\n");
         text.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n");
         results.forEach((mode, modeResults) -> {

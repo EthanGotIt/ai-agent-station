@@ -39,6 +39,27 @@ public class RagEvaluationDatasetTest {
         }, RetrievalMode.values());
     }
 
+    @Test
+    void shouldSelectRepresentativeQuickLiveCases() throws Exception {
+        List<RagEvaluationSupport.EvaluationCase> selected = RagEvaluationSupport.selectCases(
+                RagEvaluationSupport.loadCases(), "quick", "");
+
+        Assertions.assertEquals(RagEvaluationSupport.QUICK_LIVE_CASE_IDS,
+                selected.stream().map(RagEvaluationSupport.EvaluationCase::id).toList());
+    }
+
+    @Test
+    void shouldRequireExplicitCaseIdsForCustomLiveEvaluation() throws Exception {
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> RagEvaluationSupport.selectCases(RagEvaluationSupport.loadCases(), "custom", ""));
+    }
+
+    @Test
+    void shouldRejectUnknownLiveEvaluationCaseIds() throws Exception {
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> RagEvaluationSupport.selectCases(RagEvaluationSupport.loadCases(), "quick", "PS01,UNKNOWN"));
+    }
+
     private List<JsonNode> loadRawCases() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         return RagEvaluationSupport.loadCases().stream().<JsonNode>map(item -> mapper.valueToTree(Map.of(

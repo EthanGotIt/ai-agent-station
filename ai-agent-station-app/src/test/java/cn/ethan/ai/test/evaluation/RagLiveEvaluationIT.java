@@ -80,7 +80,7 @@ public class RagLiveEvaluationIT {
         ManualTestGate.requireRealAi("RagLiveEvaluationIT");
         ManualTestGate.requireDbMutation("RagLiveEvaluationIT");
         Assumptions.assumeTrue(Boolean.parseBoolean(readSetting("RUN_LIVE_RAG_EVALUATION")),
-                "完整 live evaluation 默认跳过；显式设置 RUN_LIVE_RAG_EVALUATION=true 后执行。");
+                "live evaluation 默认跳过；显式设置 RUN_LIVE_RAG_EVALUATION=true 后执行。");
         corpusManager = new RagEvaluationCorpusManager(ingestionService, adaptiveRetrieval,
                 vectorStore, mysqlJdbcTemplate, pgVectorJdbcTemplate);
         corpusManager.seed();
@@ -95,7 +95,13 @@ public class RagLiveEvaluationIT {
 
     @Test
     void runThreeModeLiveEvaluation() throws Exception {
-        List<RagEvaluationSupport.EvaluationCase> cases = selectedCases(RagEvaluationSupport.loadCases());
+        List<RagEvaluationSupport.EvaluationCase> allCases = RagEvaluationSupport.loadCases();
+        List<RagEvaluationSupport.EvaluationCase> cases = selectedCases(allCases);
+        String profile = StringUtils.defaultIfBlank(readSetting("RAG_EVAL_PROFILE"),
+                cases.size() == allCases.size() ? "full" : "custom");
+        System.out.printf("[live-eval] profile=%s selected=%s/%s ids=%s%n",
+                profile, cases.size(), allCases.size(),
+                cases.stream().map(RagEvaluationSupport.EvaluationCase::id).collect(Collectors.joining(",")));
         Map<RagEvaluationSupport.RetrievalMode, List<RagEvaluationSupport.EvaluationResult>> results = new LinkedHashMap<>();
         results.put(RagEvaluationSupport.RetrievalMode.PGVECTOR_ONLY,
                 evaluateLocalBaseline(cases, RagEvaluationSupport.RetrievalMode.PGVECTOR_ONLY));
@@ -113,14 +119,15 @@ public class RagLiveEvaluationIT {
         Map<String, Object> retention = retentionSignals(results);
         String datasetHash = datasetHash();
         String model = StringUtils.defaultIfBlank(readSetting("RAG_EVAL_MODEL"), "qwen3.7-max");
-        new RagLiveEvaluationReportWriter().write(results, retention, datasetHash, model);
+        new RagLiveEvaluationReportWriter().write(results, retention, datasetHash, model,
+                profile, cases.size(), allCases.size());
 
         List<RagEvaluationSupport.EvaluationResult> technicalFailures = adaptive.stream()
                 .filter(result -> StringUtils.isNotBlank(result.error())).toList();
         Assertions.assertTrue(technicalFailures.isEmpty(),
                 () -> "Adaptive live evaluation 存在技术失败：" + technicalFailures.stream()
                         .map(result -> result.id() + "=" + result.error()).collect(Collectors.joining("; ")));
-        if (cases.size() < RagEvaluationSupport.loadCases().size()) {
+        if (cases.size() < allCases.size()) {
             return;
         }
         RagEvaluationSupport.Metrics metrics = RagEvaluationSupport.calculate(adaptive);
@@ -514,13 +521,8 @@ public class RagLiveEvaluationIT {
 
     private List<RagEvaluationSupport.EvaluationCase> selectedCases(
             List<RagEvaluationSupport.EvaluationCase> allCases) {
-        String configured = readSetting("RAG_EVAL_CASE_IDS");
-        if (StringUtils.isBlank(configured)) {
-            return allCases;
-        }
-        Set<String> selected = java.util.Arrays.stream(configured.split(","))
-                .map(String::trim).filter(StringUtils::isNotBlank).collect(Collectors.toSet());
-        return allCases.stream().filter(item -> selected.contains(item.id())).toList();
+        return RagEvaluationSupport.selectCases(allCases,
+                readSetting("RAG_EVAL_PROFILE"), readSetting("RAG_EVAL_CASE_IDS"));
     }
 
     private static final class CapturingStream implements IAgentStreamPort {

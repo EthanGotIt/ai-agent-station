@@ -82,7 +82,7 @@ git diff --check
 .\scripts\dev\run-local-smoke.ps1
 ```
 
-默认 `mvn test` 不得访问 Docker、API key、网络或启动 MCP 子进程。live evaluation 使用百炼、PGVector、可选 ES 和 MCP，结果必须写入独立报告后才能更新 README/简历中的效果表述。
+默认 `mvn test` 不得访问 Docker、API key、网络或启动 MCP 子进程。live evaluation 分为 quick、custom、full 三层：日常修改跑 quick 抽样回归，能力定向修改跑 custom，阶段验收和效果结论才跑 full 全量评测。只有 full 报告可以用于更新 README/简历中的效果表述。
 
 ## 2026-06-23 验收记录
 

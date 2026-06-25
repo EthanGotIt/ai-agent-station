@@ -119,7 +119,15 @@ DAO、PGVector、ES、MCP 和真实模型验证使用 `*IT` 与 `integration` Pr
 mvn -q -Pintegration "-DskipTests=false" verify
 ```
 
-60 条冻结评测集位于 `ai-agent-station-app/src/test/resources/evaluation/rag-evaluation-v1.jsonl`，评测规则见 [docs/evaluation/rag-evaluation-v1.md](docs/evaluation/rag-evaluation-v1.md)。在 live evaluation 产生真实报告前，不宣称 BM25、RRF、Small-to-Big 或二次检索带来确定数值提升。
+60 条冻结评测集位于 `ai-agent-station-app/src/test/resources/evaluation/rag-evaluation-v1.jsonl`，评测规则见 [docs/evaluation/rag-evaluation-v1.md](docs/evaluation/rag-evaluation-v1.md)。日常修改只跑 quick live 抽样回归，阶段验收或效果结论才跑 full live 全量评测。
+
+```powershell
+.\scripts\dev\run-live-rag-evaluation.ps1
+.\scripts\dev\run-live-rag-evaluation.ps1 -Profile full
+.\scripts\dev\run-live-rag-evaluation.ps1 -Profile custom -CaseIds 'PS04,ET01,NR01'
+```
+
+在 full live evaluation 产生真实报告前，不宣称 BM25、RRF、Small-to-Big 或二次检索带来确定数值提升。
 
 当前回归基线为 187 个默认测试和 108 个 integration 测试，均为 0 failure/0 error。live 已验证 Harness、本地 evidence 和 MCP ToolCallback 注入，完整外部 evidence 及三组评测仍受百炼账户额度限制，详见升级总控文档。
 

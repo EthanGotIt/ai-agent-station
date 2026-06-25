@@ -2,11 +2,13 @@ package cn.ethan.ai.test.evaluation;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.commons.lang3.StringUtils;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.List;
 import java.util.Set;
@@ -15,6 +17,7 @@ import java.util.stream.Collectors;
 final class RagEvaluationSupport {
 
     private static final String DATASET = "/evaluation/rag-evaluation-v1.jsonl";
+    static final List<String> QUICK_LIVE_CASE_IDS = List.of("PS04", "ET01", "OD01", "CS06", "NR01", "MF01");
 
     private RagEvaluationSupport() {
     }
@@ -43,6 +46,34 @@ final class RagEvaluationSupport {
             }
         }
         return result;
+    }
+
+    static List<EvaluationCase> selectCases(List<EvaluationCase> allCases,
+                                            String profile,
+                                            String caseIds) {
+        if (allCases == null || allCases.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<String> selectedIds = parseCaseIds(caseIds);
+        String normalizedProfile = StringUtils.defaultIfBlank(profile, "full").trim().toLowerCase(Locale.ROOT);
+        if (selectedIds.isEmpty()) {
+            if ("quick".equals(normalizedProfile)) {
+                selectedIds.addAll(QUICK_LIVE_CASE_IDS);
+            } else if ("custom".equals(normalizedProfile)) {
+                throw new IllegalArgumentException("custom evaluation profile requires explicit case ids");
+            } else {
+                return allCases;
+            }
+        }
+        List<EvaluationCase> selected = allCases.stream()
+                .filter(item -> selectedIds.contains(item.id()))
+                .toList();
+        Set<String> found = selected.stream().map(EvaluationCase::id).collect(Collectors.toSet());
+        List<String> missing = selectedIds.stream().filter(id -> !found.contains(id)).toList();
+        if (!missing.isEmpty()) {
+            throw new IllegalArgumentException("unknown evaluation case ids: " + missing);
+        }
+        return selected;
     }
 
     static Metrics calculate(List<EvaluationResult> results) {
@@ -94,6 +125,20 @@ final class RagEvaluationSupport {
     private static List<String> textArray(JsonNode node) {
         List<String> result = new ArrayList<>();
         node.forEach(item -> result.add(item.asText()));
+        return result;
+    }
+
+    private static LinkedHashSet<String> parseCaseIds(String caseIds) {
+        LinkedHashSet<String> result = new LinkedHashSet<>();
+        if (StringUtils.isBlank(caseIds)) {
+            return result;
+        }
+        for (String item : caseIds.split(",")) {
+            String id = item.trim();
+            if (StringUtils.isNotBlank(id)) {
+                result.add(id);
+            }
+        }
         return result;
     }
 
