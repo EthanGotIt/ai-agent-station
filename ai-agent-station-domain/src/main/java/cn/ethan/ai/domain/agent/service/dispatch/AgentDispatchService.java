@@ -6,8 +6,8 @@ import cn.ethan.ai.domain.agent.model.entity.AgentExecuteResultEntity;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AiAgentVO;
 import cn.ethan.ai.domain.agent.service.IAgentDispatchService;
-import cn.ethan.ai.domain.agent.service.execute.runtime.AgentExecutionException;
-import cn.ethan.ai.domain.agent.service.execute.harness.AgentHarnessExecuteService;
+import cn.ethan.ai.types.exception.AgentExecutionException;
+import cn.ethan.ai.domain.agent.service.execute.springai.SpringAiAgentRuntime;
 import cn.ethan.ai.types.exception.BizException;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -24,7 +24,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 public class AgentDispatchService implements IAgentDispatchService {
 
     @Resource
-    private AgentHarnessExecuteService agentHarnessExecuteService;
+    private SpringAiAgentRuntime springAiAgentRuntime;
 
     @Resource
     private IAgentRepository repository;
@@ -41,7 +41,7 @@ public class AgentDispatchService implements IAgentDispatchService {
 
         Future<?> future = threadPoolExecutor.submit(() -> {
             try {
-                agentHarnessExecuteService.execute(requestParameter, streamPort);
+                springAiAgentRuntime.execute(requestParameter, streamPort);
             } catch (Exception e) {
                 log.error("Agent 执行异常：{}", e.getMessage(), e);
                 String runId = e instanceof AgentExecutionException executionException

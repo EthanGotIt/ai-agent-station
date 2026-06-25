@@ -32,7 +32,12 @@ public class ArmoryRootNode extends AbstractArmorySupport {
     @Override
     protected void multiThread(ArmoryCommandEntity requestParameter, ArmoryAssemblyContextVO assemblyContext) throws ExecutionException, InterruptedException, TimeoutException {
         // 加载数据
-        ILoadDataStrategy loadDataStrategy = loadDataStrategyMap.get(requestParameter.getLoadDataStrategy());
+        String strategyName = requestParameter.getLoadDataStrategy();
+        ILoadDataStrategy loadDataStrategy = loadDataStrategyMap.get(strategyName);
+        if (loadDataStrategy == null) {
+            log.debug("未找到装配数据策略，跳过加载。strategyName：{}", strategyName);
+            return;
+        }
         loadDataStrategy.loadData(requestParameter, assemblyContext);
     }
 

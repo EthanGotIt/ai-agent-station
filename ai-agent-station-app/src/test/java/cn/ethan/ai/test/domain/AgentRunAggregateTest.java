@@ -2,7 +2,6 @@ package cn.ethan.ai.test.domain;
 
 import cn.ethan.ai.domain.agent.model.aggregate.AgentRunAggregate;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
-import cn.ethan.ai.domain.agent.model.valobj.ContextBudgetPolicyVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AgentRunStatusEnumVO;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -17,8 +16,7 @@ public class AgentRunAggregateTest {
                         .message("hello")
                         .sessionId("session-x")
                         .maxStep(3)
-                        .build(),
-                ContextBudgetPolicyVO.builder().build()
+                        .build()
         );
         run.markRunning();
         run.bindSessionContextSummary("previous session summary");
@@ -32,8 +30,7 @@ public class AgentRunAggregateTest {
     @Test
     public void shouldExposeFailedAndCancelledTerminalState() {
         AgentRunAggregate failedRun = AgentRunAggregate.create(
-                command(),
-                ContextBudgetPolicyVO.builder().build()
+                command()
         );
         failedRun.markRunning();
         failedRun.markFailed("计划校验失败");
@@ -42,8 +39,7 @@ public class AgentRunAggregateTest {
         Assertions.assertEquals("计划校验失败", failedRun.toRecord().getErrorMessage());
 
         AgentRunAggregate cancelledRun = AgentRunAggregate.create(
-                command(),
-                ContextBudgetPolicyVO.builder().build()
+                command()
         );
         cancelledRun.markRunning();
         cancelledRun.markCancelled("用户主动取消");

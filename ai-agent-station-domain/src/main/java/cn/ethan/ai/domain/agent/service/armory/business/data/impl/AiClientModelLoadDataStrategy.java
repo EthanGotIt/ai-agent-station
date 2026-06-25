@@ -5,6 +5,7 @@ import cn.ethan.ai.domain.agent.model.entity.ArmoryCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientApiVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientModelVO;
 import cn.ethan.ai.domain.agent.model.valobj.ArmoryAssemblyContextVO;
+import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
 import cn.ethan.ai.domain.agent.service.armory.business.data.ILoadDataStrategy;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -31,18 +32,19 @@ public class AiClientModelLoadDataStrategy implements ILoadDataStrategy {
     public void loadData(ArmoryCommandEntity armoryCommandEntity, ArmoryAssemblyContextVO assemblyContext) {
         List<String> modelIdList = armoryCommandEntity.getCommandIdList();
 
-        CompletableFuture<List<AiClientApiVO>> aiClientApiListFuture = CompletableFuture.supplyAsync(() -> {
+        CompletableFuture<List<AiClientApiVO>> apiFuture = CompletableFuture.supplyAsync(() -> {
             log.info("查询模型接口配置，模型ID：{}", modelIdList);
-
             return repository.queryAiClientApiVOListByModelIds(modelIdList);
         }, threadPoolExecutor);
 
-        CompletableFuture<List<AiClientModelVO>> aiClientModelListFuture = CompletableFuture.supplyAsync(() -> {
+        CompletableFuture<List<AiClientModelVO>> modelFuture = CompletableFuture.supplyAsync(() -> {
             log.info("查询对话模型配置，模型ID：{}", modelIdList);
-
             return repository.queryAiClientModelVOByModelIds(modelIdList);
         }, threadPoolExecutor);
 
+        CompletableFuture.allOf(apiFuture, modelFuture).join();
+        assemblyContext.setValue(AiAgentEnumVO.AI_CLIENT_API.getDataName(), apiFuture.join());
+        assemblyContext.setValue(AiAgentEnumVO.AI_CLIENT_MODEL.getDataName(), modelFuture.join());
     }
 
 }

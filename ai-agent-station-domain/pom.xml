@@ -63,6 +63,10 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-pgvector-store</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.springaicommunity</groupId>
+            <artifactId>spring-ai-session-management</artifactId>
+        </dependency>
         <!-- spring ai 框架 end -->
 
         <!-- 系统模块 -->

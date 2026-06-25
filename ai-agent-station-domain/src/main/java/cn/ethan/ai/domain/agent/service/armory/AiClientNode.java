@@ -61,7 +61,7 @@ public class AiClientNode extends AbstractArmorySupport {
             }
             OpenAiChatModel chatModel = modelObjectMap.get(aiClientVO.getModelId());
 
-            // 3. 构建对话客户端。Session 记忆、RAG 和工具注入由 Harness 执行期显式管理。
+            // 3. 构建对话客户端。Session 记忆、RAG 和工具注入由 Spring AI Advisor Chain 执行期管理。
             ChatClient chatClient = ChatClient.builder(chatModel)
                     .defaultSystem(defaultSystem.toString())
                     .build();

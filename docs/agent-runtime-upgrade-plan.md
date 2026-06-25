@@ -1,47 +1,54 @@
-# Evidence-Governed Harness 升级总控
+# Spring AI 2 First 升级总控
 
 ## 当前进度
 
 | 阶段 | 状态 | 已落地 | 未完成验收 |
 |---|---|---|---|
 | Phase 0 基线与测试隔离 | 已完成 | Java 17 Enforcer、Jupiter、默认单测隔离、`*IT` + integration Profile | 无 |
-| Phase 1 Harness 协议 | 已完成 | `RETRIEVE / ASK_CLARIFY / FINALIZE`、Evidence Board、双层 Policy、2-4 轮软上限、live action trace | 无 |
-| Phase 2 Evidence Retrieval | 代码与集成完成 | 唯一入口、ragId scope、按需 BM25/RRF/父块扩展、按来源 MCP、真实 ToolCallback 采集、引用校验 | 百炼额度恢复后补完整外部 evidence smoke |
-| Phase 3 评测驱动精简 | 框架完成 | 60 条冻结数据、三种对照模式、指标计算和保留门槛 | 三组 live evaluation 和消融结论 |
-| Phase 4 Session 记忆 | 已完成 | 完整 Turn、结构化摘要、最近四 Turn、偏好、乐观锁、TTL、dev 清除、MySQL integration | 无 |
-| Phase 5 收口验收 | 代码验收完成 | 删除旧 Plan/RAG Runtime、错误累计预算和失效字段，README 已同步 | live evaluation 与消融结论 |
+| Phase 1 Spring AI 2 API 验证 | 已完成 | `ChatClient`、Tool Calling、Advisor、社区 `spring-ai-session` API 可用性测试 | 无 |
+| Phase 2 Advisor 基础设施 | 已完成 | `ContextBudgetAdvisor`、`SessionMemoryAdvisor`、`EvidenceRetrievalAdvisor`、`ObservationTraceAdvisor` | 无 |
+| Phase 3 Tool/MCP 收敛 | 已完成 | 自定义关键词路由退出主链路，Spring AI Tool Calling 承担工具调用循环，保留 Guard 安全包装 | 无 |
+| Phase 4 主链路切换 | 已完成 | `AgentDispatchService -> SpringAiAgentRuntime -> ChatClient + Advisor Chain` | 无 |
+| Phase 5 收口清理 | 已完成 | 删除旧 Harness 主链路、旧模型端口、旧路由 VO 和旧测试，README 已同步 | live evaluation 与消融结论 |
+| 后续评测验收 | 待执行 | 保留 quick/full evaluation 设计 | 三组 live evaluation 和消融结论 |
 
 ## 技术评估
 
-- 保留 Spring AI 2.0、Spring Boot 4.1、PGVector、MCP 和自研轻量 Harness。
+- 保留 Spring AI 2.0、Spring Boot 4.1、PGVector 和 MCP，主链路收敛到 Spring AI `ChatClient + Advisor Chain`。
 - 不引入 OpenHarness、LangGraph、Spring AI Alibaba Graph、精确 tokenizer、reranker、多 Agent 或长期向量记忆。
-- 借鉴 Agent Harness 的“动作、观测、策略、终止”边界，不引入另一套执行框架。
+- 旧 Harness 的动作循环已退出主链路，只保留证据治理、引用校验、拒答和运行态复盘等可迁移能力。
 - 对外使用“受控 Agentic RAG 证据闭环”，不把 Agentic RAG 3.0 描述成行业标准。
 
 ## 当前执行模型
 
 ```text
-Run
--> Harness decision
--> RETRIEVE(sourceType, queries) | ASK_CLARIFY | FINALIZE
--> EvidenceRetrievalService
--> Evidence Board
--> deterministic Evidence Policy
--> Grounded answer with [E1] citations
+AiAgentController
+-> AgentDispatchService
+-> SpringAiAgentRuntime
+-> ChatClient
+-> ContextBudgetAdvisor
+-> SessionMemoryAdvisor
+-> EvidenceRetrievalAdvisor
+-> Spring AI Tool Calling
+-> ObservationTraceAdvisor
+-> summary / complete
 ```
 
-模型只选择高层来源，不控制 PGVector、BM25、RRF、Small-to-Big 或具体 MCP 工具。最终回答不来自 Action JSON。
+模型调用由 Spring AI `ChatClient` 统一承接，项目不再维护 Harness Action Loop。
 
 ## 唯一入口与已删除冗余
 
-- Harness 主入口：`AgentHarnessExecuteService`
-- 动作副作用：`HarnessActionExecutor`
-- 检索主入口：`EvidenceRetrievalService`
+- 执行主入口：`SpringAiAgentRuntime`
+- 模型调用网关：`SpringAiChatClientPort`
+- 本地 evidence 注入：`EvidenceRetrievalAdvisor`
 - 本地检索端口：`ILocalEvidenceRetrievalPort`，当前实现 `AdaptiveLocalEvidenceRetrievalPort`
-- 最终回答：`GroundedAnswerService`
+- 运行态观测：`ObservationTraceAdvisor`
 
 已删除：
 
+- 旧 Harness 主链路和旧 Action Loop 相关类
+- `IAgentModelPort` 与旧 `AgentModelPort`
+- `ToolRoutingDecisionVO`、`AgentExecutionContextVO`、`PlanStepTypeEnumVO`
 - `AgenticRagRuntime`
 - `HybridRagRetrievalPort` 和 `IRagRetrievalPort`
 - `AgentPlanVO`、Plan 校验 VO 和 Aggregate plan 字段
@@ -54,8 +61,8 @@ Run
 - `PROJECT_KNOWLEDGE` 默认 PGVector。
 - 类名、方法名、配置键、异常文本或向量无结果时启用 BM25。
 - 两个本地通道都有结果时才执行 RRF。
-- Evidence Board gap 为 `CONTEXT_INCOMPLETE` 时才允许父块扩展。
-- `OFFICIAL_DOCS` 只路由 docs MCP，`WEB_RESEARCH` 只路由 search MCP。
+- evidence trace 标记上下文不足时才允许父块扩展。
+- `OFFICIAL_DOCS / WEB_RESEARCH` 由 Spring AI Tool Calling 调用已注册的只读资料类 MCP。
 - 外部 evidence 必须来自真实 ToolCallback 结果；无 URI 文本是低可信补充。
 
 BM25/RRF、Small-to-Big 和二次检索是否保留，由 [评测门槛](evaluation/rag-evaluation-v1.md) 决定，不由架构偏好决定。

@@ -4,37 +4,39 @@
 
 一句话回答：
 
-> 这是一个面向企业 Java 项目知识和技术资料调研的轻量受控 Agent Runtime。它解决的不是“再做一个网页聊天 AI”，而是在内部知识、版本化官方文档和外部资料之间受控选择证据，输出可引用、可拒答、可复盘的回答。
+> 这是一个面向企业 Java 项目知识和技术资料调研的 Spring AI 2 智能体执行平台。它解决的不是“再做一个网页聊天 AI”，而是基于 ChatClient、Advisor Chain、MCP Tool Calling 和 evidence trace，把内部知识、官方文档和外部资料组织成可引用、可拒答、可复盘的回答。
 
 项目不是多 Agent 平台、长期记忆系统、危险工具沙箱或通用工作流引擎。
 
 ## 为什么项目有业务意义
 
-> 通用网页 AI 能搜索公开网页，但不知道企业内部项目知识，也不能保证回答引用的是当前项目允许的知识库和官方版本文档。我的项目把问题拆成三个来源：项目知识、官方文档和外部调研，由 Harness 决定查哪个来源，后端再验证 evidence 是否可归因，最后强制使用 Evidence ID 引用。价值在证据治理和可控执行，不在“也能搜索网页”。
+> 通用网页 AI 能搜索公开网页，但不知道企业内部项目知识，也不能保证回答引用的是当前项目允许的知识库和官方版本文档。我的项目通过 Spring AI 2 Advisor Chain 把项目知识检索、MCP 只读工具、Session 记忆和运行态 trace 放到同一条调用链里，后端再验证 evidence 是否可归因。价值在证据治理和工程可控，不在“也能搜索网页”。
 
 ## 为什么不是固定 Workflow
 
-> 旧版 Flow Plan 先生成完整步骤，再逐步执行，稳定但很像 workflow。现在模型每轮只选择 `RETRIEVE`、`ASK_CLARIFY`、`FINALIZE` 三个高层动作之一，下一步取决于 Evidence Board 的真实结果。底层 Policy 仍限制四轮决策、两次检索、一次外部检索和重复 query，所以它有动态决策，但不是无限 ReAct 循环。
+> 旧版 Flow Plan 先生成完整步骤，再逐步执行，稳定但很像 workflow。现在主链路收敛到 Spring AI 2 的 ChatClient 和 Advisor Chain，模型调用、上下文、记忆、RAG evidence、工具调用和 trace 都在同一条框架链路里。项目不再维护一套自研 Action Loop，只保留证据治理、引用校验和拒答这些业务控制点。
 
-代码路径：`AgentHarnessExecuteService -> AgentActionParser -> AgentActionPolicy -> HarnessActionExecutor`。
+代码路径：`AgentDispatchService -> SpringAiAgentRuntime -> SpringAiChatClientPort -> ContextBudgetAdvisor / SessionMemoryAdvisor / EvidenceRetrievalAdvisor / ObservationTraceAdvisor`。
 
-## 为什么只保留三个 Action
+## 为什么删掉 Harness Action Loop
 
-> `RAG_PLAN` 和 `EVALUATE_EVIDENCE` 原来没有独立副作用，只会增加模型调用和状态数量；独立 `MCP_READ` 又和 RAG 的外部 evidence 重复。我把它们收敛成统一 `RETRIEVE(sourceType, queries)`。模型只选高层来源，不能控制 PGVector、BM25、RRF、父块扩展或具体 MCP 工具。
+> Harness Action Loop 能体现 Agent 控制，但它和 Spring AI 2 的 Advisor Chain、Tool Calling 会形成两套编排。项目如果同时保留两套主路径，面试时很难讲清楚谁负责工具、谁负责记忆、谁负责 RAG。我现在把模型调用统一交给 ChatClient，把上下文、Session、RAG 和 trace 放到 Advisor Chain，项目只保留证据治理和安全边界。
 
-## FINALIZE 为什么不能携带答案
+## Advisor Chain 分层怎么讲
 
-> 如果让模型在决策 JSON 里直接给答案，Evidence Policy 就可能被绕过。现在 FINALIZE 只表达“希望收口”，真正答案由 `GroundedAnswerService` 根据 Evidence Board 生成。事实回答必须引用 `[E1]` 等存在的 Evidence ID，引用校验失败最多纠正一次，再失败就拒答。
+> 第一层 `ContextBudgetAdvisor` 做上下文预算守卫，第二层 `SessionMemoryAdvisor` 注入 session 记忆，第三层 `EvidenceRetrievalAdvisor` 查项目知识，工具调用交给 Spring AI Tool Calling，最后 `ObservationTraceAdvisor` 统一收集 evidence 和工具调用 trace。这样每层职责比较单一，也更符合 Spring AI 2 的主流用法。
 
-## RAG 为什么称为 Agentic
+## RAG 现在怎么定位
 
-> 它不再固定执行 Query Rewrite、双路召回、RRF、父块扩展全套链路。Harness 根据现有 evidence 决定来源和是否需要第二次检索，PGVector 是默认通道，只有精确术语或语义无结果才补 BM25，两个通道都命中才做 RRF，只有 `CONTEXT_INCOMPLETE` 才扩父块。重点是按需检索和证据闭环，不是算法堆叠。
+> 当前更适合讲“Evidence-Governed RAG”，而不是夸张说完整 Agentic RAG。项目知识检索由 `EvidenceRetrievalAdvisor` 接入，按 `ragId` 限定知识范围，返回 evidence 后由 `ObservationTraceAdvisor` 归一化为 trace。外部资料通过只读 MCP Tool Calling 补充，最终强调 evidence 可追踪、可引用和证据不足时不编造。
 
-对外称“受控 Agentic RAG 证据闭环”，不把 Agentic RAG 3.0 说成行业标准。
+## 为什么不继续堆 Advanced RAG
 
-## Evidence Board 保存什么
+> Advanced RAG 的 Query Rewrite、BM25、RRF、父块扩展都有价值，但不是每次都该全开。项目现在把这些能力放在本地 evidence 检索能力里按需使用，简历不再把算法堆叠作为主亮点，而是讲清楚知识范围、证据来源、工具调用和回答 trace。
 
-> Evidence Board 只存在于一次 Run，保存已执行的来源/query、规范化证据、检索轮次、模型 assessment、缺失信息和重复检索键。它负责去重和给下一轮 Harness 提供压缩 observation，不进入 Session 记忆，避免把外部事实长期污染用户上下文。
+## evidence trace 保存什么
+
+> evidence trace 是一次 Run 内的观测结果，包含最终 evidence、来源类型、工具名、URI、内容摘要和证据充分性。它不会进入 Session 记忆，避免把外部事实长期写进用户上下文。Session 只记用户偏好、约束和成功完整对话，不保存工具原始输出。
 
 ## MCP evidence 为什么可信
 
@@ -42,7 +44,7 @@
 
 ## MCP 为什么不在开始时全量注入
 
-> 项目知识问题根本不需要 MCP。只有 Harness 选择 `OFFICIAL_DOCS` 或 `WEB_RESEARCH` 时，系统才分别路由 Context7 或 Exa，然后做只读过滤和 allowed set 校验。这样减少工具描述噪声，也避免无关 MCP 初始化拖慢每个请求。
+> 项目知识问题主要走本地 RAG，不需要把所有 MCP 都塞进模型上下文。现在不再做自定义关键词打分路由，而是按 Agent 注册工具集合和只读边界交给 Spring AI Tool Calling。项目侧只负责过滤写入、通知、shell、memory 这类不适合自动调用的工具。
 
 ## 怎么防止危险工具
 
@@ -50,7 +52,7 @@
 
 ## 工具调用失败怎么办
 
-> 参数错误、未授权和调用异常会被结构化归一化，并记录为失败 ToolInvocation。只有成功调用才会进入 evidence normalizer。工具失败后 Harness 可以换来源、改写 query 或基于已有 evidence 收口，不能把错误文本当成检索结果。
+> 参数错误、未授权和调用异常会被结构化归一化，并记录为失败 ToolInvocation。只有成功调用才会进入 evidence normalizer。工具失败时模型可以基于已有 evidence 回答或说明证据不足，但不能把错误文本当成检索结果。
 
 ## 为什么 PGVector 而不是更重的向量数据库
 
@@ -62,27 +64,27 @@
 
 ## 记忆机制是什么
 
-> 这是 Session 短期记忆。消息表只保存用户输入和最终回答原文，只有 USER 和 ASSISTANT 都存在的成功完整 Turn 才会再次注入。Session 表保存结构化摘要、已总结游标、乐观锁版本和 30 天过期时间，Prompt 使用摘要加最近四个完整 Turn。
+> 这是 Session 短期记忆。主链路接入了 Spring AI Community `SessionMemoryAdvisor`，通过 `sessionId` 注入会话上下文。现阶段默认使用 InMemorySessionRepository 验证框架语义，原有 conversation 表继续作为跨重启兜底，后续再迁移到 JDBC Session 存储。
 
-## 为什么不直接使用 Spring AI ChatMemory
+## 为什么用 spring-ai-session 而不是继续 ChatMemory
 
-> 我借鉴了 MessageWindowChatMemory 的完整消息窗口语义，但项目还需要按 Run 状态排除失败输入、保存结构化摘要游标和做乐观锁更新。为了框架对齐再包一层 ChatMemory 只会增加适配代码，所以保留了更符合当前 Run 模型的自定义仓储。
+> Spring AI 2.0.0 GA 本体还没有稳定 Session API，但社区版 `spring-ai-session` 已经提供 Session、SessionEvent、SessionService、SessionMemoryAdvisor 和压缩触发器/策略，并且方向上更接近 Spring AI 2.1 对 ChatMemory 的替代思路。ChatMemory 只作为兜底，不再作为新的扩展主线。
 
 ## 摘要会不会把错误事实记住
 
-> 摘要只提取用户明确表达的目标、约束、确认决策、未解决问题和回答偏好，不保存工具输出、外部事实或模型猜测。Evidence Board 生命周期只在当前 Run，和 Session Memory 分离。
+> 摘要只提取用户明确表达的目标、约束、确认决策、未解决问题和回答偏好，不保存工具输出、外部事实或模型猜测。evidence trace 生命周期只在当前 Run，和 Session Memory 分离。
 
 ## 上下文过长怎么办
 
-> Session 层按完整 Turn 淘汰，不截断单条消息。模型调用层用 `PromptBudgetAssembler` 按当前问题、项目规则、evidence、Session 上下文、observation 的顺序组装。估算单位叫 context-units，是中英文 heuristic，不是精确 tokenizer，也不再把多次模型调用字符数累计成一个假窗口。
+> 模型调用层由 `ContextBudgetAdvisor` 在 Advisor Chain 最前面做预算守卫。估算单位叫 context-units，是中英文 heuristic，不是精确 tokenizer。超过停止阈值时拒绝新模型调用，避免把超长上下文直接丢给模型。
 
 ## 并发更新记忆怎么办
 
-> Session 表有 version 乐观锁，冲突后重新读取并重试一次。摘要失败不会影响主 Run，消息原文仍保留；成功交互会续期 30 天，每日任务清理过期 Session 和消息。
+> 当前 Spring AI Session 接入先使用内存仓储验证链路，跨重启仍由项目原有 conversation 表兜底。后续迁移 JDBC Session 时再处理乐观锁、TTL 和摘要游标，避免现在同时改运行链路和持久化模型。
 
 ## 项目当前最诚实的边界
 
-- 已完成：三动作 Controlled Harness、按来源 evidence retrieval、ragId scope、真实 MCP evidence、引用校验、完整 Turn 记忆、默认测试隔离、60 条评测数据。
-- 已验收：187 个默认测试、108 个 integration 测试、Docker 数据组件、Harness live、本地 RAG 与 MCP ToolCallback 注入。
+- 已完成：Spring AI 2 主链路、Advisor Chain 基础设施、社区 Session 接入、MCP Guard 包装、旧 Harness 主路径清理、默认测试隔离。
+- 已验收：默认单测、跳过测试打包、`git diff --check`。
 - 待外部额度恢复后验收：完整 MCP evidence 回答、三组 RAG 对照和消融结论；这些结果完成前不写效果提升数字。
 - 暂不做：多 Agent、长期向量记忆、精确 tokenizer、reranker、权限系统、前端控制台和新 Agent SDK。

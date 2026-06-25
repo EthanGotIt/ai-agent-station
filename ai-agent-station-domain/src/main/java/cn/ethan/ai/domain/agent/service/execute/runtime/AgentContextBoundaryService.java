@@ -21,7 +21,7 @@ public class AgentContextBoundaryService {
     private static final String PROJECT_RULE_SCOPE = "project:ai-agent-station";
 
     private static final List<String> PROJECT_RULES = List.of(
-            "遵循本项目 Controlled Agent Harness、Tool Guard、Agentic RAG 和上下文预算策略。",
+            "遵循本项目 Spring AI Advisor Chain、Tool Guard、Agentic RAG 和上下文预算策略。",
             "不得把其他 session 的会话历史、用户偏好或工具结果带入本轮执行。",
             "知识库证据不足时说明无法从当前知识库确认，不编造证据。"
     );

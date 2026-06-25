@@ -1,12 +1,13 @@
 # AI Agent Station
 
-AI Agent Station 是面向企业 Java 项目知识与技术资料调研的轻量受控 Agent Runtime。系统在内部项目知识、版本化官方文档和外部技术资料之间选择证据来源，通过受控 Action Loop、Evidence Board 和引用校验生成可追踪回答。
+AI Agent Station 是面向企业 Java 项目知识与技术资料调研的 Spring AI 2 智能体执行平台。系统以 `ChatClient` 为模型调用主入口，通过 Advisor Chain 编排上下文预算、Session 记忆、RAG evidence、MCP Tool Calling 和运行态观测，在内部项目知识、官方文档和外部资料之间生成可追踪回答。
 
 ## 技术基线
 
 - Spring Boot `4.1.0`、Spring AI `2.0.0`、JDK `17`
 - MyBatis、MySQL、PostgreSQL + PGVector、可选 Elasticsearch
 - Spring AI MCP Client，支持 Stdio 和 Streamable HTTP
+- Spring AI Community `spring-ai-session`，用于 Session 语义和后续压缩策略迁移
 - Chat：`qwen3.7-max`
 - Embedding：`text-embedding-v4`，`1024` 维
 
@@ -14,30 +15,41 @@ Spring AI 2 迁移细节见 [docs/spring-ai-2-upgrade.md](docs/spring-ai-2-upgra
 
 ## 核心设计
 
-### Evidence-Governed Harness
+### Spring AI 2 主执行链路
 
-主链路只有三个高层动作：
+当前主链路为：
 
-- `RETRIEVE`：选择 `PROJECT_KNOWLEDGE / OFFICIAL_DOCS / WEB_RESEARCH` 之一获取证据，不直接生成最终答案。
-- `ASK_CLARIFY`：缺少必要约束时追问并终止当前 Run。
-- `FINALIZE`：后端根据 Evidence Board 统一生成最终回答，Action JSON 不能携带答案。
+```text
+AiAgentController
+-> AgentDispatchService
+-> SpringAiAgentRuntime
+-> Spring AI ChatClient
+-> Advisor Chain
+-> Tool Calling / RAG Evidence / Session Memory / Trace
+```
 
-模型负责选择高层动作，确定性 Policy 负责限制最大四轮决策、最多两次 evidence retrieval、最多一次外部检索、重复来源/query 和取消终止。Action 解析失败时不会无条件直接回答，无证据时按问题类型降级到本地检索或受控拒答。
+旧 Harness 代码已作为迁移期兼容路径保留，但不再作为新增能力入口。项目保留的是 Harness 里真正有价值的治理能力，例如证据策略、引用校验、证据不足拒答、运行态复盘和 SSE 可观测性，而不是继续维护一套模型 Action Loop。
+
+Advisor Chain 顺序固定：
+
+1. `ContextBudgetAdvisor`：估算本轮 prompt context units，超过阈值时拒绝新模型调用。
+2. `SessionMemoryAdvisor`：接入 Spring AI Community `spring-ai-session`，按 `sessionId` 注入短期上下文。
+3. `EvidenceRetrievalAdvisor`：按 `ragId` 范围检索项目知识并格式化 evidence。
+4. Spring AI Tool Calling：由 Spring AI 2 驱动工具调用循环，项目只保留工具注册边界和安全包装。
+5. `ObservationTraceAdvisor`：提取 RAG metadata、MCP 工具调用记录和 evidence trace，发布运行态事件。
 
 ### Adaptive Agentic Retrieval
 
-生产检索只有一个入口：`EvidenceRetrievalService`。
+生产主链路的项目知识检索进入 `EvidenceRetrievalAdvisor`，底层复用项目已有本地 evidence 检索能力。
 
 ```text
 用户问题
--> Harness 决定高层 evidence source
--> EvidenceRetrievalService
+-> Spring AI Advisor Chain
+-> EvidenceRetrievalAdvisor
    -> PROJECT_KNOWLEDGE: PGVector 默认，精确术语或语义无结果时启用 BM25
-   -> OFFICIAL_DOCS: 按需路由 Context7
-   -> WEB_RESEARCH: 按需路由 Exa
--> Evidence Board 去重、记录来源与检索轮次
--> 下一轮 Harness 评估 evidence 或改写 query
--> GroundedAnswerService 生成 [E1] 引用并校验
+   -> OFFICIAL_DOCS / WEB_RESEARCH: 由 Spring AI Tool Calling 调用只读 MCP 工具补充 evidence
+-> ObservationTraceAdvisor 归一化 evidence trace
+-> 最终回答使用 [E1] 等引用
 ```
 
 - PGVector 和 Elasticsearch 都携带允许的 `ragId`，禁止跨知识库召回。
@@ -56,15 +68,18 @@ Spring AI 2 迁移细节见 [docs/spring-ai-2-upgrade.md](docs/spring-ai-2-upgra
 - `context7-docs`
 - `exa-search`
 
-MCP 不在 Run 开始时全量路由。只有 `OFFICIAL_DOCS` 或 `WEB_RESEARCH` 动作发生时，系统才按来源选择对应 MCP，并再次执行只读过滤。
+MCP 不再使用项目自定义关键词打分路由。工具发现、动态加载和工具调用循环交给 Spring AI 2 Tool Calling 与 MCP 集成，项目只保留“注册边界 + 只读过滤 + GuardedToolCallback”三层安全治理。
 
 - 允许：`search / docs / fetch / read / get / open / list / resolve`
 - 禁止：`create / update / write / send / notify / memory / shell`
 
-治理边界为“按来源路由、注入前 allowed set、调用期 GuardedToolCallback”。
+治理边界为“当前 Agent 注册工具集合、只读工具注册边界、调用期 GuardedToolCallback”。
 
 ### Session 短期记忆
 
+- 主链路已接入 Spring AI Community `SessionMemoryAdvisor`，通过 `sessionId` 和 `userId` 在 Advisor Chain 中注入会话上下文。
+- 现阶段默认使用 `InMemorySessionRepository` 验证 Session 语义，现有数据库 conversation 表继续承担跨重启兜底。
+- 后续 JDBC Session 存储会单独迁移，不在本轮为了接入框架强行改表。
 - `ai_agent_conversation_message` 只保存用户输入和最终回答原文。
 - 只有同时存在 USER 和 ASSISTANT 的成功完整 Turn 会进入后续 Prompt，失败或取消 Run 的孤立 USER 不会被注入。
 - `ai_agent_conversation_session` 保存结构化滚动摘要、消息游标、乐观锁版本和 30 天过期时间。
@@ -76,13 +91,7 @@ MCP 不在 Run 开始时全量路由。只有 `OFFICIAL_DOCS` 或 `WEB_RESEARCH`
 
 ### 上下文预算
 
-上下文按单次模型调用组装，不累计多次模型输入输出。`PromptBudgetAssembler` 的保留优先级为：
-
-1. 当前问题
-2. 项目规则
-3. Evidence Board
-4. Session 上下文
-5. Harness observation
+上下文按单次模型调用组装，不累计多次模型输入输出。`ContextBudgetAdvisor` 在 Advisor Chain 最前面执行，估算本轮 prompt 的 context units 并在达到停止阈值时拒绝新模型调用。
 
 配置项为 `ai-agent.context.max-context-units`。估算器是中英文 heuristic，不是精确 tokenizer。
 
@@ -96,7 +105,8 @@ MCP 不在 Run 开始时全量路由。只有 `OFFICIAL_DOCS` 或 `WEB_RESEARCH`
 主要 NDJSON 事件：
 
 - `context_boundary`
-- `harness_observation`
+- `agent_observation`
+- `harness_observation`，迁移期兼容别名
 - `rag_evidence`
 - `summary`
 - `complete`
@@ -129,7 +139,7 @@ mvn -q -Pintegration "-DskipTests=false" verify
 
 在 full live evaluation 产生真实报告前，不宣称 BM25、RRF、Small-to-Big 或二次检索带来确定数值提升。
 
-当前回归基线为 187 个默认测试和 108 个 integration 测试，均为 0 failure/0 error。live 已验证 Harness、本地 evidence 和 MCP ToolCallback 注入，完整外部 evidence 及三组评测仍受百炼账户额度限制，详见升级总控文档。
+当前默认回归已覆盖 Spring AI 2 兼容性、社区 Session API、Advisor 基础设施、RAG 入库、会话记忆和上下文预算。完整外部 MCP evidence、三组 RAG 对照和消融结论仍需 live evaluation 单独验收，详见升级总控文档。
 
 ## 本地运行
 

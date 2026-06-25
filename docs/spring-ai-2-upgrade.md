@@ -17,7 +17,7 @@
 - [Spring AI Reference](https://docs.spring.io/spring-ai/reference/index.html)
 - [Spring Boot 4.1.0 Release](https://github.com/spring-projects/spring-boot/releases/tag/v4.1.0)
 
-升级不改变 Controlled Agent Harness、Agentic RAG、MCP 动态路由和 session 记忆的业务模型，只替换框架已废弃或移除的基础 API。
+当前分支已经进入 Spring AI 2 主链路收敛：模型调用改由 `SpringAiAgentRuntime -> ChatClient -> Advisor Chain` 承接，旧 Harness 作为迁移期兼容路径保留。
 
 ## 主要适配
 
@@ -32,9 +32,18 @@
 ### 动态工具调用
 
 - 不在运行时复制 `ChatClient`，继续复用已装配客户端。
-- MCP ToolCallback 通过单次请求的统一 `tools(...)` API 注入，不再使用 Spring AI 2 已标记移除的 `toolCallbacks(...) / defaultToolCallbacks(...)`。
+- MCP ToolCallback 通过单次请求的统一 `tools(...)` API 注入。
 - `ChatClient.builder(chatModel)` 默认提供工具调用 Advisor，因此模型首轮返回 tool call 后，会执行回调并继续下一轮模型调用。
 - `SpringAi2CompatibilityTest` 使用脚本化 ChatModel 验证了“模型请求工具 -> 回调执行 -> 模型最终回答”的完整闭环。
+- 自定义 MCP 关键词打分路由退出主链路，工具发现和调用循环交给 Spring AI 2 Tool Calling；项目保留注册边界、只读过滤和 `GuardedToolCallback` 安全包装。
+
+### Advisor Chain 与 Session
+
+- 新增 `SpringAiAgentRuntime` 作为主执行链路，`AgentDispatchService` 默认调用该 Runtime。
+- 新增 `ContextBudgetAdvisor`、`EvidenceRetrievalAdvisor` 和 `ObservationTraceAdvisor`，分别承担上下文预算、项目知识 evidence 检索和运行态 trace。
+- 引入 Spring AI Community `spring-ai-session`，并通过 `SessionMemoryAdvisor` 接入 Advisor Chain。
+- Spring AI 2.0.0 GA 本体没有在 `org.springframework.ai.chat.memory` 下暴露 `Session / SessionEvent / SessionService / CompactionTrigger / CompactionStrategy`，当前使用社区 `org.springframework.ai.session.*` API 作为面向 Spring AI 2.1 记忆方向的前置兼容路径。
+- 当前默认使用 `InMemorySessionRepository` 验证 Session Advisor 语义，现有 conversation 表继续作为跨重启兜底；JDBC Session 存储和表结构迁移后续单独处理。
 
 ### MCP 与 Actuator
 
@@ -57,6 +66,8 @@
 
 - **统一 Tools API**：动态 MCP 回调改用请求级 `tools(...)`，既能接收 ToolCallback，也保留后续接入 Provider 或 `@Tool` 对象的统一入口。
 - **ChatClient ToolCallingAdvisor**：工具执行循环由 Spring AI 2 的 Advisor 负责，项目只保留路由、授权和异常治理，不再自研模型/工具循环。
+- **Advisor Chain 主链路**：上下文预算、Session 记忆、RAG evidence 和运行态观测开始进入 Spring AI Advisor 体系，旧 Harness 不再作为新增能力入口。
+- **社区 Session API**：接入 Spring AI Community `spring-ai-session` 的 `SessionService / SessionMemoryAdvisor / CompactionTrigger / CompactionStrategy` API，可向 Spring AI 2.1 的记忆方向平滑迁移。
 - **不可变 Provider Options**：连接级 Options 缓存后通过 `mutate()` 派生模型配置，降低动态装配时遗漏 base URL、API key 或模型参数的风险。
 - **Builder 风格文本切分器**：`TokenTextSplitter.builder()` 代替已标记移除的构造器，为后续按知识库配置 chunk 参数保留稳定扩展点。
 - **MCP SDK 2 transport API**：使用 Jackson 3 mapper supplier 和新的 HTTP request customizer，继续支持 Stdio 与 Streamable HTTP。
@@ -64,8 +75,8 @@
 评估后暂缓的能力：
 
 - **Provider 原生结构化输出与 schema retry**：适合 Action JSON，但当前百炼 OpenAI compatible 模型支持边界需要单独验证，而且现有模型端口统一承担 trace、上下文预算和 fallback；本阶段不为此增加第二种模型调用入口。
-- **框架 ChatMemory Advisor**：项目已有数据库 session 消息、摘要压缩和上下文边界，重复接入会形成两套记忆来源。
-- **更多 ToolCallbackProvider 自动装配**：当前 MCP 必须经过运行时路由和只读授权，不能为了减少装配代码绕过治理层。
+- **JDBC Session 存储直接替换现有会话表**：当前只做 Session Advisor 语义接入，持久化迁移需要单独设计表兼容和历史数据读取。
+- **更多 ToolCallbackProvider 自动装配**：当前 MCP 必须经过注册边界和只读授权，不能为了减少装配代码绕过治理层。
 
 结论是只吸收能减少自研逻辑、消除废弃 API 或增强扩展性的特性，不把框架升级包装成新的 Agent 业务能力。
 
@@ -74,7 +85,7 @@
 - 当前 Chat 和 Embedding 仍通过 DashScope OpenAI compatible endpoint 接入。
 - 自定义 `completions_path / embeddings_path` 不再支持；供应商地址必须配置为完整 compatible base URL，例如 `/compatible-mode/v1`。
 - 项目业务 JSON 处理暂未整体迁移，MCP transport 已按 SDK 2 要求使用 Jackson 3；不为追求依赖形式统一扩大业务重构。
-- Spring AI 2 升级不等于增加新的 Agent 能力，简历和答辩仍以 Harness、Agentic RAG、MCP 治理和上下文治理为主线。
+- Spring AI 2 升级不等于增加新的 Agent 能力，简历和答辩应以 Spring AI 2 Advisor Chain 下的 evidence 治理、MCP 工具安全和 Session 短期记忆为主线。
 
 ## 验收命令
 
@@ -82,7 +93,7 @@
 $env:JAVA_HOME='D:\Environment\JDK17'
 $env:Path="$env:JAVA_HOME\bin;$env:Path"
 
-mvn -q -pl ai-agent-station-app -am "-DskipTests=false" "-Dsurefire.failIfNoSpecifiedTests=false" "-Dtest=SpringAi2CompatibilityTest" test
+mvn -q -pl ai-agent-station-app -am "-DskipTests=false" "-Dsurefire.failIfNoSpecifiedTests=false" "-Dtest=SpringAi2CompatibilityTest,SessionApiAvailabilityTest,SpringAiAdvisorInfrastructureTest" test
 mvn -q "-DskipTests=false" test
 mvn -q "-DskipTests" package
 git diff --check
@@ -100,7 +111,7 @@ git diff --check
 - 全量测试：160 个测试，147 个实际执行，13 个真实 AI 或数据库变更门禁测试按设计跳过，0 failures，0 errors。
 - 打包：Spring Boot 4.1.0 可执行 jar 构建通过。
 - 运行态：`/actuator/health` 返回 HTTP 200，MySQL、PGVector、Elasticsearch、Context7 Stdio MCP 和 Exa Streamable HTTP 均完成初始化。
-- live smoke：普通 Harness、MCP 工具路由、Agentic RAG 独立 `rag_evidence` 事件和同 session 两轮记忆全部通过。
+- live smoke：旧 Harness 版本已验证过本地 evidence 和 MCP ToolCallback 注入；当前 Spring AI 2 主链路仍需单独补充 live smoke 与三组 evaluation。
 - 已停止 Windows 本地 PostgreSQL，并将启动类型调整为手动；项目按默认 `5432` 直接连接 Docker pgvector，与 Docker Elasticsearch 统一管理。
 - 开发、导入和 smoke 脚本新增本地 PostgreSQL 冲突检查，避免应用静默连接到错误实例。
 - 本轮真实输出长度未达到 `context_guard` 阈值；压缩触发与保留策略由 `AgentContextWindowServiceTest` 确定性覆盖。

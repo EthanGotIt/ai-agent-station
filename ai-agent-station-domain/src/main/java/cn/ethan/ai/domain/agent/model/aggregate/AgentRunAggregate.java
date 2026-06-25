@@ -3,8 +3,6 @@ package cn.ethan.ai.domain.agent.model.aggregate;
 import cn.ethan.ai.domain.agent.model.entity.AgentRunTraceEntity;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AgentRunRecordVO;
-import cn.ethan.ai.domain.agent.model.valobj.ContextBudgetPolicyVO;
-import cn.ethan.ai.domain.agent.model.valobj.ContextWindowGuardVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AgentRunStatusEnumVO;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -22,9 +20,6 @@ public class AgentRunAggregate {
 
     @Getter
     private final AgentRunTraceEntity trace;
-
-    @Getter
-    private final ContextWindowGuardVO contextWindowGuard;
 
     private final Map<String, String> stepOutputs = new LinkedHashMap<>();
 
@@ -49,15 +44,14 @@ public class AgentRunAggregate {
     @Getter
     private LocalDateTime endTime;
 
-    private AgentRunAggregate(ExecuteCommandEntity command, ContextBudgetPolicyVO contextBudgetPolicy) {
+    private AgentRunAggregate(ExecuteCommandEntity command) {
         this.command = command;
         this.trace = new AgentRunTraceEntity();
-        this.contextWindowGuard = new ContextWindowGuardVO(contextBudgetPolicy);
         this.status = AgentRunStatusEnumVO.INIT;
     }
 
-    public static AgentRunAggregate create(ExecuteCommandEntity command, ContextBudgetPolicyVO contextBudgetPolicy) {
-        return new AgentRunAggregate(command, contextBudgetPolicy);
+    public static AgentRunAggregate create(ExecuteCommandEntity command) {
+        return new AgentRunAggregate(command);
     }
 
     public String runId() {

@@ -18,8 +18,8 @@ import cn.ethan.ai.domain.agent.model.valobj.enums.StreamTransportTypeEnumVO;
 import cn.ethan.ai.domain.agent.service.IAgentDispatchService;
 import cn.ethan.ai.domain.agent.service.IAgentRunService;
 import cn.ethan.ai.domain.agent.service.execute.runtime.AgentContextBoundaryService;
-import cn.ethan.ai.domain.agent.service.execute.runtime.AgentExecutionException;
-import cn.ethan.ai.trigger.http.adapter.ResponseBodyEmitterStreamPort;
+import cn.ethan.ai.types.exception.AgentExecutionException;
+import cn.ethan.ai.trigger.http.adapter.SseEmitterStreamPort;
 import com.alibaba.fastjson.JSON;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletResponse;
@@ -32,7 +32,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.Collections;
 
@@ -56,18 +56,19 @@ public class AiAgentController implements IAiAgentService {
 
     @Override
     @RequestMapping(value = "execute", method = RequestMethod.POST)
-    public ResponseBodyEmitter execute(@RequestBody AgentExecuteRequestDTO request, HttpServletResponse response) {
+    public SseEmitter execute(@RequestBody AgentExecuteRequestDTO request, HttpServletResponse response) {
         log.info("Agent 流式执行请求开始，请求信息：{}", JSON.toJSONString(request));
 
         try {
-            response.setContentType("application/x-ndjson");
+            response.setContentType("text/event-stream");
             response.setCharacterEncoding("UTF-8");
             response.setHeader("Cache-Control", "no-cache, no-transform");
             response.setHeader("Connection", "keep-alive");
+            response.setHeader("X-Accel-Buffering", "no");
 
             validateRequest(request);
 
-            ResponseBodyEmitter emitter = new ResponseBodyEmitter(10 * 60 * 1000L);
+            SseEmitter emitter = new SseEmitter(10 * 60 * 1000L);
             ExecuteCommandEntity executeCommandEntity = ExecuteCommandEntity.builder()
                     .aiAgentId(request.getAiAgentId())
                     .message(request.getMessage())
@@ -76,11 +77,11 @@ public class AiAgentController implements IAiAgentService {
                     .streamProtocol(StreamTransportTypeEnumVO.STREAMABLE_HTTP.getCode())
                     .build();
 
-            agentDispatchService.dispatch(executeCommandEntity, new ResponseBodyEmitterStreamPort(emitter));
+            agentDispatchService.dispatch(executeCommandEntity, new SseEmitterStreamPort(emitter));
             return emitter;
         } catch (Exception e) {
             log.error("Agent 请求处理异常：{}", e.getMessage(), e);
-            ResponseBodyEmitter errorEmitter = new ResponseBodyEmitter();
+            SseEmitter errorEmitter = new SseEmitter();
             try {
                 sendError(errorEmitter, "请求处理异常：" + e.getMessage(), request, resolveRunId(e));
             } catch (Exception ex) {
@@ -144,13 +145,13 @@ public class AiAgentController implements IAiAgentService {
         }
     }
 
-    private void sendError(ResponseBodyEmitter emitter, String content, AgentExecuteRequestDTO request, String runId) throws Exception {
+    private void sendError(SseEmitter emitter, String content, AgentExecuteRequestDTO request, String runId) throws Exception {
         AgentExecuteResultEntity errorResult = AgentExecuteResultEntity.createErrorResult(
                 content,
                 request == null ? null : request.getSessionId(),
                 runId
         );
-        emitter.send(JSON.toJSONString(errorResult) + "\n");
+        emitter.send(SseEmitter.event().name("error").data(JSON.toJSONString(errorResult)));
         emitter.complete();
     }
 

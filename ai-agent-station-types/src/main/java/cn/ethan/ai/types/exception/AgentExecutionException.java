@@ -1,4 +1,4 @@
-package cn.ethan.ai.domain.agent.service.execute.runtime;
+package cn.ethan.ai.types.exception;
 
 import lombok.Getter;
 

@@ -2,9 +2,9 @@ package cn.ethan.ai.domain.agent.service.execute.runtime;
 
 import cn.ethan.ai.domain.agent.model.valobj.ContextUnitEstimator;
 import cn.ethan.ai.domain.agent.model.valobj.HeuristicContextUnitEstimator;
+import jakarta.annotation.PostConstruct;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -17,13 +17,20 @@ import java.util.List;
 @Service
 public class PromptBudgetAssembler {
 
-    private final int maxContextUnits;
+    @Value("${ai-agent.context.max-context-units:12000}")
+    private int configuredMaxContextUnits;
+
+    private int maxContextUnits;
 
     private final ContextUnitEstimator estimator;
 
-    @Autowired
-    public PromptBudgetAssembler(@Value("${ai-agent.context.max-context-units:12000}") int maxContextUnits) {
-        this(maxContextUnits, HeuristicContextUnitEstimator.INSTANCE);
+    public PromptBudgetAssembler() {
+        this.estimator = HeuristicContextUnitEstimator.INSTANCE;
+    }
+
+    @PostConstruct
+    private void init() {
+        this.maxContextUnits = configuredMaxContextUnits <= 0 ? 12000 : configuredMaxContextUnits;
     }
 
     public PromptBudgetAssembler(int maxContextUnits, ContextUnitEstimator estimator) {

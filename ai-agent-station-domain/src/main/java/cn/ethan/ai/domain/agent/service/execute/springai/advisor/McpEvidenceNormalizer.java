@@ -1,10 +1,11 @@
-package cn.ethan.ai.domain.agent.service.execute.harness;
+package cn.ethan.ai.domain.agent.service.execute.springai.advisor;
 
 import cn.ethan.ai.domain.agent.model.valobj.ToolInvocationRecordVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.EvidenceSourceTypeEnumVO;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.lang3.StringUtils;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.stereotype.Service;
 
@@ -19,6 +20,7 @@ import java.util.regex.Pattern;
 /**
  * 将真实 MCP ToolCallback 输出归一化为可追踪 evidence。
  */
+@Slf4j
 @Service
 public class McpEvidenceNormalizer {
 
@@ -45,7 +47,7 @@ public class McpEvidenceNormalizer {
             try {
                 collectJson(objectMapper.readTree(invocation.getOutput()), invocation, sourceType, query, documents);
             } catch (Exception ignored) {
-                // Plain text MCP responses are retained as low-trust evidence without an attributable URI.
+                // 纯文本 MCP 响应保留为低可信 evidence，不把它伪装成可归因来源。
             }
             if (documents.size() == before) {
                 documents.add(buildDocument(invocation, sourceType, query,
@@ -88,7 +90,7 @@ public class McpEvidenceNormalizer {
             documents.add(buildDocument(invocation, sourceType, query, title, uri, content,
                     StringUtils.isNotBlank(uri), documents.size() + 1));
         }
-        node.fields().forEachRemaining(entry -> {
+        node.properties().forEach(entry -> {
             if (entry.getValue().isContainerNode()) {
                 collectJson(entry.getValue(), invocation, sourceType, query, documents);
             }
