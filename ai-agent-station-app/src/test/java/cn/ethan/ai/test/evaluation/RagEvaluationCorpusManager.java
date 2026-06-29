@@ -28,7 +28,7 @@ import java.util.Set;
  */
 final class RagEvaluationCorpusManager {
 
-    static final String EVALUATION_RAG_ID = "7991";
+    static final String EVALUATION_RAG_ID = "rag-eval-v1";
 
     private static final String CORPUS = "/evaluation/rag-evaluation-project-corpus-v1.jsonl";
     private static final int TOP_K = 5;
@@ -62,7 +62,7 @@ final class RagEvaluationCorpusManager {
         originalRagConfigStatuses = mysqlJdbcTemplate.query("""
                         SELECT id, status
                         FROM ai_client_config
-                        WHERE source_type='client' AND source_id='2103' AND target_type='rag' AND target_id<>?
+                        WHERE source_type='client' AND source_id='client-advisor-main' AND target_type='rag' AND target_id<>?
                         """, (resultSet, rowNum) -> Map.entry(resultSet.getLong("id"), resultSet.getInt("status")),
                 EVALUATION_RAG_ID).stream().collect(java.util.stream.Collectors.toMap(
                 Map.Entry::getKey, Map.Entry::getValue, (left, right) -> left, LinkedHashMap::new));
@@ -74,7 +74,7 @@ final class RagEvaluationCorpusManager {
                 """, EVALUATION_RAG_ID);
         mysqlJdbcTemplate.update("""
                 INSERT INTO ai_client_config(source_type, source_id, target_type, target_id, ext_param, status)
-                VALUES ('client', '2103', 'rag', ?, '{}', 1)
+                VALUES ('client', 'client-advisor-main', 'rag', ?, '{}', 1)
                 """, EVALUATION_RAG_ID);
         corpusEntries = loadCorpus();
         StringBuilder markdown = new StringBuilder("# RAG Evaluation V1 Project Corpus\n\n");
@@ -95,7 +95,7 @@ final class RagEvaluationCorpusManager {
 
     private void cleanupEvaluationArtifacts() {
         try {
-            mysqlJdbcTemplate.update("DELETE FROM ai_client_config WHERE source_type='client' AND source_id='2103' AND target_type='rag' AND target_id=?", EVALUATION_RAG_ID);
+            mysqlJdbcTemplate.update("DELETE FROM ai_client_config WHERE source_type='client' AND source_id='client-advisor-main' AND target_type='rag' AND target_id=?", EVALUATION_RAG_ID);
             mysqlJdbcTemplate.update("DELETE FROM ai_rag_chunk WHERE rag_id=?", EVALUATION_RAG_ID);
             mysqlJdbcTemplate.update("DELETE FROM ai_rag_document WHERE rag_id=?", EVALUATION_RAG_ID);
             mysqlJdbcTemplate.update("DELETE FROM ai_client_rag_order WHERE rag_id=?", EVALUATION_RAG_ID);

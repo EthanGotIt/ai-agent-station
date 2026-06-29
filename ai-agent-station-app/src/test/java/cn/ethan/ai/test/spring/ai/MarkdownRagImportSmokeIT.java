@@ -46,22 +46,22 @@ public class MarkdownRagImportSmokeIT {
     @Test
     public void importMarkdownParentChild() throws IOException {
         RagIngestionResultVO mcpGuideResult = ragIngestionService.ingestMarkdown(
-                "7001",
+                "rag-agent-station",
                 "Spring AI MCP Client 使用指南",
                 "spring-ai-mcp-client.md",
                 readUtf8Resource(springAiMcpClientMarkdown)
         );
 
         RagIngestionResultVO ragGuideResult = ragIngestionService.ingestMarkdown(
-                "7001",
+                "rag-agent-station",
                 "Evidence Retrieval 说明",
                 "rag-evidence-retrieval.md",
                 readUtf8Resource(ragEvidenceMarkdown)
         );
 
-        int documentCount = queryCount("SELECT COUNT(1) FROM ai_rag_document WHERE rag_id = '7001'");
-        int chunkCount = queryCount("SELECT COUNT(1) FROM ai_rag_chunk WHERE rag_id = '7001' AND chunk_level = 1");
-        int hierarchicalChunkCount = queryCount("SELECT COUNT(1) FROM ai_rag_chunk WHERE rag_id = '7001' AND parent_chunk_id IS NOT NULL");
+        int documentCount = queryCount("SELECT COUNT(1) FROM ai_rag_document WHERE rag_id = 'rag-agent-station'");
+        int chunkCount = queryCount("SELECT COUNT(1) FROM ai_rag_chunk WHERE rag_id = 'rag-agent-station' AND chunk_level = 1");
+        int hierarchicalChunkCount = queryCount("SELECT COUNT(1) FROM ai_rag_chunk WHERE rag_id = 'rag-agent-station' AND parent_chunk_id IS NOT NULL");
         int expectedChunkCount = mcpGuideResult.getChunkCount() + ragGuideResult.getChunkCount();
 
         Assertions.assertTrue(documentCount >= 2, "文档记录写入失败");

@@ -7,7 +7,7 @@
 - Default unit-test validation: enabled and network-free.
 - Quick live regression: 6 representative cases for routine code changes.
 - Full live baseline and adaptive comparison: not yet recorded. Do not claim numerical improvements before a full live run produces the report.
-- 2026-06-23 live preflight reached Harness decisions, project retrieval and MCP ToolCallback injection. The three-mode run was not started because the configured DashScope account returned `free quota exhausted`.
+- 2026-06-23 live preflight belonged to the old Harness branch and is kept only as historical context. Current Spring AI 2 main chain needs a new quick live report before making effect claims.
 
 ## Evaluation Tiers
 
@@ -26,7 +26,7 @@ Quick and custom reports are useful for regression diagnosis, but they are not s
 2. `FIXED_ADVANCED_RAG_BASELINE`
 3. `ADAPTIVE_AGENTIC_RETRIEVAL`
 
-Comparison implementations belong to test/evaluation code only. Production has one retrieval entry: `EvidenceRetrievalService`.
+Comparison implementations belong to test/evaluation code only. Production retrieval is entered through Spring AI Advisor Chain and `EvidenceRetrievalAdvisor`.
 
 ## Dataset Distribution
 

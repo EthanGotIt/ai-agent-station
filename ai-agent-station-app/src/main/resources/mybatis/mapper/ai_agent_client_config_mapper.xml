@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="cn.ethan.ai.infrastructure.dao.IAiAgentHarnessConfigDao">
+<mapper namespace="cn.ethan.ai.infrastructure.dao.IAiAgentClientConfigDao">
 
-    <resultMap id="AiAgentHarnessConfigMap" type="cn.ethan.ai.infrastructure.dao.po.AiAgentHarnessConfig">
+    <resultMap id="AiAgentClientConfigMap" type="cn.ethan.ai.infrastructure.dao.po.AiAgentClientConfig">
         <id column="id" property="id"/>
         <result column="agent_id" property="agentId"/>
         <result column="client_id" property="clientId"/>
@@ -13,15 +13,15 @@
         <result column="create_time" property="createTime"/>
     </resultMap>
 
-    <insert id="insert" parameterType="cn.ethan.ai.infrastructure.dao.po.AiAgentHarnessConfig" useGeneratedKeys="true"
+    <insert id="insert" parameterType="cn.ethan.ai.infrastructure.dao.po.AiAgentClientConfig" useGeneratedKeys="true"
             keyProperty="id">
-        INSERT INTO ai_agent_harness_config (agent_id, client_id, client_name, client_type, sequence, step_prompt,
+        INSERT INTO ai_agent_client_config (agent_id, client_id, client_name, client_type, sequence, step_prompt,
                                           create_time)
         VALUES (#{agentId}, #{clientId}, #{clientName}, #{clientType}, #{sequence}, #{stepPrompt}, #{createTime})
     </insert>
 
-    <update id="updateById" parameterType="cn.ethan.ai.infrastructure.dao.po.AiAgentHarnessConfig">
-        UPDATE ai_agent_harness_config
+    <update id="updateById" parameterType="cn.ethan.ai.infrastructure.dao.po.AiAgentClientConfig">
+        UPDATE ai_agent_client_config
         SET agent_id    = #{agentId},
             client_id   = #{clientId},
             sequence    = #{sequence},
@@ -31,17 +31,17 @@
 
     <delete id="deleteById" parameterType="java.lang.Long">
         DELETE
-        FROM ai_agent_harness_config
+        FROM ai_agent_client_config
         WHERE id = #{id}
     </delete>
 
     <delete id="deleteByAgentId" parameterType="java.lang.String">
         DELETE
-        FROM ai_agent_harness_config
+        FROM ai_agent_client_config
         WHERE agent_id = #{agentId}
     </delete>
 
-    <select id="queryById" parameterType="java.lang.Long" resultMap="AiAgentHarnessConfigMap">
+    <select id="queryById" parameterType="java.lang.Long" resultMap="AiAgentClientConfigMap">
         SELECT id,
                agent_id,
                client_id,
@@ -50,11 +50,11 @@
                sequence,
                step_prompt,
                create_time
-        FROM ai_agent_harness_config
+        FROM ai_agent_client_config
         WHERE id = #{id}
     </select>
 
-    <select id="queryByAgentId" parameterType="java.lang.String" resultMap="AiAgentHarnessConfigMap">
+    <select id="queryByAgentId" parameterType="java.lang.String" resultMap="AiAgentClientConfigMap">
         SELECT id,
                agent_id,
                client_id,
@@ -63,13 +63,13 @@
                sequence,
                step_prompt,
                create_time
-        FROM ai_agent_harness_config
+        FROM ai_agent_client_config
         WHERE agent_id = #{agentId}
           AND status = 1
         ORDER BY sequence
     </select>
 
-    <select id="queryByClientId" parameterType="java.lang.String" resultMap="AiAgentHarnessConfigMap">
+    <select id="queryByClientId" parameterType="java.lang.String" resultMap="AiAgentClientConfigMap">
         SELECT id,
                agent_id,
                client_id,
@@ -78,12 +78,12 @@
                sequence,
                step_prompt,
                create_time
-        FROM ai_agent_harness_config
+        FROM ai_agent_client_config
         WHERE client_id = #{clientId}
         ORDER BY sequence
     </select>
 
-    <select id="queryByAgentIdAndClientId" resultMap="AiAgentHarnessConfigMap">
+    <select id="queryByAgentIdAndClientId" resultMap="AiAgentClientConfigMap">
         SELECT id,
                agent_id,
                client_id,
@@ -92,12 +92,12 @@
                sequence,
                step_prompt,
                create_time
-        FROM ai_agent_harness_config
+        FROM ai_agent_client_config
         WHERE agent_id = #{agentId}
           AND client_id = #{clientId}
     </select>
 
-    <select id="queryAll" resultMap="AiAgentHarnessConfigMap">
+    <select id="queryAll" resultMap="AiAgentClientConfigMap">
         SELECT id,
                agent_id,
                client_id,
@@ -106,7 +106,7 @@
                sequence,
                step_prompt,
                create_time
-        FROM ai_agent_harness_config
+        FROM ai_agent_client_config
         ORDER BY agent_id, sequence
     </select>
 

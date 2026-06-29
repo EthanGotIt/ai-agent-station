@@ -27,7 +27,7 @@ public class AiClientDaoIT {
         ManualTestGate.requireDbMutation("AiClientDaoTest.test_insert");
 
         AiClient aiClient = AiClient.builder()
-                .clientId("test_3006")
+                .clientId("test-client-dao")
                 .clientName("测试客户端")
                 .description("这是一个测试客户端")
                 .status(1)
@@ -43,7 +43,7 @@ public class AiClientDaoIT {
     public void test_updateById() {
         AiClient aiClient = AiClient.builder()
                 .id(1L)
-                .clientId("test_3006")
+                .clientId("test-client-dao")
                 .clientName("更新后的测试客户端")
                 .description("这是一个更新后的测试客户端")
                 .status(1)
@@ -57,7 +57,7 @@ public class AiClientDaoIT {
     @Test
     public void test_updateByClientId() {
         AiClient aiClient = AiClient.builder()
-                .clientId("test_3006")
+                .clientId("test-client-dao")
                 .clientName("通过ClientId更新的客户端")
                 .description("通过ClientId更新的描述")
                 .status(0)
@@ -76,7 +76,7 @@ public class AiClientDaoIT {
 
     @Test
     public void test_queryByClientId() {
-        AiClient aiClient = aiClientDao.queryByClientId("3001");
+        AiClient aiClient = aiClientDao.queryByClientId("client-advisor-main");
         log.info("根据ClientId查询结果: {}", aiClient);
     }
 
@@ -109,7 +109,7 @@ public class AiClientDaoIT {
 
     @Test
     public void test_deleteByClientId() {
-        int result = aiClientDao.deleteByClientId("test_3006");
+        int result = aiClientDao.deleteByClientId("test-client-dao");
         log.info("根据ClientId删除结果: {}", result);
     }
 

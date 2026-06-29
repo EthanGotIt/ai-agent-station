@@ -12,7 +12,6 @@ import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.ai.tool.metadata.ToolMetadata;
 
 import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -31,7 +30,7 @@ public class GuardedToolCallback implements ToolCallback {
         this.delegate = delegate;
         this.allowedToolNames = allowedToolNames == null ? Set.of() : allowedToolNames.stream()
                 .filter(StringUtils::isNotBlank)
-                .map(name -> name.trim().toLowerCase(Locale.ROOT))
+                .map(ToolGuardPolicy::normalize)
                 .collect(Collectors.toSet());
     }
 
@@ -97,7 +96,7 @@ public class GuardedToolCallback implements ToolCallback {
         if (StringUtils.isBlank(toolName)) {
             return error("UNKNOWN", "TOOL_NAME_INVALID", "工具名称为空，已拒绝调用。");
         }
-        String normalizedToolName = toolName.trim().toLowerCase(Locale.ROOT);
+        String normalizedToolName = ToolGuardPolicy.normalize(toolName);
         if (!allowedToolNames.contains(normalizedToolName)) {
             return error(toolName, "TOOL_NOT_AUTHORIZED", "工具不在本轮授权集合内，已拒绝调用。");
         }
@@ -118,10 +117,12 @@ public class GuardedToolCallback implements ToolCallback {
     private String resolveToolName() {
         if (delegate == null) {
             return "";
-        } else {
-            delegate.getToolDefinition();
         }
-        return delegate.getToolDefinition().name();
+        ToolDefinition definition = delegate.getToolDefinition();
+        if (definition == null || definition.name() == null) {
+            return "";
+        }
+        return definition.name();
     }
 
     private String error(String toolName, String errorType, String message) {

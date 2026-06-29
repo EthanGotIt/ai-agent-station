@@ -101,7 +101,7 @@ public class AiClientToolMcpDaoIT {
 
     @Test
     public void test_queryByMcpId() {
-        AiClientToolMcp aiClientToolMcp = aiClientToolMcpDao.queryByMcpId("5001");
+        AiClientToolMcp aiClientToolMcp = aiClientToolMcpDao.queryByMcpId("mcp-context7-docs");
         Assertions.assertNotNull(aiClientToolMcp);
         log.info("根据MCP ID查询结果: {}", aiClientToolMcp);
     }

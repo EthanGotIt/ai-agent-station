@@ -27,7 +27,7 @@ public class AiClientRagOrderDaoIT {
         ManualTestGate.requireDbMutation("AiClientRagOrderDaoTest.test_insert");
 
         AiClientRagOrder aiClientRagOrder = AiClientRagOrder.builder()
-                .ragId("test_rag_001")
+                .ragId("test-rag-dao")
                 .ragName("测试知识库")
                 .knowledgeTag("测试标签")
                 .status(1)
@@ -43,7 +43,7 @@ public class AiClientRagOrderDaoIT {
     public void test_updateById() {
         AiClientRagOrder aiClientRagOrder = AiClientRagOrder.builder()
                 .id(1L)
-                .ragId("test_rag_001")
+                .ragId("test-rag-dao")
                 .ragName("更新后的测试知识库")
                 .knowledgeTag("更新后的测试标签")
                 .status(1)
@@ -57,7 +57,7 @@ public class AiClientRagOrderDaoIT {
     @Test
     public void test_updateByRagId() {
         AiClientRagOrder aiClientRagOrder = AiClientRagOrder.builder()
-                .ragId("test_rag_001")
+                .ragId("test-rag-dao")
                 .ragName("根据知识库ID更新的测试知识库")
                 .knowledgeTag("根据知识库ID更新的测试标签")
                 .status(1)
@@ -76,7 +76,7 @@ public class AiClientRagOrderDaoIT {
 
     @Test
     public void test_deleteByRagId() {
-        int result = aiClientRagOrderDao.deleteByRagId("test_rag_001");
+        int result = aiClientRagOrderDao.deleteByRagId("test-rag-dao");
         log.info("根据知识库ID删除结果: {}", result);
     }
 
@@ -88,7 +88,7 @@ public class AiClientRagOrderDaoIT {
 
     @Test
     public void test_queryByRagId() {
-        AiClientRagOrder aiClientRagOrder = aiClientRagOrderDao.queryByRagId("9001");
+        AiClientRagOrder aiClientRagOrder = aiClientRagOrderDao.queryByRagId("rag-agent-station");
         log.info("根据知识库ID查询结果: {}", aiClientRagOrder);
     }
 

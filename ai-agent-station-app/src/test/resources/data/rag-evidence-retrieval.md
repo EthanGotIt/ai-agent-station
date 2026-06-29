@@ -1,18 +1,18 @@
 # 证据治理 Agentic RAG 与 Session 记忆
 
-## 证据检索闭环
+## 证据检索链路
 
-AI Agent Station 的 RAG 主入口是 `EvidenceRetrievalService`。Harness 只决定检索哪类来源，底层算法由后端确定性策略控制。检索结果进入 Evidence Board，下一轮决策评估证据覆盖率、缺失信息和可信度，证据不足时最多追加一次检索。
+AI Agent Station 的 RAG 能力收敛到 Spring AI 2 Advisor Chain。`EvidenceRetrievalAdvisor` 负责根据当前客户端允许的知识库范围检索项目知识，Observation Trace 层负责汇总 RAG metadata 和工具 evidence，生成可追踪的 `rag_evidence` 事件。
 
-项目知识统一使用 PGVector 语义召回，并强制携带当前客户端允许的 `ragId` 过滤。召回结果统一补充来源、查询和排名元数据，再由 Evidence Board 按来源与内容去重。
+项目知识统一使用 PGVector 语义召回，并强制携带当前客户端允许的 `ragId` 过滤。召回结果统一补充来源、查询和排名元数据，再由单次调用内的 EvidenceAccumulator 按来源与内容去重。
 
 BM25/RRF 与 Small-to-Big 在冻结评测中未达到保留门槛，已从生产检索链路移除。固定 Advanced RAG 只作为测试代码中的历史对照，不与当前 Runtime 并存。
 
 ## 引用与拒答
 
-每条规范化证据都有稳定的 Evidence ID、来源类型、标题、URI 或项目文档标识、正文和检索时间。最终事实回答必须引用 `[E1]` 等 Evidence ID。
+每条规范化证据都有来源类型、标题、URI 或项目文档标识、正文和检索时间。最终事实回答应优先基于已检索证据组织，不把模型猜测或伪造的工具输出当作证据。
 
-后端会校验引用是否真实存在。第一次引用错误时允许模型纠正一次，仍失败或证据不足时返回无法确认，而不是用模型常识补齐。
+当前链路保留证据不足拒答和 evidence trace，不把普通网页 AI 式的无来源回答包装成可信结论。引用校验和纠错只按已落地能力表述，不夸大为完整 Self-RAG 或行业标准 Agentic RAG 3.0。
 
 ## Session 短期记忆
 

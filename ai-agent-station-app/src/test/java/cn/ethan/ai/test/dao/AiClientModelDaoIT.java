@@ -97,14 +97,14 @@ public class AiClientModelDaoIT {
 
     @Test
     public void test_queryByModelId() {
-        AiClientModel aiClientModel = aiClientModelDao.queryByModelId("2001");
+        AiClientModel aiClientModel = aiClientModelDao.queryByModelId("model-qwen37-max");
         Assertions.assertNotNull(aiClientModel);
         log.info("根据模型ID查询结果: {}", aiClientModel);
     }
 
     @Test
     public void test_queryByApiId() {
-        List<AiClientModel> aiClientModels = aiClientModelDao.queryByApiId("1001");
+        List<AiClientModel> aiClientModels = aiClientModelDao.queryByApiId("api-dashscope-openai");
         Assertions.assertFalse(aiClientModels.isEmpty());
         log.info("根据API配置ID查询结果数量: {}", aiClientModels.size());
         aiClientModels.forEach(model -> log.info("模型配置: {}", model));
@@ -137,7 +137,7 @@ public class AiClientModelDaoIT {
     private AiClientModel buildTestModel(String modelId) {
         return AiClientModel.builder()
                 .modelId(modelId)
-                .apiId("1001")
+                .apiId("api-dashscope-openai")
                 .modelName("DAO测试模型")
                 .modelType("openai")
                 .status(1)

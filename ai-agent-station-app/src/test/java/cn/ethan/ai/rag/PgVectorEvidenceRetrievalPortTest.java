@@ -9,10 +9,10 @@ public class PgVectorEvidenceRetrievalPortTest {
 
     @Test
     void shouldBuildScopedFilterForAllowedKnowledgeBases() {
-        String filter = PgVectorEvidenceRetrievalPort.buildRagFilterExpression(Set.of("7001", "7002"));
+        String filter = PgVectorEvidenceRetrievalPort.buildRagFilterExpression(Set.of("rag-agent-station", "rag-agent-other"));
 
-        Assertions.assertTrue(filter.contains("rag_id == '7001'"));
-        Assertions.assertTrue(filter.contains("rag_id == '7002'"));
+        Assertions.assertTrue(filter.contains("rag_id == 'rag-agent-station'"));
+        Assertions.assertTrue(filter.contains("rag_id == 'rag-agent-other'"));
         Assertions.assertTrue(filter.contains(" || "));
     }
 

@@ -181,7 +181,7 @@ function loadChatHistory(targetSessionId) {
     sessionId = chat.sessionId;
     document.getElementById('sessionId').textContent = chat.sessionId;
 
-    selectedAgentId = chat.agentId || '1';
+    selectedAgentId = chat.agentId || 'agent-java-knowledge';
     renderAgentCards();
     updateDropdownCases(selectedAgentId);
 
@@ -194,23 +194,23 @@ function loadChatHistory(targetSessionId) {
     scrollToBottom();
 }
 
-let selectedAgentId = '1';
+let selectedAgentId = 'agent-java-knowledge';
 let selectedMaxStep = DEFAULT_MAX_STEP;
 
 const AGENT_CONFIGS = {
-    '1': {
-        id: '1',
-        name: 'Controlled Agent Harness',
-        description: '受控动作循环、只读工具治理、Agentic RAG 证据闭环',
-        capability: 'Agent Harness',
-        tags: ['Action 协议', 'MCP 只读治理', 'Agentic RAG', '流式追踪'],
+    'agent-java-knowledge': {
+        id: 'agent-java-knowledge',
+        name: 'Spring AI Evidence Assistant',
+        description: 'Advisor Chain、只读工具治理、证据可追踪回答',
+        capability: 'Spring AI 2',
+        tags: ['Advisor Chain', 'MCP 只读治理', 'Evidence RAG', '流式追踪'],
         metrics: [
-            { label: '执行内核', value: 'Harness' },
-            { label: '工具路由', value: '按轮动态筛选' },
-            { label: '检索链路', value: 'Agentic RAG' },
+            { label: '执行入口', value: 'ChatClient' },
+            { label: '工具治理', value: 'Tool Guard' },
+            { label: '检索链路', value: 'Evidence RAG' },
             { label: '接口', value: 'NDJSON' }
         ],
-        highlight: '将固定 Flow Plan 收敛为受控 Action Loop，并在知识问答场景中通过检索规划、证据评估、有限二次检索和只读 MCP evidence 融合提升回答可追踪性',
+        highlight: '以 Spring AI 2 ChatClient 和 Advisor Chain 作为主链路，在知识问答场景中统一处理上下文预算、Session 短期记忆、RAG evidence、只读 MCP 工具和运行态追踪',
         color: '#58d0b7',
         iconPath: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
         cases: [
@@ -227,7 +227,7 @@ const AGENT_CONFIGS = {
             },
             {
                 title: '梳理 RAG 多路召回升级方案并整理项目亮点',
-                content: `请分析 AI Agent Station 从 Advanced RAG 收敛到 Agentic RAG 3.0 的升级思路，重点说明检索规划、动态通道选择、证据评估、有限二次检索和 rag_evidence trace 如何提升回答可信度，并整理成可以写进简历的 3 条项目亮点。`
+                content: `请分析 AI Agent Station 从自研 Harness Runtime 收敛到 Spring AI 2 Advisor Chain 的升级思路，重点说明上下文预算、Session 短期记忆、RAG evidence、只读 MCP 工具和 rag_evidence trace 如何提升回答可信度，并整理成可以写进简历的 3 条项目亮点。`
             }
         ]
     }

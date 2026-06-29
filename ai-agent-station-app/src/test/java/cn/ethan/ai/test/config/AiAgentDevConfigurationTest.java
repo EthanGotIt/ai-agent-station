@@ -19,13 +19,13 @@ public class AiAgentDevConfigurationTest {
         Properties properties = factory.getObject();
 
         Assertions.assertNotNull(properties);
-        Assertions.assertEquals("2102,2103",
+        Assertions.assertEquals("client-advisor-main",
                 properties.getProperty("spring.ai.agent.auto-config.client-ids"));
         Assertions.assertNull(properties.getProperty("spring.ai.agent.client-ids"));
     }
 
     @Test
-    public void knowledgeFixturesShouldDescribeCurrentHarnessArchitecture() throws Exception {
+    public void knowledgeFixturesShouldDescribeCurrentAgentArchitecture() throws Exception {
         for (String resourcePath : new String[]{
                 "data/spring-ai-mcp-client.md",
                         "data/rag-evidence-retrieval.md"

@@ -26,7 +26,7 @@ public class AiAgentRunDaoIT {
         String runId = "test-run-" + System.currentTimeMillis();
         AiAgentRun run = AiAgentRun.builder()
                 .runId(runId)
-                .agentId("1")
+                .agentId("agent-java-knowledge")
                 .sessionId("session-test")
                 .userMessage("hello")
                 .status("RUNNING")

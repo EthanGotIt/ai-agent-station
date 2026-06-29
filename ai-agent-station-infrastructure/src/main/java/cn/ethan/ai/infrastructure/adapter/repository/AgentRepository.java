@@ -26,7 +26,7 @@ public class AgentRepository implements IAgentRepository {
     private IAiAgentDao aiAgentDao;
 
     @Resource
-    private IAiAgentHarnessConfigDao aiAgentHarnessConfigDao;
+    private IAiAgentClientConfigDao aiAgentClientConfigDao;
 
     @Resource
     private IAiClientApiDao aiClientApiDao;
@@ -258,22 +258,22 @@ public class AgentRepository implements IAgentRepository {
     }
 
     @Override
-    public Map<String, AiAgentClientHarnessConfigVO> queryAiAgentClientHarnessConfig(String aiAgentId) {
+    public Map<String, AiAgentClientConfigVO> queryAiAgentClientConfig(String aiAgentId) {
         if (aiAgentId == null || aiAgentId.trim().isEmpty()) {
             return Map.of();
         }
 
         try {
-            List<AiAgentHarnessConfig> harnessConfigs = aiAgentHarnessConfigDao.queryByAgentId(aiAgentId);
-            if (isEmpty(harnessConfigs)) {
+            List<AiAgentClientConfig> clientConfigs = aiAgentClientConfigDao.queryByAgentId(aiAgentId);
+            if (isEmpty(clientConfigs)) {
                 return Map.of();
             }
 
-            Map<String, AiAgentClientHarnessConfigVO> result = new LinkedHashMap<>();
-            for (AiAgentHarnessConfig config : harnessConfigs) {
+            Map<String, AiAgentClientConfigVO> result = new LinkedHashMap<>();
+            for (AiAgentClientConfig config : clientConfigs) {
                 List<String> ragIds = queryRagIdsByClientIds(List.of(config.getClientId()));
                 result.putIfAbsent(config.getClientType(),
-                        AiAgentClientHarnessConfigVO.builder()
+                        AiAgentClientConfigVO.builder()
                                 .clientId(config.getClientId())
                                 .clientName(config.getClientName())
                                 .clientType(config.getClientType())
@@ -320,23 +320,23 @@ public class AgentRepository implements IAgentRepository {
     }
 
     @Override
-    public List<AiAgentClientHarnessConfigVO> queryAiAgentClientsByAgentId(String aiAgentId) {
-        List<AiAgentClientHarnessConfigVO> aiAgentClientHarnessConfigVOS = new ArrayList<>();
+    public List<AiAgentClientConfigVO> queryAiAgentClientsByAgentId(String aiAgentId) {
+        List<AiAgentClientConfigVO> aiAgentClientConfigVOS = new ArrayList<>();
 
-        List<AiAgentHarnessConfig> harnessConfigs = aiAgentHarnessConfigDao.queryByAgentId(aiAgentId);
-        for (AiAgentHarnessConfig harnessConfig : harnessConfigs) {
-            AiAgentClientHarnessConfigVO configVO = AiAgentClientHarnessConfigVO.builder()
-                    .clientId(harnessConfig.getClientId())
-                    .clientName(harnessConfig.getClientName())
-                    .clientType(harnessConfig.getClientType())
-                    .sequence(harnessConfig.getSequence())
-                    .stepPrompt(harnessConfig.getStepPrompt())
+        List<AiAgentClientConfig> clientConfigs = aiAgentClientConfigDao.queryByAgentId(aiAgentId);
+        for (AiAgentClientConfig clientConfig : clientConfigs) {
+            AiAgentClientConfigVO configVO = AiAgentClientConfigVO.builder()
+                    .clientId(clientConfig.getClientId())
+                    .clientName(clientConfig.getClientName())
+                    .clientType(clientConfig.getClientType())
+                    .sequence(clientConfig.getSequence())
+                    .stepPrompt(clientConfig.getStepPrompt())
                     .build();
 
-            aiAgentClientHarnessConfigVOS.add(configVO);
+            aiAgentClientConfigVOS.add(configVO);
         }
 
-        return aiAgentClientHarnessConfigVOS;
+        return aiAgentClientConfigVOS;
     }
 
     /**

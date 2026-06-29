@@ -29,7 +29,7 @@ public class AiClientSystemPromptDaoIT {
         ManualTestGate.requireDbMutation("AiClientSystemPromptDaoTest.test_insert");
 
         AiClientSystemPrompt aiClientSystemPrompt = AiClientSystemPrompt.builder()
-                .promptId("test_001")
+                .promptId("test-prompt-dao")
                 .promptName("测试提示词")
                 .promptContent("这是一个测试提示词内容")
                 .description("测试描述")
@@ -56,7 +56,7 @@ public class AiClientSystemPromptDaoIT {
     @Test
     public void test_updateByPromptId() {
         AiClientSystemPrompt aiClientSystemPrompt = AiClientSystemPrompt.builder()
-                .promptId("6001")
+                .promptId("prompt-evidence-answer")
                 .promptName("更新后的提示词名称")
                 .description("更新后的描述")
                 .status(0)
@@ -74,7 +74,7 @@ public class AiClientSystemPromptDaoIT {
 
     @Test
     public void test_deleteByPromptId() {
-        int count = aiClientSystemPromptDao.deleteByPromptId("test_001");
+        int count = aiClientSystemPromptDao.deleteByPromptId("test-prompt-dao");
         log.info("根据提示词ID删除系统提示词配置完成，影响行数: {}", count);
     }
 
@@ -86,7 +86,7 @@ public class AiClientSystemPromptDaoIT {
 
     @Test
     public void test_queryByPromptId() {
-        AiClientSystemPrompt aiClientSystemPrompt = aiClientSystemPromptDao.queryByPromptId("6001");
+        AiClientSystemPrompt aiClientSystemPrompt = aiClientSystemPromptDao.queryByPromptId("prompt-evidence-answer");
         log.info("根据提示词ID查询系统提示词配置: {}", aiClientSystemPrompt);
     }
 

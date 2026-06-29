@@ -66,25 +66,25 @@ public class AiClientConfigDaoIT {
 
     @Test
     public void test_queryBySourceId() {
-        List<AiClientConfig> aiClientConfigs = aiClientConfigDao.queryBySourceId("2001");
+        List<AiClientConfig> aiClientConfigs = aiClientConfigDao.queryBySourceId("model-qwen37-max");
         log.info("根据源ID查询结果: {}", aiClientConfigs);
     }
 
     @Test
     public void test_queryByTargetId() {
-        List<AiClientConfig> aiClientConfigs = aiClientConfigDao.queryByTargetId("5001");
+        List<AiClientConfig> aiClientConfigs = aiClientConfigDao.queryByTargetId("mcp-context7-docs");
         log.info("根据目标ID查询结果: {}", aiClientConfigs);
     }
 
     @Test
     public void test_queryBySourceTypeAndId() {
-        List<AiClientConfig> aiClientConfigs = aiClientConfigDao.queryBySourceTypeAndId("model", "2001");
+        List<AiClientConfig> aiClientConfigs = aiClientConfigDao.queryBySourceTypeAndId("model", "model-qwen37-max");
         log.info("根据源类型和源ID查询结果: {}", aiClientConfigs);
     }
 
     @Test
     public void test_queryByTargetTypeAndId() {
-        List<AiClientConfig> aiClientConfigs = aiClientConfigDao.queryByTargetTypeAndId("tool_mcp", "5001");
+        List<AiClientConfig> aiClientConfigs = aiClientConfigDao.queryByTargetTypeAndId("tool_mcp", "mcp-context7-docs");
         log.info("根据目标类型和目标ID查询结果: {}", aiClientConfigs);
     }
 

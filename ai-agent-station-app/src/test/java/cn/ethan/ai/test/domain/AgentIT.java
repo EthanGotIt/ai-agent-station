@@ -41,11 +41,11 @@ public class AgentIT {
         String apply = armoryStrategyHandler.apply(
                 ArmoryCommandEntity.builder()
                         .commandType(AiAgentEnumVO.AI_CLIENT.getCode())
-                        .commandIdList(List.of("2101"))
+                        .commandIdList(List.of("client-advisor-main"))
                         .build(),
                 new ArmoryAssemblyContextVO());
 
-        OpenAiChatOptions apiOptions = (OpenAiChatOptions) applicationContext.getBean(AiAgentEnumVO.AI_CLIENT_API.getBeanName("1001"));
+        OpenAiChatOptions apiOptions = (OpenAiChatOptions) applicationContext.getBean(AiAgentEnumVO.AI_CLIENT_API.getBeanName("api-dashscope-openai"));
 
         log.info("测试结果：baseUrl={}", apiOptions.getBaseUrl());
     }
@@ -60,18 +60,18 @@ public class AgentIT {
         String apply = armoryStrategyHandler.apply(
                 ArmoryCommandEntity.builder()
                         .commandType(AiAgentEnumVO.AI_CLIENT.getCode())
-                        .commandIdList(List.of("3101"))
+                        .commandIdList(List.of("client-advisor-main"))
                         .build(),
                 new ArmoryAssemblyContextVO());
 
-        OpenAiChatModel openAiChatModel = (OpenAiChatModel) applicationContext.getBean(AiAgentEnumVO.AI_CLIENT_MODEL.getBeanName("3001"));
+        OpenAiChatModel openAiChatModel = (OpenAiChatModel) applicationContext.getBean(AiAgentEnumVO.AI_CLIENT_MODEL.getBeanName("model-qwen37-max"));
 
         log.info("模型构建:{}", openAiChatModel);
 
         Prompt prompt = Prompt.builder()
                 .messages(new UserMessage(
                         """
-                                在"D:/FileSystemMcp"创建 test.md 文件
+                                请用一句话说明当前模型调用是否可用。
                                 """))
                 .build();
 
@@ -90,11 +90,11 @@ public class AgentIT {
         String apply = armoryStrategyHandler.apply(
                 ArmoryCommandEntity.builder()
                         .commandType(AiAgentEnumVO.AI_CLIENT.getCode())
-                        .commandIdList(List.of("2101"))
+                        .commandIdList(List.of("client-advisor-main"))
                         .build(),
                 new ArmoryAssemblyContextVO());
 
-        ChatClient chatClient = (ChatClient) applicationContext.getBean(AiAgentEnumVO.AI_CLIENT.getBeanName("2101"));
+        ChatClient chatClient = (ChatClient) applicationContext.getBean(AiAgentEnumVO.AI_CLIENT.getBeanName("client-advisor-main"));
         log.info("客户端构建:{}", chatClient);
 
         String content = chatClient.prompt(Prompt.builder()

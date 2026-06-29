@@ -12,7 +12,7 @@ public class AgentRunAggregateTest {
     public void shouldConvertRunStateToRecord() {
         AgentRunAggregate run = AgentRunAggregate.create(
                 ExecuteCommandEntity.builder()
-                        .aiAgentId("1")
+                        .aiAgentId("agent-java-knowledge")
                         .message("hello")
                         .sessionId("session-x")
                         .maxStep(3)
@@ -50,7 +50,7 @@ public class AgentRunAggregateTest {
 
     private ExecuteCommandEntity command() {
         return ExecuteCommandEntity.builder()
-                .aiAgentId("1")
+                .aiAgentId("agent-java-knowledge")
                 .message("hello")
                 .sessionId("session-x")
                 .maxStep(3)

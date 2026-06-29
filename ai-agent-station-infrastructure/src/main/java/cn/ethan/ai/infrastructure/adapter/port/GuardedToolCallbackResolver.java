@@ -3,13 +3,13 @@ package cn.ethan.ai.infrastructure.adapter.port;
 import cn.ethan.ai.domain.agent.service.execute.runtime.ToolGuardPolicy;
 import org.jspecify.annotations.NonNull;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.ai.tool.resolution.DelegatingToolCallbackResolver;
 import org.springframework.ai.tool.resolution.StaticToolCallbackResolver;
 import org.springframework.ai.tool.resolution.ToolCallbackResolver;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -32,23 +32,15 @@ public class GuardedToolCallbackResolver implements ToolCallbackResolver {
             if (group == null || group.isEmpty()) {
                 continue;
             }
-            Set<String> allowedNames = safeToolNames(group);
             List<ToolCallback> guarded = group.stream()
-                    .filter(callback -> {
-                        if (callback == null) return false;
-                        callback.getToolDefinition();
-                        callback.getToolDefinition().name();
-                        return true;
-                    })
-                    .filter(callback -> {
-                        String name = ToolGuardPolicy.normalize(callback.getToolDefinition().name());
-                        return ToolGuardPolicy.isReadOnlyEvidenceTool(name)
-                                && !ToolGuardPolicy.isBlocked(name);
-                    })
+                    .filter(this::isAllowedEvidenceTool)
+                    .toList();
+            Set<String> allowedNames = safeToolNames(guarded);
+            List<ToolCallback> guardedCallbacks = guarded.stream()
                     .map(callback -> (ToolCallback) new GuardedToolCallback(callback, allowedNames))
                     .toList();
-            if (!guarded.isEmpty()) {
-                resolvers.add(new StaticToolCallbackResolver(guarded));
+            if (!guardedCallbacks.isEmpty()) {
+                resolvers.add(new StaticToolCallbackResolver(guardedCallbacks));
             }
         }
         this.delegate = new DelegatingToolCallbackResolver(resolvers);
@@ -61,14 +53,27 @@ public class GuardedToolCallbackResolver implements ToolCallbackResolver {
 
     private static Set<String> safeToolNames(List<ToolCallback> callbacks) {
         return callbacks.stream()
-                .filter(callback -> {
-                    if (callback == null) return false;
-                    callback.getToolDefinition();
-                    callback.getToolDefinition().name();
-                    return true;
-                })
-                .map(callback -> callback.getToolDefinition().name().trim().toLowerCase(Locale.ROOT))
+                .map(GuardedToolCallbackResolver::toolName)
                 .map(ToolGuardPolicy::normalize)
+                .filter(name -> !name.isBlank())
                 .collect(Collectors.toSet());
+    }
+
+    private boolean isAllowedEvidenceTool(ToolCallback callback) {
+        String name = ToolGuardPolicy.normalize(toolName(callback));
+        return !name.isBlank()
+                && ToolGuardPolicy.isReadOnlyEvidenceTool(name)
+                && !ToolGuardPolicy.isBlocked(name);
+    }
+
+    private static String toolName(ToolCallback callback) {
+        if (callback == null) {
+            return "";
+        }
+        ToolDefinition definition = callback.getToolDefinition();
+        if (definition == null || definition.name() == null) {
+            return "";
+        }
+        return definition.name();
     }
 }

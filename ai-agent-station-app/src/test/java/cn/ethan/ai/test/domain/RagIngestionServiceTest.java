@@ -24,7 +24,7 @@ public class RagIngestionServiceTest {
                 TokenTextSplitter.builder().build(), repository, indexPort);
 
         RagIngestionResultVO result = service.ingestMarkdown(
-                "7001", "Spring AI MCP 指南", "spring-ai-mcp-guide.md", buildMarkdown());
+                "rag-agent-station", "Spring AI MCP 指南", "spring-ai-mcp-guide.md", buildMarkdown());
 
         Assertions.assertNotNull(result.getDocId());
         Assertions.assertTrue(result.getChunkCount() >= 3);
@@ -47,9 +47,9 @@ public class RagIngestionServiceTest {
 
                 Context7 通过 Stdio 接入。
 
-                ## 工具路由
+                ## 工具治理
 
-                Harness 只在需要外部资料时选择 MCP。
+                Spring AI Advisor Chain 通过只读工具注册边界和 Guard 包装控制 MCP 调用。
 
                 ## 证据治理
 

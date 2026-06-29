@@ -2,7 +2,7 @@
 
 ## 状态
 
-当前分支：`codex/spring-ai-2-upgrade`
+当前分支：`codex/spring-ai-2-tool-advisor-refactor`
 
 升级范围：Spring AI `1.1.7 -> 2.0.0`、Spring Boot `3.5.14 -> 4.1.0`、MyBatis Spring Boot Starter `3.0.4 -> 4.0.1`。
 
@@ -17,7 +17,7 @@
 - [Spring AI Reference](https://docs.spring.io/spring-ai/reference/index.html)
 - [Spring Boot 4.1.0 Release](https://github.com/spring-projects/spring-boot/releases/tag/v4.1.0)
 
-当前分支已经进入 Spring AI 2 主链路收敛：模型调用改由 `SpringAiAgentRuntime -> ChatClient -> Advisor Chain` 承接，旧 Harness 作为迁移期兼容路径保留。
+当前分支已经进入 Spring AI 2 主链路收敛：模型调用改由 `SpringAiAgentRuntime -> ChatClient -> Advisor Chain` 承接，旧 Harness 主执行链路已删除。
 
 ## 主要适配
 
@@ -32,8 +32,8 @@
 ### 动态工具调用
 
 - 不在运行时复制 `ChatClient`，继续复用已装配客户端。
-- MCP ToolCallback 通过单次请求的统一 `tools(...)` API 注入。
-- `ChatClient.builder(chatModel)` 默认提供工具调用 Advisor，因此模型首轮返回 tool call 后，会执行回调并继续下一轮模型调用。
+- MCP ToolCallback 通过 Spring AI 2 `ToolCallingAdvisor`、`DefaultToolCallingManager` 和 `ToolCallbackResolver` 进入主链路。
+- `ChatClient` 调用时由 `ToolCallingAdvisor` 接管工具执行循环，因此模型首轮返回 tool call 后，会执行回调并继续下一轮模型调用。
 - `SpringAi2CompatibilityTest` 使用脚本化 ChatModel 验证了“模型请求工具 -> 回调执行 -> 模型最终回答”的完整闭环。
 - 自定义 MCP 关键词打分路由退出主链路，工具发现和调用循环交给 Spring AI 2 Tool Calling；项目保留注册边界、只读过滤和 `GuardedToolCallback` 安全包装。
 
@@ -64,7 +64,7 @@
 
 本次直接采用的能力：
 
-- **统一 Tools API**：动态 MCP 回调改用请求级 `tools(...)`，既能接收 ToolCallback，也保留后续接入 Provider 或 `@Tool` 对象的统一入口。
+- **统一 Tool Calling Advisor**：动态 MCP 回调改用 Spring AI 2 `ToolCallingAdvisor` 和 `ToolCallbackResolver`，既能接收 ToolCallback，也保留后续接入 Provider 或 `@Tool` 对象的统一入口。
 - **ChatClient ToolCallingAdvisor**：工具执行循环由 Spring AI 2 的 Advisor 负责，项目只保留路由、授权和异常治理，不再自研模型/工具循环。
 - **Advisor Chain 主链路**：上下文预算、Session 记忆、RAG evidence 和运行态观测开始进入 Spring AI Advisor 体系，旧 Harness 不再作为新增能力入口。
 - **社区 Session API**：接入 Spring AI Community `spring-ai-session` 的 `SessionService / SessionMemoryAdvisor / CompactionTrigger / CompactionStrategy` API，可向 Spring AI 2.1 的记忆方向平滑迁移。
@@ -111,7 +111,7 @@ git diff --check
 - 全量测试：160 个测试，147 个实际执行，13 个真实 AI 或数据库变更门禁测试按设计跳过，0 failures，0 errors。
 - 打包：Spring Boot 4.1.0 可执行 jar 构建通过。
 - 运行态：`/actuator/health` 返回 HTTP 200，MySQL、PGVector、Elasticsearch、Context7 Stdio MCP 和 Exa Streamable HTTP 均完成初始化。
-- live smoke：旧 Harness 版本已验证过本地 evidence 和 MCP ToolCallback 注入；当前 Spring AI 2 主链路仍需单独补充 live smoke 与三组 evaluation。
+- live smoke：当前 Spring AI 2 主链路的本地 smoke 与三组 evaluation 仍需单独补充，不用旧 Harness 结果替代。
 - 已停止 Windows 本地 PostgreSQL，并将启动类型调整为手动；项目按默认 `5432` 直接连接 Docker pgvector，与 Docker Elasticsearch 统一管理。
 - 开发、导入和 smoke 脚本新增本地 PostgreSQL 冲突检查，避免应用静默连接到错误实例。
 - 本轮真实输出长度未达到 `context_guard` 阈值；压缩触发与保留策略由 `AgentContextWindowServiceTest` 确定性覆盖。

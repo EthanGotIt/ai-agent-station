@@ -49,7 +49,7 @@ spring:
     agent:
       auto-config:
         enabled: true
-        client-ids: 2102,2103
+        client-ids: client-advisor-main
 
 ai-agent:
   model:

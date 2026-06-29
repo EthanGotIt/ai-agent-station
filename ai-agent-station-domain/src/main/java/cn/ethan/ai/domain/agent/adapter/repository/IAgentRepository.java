@@ -24,11 +24,11 @@ public interface IAgentRepository {
 
     List<AiClientModelVO> queryAiClientModelVOByModelIds(List<String> modelIdList);
 
-    Map<String, AiAgentClientHarnessConfigVO> queryAiAgentClientHarnessConfig(String aiAgentId);
+    Map<String, AiAgentClientConfigVO> queryAiAgentClientConfig(String aiAgentId);
 
     AiAgentVO queryAiAgentByAgentId(String aiAgentId);
 
-    List<AiAgentClientHarnessConfigVO> queryAiAgentClientsByAgentId(String aiAgentId);
+    List<AiAgentClientConfigVO> queryAiAgentClientsByAgentId(String aiAgentId);
 
     List<String> queryRagIdsByClientIds(List<String> clientIds);
 

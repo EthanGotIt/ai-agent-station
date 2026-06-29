@@ -5,7 +5,7 @@ import org.apache.commons.lang3.StringUtils;
 import java.util.Locale;
 
 /**
- * Harness 可选择的高层证据来源。底层向量、关键词和融合策略不暴露给模型。
+ * Advisor Chain 中 evidence 归类使用的高层证据来源。
  */
 public enum EvidenceSourceTypeEnumVO {
 

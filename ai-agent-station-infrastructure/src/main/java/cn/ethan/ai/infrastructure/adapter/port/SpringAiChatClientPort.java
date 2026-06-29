@@ -6,7 +6,7 @@ import cn.ethan.ai.domain.agent.model.entity.AgentModelCallResultEntity;
 import cn.ethan.ai.domain.agent.model.entity.AgentRunEventEntity;
 import cn.ethan.ai.domain.agent.model.entity.AgentRunTraceEntity;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
-import cn.ethan.ai.domain.agent.model.valobj.AiAgentClientHarnessConfigVO;
+import cn.ethan.ai.domain.agent.model.valobj.AiAgentClientConfigVO;
 import cn.ethan.ai.domain.agent.model.valobj.AiClientToolMcpVO;
 import cn.ethan.ai.domain.agent.model.valobj.ToolInvocationCollector;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiAgentEnumVO;
@@ -48,7 +48,7 @@ public class SpringAiChatClientPort implements ISpringAiChatClientPort {
     private IAgentRepository repository;
 
     @Override
-    public AgentModelCallResultEntity call(Map<String, AiAgentClientHarnessConfigVO> harnessConfigMap,
+    public AgentModelCallResultEntity call(Map<String, AiAgentClientConfigVO> clientConfigMap,
                                            ExecuteCommandEntity command,
                                            AgentRunTraceEntity trace,
                                            String prompt,
@@ -61,7 +61,7 @@ public class SpringAiChatClientPort implements ISpringAiChatClientPort {
         long start = System.currentTimeMillis();
         ToolInvocationCollector collector = new ToolInvocationCollector();
         try {
-            AiAgentClientHarnessConfigVO selectedConfig = firstAvailableConfig(harnessConfigMap, clientTypes);
+            AiAgentClientConfigVO selectedConfig = firstAvailableConfig(clientConfigMap, clientTypes);
             ChatClient chatClient = resolve(selectedConfig);
             if (chatClient == null) {
                 String message = "未找到可用的 Spring AI ChatClient：" + eventType;
@@ -114,10 +114,10 @@ public class SpringAiChatClientPort implements ISpringAiChatClientPort {
     }
 
     @Override
-    public Advisor buildToolCallingAdvisor(Map<String, AiAgentClientHarnessConfigVO> harnessConfigMap) {
+    public Advisor buildToolCallingAdvisor(Map<String, AiAgentClientConfigVO> clientConfigMap) {
         List<List<ToolCallback>> mcpGroups = new ArrayList<>();
         List<AiClientToolMcpVO> mcpTools = repository.queryAiClientToolMcpVOByClientIds(
-                clientIdsFromConfig(harnessConfigMap));
+                clientIdsFromConfig(clientConfigMap));
         for (AiClientToolMcpVO mcpTool : mcpTools) {
             if (mcpTool == null || StringUtils.isBlank(mcpTool.getMcpId())) {
                 continue;
@@ -145,36 +145,36 @@ public class SpringAiChatClientPort implements ISpringAiChatClientPort {
         return ToolCallingAdvisor.builder().toolCallingManager(manager).build();
     }
 
-    private List<String> clientIdsFromConfig(Map<String, AiAgentClientHarnessConfigVO> harnessConfigMap) {
-        if (harnessConfigMap == null || harnessConfigMap.isEmpty()) {
+    private List<String> clientIdsFromConfig(Map<String, AiAgentClientConfigVO> clientConfigMap) {
+        if (clientConfigMap == null || clientConfigMap.isEmpty()) {
             return List.of();
         }
-        return harnessConfigMap.values().stream()
+        return clientConfigMap.values().stream()
                 .filter(java.util.Objects::nonNull)
-                .map(AiAgentClientHarnessConfigVO::getClientId)
+                .map(AiAgentClientConfigVO::getClientId)
                 .filter(StringUtils::isNotBlank)
                 .distinct()
                 .toList();
     }
 
-    private AiAgentClientHarnessConfigVO firstAvailableConfig(Map<String, AiAgentClientHarnessConfigVO> harnessConfigMap,
+    private AiAgentClientConfigVO firstAvailableConfig(Map<String, AiAgentClientConfigVO> clientConfigMap,
                                                               AiClientTypeEnumVO... clientTypes) {
-        if (harnessConfigMap == null || harnessConfigMap.isEmpty()) {
+        if (clientConfigMap == null || clientConfigMap.isEmpty()) {
             return null;
         }
         for (AiClientTypeEnumVO clientType : clientTypes) {
-            AiAgentClientHarnessConfigVO config = harnessConfigMap.get(clientType.getCode());
+            AiAgentClientConfigVO config = clientConfigMap.get(clientType.getCode());
             if (config != null && StringUtils.isNotBlank(config.getClientId())) {
                 return config;
             }
         }
-        return harnessConfigMap.values().stream()
+        return clientConfigMap.values().stream()
                 .filter(item -> item != null && StringUtils.isNotBlank(item.getClientId()))
                 .findFirst()
                 .orElse(null);
     }
 
-    private ChatClient resolve(AiAgentClientHarnessConfigVO config) {
+    private ChatClient resolve(AiAgentClientConfigVO config) {
         if (config == null || StringUtils.isBlank(config.getClientId())) {
             return null;
         }

@@ -126,14 +126,14 @@ public class OpenAiIT {
         ManualTestGate.requireDbMutation("OpenAiTest.uploadMarkdownParentChild");
 
         RagIngestionResultVO mcpGuideResult = ragIngestionService.ingestMarkdown(
-                "7001",
+                "rag-agent-station",
                 "Spring AI MCP Client 使用指南",
                 "spring-ai-mcp-client.md",
                 readUtf8Resource(springAiMcpClientMarkdown)
         );
 
         RagIngestionResultVO ragGuideResult = ragIngestionService.ingestMarkdown(
-                "7001",
+                "rag-agent-station",
                 "Evidence Retrieval 说明",
                 "rag-evidence-retrieval.md",
                 readUtf8Resource(ragEvidenceMarkdown)
@@ -159,7 +159,7 @@ public class OpenAiIT {
         SearchRequest request = SearchRequest.builder()
                 .query(message)
                 .topK(5)
-                .filterExpression("rag_id == '7001'")
+                .filterExpression("rag_id == 'rag-agent-station'")
                 .build();
 
         List<Document> documents = pgVectorStore.similaritySearch(request);

@@ -11,7 +11,7 @@ import cn.ethan.ai.domain.agent.model.entity.AgentModelCallResultEntity;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
 import cn.ethan.ai.domain.agent.model.valobj.AgentRunRecordVO;
 import cn.ethan.ai.domain.agent.model.valobj.AgentStepRunRecordVO;
-import cn.ethan.ai.domain.agent.model.valobj.AiAgentClientHarnessConfigVO;
+import cn.ethan.ai.domain.agent.model.valobj.AiAgentClientConfigVO;
 import cn.ethan.ai.domain.agent.model.valobj.SessionContextSnapshotVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AgentStepRunStatusEnumVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiClientTypeEnumVO;
@@ -79,8 +79,8 @@ public class SpringAiAgentRuntime {
             createAndStartRun(run);
             agentConversationMemoryService.recordUserMessage(command.getSessionId(), run.runId(), command.getMessage());
 
-            Map<String, AiAgentClientHarnessConfigVO> configMap =
-                    repository.queryAiAgentClientHarnessConfig(command.getAiAgentId());
+            Map<String, AiAgentClientConfigVO> configMap =
+                    repository.queryAiAgentClientConfig(command.getAiAgentId());
             if (configMap == null || configMap.isEmpty()) {
                 throw new IllegalStateException("智能体未配置 Spring AI ChatClient，无法执行");
             }
@@ -124,18 +124,18 @@ public class SpringAiAgentRuntime {
                 + command.getMessage();
     }
 
-    private List<Advisor> buildAdvisors(Map<String, AiAgentClientHarnessConfigVO> configMap) {
+    private List<Advisor> buildAdvisors(Map<String, AiAgentClientConfigVO> configMap) {
         List<Advisor> advisors = new ArrayList<>();
         advisors.add(new ContextBudgetAdvisor(maxContextUnits, stopThreshold,
                 HeuristicContextUnitEstimator.INSTANCE));
         if (sessionMemoryAdvisor != null) {
             advisors.add(sessionMemoryAdvisor);
         }
+        advisors.add(new EvidenceRetrievalAdvisor(localEvidenceRetrievalPort, resolveRagIds(configMap)));
         Advisor toolAdvisor = springAiChatClientPort.buildToolCallingAdvisor(configMap);
         if (toolAdvisor != null) {
             advisors.add(toolAdvisor);
         }
-        advisors.add(new EvidenceRetrievalAdvisor(localEvidenceRetrievalPort, resolveRagIds(configMap)));
         advisors.add(new ObservationTraceAdvisor(mcpEvidenceNormalizer));
         return advisors;
     }
@@ -150,11 +150,11 @@ public class SpringAiAgentRuntime {
         );
     }
 
-    private Set<String> resolveRagIds(Map<String, AiAgentClientHarnessConfigVO> configMap) {
+    private Set<String> resolveRagIds(Map<String, AiAgentClientConfigVO> configMap) {
         Set<String> ragIds = new LinkedHashSet<>();
         configMap.values().stream()
                 .filter(java.util.Objects::nonNull)
-                .map(AiAgentClientHarnessConfigVO::getRagIds)
+                .map(AiAgentClientConfigVO::getRagIds)
                 .filter(java.util.Objects::nonNull)
                 .flatMap(Set::stream)
                 .filter(StringUtils::isNotBlank)

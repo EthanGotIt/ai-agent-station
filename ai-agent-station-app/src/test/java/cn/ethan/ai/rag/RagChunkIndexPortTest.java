@@ -38,7 +38,7 @@ public class RagChunkIndexPortTest {
             documents.add(Document.builder().id("doc-" + index).text("chunk-" + index).build());
         }
         port.replaceChunks(RagIngestionDocumentVO.builder()
-                .ragId("7991").docId("evaluation-doc").build(), documents);
+                .ragId("rag-eval-v1").docId("evaluation-doc").build(), documents);
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<Document>> batches = ArgumentCaptor.forClass(List.class);

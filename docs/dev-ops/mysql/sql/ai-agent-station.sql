@@ -1,5 +1,5 @@
 -- AI Agent Station MySQL seed data
--- 当前数据保留单 Controlled Agent Harness，并内置企业知识助手常用的只读 MCP 工具配置。
+-- 当前数据保留单 Spring AI 2 Advisor Chain 智能体，并内置企业知识助手常用的只读 MCP 工具配置。
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -30,7 +30,7 @@ CREATE TABLE `ai_agent` (
 LOCK TABLES `ai_agent` WRITE;
 INSERT INTO `ai_agent` (`id`, `agent_id`, `agent_name`, `description`, `channel`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '1', 'Evidence-Governed Agent Harness', '面向 Java 项目知识与技术资料调研的受控 Agentic RAG 证据闭环', 'agent', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, 'agent-java-knowledge', 'Spring AI Evidence Assistant', '面向 Java 项目知识与技术资料调研的 Spring AI 2 证据治理助手', 'agent', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 对话客户端配置
@@ -50,8 +50,7 @@ CREATE TABLE `ai_client` (
 LOCK TABLES `ai_client` WRITE;
 INSERT INTO `ai_client` (`id`, `client_id`, `client_name`, `description`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '2102', 'Action 决策客户端', '根据当前问题和 Evidence Board 输出三类受控 action JSON', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (2, '2103', 'Evidence 执行客户端', '执行外部只读 evidence 获取与带引用的最终回答', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, 'client-advisor-main', 'Spring AI Advisor 主执行客户端', '通过 ChatClient 与 Advisor Chain 完成证据检索、工具调用和最终回答', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 模型 API 配置
@@ -72,7 +71,7 @@ CREATE TABLE `ai_client_api` (
 LOCK TABLES `ai_client_api` WRITE;
 INSERT INTO `ai_client_api` (`id`, `api_id`, `base_url`, `api_key`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '1001', 'https://dashscope.aliyuncs.com/compatible-mode/v1', '${OPENAI_API_KEY}', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, 'api-dashscope-openai', 'https://dashscope.aliyuncs.com/compatible-mode/v1', '${OPENAI_API_KEY}', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 知识库配置表保留，当前不写入 RAG 种子数据
@@ -92,7 +91,7 @@ CREATE TABLE `ai_client_rag_order` (
 LOCK TABLES `ai_client_rag_order` WRITE;
 INSERT INTO `ai_client_rag_order` (`id`, `rag_id`, `rag_name`, `knowledge_tag`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '7001', 'AI Agent Station 知识库', 'ai-agent-station', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, 'rag-agent-station', 'AI Agent Station 知识库', 'ai-agent-station', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- RAG 文档主表（Markdown Parent 元数据）
@@ -153,8 +152,7 @@ CREATE TABLE `ai_client_system_prompt` (
 LOCK TABLES `ai_client_system_prompt` WRITE;
 INSERT INTO `ai_client_system_prompt` (`id`, `prompt_id`, `prompt_name`, `prompt_content`, `description`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '6002', 'Action 决策提示词', '你是 Controlled Agent Harness 的动作决策器。请只输出一个 JSON action，可选 RETRIEVE、ASK_CLARIFY、FINALIZE。RETRIEVE 只能选择 PROJECT_KNOWLEDGE、OFFICIAL_DOCS 或 WEB_RESEARCH 高层来源，不得指定底层算法或具体工具。', 'Action JSON 决策', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (2, '6003', 'Evidence 回答提示词', '你是证据约束回答助手。最终事实结论只能基于 Evidence Board，并使用 E1、E2 等证据编号引用；工具失败、证据冲突或证据不足时不得编造。', '证据约束回答', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, 'prompt-evidence-answer', 'Evidence 回答提示词', '你是企业 Java 项目知识与技术资料助手。回答必须优先基于项目知识和可归因 evidence，并使用 E1、E2 等证据编号引用；工具失败、证据冲突或证据不足时不得编造。', 'Spring AI Advisor Chain 证据约束回答', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- MCP 工具配置
@@ -176,8 +174,8 @@ CREATE TABLE `ai_client_tool_mcp` (
 LOCK TABLES `ai_client_tool_mcp` WRITE;
 INSERT INTO `ai_client_tool_mcp` (`id`, `mcp_id`, `mcp_name`, `transport_type`, `transport_config`, `request_timeout`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '5001', 'context7-docs', 'stdio', '{\n  "context7-docs": {\n    "command": "npx.cmd",\n    "args": ["-y", "@upstash/context7-mcp@latest"],\n    "env": {\n      "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY:}"\n    },\n    "toolNames": ["resolve-library-id", "query-docs"]\n  }\n}', 3, 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (2, '5002', 'exa-search', 'streamable_http', '{\n  "baseUri": "https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa,web_search_advanced_exa",\n  "headers": {\n    "x-api-key": "${EXA_API_KEY:}"\n  },\n  "toolNames": ["exa-search", "web_search_exa", "web_fetch_exa", "web_search_advanced_exa"]\n}', 1, 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, 'mcp-context7-docs', 'context7-docs', 'stdio', '{\n  "context7-docs": {\n    "command": "npx.cmd",\n    "args": ["-y", "@upstash/context7-mcp@latest"],\n    "env": {\n      "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY:}"\n    },\n    "toolNames": ["resolve-library-id", "query-docs"]\n  }\n}', 3, 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (2, 'mcp-exa-search', 'exa-search', 'streamable_http', '{\n  "baseUri": "https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa,web_search_advanced_exa",\n  "headers": {\n    "x-api-key": "${EXA_API_KEY:}"\n  },\n  "toolNames": ["exa-search", "web_search_exa", "web_fetch_exa", "web_search_advanced_exa"]\n}', 1, 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 聊天模型配置
@@ -200,7 +198,7 @@ CREATE TABLE `ai_client_model` (
 LOCK TABLES `ai_client_model` WRITE;
 INSERT INTO `ai_client_model` (`id`, `model_id`, `api_id`, `model_name`, `model_type`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, '2001', '1001', 'qwen3.7-max', 'openai', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, 'model-qwen37-max', 'api-dashscope-openai', 'qwen3.7-max', 'openai', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 定时任务表
@@ -291,28 +289,26 @@ CREATE TABLE `ai_agent_step_run` (
     KEY `idx_step_run_order` (`run_id`, `step_order`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='智能体运行步骤表';
 
--- Harness 客户端配置
-DROP TABLE IF EXISTS `ai_agent_harness_config`;
-CREATE TABLE `ai_agent_harness_config` (
+-- 客户端配置
+DROP TABLE IF EXISTS `ai_agent_client_config`;
+CREATE TABLE `ai_agent_client_config` (
     `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `agent_id` varchar(64) NOT NULL COMMENT '智能体业务ID',
     `client_id` varchar(64) NOT NULL COMMENT '客户端业务ID',
-    `client_name` varchar(64) DEFAULT NULL COMMENT 'Harness 客户端名称',
-    `client_type` varchar(64) DEFAULT NULL COMMENT 'Harness 客户端类型',
+    `client_name` varchar(64) DEFAULT NULL COMMENT '客户端名称',
+    `client_type` varchar(64) DEFAULT NULL COMMENT '客户端类型',
     `sequence` int NOT NULL COMMENT '节点顺序',
     `step_prompt` text COMMENT '节点说明',
     `status` int DEFAULT '1' COMMENT '状态：0禁用，1启用',
     `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_agent_client_seq` (`agent_id`, `client_id`, `sequence`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='智能体 Harness 客户端配置表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='智能体客户端配置表';
 
-LOCK TABLES `ai_agent_harness_config` WRITE;
-INSERT INTO `ai_agent_harness_config` (`id`, `agent_id`, `client_id`, `client_name`, `client_type`, `sequence`, `step_prompt`, `status`, `create_time`)
+LOCK TABLES `ai_agent_client_config` WRITE;
+INSERT INTO `ai_agent_client_config` (`id`, `agent_id`, `client_id`, `client_name`, `client_type`, `sequence`, `step_prompt`, `status`, `create_time`)
 VALUES
-    (1, '1', '2102', 'Action 决策', 'TASK_ANALYZER_CLIENT', 1, '根据用户输入、上下文和 Evidence Board 输出单个受控 action JSON。', 1, '2025-09-01 00:00:00'),
-    (2, '1', '2103', 'Evidence 检索', 'EXECUTOR_CLIENT', 2, '按高层来源执行本地或 MCP 只读 evidence 检索。', 1, '2025-09-01 00:00:00'),
-    (3, '1', '2103', '最终回答', 'RESPONSE_ASSISTANT', 3, '基于 Evidence Board 生成带证据编号引用的最终回答。', 1, '2025-09-01 00:00:00');
+    (1, 'agent-java-knowledge', 'client-advisor-main', 'Spring AI Advisor 主执行', 'EXECUTOR_CLIENT', 1, '通过 ChatClient 与 Advisor Chain 注入 Session、RAG evidence、只读 MCP 工具并生成最终回答。', 1, '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 -- 客户端、模型、提示词和工具的统一关联配置
@@ -335,13 +331,11 @@ CREATE TABLE `ai_client_config` (
 LOCK TABLES `ai_client_config` WRITE;
 INSERT INTO `ai_client_config` (`id`, `source_type`, `source_id`, `target_type`, `target_id`, `ext_param`, `status`, `create_time`, `update_time`)
 VALUES
-    (1, 'client', '2102', 'model', '2001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (2, 'client', '2102', 'prompt', '6002', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (3, 'client', '2103', 'model', '2001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (4, 'client', '2103', 'prompt', '6003', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (5, 'model', '2001', 'tool_mcp', '5001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (6, 'model', '2001', 'tool_mcp', '5002', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
-    (7, 'client', '2103', 'rag', '7001', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
+    (1, 'client', 'client-advisor-main', 'model', 'model-qwen37-max', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (2, 'client', 'client-advisor-main', 'prompt', 'prompt-evidence-answer', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (3, 'model', 'model-qwen37-max', 'tool_mcp', 'mcp-context7-docs', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (4, 'model', 'model-qwen37-max', 'tool_mcp', 'mcp-exa-search', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00'),
+    (5, 'client', 'client-advisor-main', 'rag', 'rag-agent-station', '""', 1, '2025-09-01 00:00:00', '2025-09-01 00:00:00');
 UNLOCK TABLES;
 
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

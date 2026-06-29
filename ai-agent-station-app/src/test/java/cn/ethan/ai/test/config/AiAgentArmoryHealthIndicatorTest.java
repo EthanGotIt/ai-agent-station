@@ -25,7 +25,7 @@ public class AiAgentArmoryHealthIndicatorTest {
     public void shouldReportUpAfterArmoryReady() {
         AiAgentArmoryReadyState readyState = new AiAgentArmoryReadyState(new MockEnvironment()
                 .withProperty("spring.ai.agent.auto-config.enabled", "true"));
-        readyState.markAssembling(List.of("2101", "2102"));
+        readyState.markAssembling(List.of("client-session-main", "client-advisor-main"));
         readyState.markReady("已完成对话客户端自动装配");
 
         AiAgentArmoryHealthIndicator healthIndicator = new AiAgentArmoryHealthIndicator(readyState);

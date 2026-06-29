@@ -28,7 +28,7 @@ AiAgentController
 -> Tool Calling / RAG Evidence / Session Memory / Trace
 ```
 
-旧 Harness 代码已作为迁移期兼容路径保留，但不再作为新增能力入口。项目保留的是 Harness 里真正有价值的治理能力，例如证据策略、引用校验、证据不足拒答、运行态复盘和 SSE 可观测性，而不是继续维护一套模型 Action Loop。
+旧 Harness 主执行链路已删除，项目保留的是其中真正有价值的治理能力，例如证据策略、引用校验、证据不足拒答、运行态复盘和 SSE 可观测性，而不是继续维护一套模型 Action Loop。
 
 Advisor Chain 顺序固定：
 
@@ -163,7 +163,7 @@ POST /api/v1/agent/execute
 Content-Type: application/json
 
 {
-  "aiAgentId": "1",
+  "aiAgentId": "agent-java-knowledge",
   "sessionId": "session_demo_001",
   "message": "请核验 Spring AI toolContext 的官方用法，并说明当前项目如何落地。",
   "maxStep": 4

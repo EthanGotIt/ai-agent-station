@@ -30,7 +30,7 @@ public class RagIngestionRepositoryIT {
     public void replaceDocumentShouldPersistFlatChunks() {
         String docId = "doc_test_ingestion";
         RagIngestionDocumentVO document = RagIngestionDocumentVO.builder()
-                .ragId("7001")
+                .ragId("rag-agent-station")
                 .docId(docId)
                 .title("测试 Markdown")
                 .source("test-doc.md")
@@ -40,7 +40,7 @@ public class RagIngestionRepositoryIT {
                 .build();
         List<RagIngestionChunkVO> chunks = List.of(
                 RagIngestionChunkVO.builder()
-                        .ragId("7001")
+                        .ragId("rag-agent-station")
                         .docId(docId)
                         .chunkId("c_0001")
                         .parentChunkId(null)
@@ -51,7 +51,7 @@ public class RagIngestionRepositoryIT {
                         .status(1)
                         .build(),
                 RagIngestionChunkVO.builder()
-                        .ragId("7001")
+                        .ragId("rag-agent-station")
                         .docId(docId)
                         .chunkId("c_0002")
                         .parentChunkId(null)
@@ -68,17 +68,17 @@ public class RagIngestionRepositoryIT {
         Integer docCount = mysqlJdbcTemplate.queryForObject(
                 "SELECT COUNT(1) FROM ai_rag_document WHERE rag_id = ? AND doc_id = ?",
                 Integer.class,
-                "7001", docId
+                "rag-agent-station", docId
         );
         Integer chunkCount = mysqlJdbcTemplate.queryForObject(
                 "SELECT COUNT(1) FROM ai_rag_chunk WHERE rag_id = ? AND doc_id = ?",
                 Integer.class,
-                "7001", docId
+                "rag-agent-station", docId
         );
         Integer flatChunkCount = mysqlJdbcTemplate.queryForObject(
                 "SELECT COUNT(1) FROM ai_rag_chunk WHERE rag_id = ? AND doc_id = ? AND chunk_level = 1 AND parent_chunk_id IS NULL",
                 Integer.class,
-                "7001", docId
+                "rag-agent-station", docId
         );
 
         Assertions.assertEquals(Integer.valueOf(1), docCount);

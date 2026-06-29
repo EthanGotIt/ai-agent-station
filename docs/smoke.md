@@ -1,4 +1,4 @@
-# Evidence-Governed Harness Smoke
+# Spring AI Advisor Chain Smoke
 
 ## 前置
 
@@ -19,16 +19,16 @@ mvn -q "-DskipTests=false" test
 请求：
 
 ```text
-请仅基于项目知识说明 Evidence Board 的职责，并给出证据引用。
+请仅基于项目知识说明当前项目为什么从自研 Harness 收敛到 Spring AI Advisor Chain。
 ```
 
 预期：
 
-- Harness 首轮输出 `RETRIEVE + PROJECT_KNOWLEDGE`。
-- 不出现全局 `tool_routing` 事件，不初始化与本轮无关的 MCP。
-- `rag_evidence` 中 `sourceType=PROJECT_KNOWLEDGE`，knowledge scope 包含 `7001`。
+- 主链路进入 `SpringAiAgentRuntime -> ChatClient -> Advisor Chain`。
+- 不出现旧 Flow Plan 或 Harness Action 事件。
+- `rag_evidence` 中 `sourceType=PROJECT_KNOWLEDGE`，knowledge scope 包含 `rag-agent-station`。
 - 最终答案包含存在的 `[E1]` 引用。
-- `RETRIEVE` observation 非终态，后续由 `FINALIZE` 收口。
+- `summary` 和 `complete` 由 Spring AI 主 Runtime 发布。
 
 ## 场景二：官方文档 MCP
 
@@ -40,10 +40,10 @@ mvn -q "-DskipTests=false" test
 
 预期：
 
-- Harness 可先检索项目知识，再选择 `OFFICIAL_DOCS`。
-- 只路由 Context7 docs 类工具，不注入 Exa 或写入类工具。
+- Tool Calling 由 Spring AI Advisor Chain 承接。
+- 只注册 Context7 docs 和 Exa search/fetch 等只读资料类工具，写入类工具不进入默认注册边界。
 - evidence 中记录真实 `toolName/uri/retrievedAt`。
-- 没有 URI 的模型整理文本不能独立使 Evidence Policy 通过。
+- 没有 URI 的模型整理文本不能作为高可信 evidence。
 
 ## 场景三：外部资料与危险工具
 
@@ -55,10 +55,10 @@ mvn -q "-DskipTests=false" test
 
 预期：
 
-- `WEB_RESEARCH` 只选择 Exa search/fetch 类只读工具。
-- shell、write、send、notify、memory 等工具不进入 allowed set。
+- 只读工具可以用于资料补充。
+- shell、write、send、notify、memory 等工具不注册或被 Guard 拒绝。
 - 工具参数错误或调用失败不会被归一化成成功 evidence。
-- 外部 evidence retrieval 最多一次。
+- 工具不可用时返回证据不足或降级说明，不编造工具结果。
 
 ## 场景四：无证据拒答
 
@@ -70,14 +70,14 @@ mvn -q "-DskipTests=false" test
 
 预期：
 
-- Evidence Board 无可归因证据时，`FINALIZE` 被后端 Policy 否决。
+- 无可归因证据时返回“当前证据不足”。
 - 返回“当前证据不足”，不使用模型常识编造。
-- Action JSON 中即使携带答案也不会作为最终回答。
+- 不把模型猜测或伪造工具输出包装成 evidence。
 
 ## 场景五：Session 完整 Turn
 
-1. `session-a`：`以后请用中文简洁列表回答。先说明 Harness 三个动作。`
-2. 同一 `session-a`：`继续说明第二个动作。`
+1. `session-a`：`以后请用中文简洁列表回答。先说明 Advisor Chain 的核心职责。`
+2. 同一 `session-a`：`继续说明第二个职责。`
 3. 另一个 `session-b`：`请详细回答刚才的问题。`
 4. 人工制造一个只有 USER、Run 最终失败的记录，再继续 `session-a`。
 
@@ -103,7 +103,7 @@ DELETE /api/v1/agent/session/session-a/memory
 GET /api/v1/agent/run/{runId}
 ```
 
-预期步骤只包含 `harness_root` 和 `harness_action_*`，不再出现旧 `harness_tool_routing`、Flow Plan 节点或 Run step-output 压缩字段。
+预期步骤不再出现旧 `harness_tool_routing`、Flow Plan 节点或 Run step-output 压缩字段。
 
 ## 自动 smoke
 
@@ -111,4 +111,4 @@ GET /api/v1/agent/run/{runId}
 .\scripts\dev\run-local-smoke.ps1
 ```
 
-脚本应验证应用健康、Harness 完成、`rag_evidence` payload、Session 连续对话和 MCP 不可用时的安全降级。
+脚本应验证应用健康、Spring AI 主链路完成、`rag_evidence` payload、Session 连续对话和 MCP 不可用时的安全降级。

@@ -151,21 +151,21 @@ function Assert-RunSucceeded {
 Assert-HttpOk -Url ($BaseUrl.TrimEnd('/') + '/actuator/health') -TimeoutSeconds 180
 
 $vectorTotal = [int](Get-PgScalar -Sql "SELECT COUNT(1) FROM vector_store_openai;")
-$vectorParentChild = [int](Get-PgScalar -Sql "SELECT COUNT(1) FROM vector_store_openai WHERE metadata::jsonb ->> 'rag_id' = '7001';")
-$vectorChildOnly = [int](Get-PgScalar -Sql "SELECT COUNT(1) FROM vector_store_openai WHERE metadata::jsonb ->> 'rag_id' = '7001' AND metadata::jsonb ->> 'chunk_level' = '2';")
+$vectorParentChild = [int](Get-PgScalar -Sql "SELECT COUNT(1) FROM vector_store_openai WHERE metadata::jsonb ->> 'rag_id' = 'rag-agent-station';")
+$vectorChildOnly = [int](Get-PgScalar -Sql "SELECT COUNT(1) FROM vector_store_openai WHERE metadata::jsonb ->> 'rag_id' = 'rag-agent-station' AND metadata::jsonb ->> 'chunk_level' = '2';")
 if ($vectorTotal -le 0) {
     throw 'PGVector 当前没有可用向量数据。'
 }
 if ($vectorParentChild -le 0) {
-    throw 'PGVector 中未检测到 rag_id=7001 的 Parent-Child 子块向量，请先执行 Markdown 导入。'
+    throw 'PGVector 中未检测到 rag_id=rag-agent-station 的 Parent-Child 子块向量，请先执行 Markdown 导入。'
 }
 if ($vectorChildOnly -le 0) {
-    throw 'PGVector 中未检测到 rag_id=7001 的 child chunk 向量记录。'
+    throw 'PGVector 中未检测到 rag_id=rag-agent-station 的 child chunk 向量记录。'
 }
 
 $timestamp = [DateTimeOffset]::Now.ToUnixTimeMilliseconds()
 $harnessResult = Invoke-AgentExecuteWithRetry -Label 'Harness smoke' -Payload @{
-    aiAgentId = '1'
+    aiAgentId = 'agent-java-knowledge'
     sessionId = "smoke-harness-$timestamp"
     message = '请把这句话润色得更简洁：受控 Harness 负责限制 Agent 行为。'
     maxStep = 2
@@ -176,7 +176,7 @@ Assert-EventPresent -Events $harnessEvents -Value 'complete'
 Assert-RunSucceeded -RunDetail $harnessResult.RunDetail -Label 'Harness smoke'
 
 $officialResult = Invoke-AgentExecuteWithRetry -Label '官方文档 evidence smoke' -Payload @{
-    aiAgentId = '1'
+    aiAgentId = 'agent-java-knowledge'
     sessionId = "smoke-official-$timestamp"
     message = '请核验 Spring AI toolContext 的官方用法，并说明当前项目如何使用。'
     maxStep = 4
@@ -186,7 +186,7 @@ Assert-EventPresent -Events $officialResult.Events -Value 'complete'
 Assert-RunSucceeded -RunDetail $officialResult.RunDetail -Label '官方文档 evidence smoke'
 
 $ragResult = Invoke-AgentExecuteWithRetry -Label 'RAG smoke' -Payload @{
-    aiAgentId = '1'
+    aiAgentId = 'agent-java-knowledge'
     sessionId = "smoke-rag-$timestamp"
     message = '请仅基于已导入的 Markdown 知识完成回答，不要调用外部 MCP 搜索工具。请回答 Spring AI MCP Client 常见接入方式，并按结论、证据、落地建议输出。'
     maxStep = 4
@@ -199,7 +199,7 @@ Assert-RunSucceeded -RunDetail $ragRun -Label 'RAG smoke'
 
 $memorySessionId = "smoke-memory-$timestamp"
 $memoryFirstResult = Invoke-AgentExecuteWithRetry -Label '记忆首轮 smoke' -Payload @{
-    aiAgentId = '1'
+    aiAgentId = 'agent-java-knowledge'
     sessionId = $memorySessionId
     message = '以后请使用中文简洁回答。请把当前项目的 Agent Runtime 主链路总结成 3 点。'
     maxStep = 2
@@ -209,7 +209,7 @@ Assert-EventPresent -Events $memoryFirstResult.Events -Value 'complete'
 Assert-RunSucceeded -RunDetail $memoryFirstResult.RunDetail -Label '记忆首轮 smoke'
 
 $memorySecondResult = Invoke-AgentExecuteWithRetry -Label '记忆续轮 smoke' -Payload @{
-    aiAgentId = '1'
+    aiAgentId = 'agent-java-knowledge'
     sessionId = $memorySessionId
     message = '继续补充记忆治理部分。'
     maxStep = 2

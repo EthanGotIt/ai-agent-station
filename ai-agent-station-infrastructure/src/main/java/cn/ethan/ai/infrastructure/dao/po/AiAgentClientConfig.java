@@ -1,21 +1,27 @@
-package cn.ethan.ai.domain.agent.model.valobj;
+package cn.ethan.ai.infrastructure.dao.po;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.LinkedHashSet;
-import java.util.Set;
+import java.time.LocalDateTime;
 
-/**
- * 客户端配置
- */
 @Data
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class AiAgentClientHarnessConfigVO {
+public class AiAgentClientConfig {
+
+    /**
+     * 主键ID
+     */
+    private Long id;
+
+    /**
+     * 智能体ID
+     */
+    private String agentId;
 
     /**
      * 客户端ID
@@ -42,7 +48,9 @@ public class AiAgentClientHarnessConfigVO {
      */
     private String stepPrompt;
 
-    @Builder.Default
-    private Set<String> ragIds = new LinkedHashSet<>();
+    /**
+     * 创建时间
+     */
+    private LocalDateTime createTime;
 
 }

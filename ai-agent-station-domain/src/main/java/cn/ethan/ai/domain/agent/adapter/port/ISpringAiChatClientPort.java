@@ -3,7 +3,7 @@ package cn.ethan.ai.domain.agent.adapter.port;
 import cn.ethan.ai.domain.agent.model.entity.AgentModelCallResultEntity;
 import cn.ethan.ai.domain.agent.model.entity.AgentRunTraceEntity;
 import cn.ethan.ai.domain.agent.model.entity.ExecuteCommandEntity;
-import cn.ethan.ai.domain.agent.model.valobj.AiAgentClientHarnessConfigVO;
+import cn.ethan.ai.domain.agent.model.valobj.AiAgentClientConfigVO;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AiClientTypeEnumVO;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 
@@ -15,7 +15,7 @@ import java.util.Map;
  */
 public interface ISpringAiChatClientPort {
 
-    AgentModelCallResultEntity call(Map<String, AiAgentClientHarnessConfigVO> harnessConfigMap,
+    AgentModelCallResultEntity call(Map<String, AiAgentClientConfigVO> clientConfigMap,
                                     ExecuteCommandEntity command,
                                     AgentRunTraceEntity trace,
                                     String prompt,
@@ -29,5 +29,5 @@ public interface ISpringAiChatClientPort {
     /**
      * 基于 MCP 配置构建工具调用 Advisor，工具经 ToolGuardPolicy 过滤并包装为 GuardedToolCallback。
      */
-    Advisor buildToolCallingAdvisor(Map<String, AiAgentClientHarnessConfigVO> harnessConfigMap);
+    Advisor buildToolCallingAdvisor(Map<String, AiAgentClientConfigVO> clientConfigMap);
 }
