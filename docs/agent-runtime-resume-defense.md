@@ -1,88 +1,60 @@
-# AI Agent Station 面试 Defense
+# Durable After-Sales Agent 面试 Defense
 
-## 项目定位
+> 当前分支保持 Java 17 基线，已接通低层 Tool Calling、治理图、interrupt/resume、MysqlSaver、审批与幂等退款/Outbox。17 条聚焦测试、30 条冻结轨迹和 Testcontainers MySQL 跨实例恢复测试已通过；阻塞 I/O 节点使用专用有界执行器与 Graph/Policy 线程隔离。
 
-一句话回答：
+## 一句话定位
 
-> 这是一个面向企业 Java 项目知识和技术资料调研的轻量受控 Agent Runtime。它解决的不是“再做一个网页聊天 AI”，而是在内部知识、版本化官方文档和外部资料之间受控选择证据，输出可引用、可拒答、可复盘的回答。
+> 这是一个基于 Spring AI 2 与 LangGraph4j 的可恢复售后退款 Agent。它把模型的不确定性显式变成图状态，由 Java Policy 控制参数修复、有限重试、人工审批、幂等退款和故障恢复。
 
-项目不是多 Agent 平台、长期记忆系统、危险工具沙箱或通用工作流引擎。
+## 创新点来自哪里
 
-## 为什么项目有业务意义
+不是“用了 LangGraph4j”，也不是“升级了 Java 21”。LangGraph4j 提供图和 checkpoint，Spring AI 提供模型和工具抽象；Java 21 只可能是运行时优化，不是当前 Agent 创新点。项目自己的部分是：
 
-> 通用网页 AI 能搜索公开网页，但不知道企业内部项目知识，也不能保证回答引用的是当前项目允许的知识库和官方版本文档。我的项目把问题拆成三个来源：项目知识、官方文档和外部调研，由 Harness 决定查哪个来源，后端再验证 evidence 是否可归因，最后强制使用 Evidence ID 引用。价值在证据治理和可控执行，不在“也能搜索网页”。
+- 将 `tool_error / retry_budget / approval / terminal_reason` 建模为显式状态；
+- 用确定性 Edge 决定 `REPAIR / RETRY / CLARIFY / APPROVE / STOP`；
+- 把退款工具包装成有幂等键、执行凭证和终态记录的业务 Command；
+- 用故障注入评测完整 trajectory，而不只看最终回答。
 
-## 为什么不是固定 Workflow
+## Spring AI 与 LangGraph4j 的边界
 
-> 旧版 Flow Plan 先生成完整步骤，再逐步执行，稳定但很像 workflow。现在模型每轮只选择 `RETRIEVE`、`ASK_CLARIFY`、`FINALIZE` 三个高层动作之一，下一步取决于 Evidence Board 的真实结果。底层 Policy 仍限制四轮决策、两次检索、一次外部检索和重复 query，所以它有动态决策，但不是无限 ReAct 循环。
+Spring AI 2 使用低层 `ChatModel + ToolCallingManager + ToolCallback`。模型可以生成只读工具请求，但 Spring AI 不自动跑完整循环。LangGraph4j 保存共享状态、调度节点、持久化 checkpoint，并在补信息和退款审批处 interrupt。
 
-代码路径：`AgentHarnessExecuteService -> AgentActionParser -> AgentActionPolicy -> HarnessActionExecutor`。
+项目不使用 LangGraph4j 的现成 ReAct Agent，也不让 `ToolCallingAdvisor` 与 Graph 同时控制循环。否则状态、重试和终止会存在两个事实来源，无法可靠恢复。
 
-## 为什么只保留三个 Action
+## 工具调用为什么能自愈
 
-> `RAG_PLAN` 和 `EVALUATE_EVIDENCE` 原来没有独立副作用，只会增加模型调用和状态数量；独立 `MCP_READ` 又和 RAG 的外部 evidence 重复。我把它们收敛成统一 `RETRIEVE(sourceType, queries)`。模型只选高层来源，不能控制 PGVector、BM25、RRF、父块扩展或具体 MCP 工具。
+工具请求先经过 schema 和业务字段校验。参数错误会生成结构化 `ToolErrorEnvelope`，只把字段错误、允许 schema 和剩余预算反馈给修复节点，最多修复两次。超时和限流保持原参数重试；状态冲突重新读取订单；无权限和业务拒绝直接终止。
 
-## FINALIZE 为什么不能携带答案
+相同参数指纹连续失败会提前停止，避免模型只换一种表达却重复提交同一错误调用。退款副作用不交给模型选择，必须经过资格 Policy 和人工审批节点。
 
-> 如果让模型在决策 JSON 里直接给答案，Evidence Policy 就可能被绕过。现在 FINALIZE 只表达“希望收口”，真正答案由 `GroundedAnswerService` 根据 Evidence Board 生成。事实回答必须引用 `[E1]` 等存在的 Evidence ID，引用校验失败最多纠正一次，再失败就拒答。
+## checkpoint 和幂等分别解决什么
 
-## RAG 为什么称为 Agentic
+checkpoint 解决“运行到哪、恢复后从哪个节点继续”；业务幂等解决“节点被重放时会不会再次退款”。两者不能互相替代。
 
-> 它不再固定执行 Query Rewrite、双路召回、RRF、父块扩展全套链路。Harness 根据现有 evidence 决定来源和是否需要第二次检索，PGVector 是默认通道，只有精确术语或语义无结果才补 BM25，两个通道都命中才做 RRF，只有 `CONTEXT_INCOMPLETE` 才扩父块。重点是按需检索和证据闭环，不是算法堆叠。
+退款使用稳定 `caseId:REFUND` 幂等键。即使审批请求重复、进程在退款成功后响应前宕机，恢复节点也只能读取已有 Command 结果，不能再次调用退款适配器。
 
-对外称“受控 Agentic RAG 证据闭环”，不把 Agentic RAG 3.0 说成行业标准。
+## 为什么当前回到 Java 17
 
-## Evidence Board 保存什么
+当前机器 `JAVA_HOME` 是 Java 17，而且项目亮点主要来自可恢复治理图、工具契约自愈、人工审批和幂等副作用，不来自线程模型。为了避免把环境升级包装成 Agent 能力，当前分支保持 Java 17。
 
-> Evidence Board 只存在于一次 Run，保存已执行的来源/query、规范化证据、检索轮次、模型 assessment、缺失信息和重复检索键。它负责去重和给下一轮 Harness 提供压缩 observation，不进入 Session 记忆，避免把外部事实长期污染用户上下文。
+阻塞模型调用、JDBC、同步 HTTP Tool 和退款核验仍通过专用 `agentIoExecutor` 隔离，但实现为 Java 17 有界线程池。后续如果要升级 Java 21，必须拿出并发压测、连接池容量和线程观测证据，再把虚拟线程作为执行层优化，而不是面试主卖点。
 
-## MCP evidence 为什么可信
+## 怎么证明不是框架 Demo
 
-> 外部检索时，系统通过 Spring AI `toolContext` 给 `GuardedToolCallback` 传入调用记录器，记录真实工具名、脱敏参数、成功状态和受限原始结果。`McpEvidenceNormalizer` 从真实 ToolCallback 结果提取 title、URI 和 content，而不是把模型整理后的回答当证据。没有 URI 的文本只能作为低可信补充，不能独立证明“最新版本”这类事实。
+评测不只检查回答文本，而是冻结正常、参数错误、超时、状态冲突、重复审批和宕机恢复轨迹，对比自由工具循环与治理图：
 
-## MCP 为什么不在开始时全量注入
+- 工具参数合法率和错误恢复率；
+- 未审批、跨用户和重复退款次数；
+- checkpoint 恢复前后结果一致性；
+- 模型调用数、P95 延迟和终态原因。
 
-> 项目知识问题根本不需要 MCP。只有 Harness 选择 `OFFICIAL_DOCS` 或 `WEB_RESEARCH` 时，系统才分别路由 Context7 或 Exa，然后做只读过滤和 allowed set 校验。这样减少工具描述噪声，也避免无关 MCP 初始化拖慢每个请求。
+在 Full 评测完成前，只能讲架构和测试覆盖，不能编造成功率提升数字。
 
-## 怎么防止危险工具
+## 当前不可宣称边界
 
-> 第一层按 evidence source 只选 docs/search MCP，第二层只允许 search、docs、fetch、read、get、open、list、resolve 语义的工具，第三层 `GuardedToolCallback` 在调用期再次检查授权集合和危险名称。create、update、write、send、notify、memory、shell 不会进入证据链路。
-
-## 工具调用失败怎么办
-
-> 参数错误、未授权和调用异常会被结构化归一化，并记录为失败 ToolInvocation。只有成功调用才会进入 evidence normalizer。工具失败后 Harness 可以换来源、改写 query 或基于已有 evidence 收口，不能把错误文本当成检索结果。
-
-## 为什么 PGVector 而不是更重的向量数据库
-
-> 这是根据当前数据量、部署目标和运维成本做的选择。PGVector 已能满足项目知识语义检索，并和 PostgreSQL 一起完成轻量部署。只有进入更大规模、多租户隔离、高并发或专门索引治理场景时，才有充分理由引入独立向量数据库。这是技术选型方法，不是说 Milvus 本身不好。
-
-## BM25、RRF、Small-to-Big 会不会过度设计
-
-> 现在它们不是默认全开。项目冻结了 60 条评测数据，BM25/RRF 只有在精确术语子集 Hit@5 提升至少 10 个百分点或修复至少 3 个 case 时保留；Small-to-Big 也有关键点覆盖率和 Faithfulness 门槛。live evaluation 未完成前，我不会在简历中写确定的效果提升。
-
-## 记忆机制是什么
-
-> 这是 Session 短期记忆。消息表只保存用户输入和最终回答原文，只有 USER 和 ASSISTANT 都存在的成功完整 Turn 才会再次注入。Session 表保存结构化摘要、已总结游标、乐观锁版本和 30 天过期时间，Prompt 使用摘要加最近四个完整 Turn。
-
-## 为什么不直接使用 Spring AI ChatMemory
-
-> 我借鉴了 MessageWindowChatMemory 的完整消息窗口语义，但项目还需要按 Run 状态排除失败输入、保存结构化摘要游标和做乐观锁更新。为了框架对齐再包一层 ChatMemory 只会增加适配代码，所以保留了更符合当前 Run 模型的自定义仓储。
-
-## 摘要会不会把错误事实记住
-
-> 摘要只提取用户明确表达的目标、约束、确认决策、未解决问题和回答偏好，不保存工具输出、外部事实或模型猜测。Evidence Board 生命周期只在当前 Run，和 Session Memory 分离。
-
-## 上下文过长怎么办
-
-> Session 层按完整 Turn 淘汰，不截断单条消息。模型调用层用 `PromptBudgetAssembler` 按当前问题、项目规则、evidence、Session 上下文、observation 的顺序组装。估算单位叫 context-units，是中英文 heuristic，不是精确 tokenizer，也不再把多次模型调用字符数累计成一个假窗口。
-
-## 并发更新记忆怎么办
-
-> Session 表有 version 乐观锁，冲突后重新读取并重试一次。摘要失败不会影响主 Run，消息原文仍保留；成功交互会续期 30 天，每日任务清理过期 Session 和消息。
-
-## 项目当前最诚实的边界
-
-- 已完成：三动作 Controlled Harness、按来源 evidence retrieval、ragId scope、真实 MCP evidence、引用校验、完整 Turn 记忆、默认测试隔离、60 条评测数据。
-- 已验收：187 个默认测试、108 个 integration 测试、Docker 数据组件、Harness live、本地 RAG 与 MCP ToolCallback 注入。
-- 待外部额度恢复后验收：完整 MCP evidence 回答、三组 RAG 对照和消融结论；这些结果完成前不写效果提升数字。
-- 暂不做：多 Agent、长期向量记忆、精确 tokenizer、reranker、权限系统、前端控制台和新 Agent SDK。
+- 已实现 Spring AI `ChatModel + ToolCallingManager` 受控调用、LangGraph4j interrupt/resume、过期 checkpoint 拒绝、退款资格与错误预算、幂等 Command 和 Outbox 代码路径。
+- 已通过 17 条聚焦测试、30 条冻结轨迹和 MySQL Testcontainers 跨实例恢复；集成测试断言恢复后只有一条退款 Command、一条 Outbox，订单终态为 `REFUNDED`。
+- 当前只接本地演示订单，不宣称真实支付接入；真实模型 Full 评测未执行，不提供效果提升数字。
+- 当前保持 Java 17；Java 21/虚拟线程未作为当前已落地能力，生产负载下的容量压测也尚未执行。
+- 不宣称多 Agent、长期记忆、通用工作流平台或生产真实退款接入。
+- 第一版只验证退款主链路和本地可控的售后适配器。

@@ -1,26 +1,19 @@
 package cn.ethan.ai.domain.agent.adapter.repository;
 
-import cn.ethan.ai.domain.agent.model.valobj.AgentRunDetailVO;
-import cn.ethan.ai.domain.agent.model.valobj.AgentRunRecordVO;
-import cn.ethan.ai.domain.agent.model.valobj.AgentStepRunRecordVO;
+import cn.ethan.ai.domain.agent.model.valobj.AgentRunRecord;
+import cn.ethan.ai.domain.agent.model.valobj.AgentStepRunRecord;
 
 /**
  * 运行态仓储
  */
 public interface IAgentRunRepository {
 
-    void createRun(AgentRunRecordVO record);
+    void createRun(AgentRunRecord record);
 
-    void updateRun(AgentRunRecordVO record);
+    void updateRun(AgentRunRecord record);
 
-    void createStep(AgentStepRunRecordVO record);
-
-    void updateStep(AgentStepRunRecordVO record);
-
-    AgentRunDetailVO queryRunDetail(String runId);
+    void createStep(AgentStepRunRecord record);
 
     boolean cancelRun(String runId, String reason);
-
-    boolean isCancelled(String runId);
 
 }

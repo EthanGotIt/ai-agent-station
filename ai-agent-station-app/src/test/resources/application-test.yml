@@ -1,11 +1,8 @@
 spring:
   ai:
-    agent:
-      auto-config:
-        enabled: false
+    model:
+      chat: none
 
 ai-agent:
-  vector-store:
-    enabled: false
-  evidence-retrieval:
-    initialize-es-on-startup: false
+  after-sales:
+    checkpoint-store: memory

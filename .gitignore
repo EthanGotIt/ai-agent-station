@@ -1,8 +1,5 @@
 target/
 test-results/
-output/
-docs/dev-ops/log/
-output/playwright/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
@@ -41,6 +38,3 @@ build/
 
 ### Mac OS ###
 .DS_Store
-/ai-agent-station-app/data/
-/data/
-**/.github/modernize/

@@ -1,16 +1,3 @@
-server:
-  port: 8090
-
-thread:
-  pool:
-    executor:
-      config:
-        core-pool-size: 20
-        max-pool-size: 50
-        keep-alive-time: 5000
-        block-queue-size: 5000
-        policy: CallerRunsPolicy
-
 spring:
   datasource:
     mysql:
@@ -19,55 +6,19 @@ spring:
       url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3306/ai-agent-station?useUnicode=true&characterEncoding=utf8&autoReconnect=true&zeroDateTimeBehavior=convertToNull&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
       driver-class-name: com.mysql.cj.jdbc.Driver
       hikari:
-        minimum-idle: 15
-        idle-timeout: 30000
-        maximum-pool-size: 25
-        max-lifetime: 1800000
-        connection-timeout: 30000
-    pgvector:
-      username: ${PGVECTOR_USERNAME:postgres}
-      password: ${PGVECTOR_PASSWORD:postgres}
-      url: ${PGVECTOR_URL:jdbc:postgresql://127.0.0.1:5432/ai-agent-station}
-      driver-class-name: org.postgresql.Driver
-      hikari:
-        maximum-pool-size: 5
         minimum-idle: 2
         idle-timeout: 30000
+        maximum-pool-size: 10
+        max-lifetime: 1800000
         connection-timeout: 30000
   ai:
     model:
       chat: ${SPRING_AI_MODEL_CHAT:none}
-      embedding: ${SPRING_AI_MODEL_EMBEDDING:none}
-      image: ${SPRING_AI_MODEL_IMAGE:none}
-      moderation: ${SPRING_AI_MODEL_MODERATION:none}
-      audio:
-        speech: ${SPRING_AI_MODEL_AUDIO_SPEECH:none}
-        transcription: ${SPRING_AI_MODEL_AUDIO_TRANSCRIPTION:none}
     openai:
-      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      base-url: ${OPENAI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
       api-key: ${OPENAI_API_KEY:}
-    agent:
-      auto-config:
-        enabled: true
-        client-ids: 2102,2103
 
 ai-agent:
-  model:
-    request-timeout-seconds: ${AI_AGENT_MODEL_REQUEST_TIMEOUT_SECONDS:60}
-    max-retries: ${AI_AGENT_MODEL_MAX_RETRIES:1}
-  context:
-    max-context-units: ${AI_AGENT_CONTEXT_MAX_UNITS:12000}
-    stop-threshold: ${AI_AGENT_CONTEXT_STOP_THRESHOLD:0.95}
-  vector-store:
-    enabled: ${AI_AGENT_VECTOR_STORE_ENABLED:false}
-    base-url: ${AI_AGENT_VECTOR_STORE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
-    api-key: ${OPENAI_API_KEY:}
-    model: ${AI_AGENT_VECTOR_STORE_MODEL:text-embedding-v4}
-    dimensions: ${AI_AGENT_VECTOR_STORE_DIMENSIONS:1024}
-  evidence-retrieval:
-    vector-route-top-k: ${AI_AGENT_VECTOR_ROUTE_TOP_K:12}
-
-logging:
-  level:
-    root: info
-  config: classpath:logback-spring.xml
+  after-sales:
+    model-bean-name: ${AI_AGENT_AFTER_SALES_MODEL_BEAN_NAME:}
+    checkpoint-store: ${AI_AGENT_AFTER_SALES_CHECKPOINT_STORE:memory}

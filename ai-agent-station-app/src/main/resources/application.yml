@@ -3,3 +3,11 @@ spring:
     name: ai-agent-station-app
   profiles:
     active: dev
+
+server:
+  port: 8090
+
+logging:
+  level:
+    root: info
+  config: classpath:logback-spring.xml

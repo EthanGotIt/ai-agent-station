@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.ethan.ai.infrastructure.dao.RefundCommandMapper">
+
+    <resultMap id="RefundCommandMap" type="cn.ethan.ai.infrastructure.dao.po.RefundCommandPO">
+        <id column="command_id" property="commandId"/>
+        <result column="case_id" property="caseId"/>
+        <result column="order_id" property="orderId"/>
+        <result column="user_id" property="userId"/>
+        <result column="idempotency_key" property="idempotencyKey"/>
+        <result column="status" property="status"/>
+        <result column="failure_reason" property="failureReason"/>
+    </resultMap>
+
+    <select id="selectByIdempotencyKeyForUpdate" resultMap="RefundCommandMap">
+        SELECT command_id, case_id, order_id, user_id, idempotency_key, status, failure_reason
+        FROM refund_command
+        WHERE idempotency_key = #{idempotencyKey}
+        FOR UPDATE
+    </select>
+
+    <insert id="insertIgnore" parameterType="cn.ethan.ai.infrastructure.dao.po.RefundCommandPO">
+        INSERT IGNORE INTO refund_command
+            (command_id, case_id, order_id, user_id, idempotency_key, status, created_at, updated_at)
+        VALUES
+            (#{commandId}, #{caseId}, #{orderId}, #{userId}, #{idempotencyKey}, #{status}, NOW(6), NOW(6))
+    </insert>
+
+    <update id="markSuccess">
+        UPDATE refund_command
+        SET status = 'SUCCESS',
+            failure_reason = NULL,
+            updated_at = NOW(6)
+        WHERE command_id = #{commandId}
+    </update>
+
+    <update id="markFailed">
+        UPDATE refund_command
+        SET status = 'FAILED',
+            failure_reason = #{failureReason},
+            updated_at = NOW(6)
+        WHERE command_id = #{commandId}
+    </update>
+
+</mapper>

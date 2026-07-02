@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.ethan.ai.infrastructure.dao.AfterSalesOutboxMapper">
+
+    <insert id="insertIgnore" parameterType="cn.ethan.ai.infrastructure.dao.po.AfterSalesOutboxPO">
+        INSERT IGNORE INTO after_sales_outbox
+            (event_id, aggregate_id, event_type, payload, status, created_at, updated_at)
+        VALUES
+            (#{eventId}, #{aggregateId}, #{eventType}, #{payload}, #{status}, NOW(6), NOW(6))
+    </insert>
+
+</mapper>

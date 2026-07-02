@@ -3,7 +3,5 @@
   <component name="SqlDialectMappings">
     <file url="file://$PROJECT_DIR$/.idea/queries/Query.sql" dialect="MySQL" />
     <file url="file://$PROJECT_DIR$/.idea/queries/Query_1.sql" dialect="MySQL" />
-    <file url="file://$PROJECT_DIR$/docs/dev-ops/mysql/sql/grafana.sql" dialect="MySQL" />
-    <file url="file://$PROJECT_DIR$/docs/dev-ops/pgvector/sql/ai-agent-station.sql" dialect="PostgreSQL" />
   </component>
 </project>

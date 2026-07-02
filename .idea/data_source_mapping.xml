@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="DataSourcePerFileMappings">
-    <file url="file://$PROJECT_DIR$/ai-agent-station-app/src/main/resources/mybatis/mapper/ai_agent_mapper.xml" value="52541902-51b5-44c6-b2a0-e0b7483ab1dd" />
+    <file url="file://$PROJECT_DIR$/ai-agent-station-app/src/main/resources/mybatis/mapper/after_sales_case_mapper.xml" value="52541902-51b5-44c6-b2a0-e0b7483ab1dd" />
+    <file url="file://$PROJECT_DIR$/ai-agent-station-app/src/main/resources/mybatis/mapper/after_sales_outbox_mapper.xml" value="52541902-51b5-44c6-b2a0-e0b7483ab1dd" />
+    <file url="file://$PROJECT_DIR$/ai-agent-station-app/src/main/resources/mybatis/mapper/agent_run_mapper.xml" value="52541902-51b5-44c6-b2a0-e0b7483ab1dd" />
+    <file url="file://$PROJECT_DIR$/ai-agent-station-app/src/main/resources/mybatis/mapper/agent_step_run_mapper.xml" value="52541902-51b5-44c6-b2a0-e0b7483ab1dd" />
+    <file url="file://$PROJECT_DIR$/ai-agent-station-app/src/main/resources/mybatis/mapper/demo_order_mapper.xml" value="52541902-51b5-44c6-b2a0-e0b7483ab1dd" />
+    <file url="file://$PROJECT_DIR$/ai-agent-station-app/src/main/resources/mybatis/mapper/refund_command_mapper.xml" value="52541902-51b5-44c6-b2a0-e0b7483ab1dd" />
   </component>
 </project>
