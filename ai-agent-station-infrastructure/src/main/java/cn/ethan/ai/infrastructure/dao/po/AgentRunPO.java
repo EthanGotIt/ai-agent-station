@@ -20,11 +20,15 @@ public class AgentRunPO {
 
     private String runId;
 
+    private String turnId;
+
+    private String caseId;
+
     private String agentId;
 
-    private String sessionId;
+    private String triggerType;
 
-    private String userMessage;
+    private Integer attemptNo;
 
     private String status;
 
@@ -33,6 +37,10 @@ public class AgentRunPO {
     private String errorMessage;
 
     private String cancelReason;
+
+    private String checkpointBefore;
+
+    private String checkpointAfter;
 
     private LocalDateTime startTime;
 

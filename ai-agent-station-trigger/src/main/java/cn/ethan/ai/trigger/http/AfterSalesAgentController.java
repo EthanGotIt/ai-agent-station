@@ -8,15 +8,15 @@ import cn.ethan.ai.domain.agent.model.AfterSalesResumeCommand;
 import cn.ethan.ai.domain.agent.model.AfterSalesRunCommand;
 import cn.ethan.ai.domain.agent.model.AfterSalesRunResult;
 import cn.ethan.ai.domain.agent.service.AfterSalesAgentService;
-import cn.ethan.ai.domain.agent.service.exception.AfterSalesResumeConflictException;
+import cn.ethan.ai.domain.agent.exception.AfterSalesResumeConflictException;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -24,8 +24,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/v1/after-sales/runs")
-@CrossOrigin(origins = "*")
+@RequestMapping("/api/v1/after-sales/cases")
 public class AfterSalesAgentController {
 
     private final AfterSalesAgentService afterSalesAgentService;
@@ -35,71 +34,97 @@ public class AfterSalesAgentController {
     }
 
     @PostMapping
-    public AfterSalesRunResponseDTO start(@RequestBody AfterSalesRunRequestDTO request) {
-        return toResponse(afterSalesAgentService.start(new AfterSalesRunCommand(
-                request.getUserId(),
-                request.getSessionId(),
-                request.getMessage(),
-                request.getOrderId(),
-                request.getRefundReason()
+    public AfterSalesRunResponseDTO start(@RequestHeader("X-User-Id") String userId,
+                                          @RequestBody AfterSalesRunRequestDTO request) {
+        if (request.userId() != null && !request.userId().isBlank()
+                && !userId.equals(request.userId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "请求身份与消息身份不一致");
+        }
+        return toResponse(afterSalesAgentService.start(AfterSalesRunCommand.of(
+                userId,
+                request.sessionId(),
+                request.message(),
+                request.orderId(),
+                request.refundReason()
         )));
     }
 
-    @PostMapping("/{runId}/resume")
-    public AfterSalesRunResponseDTO resume(@PathVariable String runId,
+    @PostMapping("/{caseId}/resume")
+    public AfterSalesRunResponseDTO resume(@PathVariable String caseId,
+                                           @RequestHeader("X-User-Id") String actorId,
+                                           @RequestHeader(value = "X-User-Role", defaultValue = "") String actorRole,
                                            @RequestBody AfterSalesResumeRequestDTO request) {
         try {
             AfterSalesResumeCommand.ResumeAction action = AfterSalesResumeCommand.ResumeAction.valueOf(
-                    request.getAction() == null ? "" : request.getAction().trim().toUpperCase()
+                    request.action() == null ? "" : request.action().trim().toUpperCase()
             );
-            return toResponse(afterSalesAgentService.resume(new AfterSalesResumeCommand(
-                    runId,
-                    request.getCheckpointId(),
+            return toResponse(afterSalesAgentService.resume(AfterSalesResumeCommand.of(
+                    caseId,
+                    request.checkpointId(),
                     action,
-                    request.getOrderId(),
-                    request.getRefundReason()
+                    request.orderId(),
+                    request.refundReason(),
+                    actorId,
+                    actorRole
             )));
         } catch (AfterSalesResumeConflictException e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage(), e);
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
+        } catch (SecurityException e) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, e.getMessage(), e);
         }
     }
 
-    @GetMapping("/{runId}")
-    public AfterSalesRunResponseDTO query(@PathVariable String runId) {
-        AfterSalesCaseView view = afterSalesAgentService.query(runId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "售后运行不存在"));
-        return AfterSalesRunResponseDTO.builder()
-                .runId(view.runId())
-                .caseId(view.caseId())
-                .stage(view.stage())
-                .checkpointId(view.checkpointId())
-                .nextNode(view.nextNode())
-                .terminalReason(view.terminalReason())
-                .commandId(view.commandId())
-                .state(Map.of())
-                .build();
+    @GetMapping("/{caseId}")
+    public AfterSalesRunResponseDTO query(@PathVariable String caseId,
+                                          @RequestHeader("X-User-Id") String requesterId,
+                                          @RequestHeader(value = "X-User-Role", defaultValue = "") String requesterRole) {
+        AfterSalesCaseView view;
+        try {
+            view = afterSalesAgentService.query(caseId, requesterId, requesterRole)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "售后Case不存在"));
+        } catch (SecurityException error) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, error.getMessage(), error);
+        }
+        return new AfterSalesRunResponseDTO(
+                view.caseIdValue(),
+                null,
+                null,
+                view.stage(),
+                view.checkpointId(),
+                view.nextNode(),
+                null,
+                view.terminalReason(),
+                view.commandId(),
+                Map.of()
+        );
     }
 
-    @DeleteMapping("/{runId}")
-    public Map<String, Object> cancel(@PathVariable String runId,
+    @DeleteMapping("/{caseId}")
+    public Map<String, Object> cancel(@PathVariable String caseId,
+                                      @RequestHeader("X-User-Id") String requesterId,
                                       @RequestParam(required = false) String reason) {
-        boolean cancelled = afterSalesAgentService.cancel(runId, reason);
-        return Map.of("runId", runId, "cancelled", cancelled);
+        try {
+            boolean cancelled = afterSalesAgentService.cancel(caseId, requesterId, reason);
+            return Map.of("caseId", caseId, "cancelled", cancelled);
+        } catch (SecurityException error) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, error.getMessage(), error);
+        }
     }
 
     private AfterSalesRunResponseDTO toResponse(AfterSalesRunResult result) {
-        return AfterSalesRunResponseDTO.builder()
-                .runId(result.runId())
-                .caseId(result.caseId())
-                .stage(result.stage())
-                .checkpointId(result.checkpointId())
-                .nextNode(result.nextNode())
-                .waitingReason(result.waitingReason())
-                .terminalReason(result.terminalReason())
-                .commandId(result.commandId())
-                .state(result.state())
-                .build();
+        return new AfterSalesRunResponseDTO(
+                result.caseIdValue(),
+                result.turnIdValue(),
+                result.runIdValue(),
+                result.stage(),
+                result.checkpointId(),
+                result.nextNode(),
+                result.waitingReason(),
+                result.terminalReason(),
+                result.commandId(),
+                result.state()
+        );
     }
 }

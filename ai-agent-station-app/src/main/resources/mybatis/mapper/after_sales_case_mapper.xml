@@ -4,7 +4,6 @@
 
     <resultMap id="AfterSalesCaseMap" type="cn.ethan.ai.infrastructure.dao.po.AfterSalesCasePO">
         <id column="case_id" property="caseId"/>
-        <result column="run_id" property="runId"/>
         <result column="user_id" property="userId"/>
         <result column="session_id" property="sessionId"/>
         <result column="user_message" property="userMessage"/>
@@ -18,13 +17,13 @@
 
     <insert id="insert" parameterType="cn.ethan.ai.infrastructure.dao.po.AfterSalesCasePO">
         INSERT INTO after_sales_case
-            (case_id, run_id, user_id, session_id, user_message, stage, created_at, updated_at)
+            (case_id, user_id, session_id, user_message, stage, created_at, updated_at)
         VALUES
-            (#{caseId}, #{runId}, #{userId}, #{sessionId}, #{userMessage}, #{stage}, NOW(6), NOW(6))
+            (#{caseId}, #{userId}, #{sessionId}, #{userMessage}, #{stage}, NOW(6), NOW(6))
         ON DUPLICATE KEY UPDATE updated_at = VALUES(updated_at)
     </insert>
 
-    <update id="updateByRunId" parameterType="cn.ethan.ai.infrastructure.dao.po.AfterSalesCasePO">
+    <update id="updateByCaseId" parameterType="cn.ethan.ai.infrastructure.dao.po.AfterSalesCasePO">
         UPDATE after_sales_case
         SET order_id = #{orderId},
             stage = #{stage},
@@ -32,32 +31,47 @@
             next_node = #{nextNode},
             terminal_reason = #{terminalReason},
             command_id = #{commandId},
+            resume_token = NULL,
             updated_at = NOW(6)
-        WHERE run_id = #{runId}
+        WHERE case_id = #{caseId}
     </update>
 
-    <select id="selectByRunId" resultMap="AfterSalesCaseMap">
-        SELECT case_id, run_id, user_id, session_id, user_message, order_id, stage,
+    <select id="selectByCaseId" resultMap="AfterSalesCaseMap">
+        SELECT case_id, user_id, session_id, user_message, order_id, stage,
                checkpoint_id, next_node, terminal_reason, command_id
         FROM after_sales_case
-        WHERE run_id = #{runId}
+        WHERE case_id = #{caseId}
     </select>
 
-    <update id="cancelByRunId">
+    <update id="cancelByCaseId">
         UPDATE after_sales_case
-        SET stage = 'CANCELLED',
+        SET stage = 'REJECTED',
             terminal_reason = #{reason},
             updated_at = NOW(6)
-        WHERE run_id = #{runId}
-          AND stage NOT IN ('COMPLETED', 'REJECTED', 'CANCELLED')
+        WHERE case_id = #{caseId}
+          AND stage NOT IN ('COMPLETED', 'REJECTED')
     </update>
 
     <update id="markRefundExecuting">
         UPDATE after_sales_case
-        SET stage = 'EXECUTE_REFUND',
+        SET stage = 'COMPLETED',
             command_id = #{commandId},
             updated_at = NOW(6)
         WHERE case_id = #{caseId}
+    </update>
+
+    <update id="tryAcquireResume">
+        UPDATE after_sales_case
+        SET resume_token = #{resumeToken}, updated_at = NOW(6)
+        WHERE case_id = #{caseId}
+          AND checkpoint_id = #{checkpointId}
+          AND resume_token IS NULL
+    </update>
+
+    <update id="releaseResume">
+        UPDATE after_sales_case
+        SET resume_token = NULL, updated_at = NOW(6)
+        WHERE case_id = #{caseId} AND resume_token = #{resumeToken}
     </update>
 
 </mapper>

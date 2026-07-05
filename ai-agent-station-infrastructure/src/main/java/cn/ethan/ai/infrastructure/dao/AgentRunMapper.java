@@ -2,9 +2,6 @@ package cn.ethan.ai.infrastructure.dao;
 
 import cn.ethan.ai.infrastructure.dao.po.AgentRunPO;
 import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Param;
-
-import java.time.LocalDateTime;
 
 @Mapper
 public interface AgentRunMapper {
@@ -13,8 +10,6 @@ public interface AgentRunMapper {
 
     int updateByRunId(AgentRunPO run);
 
-    int cancelByRunId(@Param("runId") String runId,
-                      @Param("cancelReason") String cancelReason,
-                      @Param("updateTime") LocalDateTime updateTime);
+    int countByTurnId(String turnId);
 
 }

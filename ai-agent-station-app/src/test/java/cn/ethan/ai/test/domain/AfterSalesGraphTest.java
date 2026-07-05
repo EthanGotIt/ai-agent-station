@@ -1,43 +1,70 @@
 package cn.ethan.ai.test.domain;
 
 import cn.ethan.ai.domain.agent.model.AfterSalesAgentState;
+import cn.ethan.ai.domain.agent.model.AfterSalesOrderSnapshot;
+import cn.ethan.ai.domain.agent.model.plan.ChecklistItem;
+import cn.ethan.ai.domain.agent.model.plan.PlanStep;
+import cn.ethan.ai.domain.agent.model.plan.PlanningContext;
+import cn.ethan.ai.domain.agent.model.plan.RefundPlan;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AfterSalesStage;
-import cn.ethan.ai.domain.agent.service.AfterSalesGraphRuntime;
-import cn.ethan.ai.domain.agent.service.RefundEligibilityPolicy;
-import org.bsc.langgraph4j.RunnableConfig;
+import cn.ethan.ai.domain.agent.policy.AfterSalesRefundEligibilityPolicy;
+import cn.ethan.ai.domain.agent.policy.RefundInformationGatheringPolicy;
+import cn.ethan.ai.domain.agent.port.driven.IAfterSalesStateMachine;
+import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
+import cn.ethan.ai.infrastructure.adapter.statemachine.SpringStateMachineAdapter;
+import cn.ethan.ai.test.fixture.InMemoryAfterSalesRepository;
+import cn.ethan.ai.test.fixture.StubAfterSalesToolPort;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
+/**
+ * Spring State Machine 路由测试。
+ *
+ * <p>验证 Plan-and-Execute 主链路下，SpringStateMachineAdapter 在各个边界条件中的路由结果。</p>
+ */
 public class AfterSalesGraphTest {
 
-    private AfterSalesGraphRuntime graphRuntime;
+    private IAfterSalesStateMachine stateMachine;
+    private InMemoryAfterSalesRepository repository;
 
     @BeforeEach
-    void setUp() throws Exception {
-        graphRuntime = new AfterSalesGraphRuntime();
+    void setUp() {
+        repository = new InMemoryAfterSalesRepository();
+        repository.orders.put("order-1", new AfterSalesOrderSnapshot("order-1", "user-1", "PAID", null));
+        stateMachine = new SpringStateMachineAdapter(
+                new StubAfterSalesToolPort(repository),
+                repository,
+                new RefundPlanningAgent(null),
+                new RefundInformationGatheringPolicy(),
+                null);
     }
 
     @Test
     void shouldRouteEligiblePaidOrderToApprovalBoundary() {
         AfterSalesAgentState state = execute(eligibleInput(), "paid-order");
 
-        Assertions.assertEquals(AfterSalesStage.READY_FOR_APPROVAL, state.stage());
-        Assertions.assertEquals(Boolean.TRUE, state.data().get(AfterSalesAgentState.ELIGIBLE));
+        Assertions.assertEquals(AfterSalesStage.PENDING_APPROVAL, state.stage());
+        Assertions.assertEquals(Boolean.TRUE.toString(), state.text(AfterSalesAgentState.ELIGIBLE));
         Assertions.assertEquals("REFUND_REQUIRES_APPROVAL", state.text(AfterSalesAgentState.DECISION_REASON));
+        Assertions.assertNotNull(state.data().get(AfterSalesAgentState.CHECKLIST));
+        Assertions.assertFalse(((java.util.List<?>) state.data().get(AfterSalesAgentState.CHECKLIST)).isEmpty());
     }
 
     @Test
     void shouldAskForMissingOrderId() {
         Map<String, Object> input = eligibleInput();
         input.remove(AfterSalesAgentState.ORDER_ID);
+        input.remove(AfterSalesAgentState.ORDER_STATUS);
 
         AfterSalesAgentState state = execute(input, "missing-order");
 
-        Assertions.assertEquals(AfterSalesStage.NEED_USER_INPUT, state.stage());
+        Assertions.assertEquals(AfterSalesStage.INTAKE, state.stage());
+        Assertions.assertTrue(state.flag(AfterSalesAgentState.NEED_USER_INPUT));
         Assertions.assertEquals("MISSING_REQUIRED_IDENTITY", state.text(AfterSalesAgentState.DECISION_REASON));
     }
 
@@ -64,97 +91,77 @@ public class AfterSalesGraphTest {
     }
 
     @Test
-    void shouldRouteInvalidArgumentsToBoundedRepair() {
-        Map<String, Object> input = Map.of(
-                AfterSalesAgentState.ERROR_TYPE, "ARGUMENT_INVALID",
-                AfterSalesAgentState.REPAIR_COUNT, 0
-        );
-
-        AfterSalesAgentState state = execute(input, "repair-tool-input");
-
-        Assertions.assertEquals(AfterSalesStage.REPAIR_TOOL_INPUT, state.stage());
-        Assertions.assertEquals("REPAIR_INVALID_ARGUMENTS", state.text(AfterSalesAgentState.DECISION_REASON));
-    }
-
-    @Test
-    void shouldStopWhenRepairBudgetIsExhausted() {
-        Map<String, Object> input = Map.of(
-                AfterSalesAgentState.ERROR_TYPE, "ARGUMENT_INVALID",
-                AfterSalesAgentState.REPAIR_COUNT, 2
-        );
-
-        AfterSalesAgentState state = execute(input, "repair-budget-exhausted");
-
-        Assertions.assertEquals(AfterSalesStage.REJECTED, state.stage());
-        Assertions.assertEquals("REPAIR_BUDGET_EXHAUSTED", state.text(AfterSalesAgentState.TERMINAL_REASON));
-    }
-
-    @Test
-    void shouldRetryTransientFailureWithinBudget() {
-        Map<String, Object> input = Map.of(
-                AfterSalesAgentState.ERROR_TYPE, "TIMEOUT",
-                AfterSalesAgentState.RETRY_COUNT, 1
-        );
-
-        AfterSalesAgentState state = execute(input, "retry-timeout");
-
-        Assertions.assertEquals(AfterSalesStage.RETRY_TOOL, state.stage());
-        Assertions.assertEquals("RETRY_TRANSIENT_FAILURE", state.text(AfterSalesAgentState.DECISION_REASON));
-    }
-
-    @Test
-    void shouldStopForbiddenToolCallWithoutRetry() {
-        AfterSalesAgentState state = execute(
-                Map.of(AfterSalesAgentState.ERROR_TYPE, "FORBIDDEN"),
-                "forbidden-tool"
-        );
-
-        Assertions.assertEquals(AfterSalesStage.REJECTED, state.stage());
-        Assertions.assertEquals("TOOL_ACCESS_FORBIDDEN", state.text(AfterSalesAgentState.TERMINAL_REASON));
-    }
-
-    @Test
-    void shouldExposeCheckpointHistoryForAThread() {
-        String threadId = "checkpoint-history";
-        execute(eligibleInput(), threadId);
-
-        Assertions.assertFalse(graphRuntime.compiledGraph().getStateHistory(
-                RunnableConfig.builder().threadId(threadId).build()
-        ).isEmpty());
-    }
-
-    @Test
     void shouldApplyDeliveredRefundWindowAndReasonDeterministically() {
-        RefundEligibilityPolicy policy = new RefundEligibilityPolicy();
+        AfterSalesRefundEligibilityPolicy policy = new AfterSalesRefundEligibilityPolicy();
 
-        RefundEligibilityPolicy.RefundDecision accepted = policy.evaluate(
-                new RefundEligibilityPolicy.RefundRequest(
+        AfterSalesRefundEligibilityPolicy.RefundDecision accepted = policy.evaluate(
+                new AfterSalesRefundEligibilityPolicy.RefundRequest(
                         "user-1", "order-1", "user-1", "DELIVERED", "DAMAGED", 7
                 )
         );
-        RefundEligibilityPolicy.RefundDecision rejected = policy.evaluate(
-                new RefundEligibilityPolicy.RefundRequest(
+        AfterSalesRefundEligibilityPolicy.RefundDecision rejected = policy.evaluate(
+                new AfterSalesRefundEligibilityPolicy.RefundRequest(
                         "user-1", "order-1", "user-1", "DELIVERED", "NO_LONGER_WANTED", 2
                 )
         );
 
-        Assertions.assertEquals(RefundEligibilityPolicy.RefundOutcome.ELIGIBLE, accepted.outcome());
-        Assertions.assertEquals(RefundEligibilityPolicy.RefundOutcome.REJECTED, rejected.outcome());
+        Assertions.assertEquals(AfterSalesRefundEligibilityPolicy.RefundOutcome.ELIGIBLE, accepted.outcome());
+        Assertions.assertEquals(AfterSalesRefundEligibilityPolicy.RefundOutcome.REJECTED, rejected.outcome());
         Assertions.assertEquals("DELIVERED_REFUND_RULE_NOT_MET", rejected.reason());
     }
 
+    @Test
+    void shouldRejectWhenRePlanBudgetExhausted() {
+        stateMachine = new SpringStateMachineAdapter(
+                new StubAfterSalesToolPort(repository),
+                repository,
+                new AlwaysQueryMissingAgent(),
+                new RefundInformationGatheringPolicy(),
+                null);
+
+        Map<String, Object> input = eligibleInput();
+        input.put(AfterSalesAgentState.ORDER_ID, "ORDER-MISSING");
+        input.remove(AfterSalesAgentState.ORDER_STATUS);
+
+        AfterSalesAgentState state = execute(input, "replan-budget-exhausted");
+
+        Assertions.assertEquals(AfterSalesStage.REJECTED, state.stage());
+        Assertions.assertEquals("REPLAN_BUDGET_EXHAUSTED", state.text(AfterSalesAgentState.TERMINAL_REASON));
+        Assertions.assertEquals(4, state.count(AfterSalesAgentState.REPLAN_COUNT));
+    }
+
     private AfterSalesAgentState execute(Map<String, Object> input, String threadId) {
-        return graphRuntime.execute(input, threadId);
+        return stateMachine.execute(input, threadId);
     }
 
     private Map<String, Object> eligibleInput() {
         Map<String, Object> input = new HashMap<>();
         input.put(AfterSalesAgentState.RUN_ID, "run-1");
         input.put(AfterSalesAgentState.USER_ID, "user-1");
+        input.put(AfterSalesAgentState.SESSION_ID, "session-1");
         input.put(AfterSalesAgentState.ORDER_ID, "order-1");
         input.put(AfterSalesAgentState.ORDER_OWNER_ID, "user-1");
         input.put(AfterSalesAgentState.ORDER_STATUS, "PAID");
         input.put(AfterSalesAgentState.REFUND_REASON, "DAMAGED");
         return input;
+    }
+
+    private static final class AlwaysQueryMissingAgent extends RefundPlanningAgent {
+        AlwaysQueryMissingAgent() {
+            super(null);
+        }
+
+        @Override
+        public RefundPlan plan(PlanningContext context) {
+            return new RefundPlan(false, List.of(
+                    new PlanStep("TOOL_CALL", "orderStatus", "query_order",
+                            Map.of("orderId", "ORDER-MISSING"), null)
+            ), List.of(
+                    new ChecklistItem("userId", "DONE"),
+                    new ChecklistItem("orderId", "DONE"),
+                    new ChecklistItem("orderStatus", "PENDING"),
+                    new ChecklistItem("refundReason", "DONE")
+            ));
+        }
     }
 }

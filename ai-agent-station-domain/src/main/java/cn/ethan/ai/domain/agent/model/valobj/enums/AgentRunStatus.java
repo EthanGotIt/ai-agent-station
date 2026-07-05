@@ -5,7 +5,6 @@ package cn.ethan.ai.domain.agent.model.valobj.enums;
  */
 public enum AgentRunStatus {
 
-    INIT,
     RUNNING,
     SUCCESS,
     FAILED,

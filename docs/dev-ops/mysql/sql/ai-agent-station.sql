@@ -1,55 +1,14 @@
 -- Durable After-Sales Agent 完整数据库结构。
--- 包含业务运行审计、售后业务、退款幂等、Outbox 和 LangGraph4j checkpoint 共 8 张表。
+-- 包含业务交互与运行审计、售后业务、退款幂等、Outbox/Inbox 共 8 张表。
 
-DROP TABLE IF EXISTS `LANGRAPH4J_CHECKPOINT`;
-DROP TABLE IF EXISTS `LANGRAPH4J_THREAD`;
+DROP TABLE IF EXISTS `after_sales_event_consume`;
 DROP TABLE IF EXISTS `after_sales_outbox`;
 DROP TABLE IF EXISTS `refund_command`;
+DROP TABLE IF EXISTS `agent_step`;
+DROP TABLE IF EXISTS `agent_run`;
+DROP TABLE IF EXISTS `agent_turn`;
 DROP TABLE IF EXISTS `after_sales_case`;
 DROP TABLE IF EXISTS `demo_order`;
-DROP TABLE IF EXISTS `agent_step_run`;
-DROP TABLE IF EXISTS `agent_run`;
-
-CREATE TABLE `agent_run` (
-    `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-    `run_id` varchar(64) NOT NULL COMMENT '一次业务执行ID',
-    `agent_id` varchar(64) NOT NULL COMMENT 'Agent类型',
-    `session_id` varchar(128) NOT NULL COMMENT '调用方会话ID，仅用于归组多个Run',
-    `user_message` text COMMENT '用户原始输入',
-    `status` varchar(32) NOT NULL COMMENT 'INIT/RUNNING/SUCCESS/FAILED/CANCELLED',
-    `final_summary` mediumtext COMMENT '最终结果摘要',
-    `error_message` varchar(1024) DEFAULT NULL COMMENT '失败原因',
-    `cancel_reason` varchar(255) DEFAULT NULL COMMENT '取消原因',
-    `start_time` datetime(6) DEFAULT NULL COMMENT '开始时间',
-    `end_time` datetime(6) DEFAULT NULL COMMENT '结束时间',
-    `create_time` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间',
-    `update_time` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间',
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_agent_run_id` (`run_id`),
-    KEY `idx_agent_run_session` (`session_id`, `create_time`),
-    KEY `idx_agent_run_status` (`status`, `update_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent业务运行记录';
-
-CREATE TABLE `agent_step_run` (
-    `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-    `run_id` varchar(64) NOT NULL COMMENT '所属业务执行ID',
-    `step_id` varchar(64) NOT NULL COMMENT 'checkpoint或步骤ID',
-    `step_name` varchar(255) DEFAULT NULL COMMENT '步骤名称',
-    `step_order` int NOT NULL DEFAULT '0' COMMENT '步骤序号',
-    `step_type` varchar(32) DEFAULT NULL COMMENT '步骤类型',
-    `status` varchar(32) NOT NULL COMMENT 'PENDING/RUNNING/SUCCESS/FAILED/SKIPPED/CANCELLED',
-    `output_summary` mediumtext COMMENT '步骤摘要',
-    `error_message` varchar(1024) DEFAULT NULL COMMENT '步骤错误',
-    `cost_millis` bigint NOT NULL DEFAULT '0' COMMENT '耗时毫秒',
-    `start_time` datetime(6) DEFAULT NULL COMMENT '开始时间',
-    `end_time` datetime(6) DEFAULT NULL COMMENT '结束时间',
-    `create_time` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间',
-    `update_time` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间',
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_agent_step_run` (`run_id`, `step_id`),
-    KEY `idx_agent_step_order` (`run_id`, `step_order`),
-    CONSTRAINT `fk_agent_step_run` FOREIGN KEY (`run_id`) REFERENCES `agent_run` (`run_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent步骤运行记录';
 
 CREATE TABLE `demo_order` (
     `order_id` varchar(64) NOT NULL,
@@ -64,22 +23,88 @@ CREATE TABLE `demo_order` (
 
 CREATE TABLE `after_sales_case` (
     `case_id` varchar(36) NOT NULL,
-    `run_id` varchar(36) NOT NULL,
     `user_id` varchar(64) NOT NULL,
     `session_id` varchar(64) NOT NULL,
     `user_message` varchar(2000) DEFAULT NULL,
     `order_id` varchar(64) DEFAULT NULL,
     `stage` varchar(64) NOT NULL,
     `checkpoint_id` varchar(36) DEFAULT NULL,
+    `resume_token` varchar(36) DEFAULT NULL COMMENT '并发恢复租约，Run完成或失败后释放',
     `next_node` varchar(128) DEFAULT NULL,
     `terminal_reason` varchar(255) DEFAULT NULL,
     `command_id` varchar(36) DEFAULT NULL,
     `created_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     `updated_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     PRIMARY KEY (`case_id`),
-    UNIQUE KEY `uk_after_sales_run` (`run_id`),
     KEY `idx_after_sales_user_stage` (`user_id`, `stage`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='售后 Agent 业务 Case';
+
+CREATE TABLE `agent_turn` (
+    `id` bigint NOT NULL AUTO_INCREMENT,
+    `turn_id` varchar(36) NOT NULL COMMENT '一次外部交互ID',
+    `case_id` varchar(36) NOT NULL COMMENT '所属售后Case',
+    `session_id` varchar(128) NOT NULL COMMENT '调用方会话标识，仅用于归组',
+    `actor_id` varchar(64) NOT NULL COMMENT '用户或审批人标识',
+    `turn_type` varchar(32) NOT NULL COMMENT 'START/SUPPLY_INFO/APPROVE/REJECT/CANCEL',
+    `input_summary` text COMMENT '本次交互输入摘要',
+    `output_summary` text COMMENT '本次交互结果摘要',
+    `status` varchar(32) NOT NULL COMMENT 'RUNNING/SUCCESS/FAILED/CANCELLED',
+    `start_time` datetime(6) NOT NULL,
+    `end_time` datetime(6) DEFAULT NULL,
+    `create_time` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    `update_time` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_agent_turn_id` (`turn_id`),
+    KEY `idx_agent_turn_case` (`case_id`, `create_time`),
+    CONSTRAINT `fk_agent_turn_case` FOREIGN KEY (`case_id`) REFERENCES `after_sales_case` (`case_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent外部交互记录';
+
+CREATE TABLE `agent_run` (
+    `id` bigint NOT NULL AUTO_INCREMENT,
+    `run_id` varchar(36) NOT NULL COMMENT '一次状态机执行或恢复尝试ID',
+    `turn_id` varchar(36) NOT NULL COMMENT '触发本次执行的Turn',
+    `case_id` varchar(36) NOT NULL COMMENT '所属售后Case，同时是状态机 thread key',
+    `agent_id` varchar(64) NOT NULL,
+    `trigger_type` varchar(32) NOT NULL COMMENT 'START/RESUME/RETRY',
+    `attempt_no` int NOT NULL DEFAULT 1,
+    `status` varchar(32) NOT NULL COMMENT 'RUNNING/SUCCESS/FAILED/CANCELLED',
+    `final_summary` text COMMENT '本次执行结果摘要',
+    `error_message` varchar(1024) DEFAULT NULL,
+    `cancel_reason` varchar(255) DEFAULT NULL,
+    `checkpoint_before` varchar(36) DEFAULT NULL,
+    `checkpoint_after` varchar(36) DEFAULT NULL,
+    `start_time` datetime(6) NOT NULL,
+    `end_time` datetime(6) DEFAULT NULL,
+    `create_time` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    `update_time` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_agent_run_id` (`run_id`),
+    UNIQUE KEY `uk_agent_run_turn_attempt` (`turn_id`, `attempt_no`),
+    KEY `idx_agent_run_case` (`case_id`, `create_time`),
+    CONSTRAINT `fk_agent_run_turn` FOREIGN KEY (`turn_id`) REFERENCES `agent_turn` (`turn_id`),
+    CONSTRAINT `fk_agent_run_case` FOREIGN KEY (`case_id`) REFERENCES `after_sales_case` (`case_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent单次执行记录';
+
+CREATE TABLE `agent_step` (
+    `id` bigint NOT NULL AUTO_INCREMENT,
+    `run_id` varchar(36) NOT NULL,
+    `step_id` varchar(36) NOT NULL,
+    `step_name` varchar(128) NOT NULL COMMENT '状态机 Action或Tool名称',
+    `step_order` int NOT NULL,
+    `step_type` varchar(32) NOT NULL COMMENT 'NODE/MODEL/TOOL',
+    `status` varchar(32) NOT NULL COMMENT 'SUCCESS/FAILED',
+    `output_summary` text,
+    `error_message` varchar(1024) DEFAULT NULL,
+    `cost_millis` bigint NOT NULL DEFAULT 0,
+    `start_time` datetime(6) NOT NULL,
+    `end_time` datetime(6) NOT NULL,
+    `create_time` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    `update_time` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_agent_step` (`run_id`, `step_id`),
+    KEY `idx_agent_step_order` (`run_id`, `step_order`),
+    CONSTRAINT `fk_agent_step_agent_run` FOREIGN KEY (`run_id`) REFERENCES `agent_run` (`run_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent节点与工具步骤记录';
 
 CREATE TABLE `refund_command` (
     `command_id` varchar(36) NOT NULL,
@@ -103,36 +128,31 @@ CREATE TABLE `after_sales_outbox` (
     `payload` json NOT NULL,
     `status` varchar(32) NOT NULL,
     `retry_count` int NOT NULL DEFAULT 0,
+    `next_attempt_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    `locked_by` varchar(64) DEFAULT NULL,
+    `locked_until` datetime(6) DEFAULT NULL,
+    `last_error` varchar(1024) DEFAULT NULL,
+    `delivered_at` datetime(6) DEFAULT NULL,
     `created_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     `updated_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     PRIMARY KEY (`event_id`),
-    KEY `idx_after_sales_outbox_dispatch` (`status`, `created_at`)
+    KEY `idx_after_sales_outbox_dispatch` (`status`, `next_attempt_at`, `locked_until`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='售后领域事件 Outbox';
+
+CREATE TABLE `after_sales_event_consume` (
+    `event_id` varchar(36) NOT NULL,
+    `consumer_name` varchar(64) NOT NULL,
+    `status` varchar(32) NOT NULL,
+    `consumed_at` datetime(6) DEFAULT NULL,
+    `created_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    `updated_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (`event_id`, `consumer_name`),
+    KEY `idx_after_sales_consume_status` (`consumer_name`, `status`, `updated_at`),
+    CONSTRAINT `fk_after_sales_consume_event` FOREIGN KEY (`event_id`)
+        REFERENCES `after_sales_outbox` (`event_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='售后事件消费幂等收件箱';
 
 INSERT INTO `demo_order` (`order_id`, `user_id`, `status`, `delivered_at`) VALUES
     ('ORDER-PAID-001', 'demo-user-1', 'PAID', NULL),
     ('ORDER-DELIVERED-001', 'demo-user-1', 'DELIVERED', DATE_SUB(NOW(6), INTERVAL 3 DAY)),
     ('ORDER-FOREIGN-001', 'demo-user-2', 'PAID', NULL);
-
--- LangGraph4j MysqlSaver 1.8.20 checkpoint 表。
-CREATE TABLE `LANGRAPH4J_THREAD` (
-    `thread_id` varchar(36) NOT NULL,
-    `thread_name` varchar(255) DEFAULT NULL,
-    `is_released` boolean NOT NULL DEFAULT FALSE,
-    PRIMARY KEY (`thread_id`),
-    UNIQUE KEY `IDX_LANGRAPH4J_THREAD_NAME_RELEASED` (`thread_name`, `is_released`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
-CREATE TABLE `LANGRAPH4J_CHECKPOINT` (
-    `id` bigint unsigned NOT NULL AUTO_INCREMENT UNIQUE KEY,
-    `checkpoint_id` varchar(36) NOT NULL,
-    `thread_id` varchar(36) NOT NULL,
-    `node_id` varchar(255) DEFAULT NULL,
-    `next_node_id` varchar(255) DEFAULT NULL,
-    `state_data` json NOT NULL,
-    `saved_at` timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    PRIMARY KEY (`checkpoint_id`),
-    KEY `idx_langgraph4j_checkpoint_thread` (`thread_id`, `saved_at`),
-    CONSTRAINT `LANGRAPH4J_FK_THREAD` FOREIGN KEY (`thread_id`)
-        REFERENCES `LANGRAPH4J_THREAD` (`thread_id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

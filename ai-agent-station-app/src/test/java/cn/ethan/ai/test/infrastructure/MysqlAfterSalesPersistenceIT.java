@@ -1,29 +1,40 @@
 package cn.ethan.ai.test.infrastructure;
 
-import cn.ethan.ai.domain.agent.adapter.port.IAfterSalesToolPort;
+import cn.ethan.ai.domain.agent.model.AfterSalesDomainEvent;
 import cn.ethan.ai.domain.agent.model.AfterSalesAgentState;
+import cn.ethan.ai.domain.agent.model.AfterSalesCaseView;
 import cn.ethan.ai.domain.agent.model.AfterSalesOrderSnapshot;
 import cn.ethan.ai.domain.agent.model.AfterSalesRefundResult;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolRequest;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolResult;
 import cn.ethan.ai.domain.agent.model.valobj.AgentRunRecord;
-import cn.ethan.ai.domain.agent.model.valobj.AgentStepRunRecord;
+import cn.ethan.ai.domain.agent.model.valobj.AgentStepRecord;
+import cn.ethan.ai.domain.agent.model.valobj.AgentTurnRecord;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AfterSalesStage;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AgentRunStatus;
-import cn.ethan.ai.domain.agent.model.valobj.enums.AgentStepRunStatus;
-import cn.ethan.ai.domain.agent.service.AfterSalesGraphRuntime;
+import cn.ethan.ai.domain.agent.model.valobj.enums.AgentStepStatus;
+import cn.ethan.ai.domain.agent.policy.RefundInformationGatheringPolicy;
+import cn.ethan.ai.domain.agent.port.driving.IAfterSalesEventHandler;
+import cn.ethan.ai.domain.agent.port.driven.IAfterSalesRepository;
+import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
+import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
+import cn.ethan.ai.infrastructure.adapter.commerce.LocalOrderGateway;
+import cn.ethan.ai.infrastructure.adapter.commerce.LocalRefundGateway;
+import cn.ethan.ai.infrastructure.adapter.event.AfterSalesOutboxDispatcher;
+import cn.ethan.ai.infrastructure.adapter.event.IdempotentLocalEventPublisher;
 import cn.ethan.ai.infrastructure.adapter.repository.AfterSalesRepository;
 import cn.ethan.ai.infrastructure.adapter.repository.AgentRunRepository;
+import cn.ethan.ai.infrastructure.adapter.statemachine.SpringStateMachineAdapter;
 import cn.ethan.ai.infrastructure.dao.AfterSalesCaseMapper;
 import cn.ethan.ai.infrastructure.dao.AfterSalesOutboxMapper;
 import cn.ethan.ai.infrastructure.dao.AgentRunMapper;
-import cn.ethan.ai.infrastructure.dao.AgentStepRunMapper;
+import cn.ethan.ai.infrastructure.dao.AgentStepMapper;
+import cn.ethan.ai.infrastructure.dao.AgentTurnMapper;
 import cn.ethan.ai.infrastructure.dao.DemoOrderMapper;
 import cn.ethan.ai.infrastructure.dao.RefundCommandMapper;
+import cn.ethan.ai.infrastructure.dao.po.AfterSalesOutboxPO;
 import com.mysql.cj.jdbc.MysqlDataSource;
 import org.apache.ibatis.session.SqlSessionFactory;
-import org.bsc.langgraph4j.checkpoint.CreateOption;
-import org.bsc.langgraph4j.checkpoint.MysqlSaver;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionFactoryBean;
@@ -44,24 +55,27 @@ import java.sql.Connection;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Testcontainers(disabledWithoutDocker = true)
 public class MysqlAfterSalesPersistenceIT {
 
     private static final String[] EXPECTED_TABLES = {
             "agent_run",
-            "agent_step_run",
+            "agent_step",
+            "agent_turn",
             "demo_order",
             "after_sales_case",
             "refund_command",
             "after_sales_outbox",
-            "LANGRAPH4J_THREAD",
-            "LANGRAPH4J_CHECKPOINT"
+            "after_sales_event_consume"
     };
 
     private static final String[] MAPPER_FILES = {
             "agent_run_mapper.xml",
-            "agent_step_run_mapper.xml",
+            "agent_step_mapper.xml",
+            "agent_turn_mapper.xml",
             "demo_order_mapper.xml",
             "after_sales_case_mapper.xml",
             "refund_command_mapper.xml",
@@ -75,7 +89,7 @@ public class MysqlAfterSalesPersistenceIT {
             .withPassword("test");
 
     @Test
-    void shouldPersistAllEightTablesAndResumeRefundIdempotently() throws Exception {
+    void shouldPersistAllTenTablesAndCompleteOutboxRetryAndIdempotentConsumption() throws Exception {
         MysqlDataSource dataSource = dataSource();
         createSchema(dataSource);
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
@@ -85,10 +99,14 @@ public class MysqlAfterSalesPersistenceIT {
         SqlSessionTemplate sqlSessionTemplate = sqlSessionTemplate(dataSource);
         AgentRunRepository runRepository = new AgentRunRepository(
                 sqlSessionTemplate.getMapper(AgentRunMapper.class),
-                sqlSessionTemplate.getMapper(AgentStepRunMapper.class)
+                sqlSessionTemplate.getMapper(AgentStepMapper.class),
+                sqlSessionTemplate.getMapper(AgentTurnMapper.class)
         );
+        DemoOrderMapper demoOrderMapper = sqlSessionTemplate.getMapper(DemoOrderMapper.class);
+        LocalOrderGateway orderGateway = new LocalOrderGateway(demoOrderMapper);
         AfterSalesRepository afterSalesRepository = new AfterSalesRepository(
-                sqlSessionTemplate.getMapper(DemoOrderMapper.class),
+                orderGateway,
+                new LocalRefundGateway(demoOrderMapper, orderGateway),
                 sqlSessionTemplate.getMapper(AfterSalesCaseMapper.class),
                 sqlSessionTemplate.getMapper(RefundCommandMapper.class),
                 sqlSessionTemplate.getMapper(AfterSalesOutboxMapper.class),
@@ -96,33 +114,45 @@ public class MysqlAfterSalesPersistenceIT {
         );
 
         LocalDateTime now = LocalDateTime.now();
+        afterSalesRepository.createCase("case-1", "demo-user-1", "session-1", "退款");
+        runRepository.createTurn(AgentTurnRecord.builder()
+                .turnId("turn-1")
+                .caseId("case-1")
+                .sessionId("session-1")
+                .actorId("demo-user-1")
+                .turnType("START")
+                .inputSummary("订单退款")
+                .status("RUNNING")
+                .startTime(now)
+                .build());
         runRepository.createRun(AgentRunRecord.builder()
                 .runId("run-1")
+                .turnId("turn-1")
+                .caseId("case-1")
                 .agentId("durable-after-sales")
-                .sessionId("session-1")
-                .userMessage("订单退款")
+                .triggerType("START")
+                .attemptNo(1)
                 .status(AgentRunStatus.RUNNING)
                 .startTime(now)
                 .build());
-        runRepository.createStep(AgentStepRunRecord.builder()
+        runRepository.createStep(AgentStepRecord.builder()
                 .runId("run-1")
                 .stepId("step-1")
                 .stepName("INTAKE")
                 .stepOrder(1)
                 .stepType("AFTER_SALES_GRAPH")
-                .status(AgentStepRunStatus.SUCCESS)
+                .status(AgentStepStatus.SUCCESS)
                 .costMillis(1L)
                 .startTime(now)
                 .endTime(now)
                 .build());
-        afterSalesRepository.createCase("run-1", "case-1", "demo-user-1", "session-1", "退款");
-
-        AfterSalesOrderSnapshot order = afterSalesRepository.findOrder("ORDER-PAID-001").orElseThrow();
+        AfterSalesOrderSnapshot order = afterSalesRepository
+                .findOrder("ORDER-PAID-001", "demo-user-1").orElseThrow();
         Assertions.assertEquals("PAID", order.status());
         Assertions.assertEquals(AfterSalesStage.INTAKE.name(),
-                afterSalesRepository.findCase("run-1").orElseThrow().stage());
+                afterSalesRepository.findCase("case-1").orElseThrow().stage());
 
-        AfterSalesGraphRuntime firstProcess = graph(dataSource, afterSalesRepository);
+        SpringStateMachineAdapter process = graph(dataSource, afterSalesRepository);
         Map<String, Object> input = new LinkedHashMap<>();
         input.put(AfterSalesAgentState.RUN_ID, "run-1");
         input.put(AfterSalesAgentState.CASE_ID, "case-1");
@@ -133,16 +163,13 @@ public class MysqlAfterSalesPersistenceIT {
         input.put(AfterSalesAgentState.ORDER_STATUS, "PAID");
         input.put(AfterSalesAgentState.REFUND_REASON, "DAMAGED");
 
-        AfterSalesAgentState waiting = firstProcess.execute(input, "run-1");
-        String checkpointId = firstProcess.currentSnapshot("run-1").orElseThrow()
-                .config().checkPointId().orElseThrow();
-        Assertions.assertEquals(AfterSalesStage.READY_FOR_APPROVAL, waiting.stage());
+        AfterSalesAgentState waiting = process.execute(input, "case-1");
+        String checkpointId = process.currentSnapshot("case-1").orElseThrow().checkpointId();
+        Assertions.assertEquals(AfterSalesStage.PENDING_APPROVAL, waiting.stage());
 
-        AfterSalesGraphRuntime restartedProcess = graph(dataSource, afterSalesRepository);
-        Assertions.assertTrue(restartedProcess.currentSnapshot("run-1").isPresent());
-        AfterSalesAgentState completed = restartedProcess.resume(
+        AfterSalesAgentState completed = process.resume(
                 Map.of(AfterSalesAgentState.APPROVAL_DECISION, "APPROVE"),
-                "run-1",
+                "case-1",
                 checkpointId
         );
 
@@ -152,15 +179,68 @@ public class MysqlAfterSalesPersistenceIT {
         Assertions.assertTrue(replay.success());
         Assertions.assertTrue(replay.idempotentReplay());
 
+        AfterSalesOutboxMapper outboxMapper = sqlSessionTemplate.getMapper(AfterSalesOutboxMapper.class);
+        TransactionTemplate transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        AtomicInteger handled = new AtomicInteger();
+        IAfterSalesEventHandler handler = new IAfterSalesEventHandler() {
+            @Override
+            public boolean supports(String eventType) {
+                return "REFUND_SUCCEEDED".equals(eventType);
+            }
+
+            @Override
+            public void handle(AfterSalesDomainEvent event) {
+                handled.incrementAndGet();
+            }
+        };
+        IdempotentLocalEventPublisher localPublisher = new IdempotentLocalEventPublisher(
+                outboxMapper, java.util.List.of(handler), transactionTemplate);
+        AfterSalesOutboxDispatcher dispatcher = new AfterSalesOutboxDispatcher(
+                outboxMapper, localPublisher, false, 3);
+        LocalDateTime dispatchAt = LocalDateTime.now().plusSeconds(1);
+        Assertions.assertEquals(1, dispatcher.dispatchBatch(10, dispatchAt).delivered());
+
+        Map<String, Object> deliveredEvent = jdbc.queryForMap(
+                "SELECT event_id, aggregate_id, event_type, payload FROM after_sales_outbox WHERE aggregate_id = ?",
+                "case-1");
+        localPublisher.publish(new AfterSalesDomainEvent(
+                String.valueOf(deliveredEvent.get("event_id")),
+                String.valueOf(deliveredEvent.get("aggregate_id")),
+                String.valueOf(deliveredEvent.get("event_type")),
+                String.valueOf(deliveredEvent.get("payload"))));
+        Assertions.assertEquals(1, handled.get(), "duplicate event must not repeat the consumer side effect");
+
+        outboxMapper.insertIgnore(AfterSalesOutboxPO.builder()
+                .eventId("event-retry-1")
+                .aggregateId("case-1")
+                .eventType("REFUND_SUCCEEDED")
+                .payload("{\"caseId\":\"case-1\",\"commandId\":\"retry-command\"}")
+                .status("PENDING")
+                .build());
+        AtomicInteger publishAttempts = new AtomicInteger();
+        AfterSalesOutboxDispatcher retryDispatcher = new AfterSalesOutboxDispatcher(
+                outboxMapper,
+                event -> {
+                    if (publishAttempts.incrementAndGet() == 1) {
+                        throw new IllegalStateException("injected publish failure");
+                    }
+                },
+                false,
+                3);
+        Assertions.assertEquals(1, retryDispatcher.dispatchBatch(10, dispatchAt.plusSeconds(1)).retried());
+        Assertions.assertEquals(1, retryDispatcher.dispatchBatch(10, dispatchAt.plusSeconds(3)).delivered());
+        Assertions.assertEquals(2, publishAttempts.get());
+
         assertRowCount(jdbc, "agent_run", 1);
-        assertRowCount(jdbc, "agent_step_run", 1);
+        assertRowCount(jdbc, "agent_step", 1);
+        assertRowCount(jdbc, "agent_turn", 1);
         assertRowCount(jdbc, "demo_order", 3);
         assertRowCount(jdbc, "after_sales_case", 1);
         assertRowCount(jdbc, "refund_command", 1);
-        assertRowCount(jdbc, "after_sales_outbox", 1);
-        Assertions.assertTrue(rowCount(jdbc, "LANGRAPH4J_THREAD") >= 1);
-        Assertions.assertTrue(rowCount(jdbc, "LANGRAPH4J_CHECKPOINT") >= 1);
-        Assertions.assertEquals("REFUNDED", afterSalesRepository.findOrder("ORDER-PAID-001").orElseThrow().status());
+        assertRowCount(jdbc, "after_sales_outbox", 2);
+        assertRowCount(jdbc, "after_sales_event_consume", 1);
+        Assertions.assertEquals("REFUNDED", afterSalesRepository
+                .findOrder("ORDER-PAID-001", "demo-user-1").orElseThrow().status());
     }
 
     private MysqlDataSource dataSource() {
@@ -171,16 +251,14 @@ public class MysqlAfterSalesPersistenceIT {
         return dataSource;
     }
 
-    private AfterSalesGraphRuntime graph(MysqlDataSource dataSource,
-                                         AfterSalesRepository repository) throws Exception {
-        return new AfterSalesGraphRuntime(
-                MysqlSaver.builder()
-                        .dataSource(dataSource)
-                        .createOption(CreateOption.CREATE_IF_NOT_EXISTS)
-                        .build(),
+    private SpringStateMachineAdapter graph(MysqlDataSource dataSource,
+                                            AfterSalesRepository repository) throws Exception {
+        return new SpringStateMachineAdapter(
                 new UnusedToolPort(),
-                repository
-        );
+                repository,
+                new RefundPlanningAgent(null),
+                new RefundInformationGatheringPolicy(),
+                null);
     }
 
     private SqlSessionTemplate sqlSessionTemplate(MysqlDataSource dataSource) throws Exception {
@@ -256,8 +334,8 @@ public class MysqlAfterSalesPersistenceIT {
 
     private static final class UnusedToolPort implements IAfterSalesToolPort {
         @Override
-        public AfterSalesToolRequest proposeOrderQuery(String userMessage, String userId, String orderIdHint,
-                                                       String refundReason, String correction) {
+        public AfterSalesToolRequest proposeOrderQuery(String userMessage, String userId, String sessionId,
+                                                       String orderIdHint, String refundReason, String correction) {
             throw new UnsupportedOperationException();
         }
 

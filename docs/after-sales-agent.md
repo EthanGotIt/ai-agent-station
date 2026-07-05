@@ -2,54 +2,63 @@
 
 ## 当前实现
 
-Java 17 主链路已经接通：
+Java 17 主链路已升级为轻量 **Plan-and-Execute** 范式：
 
 ```text
-INTAKE -> DECIDE_TOOL -> VALIDATE_TOOL -> EXECUTE_TOOL
-       -> EVALUATE_POLICY -> READY_FOR_APPROVAL (interrupt)
-       -> EXECUTE_REFUND -> VERIFY -> COMPLETED
+INTAKE (Plan-and-Execute)
+  ├─ Plan → Execute → RePlan（最多 3 次）
+  ├─ 缺少信息 → NEED_USER_INPUT（interrupt）
+  └─ 信息完整且通过 Policy → PENDING_APPROVAL
+PENDING_APPROVAL
+  ├─ APPROVE → 幂等退款 → COMPLETED
+  └─ REJECT / 资格不符 → REJECTED
 ```
 
-- Spring AI `ChatModel` 只生成 `query_order` 请求，`ToolCallingManager` 在 Graph 节点内执行。
-- `userId` 通过 `ToolContext` 传给工具，不进入模型参数；模型只能生成 `orderId`。
-- 缺少订单号进入 `NEED_USER_INPUT` interrupt；退款前进入 `READY_FOR_APPROVAL` interrupt。
-- resume 必须携带当前 checkpoint ID；旧 checkpoint 返回 HTTP 409。
-- 参数修复最多 2 次，瞬态重试最多 2 次，状态重载最多 1 次；相同失败指纹重复时提前终止。
-- 退款使用 `caseId:REFUND` 幂等键，订单更新、Command 和 Outbox 在同一 MySQL 事务内完成。
-- `agent_run/agent_step_run` 记录业务 Run 与步骤摘要，`LANGRAPH4J_*` 表只负责恢复状态。
-- `DECIDE_TOOL`、`EXECUTE_TOOL`、`EXECUTE_REFUND`、`VERIFY` 等阻塞 I/O 节点使用专用有界执行器；Policy Edge 保持同步执行。
+- `RefundPlanningAgent`（Spring AI `ChatClient` + `SessionMemoryAdvisor`）根据当前上下文输出 JSON Plan，只规划还需要收集的信息；不决定退款、不生成副作用动作。
+- `RefundInformationGatherer` 执行 Plan：
+  - `ASK_USER` → 在 `INTAKE` 阶段设置 `NEED_USER_INPUT` interrupt；
+  - `TOOL_CALL(query_order)` → 调用 `SpringAiAfterSalesToolAdapter` 查询订单；
+  - 工具失败或信息仍不完整时触发 RePlan，最多 3 次，超过则进入 `REJECTED`。
+- `RefundInformationGatheringPolicy` 硬拦截 Plan：动作白名单仅限 `ASK_USER` / `TOOL_CALL`，工具仅限 `query_order`，禁止重复询问已存在字段。
+- 信息完整后由 `AfterSalesRefundEligibilityPolicy` 判定资格，进入 `PENDING_APPROVAL`；进入审批时 `TodoWriteTool` 生成退款检查清单并写入业务状态。
+- 状态机只保留 `INTAKE / PENDING_APPROVAL / COMPLETED / REJECTED` 四个业务状态，由 Spring State Machine 维护内存 checkpoint 和 interrupt/resume 语义。
+- `userId` 来自 HTTP 身份头并通过 `ToolContext` 传给工具，不进入模型参数；模型只能生成 `orderId`。
+- resume 必须携带当前 checkpoint ID；旧 checkpoint 或并发恢复返回 HTTP 409。
+- 退款使用 `caseId:REFUND` 幂等键：事务内准备 Command，事务外调用退款适配器，再在事务内确认 Command、Case 和 Outbox；宕机重放仍复用同一幂等键。
+- `after_sales_case -> agent_turn -> agent_run -> agent_step` 分别记录业务流程、外部交互、状态机运行尝试和 Plan/Tool/Policy 执行记录；checkpoint 由 `SpringStateMachineAdapter` 在内存中维护，业务恢复通过 `after_sales_case` 业务快照实现。
+- `caseId` 同时作为 Spring State Machine 的状态机标识（thread key），resume 使用数据库条件租约防止同一 checkpoint 被并发消费。
+- Outbox 使用领取租约、指数退避和最大重试，Inbox 以 `eventId + consumerName` 保证消费幂等。
 
 ## 配置
 
-开发环境默认使用内存 checkpoint，避免默认启动时污染主库核心表；需要验证跨进程恢复时再显式切到 MySQL：
+开发环境默认状态机使用内存 checkpoint，避免默认启动时污染主库核心表；需要验证跨进程恢复时依赖 `after_sales_case` 业务快照：
 
 ```yaml
 ai-agent:
   after-sales:
-    checkpoint-store: memory
     model-bean-name: ""
+    commerce-adapter: local
 ```
 
-- `AI_AGENT_AFTER_SALES_CHECKPOINT_STORE=memory`：本地离线测试。
-- `AI_AGENT_AFTER_SALES_CHECKPOINT_STORE=mysql`：跨进程恢复；先执行完整数据库脚本。
 - `AI_AGENT_AFTER_SALES_MODEL_BEAN_NAME`：显式指定动态注册的 `ChatModel` Bean；为空时选择可用模型，无模型时仅对明确订单号使用确定性降级。
+- `AI_AGENT_AFTER_SALES_COMMERCE_ADAPTER=local|http`：本地演示订单或真实 HTTP 订单/退款适配器。
 
-执行 `docs/dev-ops/mysql/sql/ai-agent-station.sql`，一次创建两张运行表、四张售后业务表和两张 checkpoint 表。
+执行 `docs/dev-ops/mysql/sql/ai-agent-station.sql`，一次创建 8 张项目表。
 
-两张运行表和四张售后业务表均使用 MyBatis Mapper；两张 `LANGRAPH4J_*` 表由 LangGraph4j `MysqlSaver` 管理。
+项目表均使用 MyBatis Mapper。checkpoint 由 `SpringStateMachineAdapter` 在内存中维护，业务恢复所需的持久化状态通过 `after_sales_case` 业务快照保存。
 
-`sessionId` 当前只用于把多个 Run 归组，不保存聊天历史，因此没有 Session 消息表或 Turn 表。
+`sessionId` 当前只作为归组字段，不保存聊天历史；Turn 已用于记录 start、补充信息和人工审批。
 
 ## HTTP 流程
 
 启动退款 Run：
 
 ```http
-POST /api/v1/after-sales/runs
+POST /api/v1/after-sales/cases
 Content-Type: application/json
+X-User-Id: demo-user-1
 
 {
-  "userId": "demo-user-1",
   "sessionId": "session-1",
   "message": "申请退款订单 ORDER-PAID-001",
   "orderId": "ORDER-PAID-001",
@@ -60,8 +69,10 @@ Content-Type: application/json
 批准当前 checkpoint：
 
 ```http
-POST /api/v1/after-sales/runs/{runId}/resume
+POST /api/v1/after-sales/cases/{caseId}/resume
 Content-Type: application/json
+X-User-Id: approver-1
+X-User-Role: AFTER_SALES_APPROVER
 
 {
   "checkpointId": "响应中的当前 checkpointId",
@@ -71,8 +82,8 @@ Content-Type: application/json
 
 补充订单信息使用 `SUPPLY_INFO`，拒绝退款使用 `REJECT`。查询和取消接口分别为：
 
-- `GET /api/v1/after-sales/runs/{runId}`
-- `DELETE /api/v1/after-sales/runs/{runId}`
+- `GET /api/v1/after-sales/cases/{caseId}`
+- `DELETE /api/v1/after-sales/cases/{caseId}`
 
 ## 验收
 
@@ -83,20 +94,19 @@ $env:JAVA_HOME='D:\Environment\JDK17'
 mvn -pl ai-agent-station-app -am -DskipTests=false "-Dtest=AfterSalesGraphTest,AfterSalesAgentServiceTest,SpringAiAfterSalesToolAdapterTest,AfterSalesTrajectoryEvaluationTest" -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-八张表建表与读写、MySQL checkpoint、跨实例 resume、幂等 Command 和单条 Outbox 集成测试：
+八张表建表与读写、业务快照恢复、跨实例 resume、幂等 Command、Outbox 重试与 Inbox 幂等消费集成测试：
 
 ```powershell
 $env:JAVA_HOME='D:\Environment\JDK17'
 mvn -pl ai-agent-station-app -am -DskipTests=false -Dit.test=MysqlAfterSalesPersistenceIT verify
 ```
 
-当前机器已使用 Docker Desktop 与 MySQL 8.0.36 运行 `MysqlAfterSalesPersistenceIT`：第一个 Graph 实例在审批点持久化 checkpoint，第二个 Graph 实例加载同一 checkpoint 并恢复执行，最终断言只生成一条退款 Command、一条 Outbox，订单状态为 `REFUNDED`。
+真实模型与 Java 17 并发指标见 `docs/evaluation/`。真实模型 30/30 Plan 契约与治理路由通过；Java 17 基线 431.03 tasks/s、P95 82 ms、0 错误。
 
-当前版本不把 Java 21 虚拟线程作为已落地亮点；如果后续要升级，需要补充并发压测、连接池容量和运行时线程观测证据。
+当前版本不升级 Java 21：已有基线没有显示平台线程瓶颈，后续必须用真实 HTTP/数据库 A/B 压测证明收益。
 
 ## 暂不宣称
 
-- 当前没有真实支付系统，只更新本地演示订单。
-- Outbox 已建立事务账本，但尚未实现生产消息投递器。
-- 未完成真实模型 Full 评测，不提供效果提升百分比。
-- 尚未进行生产负载下的连接池、下游限流和并发容量验证。
+- 已提供 HTTP 订单/退款适配器，但尚未与生产服务联调。
+- 当前 Outbox 默认使用本地幂等消费者；尚未接入生产 MQ。
+- 尚未进行生产连接池、下游限流和真实网络容量验证。

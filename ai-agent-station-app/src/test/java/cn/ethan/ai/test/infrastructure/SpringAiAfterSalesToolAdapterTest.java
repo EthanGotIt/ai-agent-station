@@ -5,8 +5,9 @@ import cn.ethan.ai.domain.agent.model.AfterSalesOrderSnapshot;
 import cn.ethan.ai.domain.agent.model.AfterSalesRefundResult;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolRequest;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolResult;
-import cn.ethan.ai.domain.agent.adapter.repository.IAfterSalesRepository;
-import cn.ethan.ai.infrastructure.adapter.port.SpringAiAfterSalesToolAdapter;
+import cn.ethan.ai.domain.agent.port.driven.IAfterSalesRepository;
+import cn.ethan.ai.domain.agent.port.driven.IOrderGateway;
+import cn.ethan.ai.infrastructure.adapter.ai.SpringAiAfterSalesToolAdapter;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -36,11 +37,13 @@ public class SpringAiAfterSalesToolAdapterTest {
                     context,
                     new OrderOnlyRepository(),
                     ToolCallingManager.builder().build(),
-                    "afterSalesModel"
+                    null,
+                    "afterSalesModel",
+                    "stub"
             );
 
             AfterSalesToolRequest request = adapter.proposeOrderQuery(
-                    "退款订单 ORDER-1", "user-1", "ORDER-1", "DAMAGED", null);
+                    "退款订单 ORDER-1", "user-1", "session-1", "ORDER-1", "DAMAGED", null);
             AfterSalesToolResult result = adapter.executeOrderQuery(request, "user-1", "退款订单 ORDER-1");
 
             Assertions.assertEquals(1, modelCalls.get());
@@ -77,34 +80,10 @@ public class SpringAiAfterSalesToolAdapterTest {
         }
     }
 
-    private static final class OrderOnlyRepository implements IAfterSalesRepository {
+    private static final class OrderOnlyRepository implements IOrderGateway {
         @Override
-        public Optional<AfterSalesOrderSnapshot> findOrder(String orderId) {
+        public Optional<AfterSalesOrderSnapshot> findOrder(String orderId, String requesterId) {
             return Optional.of(new AfterSalesOrderSnapshot(orderId, "user-1", "PAID", null));
-        }
-
-        @Override
-        public void createCase(String runId, String caseId, String userId, String sessionId, String message) {
-        }
-
-        @Override
-        public void updateCase(AfterSalesCaseView caseView) {
-        }
-
-        @Override
-        public Optional<AfterSalesCaseView> findCase(String runId) {
-            return Optional.empty();
-        }
-
-        @Override
-        public boolean cancelCase(String runId, String reason) {
-            return false;
-        }
-
-        @Override
-        public AfterSalesRefundResult executeRefund(String caseId, String orderId,
-                                                    String userId, String idempotencyKey) {
-            throw new UnsupportedOperationException();
         }
     }
 }

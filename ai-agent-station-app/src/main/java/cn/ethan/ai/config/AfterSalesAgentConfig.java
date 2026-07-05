@@ -1,27 +1,31 @@
 package cn.ethan.ai.config;
 
+import cn.ethan.ai.domain.agent.policy.RefundInformationGatheringPolicy;
+import cn.ethan.ai.domain.agent.port.driven.IAfterSalesRepository;
+import cn.ethan.ai.domain.agent.port.driven.IAfterSalesStateMachine;
+import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
+import cn.ethan.ai.domain.agent.port.driven.IAgentRunRepository;
 import cn.ethan.ai.domain.agent.service.AfterSalesAgentService;
-import cn.ethan.ai.domain.agent.service.AfterSalesGraphRuntime;
-import cn.ethan.ai.domain.agent.adapter.repository.IAfterSalesRepository;
-import cn.ethan.ai.domain.agent.adapter.port.IAfterSalesToolPort;
-import cn.ethan.ai.domain.agent.adapter.repository.IAgentRunRepository;
-import org.bsc.langgraph4j.GraphStateException;
-import org.bsc.langgraph4j.checkpoint.BaseCheckpointSaver;
-import org.bsc.langgraph4j.checkpoint.CreateOption;
-import org.bsc.langgraph4j.checkpoint.MemorySaver;
-import org.bsc.langgraph4j.checkpoint.MysqlSaver;
+import cn.ethan.ai.domain.agent.service.AfterSalesAuditService;
+import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
+import cn.ethan.ai.infrastructure.adapter.statemachine.SpringStateMachineAdapter;
+import org.springaicommunity.agent.tools.TodoWriteTool;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
-import javax.sql.DataSource;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Configuration
+@EnableScheduling
 public class AfterSalesAgentConfig {
 
     @Bean(name = "agentIoExecutor", destroyMethod = "shutdown")
@@ -33,39 +37,42 @@ public class AfterSalesAgentConfig {
             thread.setDaemon(true);
             return thread;
         };
-        return Executors.newFixedThreadPool(poolSize, threadFactory);
-    }
-
-    @Bean("afterSalesCheckpointSaver")
-    @ConditionalOnProperty(name = "ai-agent.after-sales.checkpoint-store", havingValue = "mysql")
-    public BaseCheckpointSaver mysqlAfterSalesCheckpointSaver(
-            @Qualifier("mysqlDataSource") DataSource dataSource) {
-        return MysqlSaver.builder()
-                .dataSource(dataSource)
-                .createOption(CreateOption.CREATE_IF_NOT_EXISTS)
-                .build();
-    }
-
-    @Bean("afterSalesCheckpointSaver")
-    @ConditionalOnProperty(name = "ai-agent.after-sales.checkpoint-store",
-            havingValue = "memory", matchIfMissing = true)
-    public BaseCheckpointSaver memoryAfterSalesCheckpointSaver() {
-        return new MemorySaver();
+        return new ThreadPoolExecutor(
+                poolSize,
+                poolSize,
+                60L,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(poolSize * 32),
+                threadFactory,
+                new ThreadPoolExecutor.CallerRunsPolicy()
+        );
     }
 
     @Bean
-    public AfterSalesGraphRuntime afterSalesGraphRuntime(
-            @Qualifier("afterSalesCheckpointSaver") BaseCheckpointSaver checkpointSaver,
+    public RefundInformationGatheringPolicy refundInformationGatheringPolicy() {
+        return new RefundInformationGatheringPolicy();
+    }
+
+    @Bean
+    public RefundPlanningAgent refundPlanningAgent(
+            @Autowired(required = false) @Qualifier("afterSalesChatClient") ChatClient chatClient) {
+        return new RefundPlanningAgent(chatClient);
+    }
+
+    @Bean
+    public IAfterSalesStateMachine springAfterSalesStateMachine(
             IAfterSalesToolPort toolPort,
             IAfterSalesRepository repository,
-            @Qualifier("agentIoExecutor") ExecutorService ioExecutor) throws GraphStateException {
-        return new AfterSalesGraphRuntime(checkpointSaver, toolPort, repository, ioExecutor);
+            RefundPlanningAgent refundPlanningAgent,
+            RefundInformationGatheringPolicy refundInformationGatheringPolicy,
+            TodoWriteTool todoWriteTool) {
+        return new SpringStateMachineAdapter(toolPort, repository, refundPlanningAgent, refundInformationGatheringPolicy, todoWriteTool);
     }
 
     @Bean
-    public AfterSalesAgentService afterSalesAgentService(AfterSalesGraphRuntime graphRuntime,
+    public AfterSalesAgentService afterSalesAgentService(IAfterSalesStateMachine stateMachine,
                                                          IAfterSalesRepository repository,
                                                          IAgentRunRepository runRepository) {
-        return new AfterSalesAgentService(graphRuntime, repository, runRepository);
+        return new AfterSalesAgentService(stateMachine, repository, new AfterSalesAuditService(runRepository));
     }
 }

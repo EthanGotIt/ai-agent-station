@@ -42,4 +42,10 @@
         WHERE command_id = #{commandId}
     </update>
 
+    <update id="markPending">
+        UPDATE refund_command
+        SET status = 'PENDING', failure_reason = NULL, updated_at = NOW(6)
+        WHERE command_id = #{commandId} AND status = 'FAILED'
+    </update>
+
 </mapper>

@@ -11,6 +11,10 @@
 
     <dependencies>
         <dependency>
+            <groupId>cn.ethan.ai</groupId>
+            <artifactId>ai-agent-station-types</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
         </dependency>

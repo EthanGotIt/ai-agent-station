@@ -12,7 +12,6 @@ import lombok.NoArgsConstructor;
 public class AfterSalesCasePO {
 
     private String caseId;
-    private String runId;
     private String userId;
     private String sessionId;
     private String userMessage;

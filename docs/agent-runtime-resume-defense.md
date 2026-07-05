@@ -1,29 +1,30 @@
 # Durable After-Sales Agent 面试 Defense
 
-> 当前分支保持 Java 17 基线，已接通低层 Tool Calling、治理图、interrupt/resume、MysqlSaver、审批与幂等退款/Outbox。17 条聚焦测试、30 条冻结轨迹和 Testcontainers MySQL 跨实例恢复测试已通过；阻塞 I/O 节点使用专用有界执行器与 Graph/Policy 线程隔离。
+> 当前分支保持 Java 17 基线，已接通轻量 Plan-and-Execute：Spring AI `ChatClient` 生成 JSON Plan，`RefundInformationGatherer` 执行并最多 3 次 RePlan，Spring State Machine 守护 `INTAKE / PENDING_APPROVAL / COMPLETED / REJECTED`。28 条单元测试、30 条真实模型轨迹和 Testcontainers MySQL 集成验收覆盖主链路。
 
 ## 一句话定位
 
-> 这是一个基于 Spring AI 2 与 LangGraph4j 的可恢复售后退款 Agent。它把模型的不确定性显式变成图状态，由 Java Policy 控制参数修复、有限重试、人工审批、幂等退款和故障恢复。
+> 这是一个基于 Spring AI 2、Spring State Machine 与 spring-ai-community 的可恢复售后退款 Agent。模型只负责 Plan（规划还需要收集什么信息），Java 负责 Execute（执行、校验、RePlan 预算、审批、幂等退款和故障恢复），把模型不确定性约束在受控的信息收集范围内。
 
 ## 创新点来自哪里
 
-不是“用了 LangGraph4j”，也不是“升级了 Java 21”。LangGraph4j 提供图和 checkpoint，Spring AI 提供模型和工具抽象；Java 21 只可能是运行时优化，不是当前 Agent 创新点。项目自己的部分是：
+不是“用了 Spring State Machine”，也不是“升级了 Java 21”。Spring State Machine 提供状态图和恢复语义，Spring AI 提供模型和工具抽象，spring-ai-community 提供记忆与任务清单；Java 21 只可能是运行时优化，不是当前 Agent 创新点。项目自己的部分是：
 
-- 将 `tool_error / retry_budget / approval / terminal_reason` 建模为显式状态；
-- 用确定性 Edge 决定 `REPAIR / RETRY / CLARIFY / APPROVE / STOP`；
+- 将模型能力收敛为“信息收集规划”：用 JSON Plan 约束模型只输出 `ASK_USER` / `TOOL_CALL(query_order)`；
+- 用 `RefundInformationGatheringPolicy` 硬拦截非法 action 与非收敛 Plan，把不确定性关在 Plan 阶段；
+- 用确定性 Edge 决定 `REPLAN / ASK_USER / APPROVE / STOP`，最多 3 次 RePlan；
 - 把退款工具包装成有幂等键、执行凭证和终态记录的业务 Command；
 - 用故障注入评测完整 trajectory，而不只看最终回答。
 
-## Spring AI 与 LangGraph4j 的边界
+## Spring AI 与 Spring State Machine 的边界
 
-Spring AI 2 使用低层 `ChatModel + ToolCallingManager + ToolCallback`。模型可以生成只读工具请求，但 Spring AI 不自动跑完整循环。LangGraph4j 保存共享状态、调度节点、持久化 checkpoint，并在补信息和退款审批处 interrupt。
+Spring AI 2 通过 `ChatClient` 让 `RefundPlanningAgent` 输出 JSON Plan；`SpringAiAfterSalesToolAdapter` 使用 `ToolCallingManager + ToolCallback` 执行只读订单查询。模型只参与“还需要收集什么信息”，不参与退款决策或循环控制。Spring State Machine 保存共享状态、调度 Guard/Action、维护内存 checkpoint，并在补信息和退款审批处 interrupt。
 
-项目不使用 LangGraph4j 的现成 ReAct Agent，也不让 `ToolCallingAdvisor` 与 Graph 同时控制循环。否则状态、重试和终止会存在两个事实来源，无法可靠恢复。
+项目不使用现成的 ReAct Agent，也不让 `ToolCallingAdvisor` 与状态机同时控制循环。Plan 由 Spring AI 生成，执行与 RePlan 预算由 Java 控制，状态转移由 SSM 负责——三者边界清晰，避免状态、重试和终止存在两个事实来源。
 
 ## 工具调用为什么能自愈
 
-工具请求先经过 schema 和业务字段校验。参数错误会生成结构化 `ToolErrorEnvelope`，只把字段错误、允许 schema 和剩余预算反馈给修复节点，最多修复两次。超时和限流保持原参数重试；状态冲突重新读取订单；无权限和业务拒绝直接终止。
+Plan 先经过 `RefundInformationGatheringPolicy` 校验：动作白名单、工具白名单、输入 schema 和收敛性。非法 Plan 被替换为确定性兜底。工具执行失败会生成结构化错误信息并带入下一次 PlanningContext，`RefundPlanningAgent` 据此生成下一步 Plan；最多 3 次 RePlan，超过预算由 Java Policy 直接终止。
 
 相同参数指纹连续失败会提前停止，避免模型只换一种表达却重复提交同一错误调用。退款副作用不交给模型选择，必须经过资格 Policy 和人工审批节点。
 
@@ -48,13 +49,13 @@ checkpoint 解决“运行到哪、恢复后从哪个节点继续”；业务幂
 - checkpoint 恢复前后结果一致性；
 - 模型调用数、P95 延迟和终态原因。
 
-在 Full 评测完成前，只能讲架构和测试覆盖，不能编造成功率提升数字。
+真实模型冻结集 30/30 通过 Tool 契约和治理路由；平均 4554 ms、P95 6862 ms。该数字只代表当前冻结集，不外推为生产成功率。
 
 ## 当前不可宣称边界
 
-- 已实现 Spring AI `ChatModel + ToolCallingManager` 受控调用、LangGraph4j interrupt/resume、过期 checkpoint 拒绝、退款资格与错误预算、幂等 Command 和 Outbox 代码路径。
-- 已通过 17 条聚焦测试、30 条冻结轨迹和 MySQL Testcontainers 跨实例恢复；集成测试断言恢复后只有一条退款 Command、一条 Outbox，订单终态为 `REFUNDED`。
-- 当前只接本地演示订单，不宣称真实支付接入；真实模型 Full 评测未执行，不提供效果提升数字。
-- 当前保持 Java 17；Java 21/虚拟线程未作为当前已落地能力，生产负载下的容量压测也尚未执行。
+- 已实现 Spring AI `ChatClient` Plan 生成、`RefundInformationGatherer` 执行与 RePlan、Spring State Machine interrupt/resume、过期 checkpoint 拒绝、退款资格与 RePlan 预算、幂等 Command 和 Outbox 代码路径。
+- 已通过 28 条单元测试、30 条真实模型冻结轨迹和 MySQL Testcontainers 集成验收；覆盖 Outbox 重试、Inbox 幂等消费和跨实例恢复。
+- 已提供 local/http 订单与退款适配器，但未宣称已与生产支付系统联调。
+- Java 17 并发基线为 431.03 tasks/s、P95 82 ms、0 错误，因此当前不升级 Java 21。
 - 不宣称多 Agent、长期记忆、通用工作流平台或生产真实退款接入。
-- 第一版只验证退款主链路和本地可控的售后适配器。
+- 第一版只验证退款主链路和可替换的售后适配器，不宣称通用平台。

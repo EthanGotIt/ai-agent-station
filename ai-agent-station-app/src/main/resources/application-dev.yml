@@ -17,8 +17,20 @@ spring:
     openai:
       base-url: ${OPENAI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
       api-key: ${OPENAI_API_KEY:}
+      chat:
+        model: ${OPENAI_MODEL:qwen3.7-plus}
 
 ai-agent:
   after-sales:
     model-bean-name: ${AI_AGENT_AFTER_SALES_MODEL_BEAN_NAME:}
-    checkpoint-store: ${AI_AGENT_AFTER_SALES_CHECKPOINT_STORE:memory}
+    commerce-adapter: ${AI_AGENT_AFTER_SALES_COMMERCE_ADAPTER:local}
+    commerce-base-url: ${AI_AGENT_AFTER_SALES_COMMERCE_BASE_URL:http://127.0.0.1:18080}
+    commerce-timeout: ${AI_AGENT_AFTER_SALES_COMMERCE_TIMEOUT:3s}
+    outbox:
+      scheduling-enabled: ${AI_AGENT_AFTER_SALES_OUTBOX_ENABLED:false}
+      fixed-delay: ${AI_AGENT_AFTER_SALES_OUTBOX_FIXED_DELAY:1000}
+      max-attempts: ${AI_AGENT_AFTER_SALES_OUTBOX_MAX_ATTEMPTS:5}
+    fault-injection:
+      enabled: ${AI_AGENT_AFTER_SALES_FAULT_ENABLED:false}
+      mode: ${AI_AGENT_AFTER_SALES_FAULT_MODE:TIMEOUT}
+      failure-count: ${AI_AGENT_AFTER_SALES_FAULT_COUNT:1}

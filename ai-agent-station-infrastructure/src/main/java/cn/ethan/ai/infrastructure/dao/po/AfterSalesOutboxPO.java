@@ -16,4 +16,10 @@ public class AfterSalesOutboxPO {
     private String eventType;
     private String payload;
     private String status;
+    private Integer retryCount;
+    private java.time.LocalDateTime nextAttemptAt;
+    private String lockedBy;
+    private java.time.LocalDateTime lockedUntil;
+    private String lastError;
+    private java.time.LocalDateTime deliveredAt;
 }

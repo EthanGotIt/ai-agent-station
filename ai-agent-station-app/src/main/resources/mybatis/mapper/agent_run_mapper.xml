@@ -5,13 +5,17 @@
     <resultMap id="AgentRunMap" type="cn.ethan.ai.infrastructure.dao.po.AgentRunPO">
         <id column="id" property="id"/>
         <result column="run_id" property="runId"/>
+        <result column="turn_id" property="turnId"/>
+        <result column="case_id" property="caseId"/>
         <result column="agent_id" property="agentId"/>
-        <result column="session_id" property="sessionId"/>
-        <result column="user_message" property="userMessage"/>
+        <result column="trigger_type" property="triggerType"/>
+        <result column="attempt_no" property="attemptNo"/>
         <result column="status" property="status"/>
         <result column="final_summary" property="finalSummary"/>
         <result column="error_message" property="errorMessage"/>
         <result column="cancel_reason" property="cancelReason"/>
+        <result column="checkpoint_before" property="checkpointBefore"/>
+        <result column="checkpoint_after" property="checkpointAfter"/>
         <result column="start_time" property="startTime"/>
         <result column="end_time" property="endTime"/>
         <result column="create_time" property="createTime"/>
@@ -19,12 +23,14 @@
     </resultMap>
 
     <insert id="insert" parameterType="cn.ethan.ai.infrastructure.dao.po.AgentRunPO" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO agent_run (run_id, agent_id, session_id, user_message, status, final_summary, error_message,
-                                  cancel_reason,
-                                  start_time, end_time, create_time, update_time)
-        VALUES (#{runId}, #{agentId}, #{sessionId}, #{userMessage}, #{status}, #{finalSummary}, #{errorMessage},
-                #{cancelReason},
-                #{startTime}, #{endTime}, #{createTime}, #{updateTime})
+        INSERT INTO agent_run
+            (run_id, turn_id, case_id, agent_id, trigger_type, attempt_no, status, final_summary,
+             error_message, cancel_reason, checkpoint_before, checkpoint_after,
+             start_time, end_time, create_time, update_time)
+        VALUES
+            (#{runId}, #{turnId}, #{caseId}, #{agentId}, #{triggerType}, #{attemptNo}, #{status}, #{finalSummary},
+             #{errorMessage}, #{cancelReason}, #{checkpointBefore}, #{checkpointAfter},
+             #{startTime}, #{endTime}, #{createTime}, #{updateTime})
     </insert>
 
     <update id="updateByRunId" parameterType="cn.ethan.ai.infrastructure.dao.po.AgentRunPO">
@@ -33,20 +39,14 @@
             final_summary            = #{finalSummary},
             error_message            = #{errorMessage},
             cancel_reason            = #{cancelReason},
-            start_time               = #{startTime},
+            checkpoint_after         = #{checkpointAfter},
             end_time                 = #{endTime},
             update_time              = #{updateTime}
         WHERE run_id = #{runId}
     </update>
 
-    <update id="cancelByRunId">
-        UPDATE agent_run
-        SET status        = 'CANCELLED',
-            cancel_reason = #{cancelReason},
-            end_time      = COALESCE(end_time, #{updateTime}),
-            update_time   = #{updateTime}
-        WHERE run_id = #{runId}
-          AND status IN ('INIT', 'RUNNING')
-    </update>
+    <select id="countByTurnId" resultType="int">
+        SELECT COUNT(*) FROM agent_run WHERE turn_id = #{turnId}
+    </select>
 
 </mapper>

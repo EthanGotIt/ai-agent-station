@@ -14,4 +14,6 @@ public interface RefundCommandMapper {
     int markSuccess(@Param("commandId") String commandId);
 
     int markFailed(@Param("commandId") String commandId, @Param("failureReason") String failureReason);
+
+    int markPending(@Param("commandId") String commandId);
 }

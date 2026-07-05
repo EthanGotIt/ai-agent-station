@@ -9,11 +9,17 @@ public interface AfterSalesCaseMapper {
 
     int insert(AfterSalesCasePO afterSalesCase);
 
-    int updateByRunId(AfterSalesCasePO afterSalesCase);
+    int updateByCaseId(AfterSalesCasePO afterSalesCase);
 
-    AfterSalesCasePO selectByRunId(@Param("runId") String runId);
+    AfterSalesCasePO selectByCaseId(@Param("caseId") String caseId);
 
-    int cancelByRunId(@Param("runId") String runId, @Param("reason") String reason);
+    int cancelByCaseId(@Param("caseId") String caseId, @Param("reason") String reason);
 
     int markRefundExecuting(@Param("caseId") String caseId, @Param("commandId") String commandId);
+
+    int tryAcquireResume(@Param("caseId") String caseId,
+                         @Param("checkpointId") String checkpointId,
+                         @Param("resumeToken") String resumeToken);
+
+    int releaseResume(@Param("caseId") String caseId, @Param("resumeToken") String resumeToken);
 }

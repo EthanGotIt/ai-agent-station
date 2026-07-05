@@ -17,6 +17,10 @@
         <!-- 系统模块 -->
         <dependency>
             <groupId>cn.ethan.ai</groupId>
+            <artifactId>ai-agent-station-types</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.ethan.ai</groupId>
             <artifactId>ai-agent-station-api</artifactId>
         </dependency>
         <dependency>

@@ -1,6 +1,7 @@
 spring:
   config:
     name: ai-agent-station-app
+    import: optional:file:.env[.properties],optional:file:../.env[.properties]
   profiles:
     active: dev
 

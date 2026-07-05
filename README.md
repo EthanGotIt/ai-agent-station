@@ -1,46 +1,59 @@
 # Durable After-Sales Agent
 
-基于 Spring AI 2 与 LangGraph4j 的可恢复售后退款 Agent。模型只负责理解用户意图并生成受限的只读工具请求；Java 状态图和 Policy 负责流程推进、错误恢复、人工审批以及退款副作用安全。
+基于 Spring AI 2、Spring State Machine 与 spring-ai-community 的可恢复售后退款 Agent。模型负责规划信息收集（Plan），Java 负责执行、校验和守护金融副作用边界（Execute）；状态机和 Policy 负责流程推进、错误恢复、人工审批以及退款副作用安全。
 
-当前是完成主链路和恢复验收的工程 MVP，属于初步落地，不代表已完成真实支付接入、消息投递和生产容量验证。
+当前已完成 Plan-and-Execute 主链路、恢复、真实模型评估、Outbox/Inbox 和并发基线验收，仍未与生产订单、退款服务实际联调。
 
 ## 技术基线
 
 - Java 17、Spring Boot 4.1、Spring AI 2
-- LangGraph4j 1.8
+- Spring State Machine 4.0（默认运行时）
+- spring-ai-community：`spring-ai-session-management`、`spring-ai-agent-utils`、`mcp-annotations`
 - MySQL、MyBatis
 - Testcontainers
 
-当前不把 Java 21 或虚拟线程作为项目亮点。阻塞模型调用和 JDBC 节点由专用有界线程池隔离，后续只有在并发压测证明收益后才考虑升级。
+Java 17 有界线程池基线达到 431.03 tasks/s、P95 82 ms、0 错误，当前没有升级 Java 21 虚拟线程的量化依据。
 
 ## 主链路
 
 ```text
-INTAKE
--> DECIDE_TOOL
--> VALIDATE_TOOL
--> EXECUTE_TOOL
--> EVALUATE_POLICY
--> READY_FOR_APPROVAL (interrupt)
--> EXECUTE_REFUND
--> VERIFY
--> COMPLETED
+INTAKE (Plan-and-Execute)
+  ├─ Plan → Execute → RePlan（最多 3 次）
+  ├─ 缺少信息 → NEED_USER_INPUT（interrupt，补充后继续）
+  └─ 信息完整且通过 Policy → PENDING_APPROVAL
+PENDING_APPROVAL
+  ├─ APPROVE → 幂等退款 → COMPLETED
+  └─ REJECT / 资格不符 → REJECTED
 ```
 
-- Spring AI：`ChatModel + ToolCallingManager + ToolCallback`，只负责模型与工具调用协议。
-- LangGraph4j：状态图、checkpoint、interrupt/resume。
-- Java Policy：退款资格、参数修复、有限重试、审批、幂等和终止条件。
+- Spring AI `ChatClient`：通过 `RefundPlanningAgent` 生成结构化的信息收集计划（JSON Plan）。
+- `RefundInformationGatherer`：执行 Plan 中的 `ASK_USER` / `TOOL_CALL(query_order)` 步骤，监控执行结果并触发最多 3 次 RePlan。
+- Spring State Machine：业务状态图只保留 `INTAKE / PENDING_APPROVAL / COMPLETED / REJECTED`，interrupt/resume 与 checkpoint 语义由 `IAfterSalesStateMachine` 端口封装。
+- spring-ai-session：为规划调用提供结构化会话记忆（`SessionMemoryAdvisor`）。
+- spring-ai-agent-utils：在进入 `PENDING_APPROVAL` 时通过 `TodoWriteTool` 生成退款检查清单。
+- MCP：售后工具通过 `@McpTool` 暴露为 Model Context Protocol Server。
+- Java Policy：`RefundInformationGatheringPolicy` 校验 Plan 动作白名单与收敛性；`AfterSalesRefundEligibilityPolicy` 判定退款资格；`AfterSalesAuthorizationService` 守护审批身份。
 
 缺少订单号时进入补充信息 interrupt；退款执行前必须进入人工审批 interrupt。恢复请求必须携带当前 checkpoint ID，旧 checkpoint 返回 HTTP 409。
 
-## Session、Run 与 checkpoint
+## Case、Turn、Run、Step 与 checkpoint
 
-- `sessionId`：调用方提供的业务归组标识，可关联多个 Run；当前不保存聊天历史或长期记忆。
-- `runId`：一次可查询、可取消、可恢复的售后执行，记录在 `agent_run`。
-- `agent_step_run`：对外可观测的业务步骤摘要。
-- `LANGRAPH4J_THREAD/LANGRAPH4J_CHECKPOINT`：框架恢复状态，不替代 Run 审计。
+- `sessionId`：调用方提供的归组标识，不单独建表。
+- `caseId`：跨多轮的售后业务流程，同时作为状态机 `threadId`。
+- `turnId`：一次用户补充或人工审批交互。
+- `runId`：一次状态机 start/resume/retry 尝试。
+- `agent_step`：实际 Node/Model/Tool 执行记录。
+- checkpoint：由状态机适配器维护的恢复令牌，业务上保存在 `after_sales_case.checkpoint_id`。
 
-因此当前模型是 **Session 标识 + Run 持久化**，没有单独的 Turn 表，也没有冗余 Session 消息表。
+因此当前模型是 **Session 标识 + Case → Turn → Run → Step**；业务 `caseId` 直接复用为状态机 thread key。
+
+## 模块划分
+
+- `ai-agent-station-types`：共享内核，包含强类型 ID 与基础异常。
+- `ai-agent-station-domain`：领域模型、端口、Policy、领域服务。
+- `ai-agent-station-infrastructure`：Spring State Machine、Spring AI、MCP、仓库、网关、事件适配器。
+- `ai-agent-station-trigger`：HTTP 触发器与 DTO。
+- `ai-agent-station-app`：应用启动与配置。
 
 ## 数据库
 
@@ -51,29 +64,29 @@ Get-Content -Raw .\docs\dev-ops\mysql\sql\ai-agent-station.sql |
   & 'D:\Environment\MySQL\bin\mysql.exe' -h 127.0.0.1 -P 3306 -u root -p ai-agent-station
 ```
 
-最终只保留 8 张表：
+共 8 张业务表：
 
-- 通用运行态：`agent_run`、`agent_step_run`
-- 售后业务：`demo_order`、`after_sales_case`、`refund_command`、`after_sales_outbox`
-- LangGraph4j：`LANGRAPH4J_THREAD`、`LANGRAPH4J_CHECKPOINT`
+- 运行审计：`agent_turn`、`agent_run`、`agent_step`
+- 售后业务：`demo_order`、`after_sales_case`、`refund_command`
+- 可靠事件：`after_sales_outbox`、`after_sales_event_consume`
 
-其中 6 张项目自有表统一通过 MyBatis Mapper 访问；两张 `LANGRAPH4J_*` 表由 `MysqlSaver` 管理。
+所有表统一通过 MyBatis Mapper 访问。checkpoint 由 `SpringStateMachineAdapter` 在内存中维护；业务恢复所需的持久化状态通过 `after_sales_case` 业务快照保存，不再依赖单独的状态机框架 checkpoint 表。
 
 ## HTTP
 
-- `POST /api/v1/after-sales/runs`
-- `POST /api/v1/after-sales/runs/{runId}/resume`
-- `GET /api/v1/after-sales/runs/{runId}`
-- `DELETE /api/v1/after-sales/runs/{runId}`
+- `POST /api/v1/after-sales/cases`
+- `POST /api/v1/after-sales/cases/{caseId}/resume`
+- `GET /api/v1/after-sales/cases/{caseId}`
+- `DELETE /api/v1/after-sales/cases/{caseId}`
 
 示例：
 
 ```http
-POST /api/v1/after-sales/runs
+POST /api/v1/after-sales/cases
 Content-Type: application/json
+X-User-Id: demo-user-1
 
 {
-  "userId": "demo-user-1",
   "sessionId": "session-1",
   "message": "申请退款订单 ORDER-PAID-001",
   "orderId": "ORDER-PAID-001",
@@ -97,6 +110,7 @@ mvn -pl ai-agent-station-app -am "-DskipTests=false" -Dit.test=MysqlAfterSalesPe
 
 详细边界与验收说明见：
 
+- `docs/refactoring-plan.md`：本次从 LangGraph4j 迁移到 Spring State Machine + spring-ai-community 的重构计划。
 - `docs/after-sales-agent.md`
 - `docs/agent-runtime-upgrade-plan.md`
 - `docs/agent-runtime-resume-defense.md`

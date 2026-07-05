@@ -1,12 +1,15 @@
 package cn.ethan.ai.infrastructure.adapter.repository;
 
-import cn.ethan.ai.domain.agent.adapter.repository.IAgentRunRepository;
+import cn.ethan.ai.domain.agent.port.driven.IAgentRunRepository;
 import cn.ethan.ai.domain.agent.model.valobj.AgentRunRecord;
-import cn.ethan.ai.domain.agent.model.valobj.AgentStepRunRecord;
+import cn.ethan.ai.domain.agent.model.valobj.AgentStepRecord;
+import cn.ethan.ai.domain.agent.model.valobj.AgentTurnRecord;
 import cn.ethan.ai.infrastructure.dao.AgentRunMapper;
-import cn.ethan.ai.infrastructure.dao.AgentStepRunMapper;
+import cn.ethan.ai.infrastructure.dao.AgentStepMapper;
+import cn.ethan.ai.infrastructure.dao.AgentTurnMapper;
 import cn.ethan.ai.infrastructure.dao.po.AgentRunPO;
-import cn.ethan.ai.infrastructure.dao.po.AgentStepRunPO;
+import cn.ethan.ai.infrastructure.dao.po.AgentStepPO;
+import cn.ethan.ai.infrastructure.dao.po.AgentTurnPO;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -18,24 +21,42 @@ import java.time.LocalDateTime;
 public class AgentRunRepository implements IAgentRunRepository {
 
     private final AgentRunMapper agentRunMapper;
-    private final AgentStepRunMapper agentStepRunMapper;
+    private final AgentStepMapper agentStepMapper;
+    private final AgentTurnMapper agentTurnMapper;
 
-    public AgentRunRepository(AgentRunMapper agentRunMapper, AgentStepRunMapper agentStepRunMapper) {
+    public AgentRunRepository(AgentRunMapper agentRunMapper,
+                              AgentStepMapper agentStepMapper,
+                              AgentTurnMapper agentTurnMapper) {
         this.agentRunMapper = agentRunMapper;
-        this.agentStepRunMapper = agentStepRunMapper;
+        this.agentStepMapper = agentStepMapper;
+        this.agentTurnMapper = agentTurnMapper;
+    }
+
+    @Override
+    public void createTurn(AgentTurnRecord record) {
+        agentTurnMapper.insert(toTurnPO(record));
+    }
+
+    @Override
+    public void completeTurn(AgentTurnRecord record) {
+        agentTurnMapper.updateByTurnId(toTurnPO(record));
     }
 
     @Override
     public void createRun(AgentRunRecord record) {
         agentRunMapper.insert(AgentRunPO.builder()
                 .runId(record.getRunId())
+                .turnId(record.getTurnId())
+                .caseId(record.getCaseId())
                 .agentId(record.getAgentId())
-                .sessionId(record.getSessionId())
-                .userMessage(record.getUserMessage())
+                .triggerType(record.getTriggerType())
+                .attemptNo(record.getAttemptNo())
                 .status(nameOf(record.getStatus()))
                 .finalSummary(record.getFinalSummary())
                 .errorMessage(record.getErrorMessage())
                 .cancelReason(record.getCancelReason())
+                .checkpointBefore(record.getCheckpointBefore())
+                .checkpointAfter(record.getCheckpointAfter())
                 .startTime(record.getStartTime())
                 .endTime(record.getEndTime())
                 .createTime(LocalDateTime.now())
@@ -51,15 +72,15 @@ public class AgentRunRepository implements IAgentRunRepository {
                 .finalSummary(record.getFinalSummary())
                 .errorMessage(record.getErrorMessage())
                 .cancelReason(record.getCancelReason())
-                .startTime(record.getStartTime())
+                .checkpointAfter(record.getCheckpointAfter())
                 .endTime(record.getEndTime())
                 .updateTime(LocalDateTime.now())
                 .build());
     }
 
     @Override
-    public void createStep(AgentStepRunRecord record) {
-        agentStepRunMapper.insert(AgentStepRunPO.builder()
+    public void createStep(AgentStepRecord record) {
+        agentStepMapper.insert(AgentStepPO.builder()
                 .runId(record.getRunId())
                 .stepId(record.getStepId())
                 .stepName(record.getStepName())
@@ -77,9 +98,25 @@ public class AgentRunRepository implements IAgentRunRepository {
     }
 
     @Override
-    public boolean cancelRun(String runId, String reason) {
-        String actualReason = reason == null || reason.isBlank() ? "用户主动取消" : reason;
-        return agentRunMapper.cancelByRunId(runId, actualReason, LocalDateTime.now()) > 0;
+    public int nextAttemptNo(String turnId) {
+        return agentRunMapper.countByTurnId(turnId) + 1;
+    }
+
+    private AgentTurnPO toTurnPO(AgentTurnRecord record) {
+        return AgentTurnPO.builder()
+                .turnId(record.getTurnId())
+                .caseId(record.getCaseId())
+                .sessionId(record.getSessionId())
+                .actorId(record.getActorId())
+                .turnType(record.getTurnType())
+                .inputSummary(record.getInputSummary())
+                .outputSummary(record.getOutputSummary())
+                .status(record.getStatus())
+                .startTime(record.getStartTime())
+                .endTime(record.getEndTime())
+                .createTime(record.getCreateTime() == null ? LocalDateTime.now() : record.getCreateTime())
+                .updateTime(record.getUpdateTime() == null ? LocalDateTime.now() : record.getUpdateTime())
+                .build();
     }
 
     private String nameOf(Enum<?> value) {

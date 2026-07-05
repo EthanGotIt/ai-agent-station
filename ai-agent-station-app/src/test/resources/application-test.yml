@@ -2,7 +2,3 @@ spring:
   ai:
     model:
       chat: none
-
-ai-agent:
-  after-sales:
-    checkpoint-store: memory

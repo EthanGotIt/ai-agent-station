@@ -1,17 +1,18 @@
 package cn.ethan.ai.infrastructure.adapter.repository;
 
-import cn.ethan.ai.domain.agent.adapter.repository.IAfterSalesRepository;
+import cn.ethan.ai.domain.agent.port.driven.IAfterSalesRepository;
+import cn.ethan.ai.domain.agent.port.driven.IOrderGateway;
+import cn.ethan.ai.domain.agent.port.driven.IRefundGateway;
 import cn.ethan.ai.domain.agent.model.AfterSalesCaseView;
 import cn.ethan.ai.domain.agent.model.AfterSalesOrderSnapshot;
 import cn.ethan.ai.domain.agent.model.AfterSalesRefundResult;
+import cn.ethan.ai.domain.agent.model.RefundGatewayResult;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AfterSalesStage;
 import cn.ethan.ai.infrastructure.dao.AfterSalesCaseMapper;
 import cn.ethan.ai.infrastructure.dao.AfterSalesOutboxMapper;
-import cn.ethan.ai.infrastructure.dao.DemoOrderMapper;
 import cn.ethan.ai.infrastructure.dao.RefundCommandMapper;
 import cn.ethan.ai.infrastructure.dao.po.AfterSalesCasePO;
 import cn.ethan.ai.infrastructure.dao.po.AfterSalesOutboxPO;
-import cn.ethan.ai.infrastructure.dao.po.DemoOrderPO;
 import cn.ethan.ai.infrastructure.dao.po.RefundCommandPO;
 import com.alibaba.fastjson.JSON;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -28,18 +29,21 @@ import java.util.UUID;
 @Repository
 public class AfterSalesRepository implements IAfterSalesRepository {
 
-    private final DemoOrderMapper demoOrderMapper;
+    private final IOrderGateway orderGateway;
+    private final IRefundGateway refundGateway;
     private final AfterSalesCaseMapper afterSalesCaseMapper;
     private final RefundCommandMapper refundCommandMapper;
     private final AfterSalesOutboxMapper afterSalesOutboxMapper;
     private final TransactionTemplate transactionTemplate;
 
-    public AfterSalesRepository(DemoOrderMapper demoOrderMapper,
+    public AfterSalesRepository(IOrderGateway orderGateway,
+                                IRefundGateway refundGateway,
                                 AfterSalesCaseMapper afterSalesCaseMapper,
                                 RefundCommandMapper refundCommandMapper,
                                 AfterSalesOutboxMapper afterSalesOutboxMapper,
                                 @Qualifier("mysqlTransactionTemplate") TransactionTemplate transactionTemplate) {
-        this.demoOrderMapper = demoOrderMapper;
+        this.orderGateway = orderGateway;
+        this.refundGateway = refundGateway;
         this.afterSalesCaseMapper = afterSalesCaseMapper;
         this.refundCommandMapper = refundCommandMapper;
         this.afterSalesOutboxMapper = afterSalesOutboxMapper;
@@ -47,27 +51,14 @@ public class AfterSalesRepository implements IAfterSalesRepository {
     }
 
     @Override
-    public Optional<AfterSalesOrderSnapshot> findOrder(String orderId) {
-        if (orderId == null || orderId.isBlank()) {
-            return Optional.empty();
-        }
-        DemoOrderPO order = demoOrderMapper.selectByOrderId(orderId);
-        if (order == null) {
-            return Optional.empty();
-        }
-        return Optional.of(new AfterSalesOrderSnapshot(
-                order.getOrderId(),
-                order.getUserId(),
-                order.getStatus(),
-                order.getDaysSinceDelivery()
-        ));
+    public Optional<AfterSalesOrderSnapshot> findOrder(String orderId, String requesterId) {
+        return orderGateway.findOrder(orderId, requesterId);
     }
 
     @Override
-    public void createCase(String runId, String caseId, String userId, String sessionId, String message) {
+    public void createCase(String caseId, String userId, String sessionId, String message) {
         afterSalesCaseMapper.insert(AfterSalesCasePO.builder()
                 .caseId(caseId)
-                .runId(runId)
                 .userId(userId)
                 .sessionId(sessionId)
                 .userMessage(message)
@@ -77,9 +68,9 @@ public class AfterSalesRepository implements IAfterSalesRepository {
 
     @Override
     public void updateCase(AfterSalesCaseView caseView) {
-        afterSalesCaseMapper.updateByRunId(AfterSalesCasePO.builder()
-                .runId(caseView.runId())
-                .orderId(caseView.orderId())
+        afterSalesCaseMapper.updateByCaseId(AfterSalesCasePO.builder()
+                .caseId(caseView.caseIdValue())
+                .orderId(caseView.orderIdValue())
                 .stage(caseView.stage())
                 .checkpointId(caseView.checkpointId())
                 .nextNode(caseView.nextNode())
@@ -89,13 +80,12 @@ public class AfterSalesRepository implements IAfterSalesRepository {
     }
 
     @Override
-    public Optional<AfterSalesCaseView> findCase(String runId) {
-        AfterSalesCasePO afterSalesCase = afterSalesCaseMapper.selectByRunId(runId);
+    public Optional<AfterSalesCaseView> findCase(String caseId) {
+        AfterSalesCasePO afterSalesCase = afterSalesCaseMapper.selectByCaseId(caseId);
         if (afterSalesCase == null) {
             return Optional.empty();
         }
-        return Optional.of(new AfterSalesCaseView(
-                afterSalesCase.getRunId(),
+        return Optional.of(AfterSalesCaseView.of(
                 afterSalesCase.getCaseId(),
                 afterSalesCase.getUserId(),
                 afterSalesCase.getSessionId(),
@@ -109,8 +99,18 @@ public class AfterSalesRepository implements IAfterSalesRepository {
     }
 
     @Override
-    public boolean cancelCase(String runId, String reason) {
-        return afterSalesCaseMapper.cancelByRunId(runId, reason) > 0;
+    public boolean cancelCase(String caseId, String reason) {
+        return afterSalesCaseMapper.cancelByCaseId(caseId, reason) > 0;
+    }
+
+    @Override
+    public boolean tryAcquireResume(String caseId, String checkpointId, String resumeToken) {
+        return afterSalesCaseMapper.tryAcquireResume(caseId, checkpointId, resumeToken) > 0;
+    }
+
+    @Override
+    public void releaseResume(String caseId, String resumeToken) {
+        afterSalesCaseMapper.releaseResume(caseId, resumeToken);
     }
 
     @Override
@@ -118,52 +118,78 @@ public class AfterSalesRepository implements IAfterSalesRepository {
                                                 String orderId,
                                                 String userId,
                                                 String idempotencyKey) {
+        PreparedRefund prepared = transactionTemplate.execute(status ->
+                prepareRefund(caseId, orderId, userId, idempotencyKey));
+        if (prepared == null) {
+            throw new IllegalStateException("退款命令准备事务没有返回结果");
+        }
+        if (prepared.terminalResult() != null) {
+            return prepared.terminalResult();
+        }
+
+        RefundGatewayResult gatewayResult;
+        try {
+            gatewayResult = refundGateway.executeRefund(orderId, userId, idempotencyKey);
+        } catch (RuntimeException error) {
+            transactionTemplate.executeWithoutResult(status -> refundCommandMapper.markFailed(
+                    prepared.commandId(), "GATEWAY_ERROR:" + error.getClass().getSimpleName()));
+            throw error;
+        }
+
         AfterSalesRefundResult result = transactionTemplate.execute(status ->
-                executeRefundInTransaction(caseId, orderId, userId, idempotencyKey));
+                finalizeRefund(caseId, orderId, prepared.commandId(), gatewayResult));
         if (result == null) {
-            throw new IllegalStateException("退款事务没有返回结果");
+            throw new IllegalStateException("退款确认事务没有返回结果");
         }
         return result;
     }
 
-    private AfterSalesRefundResult executeRefundInTransaction(String caseId,
-                                                              String orderId,
-                                                              String userId,
-                                                              String idempotencyKey) {
+    private PreparedRefund prepareRefund(String caseId,
+                                         String orderId,
+                                         String userId,
+                                         String idempotencyKey) {
         Optional<RefundCommandPO> existing = findRefundCommand(idempotencyKey);
         if (existing.isPresent() && "SUCCESS".equals(existing.get().getStatus())) {
-            return new AfterSalesRefundResult(true, true, existing.get().getCommandId(), "ALREADY_EXECUTED");
+            return new PreparedRefund(existing.get().getCommandId(),
+                    new AfterSalesRefundResult(true, true, existing.get().getCommandId(), "ALREADY_EXECUTED"));
+        }
+        if (existing.isPresent() && "PENDING".equals(existing.get().getStatus())) {
+            return new PreparedRefund(existing.get().getCommandId(),
+                    new AfterSalesRefundResult(false, true, existing.get().getCommandId(), "COMMAND_IN_PROGRESS"));
+        }
+        if (existing.isPresent() && "FAILED".equals(existing.get().getStatus())) {
+            refundCommandMapper.markPending(existing.get().getCommandId());
+            return new PreparedRefund(existing.get().getCommandId(), null);
         }
 
-        String commandId = existing.map(RefundCommandPO::getCommandId).orElse(UUID.randomUUID().toString());
-        if (existing.isEmpty()) {
-            int inserted = refundCommandMapper.insertIgnore(RefundCommandPO.builder()
-                    .commandId(commandId)
-                    .caseId(caseId)
-                    .orderId(orderId)
-                    .userId(userId)
-                    .idempotencyKey(idempotencyKey)
-                    .status("PENDING")
-                    .build());
-            if (inserted == 0) {
-                RefundCommandPO concurrent = findRefundCommand(idempotencyKey)
-                        .orElseThrow(() -> new IllegalStateException("幂等退款命令并发创建后不可见"));
-                return "SUCCESS".equals(concurrent.getStatus())
-                        ? new AfterSalesRefundResult(true, true, concurrent.getCommandId(), "ALREADY_EXECUTED")
-                        : new AfterSalesRefundResult(false, true, concurrent.getCommandId(), "COMMAND_IN_PROGRESS");
-            }
+        String commandId = UUID.randomUUID().toString();
+        int inserted = refundCommandMapper.insertIgnore(RefundCommandPO.builder()
+                .commandId(commandId)
+                .caseId(caseId)
+                .orderId(orderId)
+                .userId(userId)
+                .idempotencyKey(idempotencyKey)
+                .status("PENDING")
+                .build());
+        if (inserted == 0) {
+            RefundCommandPO concurrent = findRefundCommand(idempotencyKey)
+                    .orElseThrow(() -> new IllegalStateException("幂等退款命令并发创建后不可见"));
+            AfterSalesRefundResult concurrentResult = "SUCCESS".equals(concurrent.getStatus())
+                    ? new AfterSalesRefundResult(true, true, concurrent.getCommandId(), "ALREADY_EXECUTED")
+                    : new AfterSalesRefundResult(false, true, concurrent.getCommandId(), "COMMAND_IN_PROGRESS");
+            return new PreparedRefund(concurrent.getCommandId(), concurrentResult);
         }
+        return new PreparedRefund(commandId, null);
+    }
 
-        int changed = demoOrderMapper.updateStatusForRefund(orderId, userId);
-        if (changed == 0) {
-            Optional<AfterSalesOrderSnapshot> order = findOrder(orderId);
-            if (order.isPresent() && userId.equals(order.get().ownerId())
-                    && "REFUNDED".equalsIgnoreCase(order.get().status())) {
-                refundCommandMapper.markSuccess(commandId);
-                return new AfterSalesRefundResult(true, true, commandId, "ALREADY_REFUNDED");
-            }
-            refundCommandMapper.markFailed(commandId, "ORDER_STATE_CONFLICT");
-            return new AfterSalesRefundResult(false, false, commandId, "ORDER_STATE_CONFLICT");
+    private AfterSalesRefundResult finalizeRefund(String caseId,
+                                                  String orderId,
+                                                  String commandId,
+                                                  RefundGatewayResult gatewayResult) {
+        if (!gatewayResult.success()) {
+            refundCommandMapper.markFailed(commandId, gatewayResult.reason());
+            return new AfterSalesRefundResult(false, gatewayResult.idempotentReplay(),
+                    commandId, gatewayResult.reason());
         }
 
         refundCommandMapper.markSuccess(commandId);
@@ -183,10 +209,13 @@ public class AfterSalesRepository implements IAfterSalesRepository {
                 )))
                 .status("PENDING")
                 .build());
-        return new AfterSalesRefundResult(true, false, commandId, "REFUND_EXECUTED");
+        return new AfterSalesRefundResult(true, gatewayResult.idempotentReplay(), commandId, gatewayResult.reason());
     }
 
     private Optional<RefundCommandPO> findRefundCommand(String idempotencyKey) {
         return Optional.ofNullable(refundCommandMapper.selectByIdempotencyKeyForUpdate(idempotencyKey));
+    }
+
+    private record PreparedRefund(String commandId, AfterSalesRefundResult terminalResult) {
     }
 }

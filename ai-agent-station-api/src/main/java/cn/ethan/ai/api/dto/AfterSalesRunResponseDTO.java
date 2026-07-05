@@ -1,24 +1,18 @@
 package cn.ethan.ai.api.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
 import java.util.Map;
 
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
-public class AfterSalesRunResponseDTO {
-    private String runId;
-    private String caseId;
-    private String stage;
-    private String checkpointId;
-    private String nextNode;
-    private String waitingReason;
-    private String terminalReason;
-    private String commandId;
-    private Map<String, Object> state;
+/**
+ * 售后 Agent 运行响应。
+ */
+public record AfterSalesRunResponseDTO(String caseId,
+                                       String turnId,
+                                       String runId,
+                                       String stage,
+                                       String checkpointId,
+                                       String nextNode,
+                                       String waitingReason,
+                                       String terminalReason,
+                                       String commandId,
+                                       Map<String, Object> state) {
 }

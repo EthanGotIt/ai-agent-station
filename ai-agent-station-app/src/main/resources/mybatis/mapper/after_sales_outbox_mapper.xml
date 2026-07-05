@@ -2,11 +2,85 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="cn.ethan.ai.infrastructure.dao.AfterSalesOutboxMapper">
 
+    <resultMap id="AfterSalesOutboxMap" type="cn.ethan.ai.infrastructure.dao.po.AfterSalesOutboxPO">
+        <id column="event_id" property="eventId"/>
+        <result column="aggregate_id" property="aggregateId"/>
+        <result column="event_type" property="eventType"/>
+        <result column="payload" property="payload"/>
+        <result column="status" property="status"/>
+        <result column="retry_count" property="retryCount"/>
+        <result column="next_attempt_at" property="nextAttemptAt"/>
+        <result column="locked_by" property="lockedBy"/>
+        <result column="locked_until" property="lockedUntil"/>
+        <result column="last_error" property="lastError"/>
+        <result column="delivered_at" property="deliveredAt"/>
+    </resultMap>
+
     <insert id="insertIgnore" parameterType="cn.ethan.ai.infrastructure.dao.po.AfterSalesOutboxPO">
         INSERT IGNORE INTO after_sales_outbox
             (event_id, aggregate_id, event_type, payload, status, created_at, updated_at)
         VALUES
             (#{eventId}, #{aggregateId}, #{eventType}, #{payload}, #{status}, NOW(6), NOW(6))
     </insert>
+
+    <select id="selectDispatchable" resultMap="AfterSalesOutboxMap">
+        SELECT event_id, aggregate_id, event_type, payload, status, retry_count,
+               next_attempt_at, locked_by, locked_until, last_error, delivered_at
+        FROM after_sales_outbox
+        WHERE status IN ('PENDING', 'RETRY')
+          AND next_attempt_at &lt;= #{now}
+          AND (locked_until IS NULL OR locked_until &lt; #{now})
+        ORDER BY created_at
+        LIMIT #{limit}
+    </select>
+
+    <update id="claim">
+        UPDATE after_sales_outbox
+        SET locked_by = #{workerId},
+            locked_until = #{lockedUntil},
+            updated_at = NOW(6)
+        WHERE event_id = #{eventId}
+          AND status IN ('PENDING', 'RETRY')
+          AND next_attempt_at &lt;= #{now}
+          AND (locked_until IS NULL OR locked_until &lt; #{now})
+    </update>
+
+    <update id="markDelivered">
+        UPDATE after_sales_outbox
+        SET status = 'DELIVERED',
+            delivered_at = #{deliveredAt},
+            locked_by = NULL,
+            locked_until = NULL,
+            last_error = NULL,
+            updated_at = NOW(6)
+        WHERE event_id = #{eventId}
+          AND locked_by = #{workerId}
+    </update>
+
+    <update id="markFailed">
+        UPDATE after_sales_outbox
+        SET status = #{status},
+            retry_count = #{retryCount},
+            next_attempt_at = #{nextAttemptAt},
+            last_error = #{lastError},
+            locked_by = NULL,
+            locked_until = NULL,
+            updated_at = NOW(6)
+        WHERE event_id = #{eventId}
+          AND locked_by = #{workerId}
+    </update>
+
+    <insert id="insertConsumerReceipt">
+        INSERT IGNORE INTO after_sales_event_consume
+            (event_id, consumer_name, status, consumed_at, created_at, updated_at)
+        VALUES
+            (#{eventId}, #{consumerName}, 'PROCESSING', NULL, NOW(6), NOW(6))
+    </insert>
+
+    <update id="markConsumerSuccess">
+        UPDATE after_sales_event_consume
+        SET status = 'SUCCESS', consumed_at = NOW(6), updated_at = NOW(6)
+        WHERE event_id = #{eventId} AND consumer_name = #{consumerName}
+    </update>
 
 </mapper>

@@ -19,11 +19,15 @@ public class AgentRunRecord {
 
     private String runId;
 
+    private String turnId;
+
+    private String caseId;
+
     private String agentId;
 
-    private String sessionId;
+    private String triggerType;
 
-    private String userMessage;
+    private Integer attemptNo;
 
     private AgentRunStatus status;
 
@@ -32,6 +36,10 @@ public class AgentRunRecord {
     private String errorMessage;
 
     private String cancelReason;
+
+    private String checkpointBefore;
+
+    private String checkpointAfter;
 
     private LocalDateTime startTime;
 

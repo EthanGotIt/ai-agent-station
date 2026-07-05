@@ -11,8 +11,9 @@
         <module>ai-agent-station-api</module>
         <module>ai-agent-station-app</module>
         <module>ai-agent-station-domain</module>
-        <module>ai-agent-station-trigger</module>
         <module>ai-agent-station-infrastructure</module>
+        <module>ai-agent-station-trigger</module>
+        <module>ai-agent-station-types</module>
     </modules>
 
     <repositories>
@@ -34,7 +35,10 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <langgraph4j.version>1.8.20</langgraph4j.version>
+        <spring-statemachine.version>4.0.2</spring-statemachine.version>
+        <spring-ai-session.version>0.5.0</spring-ai-session.version>
+        <spring-ai-agent-utils.version>0.10.0</spring-ai-agent-utils.version>
+        <mcp-annotations.version>0.9.0</mcp-annotations.version>
         <skipTests>true</skipTests>
         <test.spring.profile>test</test.spring.profile>
     </properties>
@@ -58,11 +62,6 @@
                 <version>2.0.28</version>
             </dependency>
             <dependency>
-                <groupId>org.apache.commons</groupId>
-                <artifactId>commons-lang3</artifactId>
-                <version>3.9</version>
-            </dependency>
-            <dependency>
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-bom</artifactId>
                 <version>2.0.0</version>
@@ -70,11 +69,43 @@
                 <scope>import</scope>
             </dependency>
             <dependency>
-                <groupId>org.bsc.langgraph4j</groupId>
-                <artifactId>langgraph4j-bom</artifactId>
-                <version>${langgraph4j.version}</version>
+                <groupId>org.springframework.statemachine</groupId>
+                <artifactId>spring-statemachine-core</artifactId>
+                <version>${spring-statemachine.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springaicommunity</groupId>
+                <artifactId>spring-ai-session-bom</artifactId>
+                <version>${spring-ai-session.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.springaicommunity</groupId>
+                <artifactId>spring-ai-agent-utils</artifactId>
+                <version>${spring-ai-agent-utils.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springaicommunity</groupId>
+                <artifactId>mcp-annotations</artifactId>
+                <version>${mcp-annotations.version}</version>
+            </dependency>
+            <!-- mcp-annotations 0.9.0 与 spring-ai-client-chat 2.0.0 引入的 victools 5.0.0 不兼容，
+                 强制对齐到 mcp-annotations 期望的 4.38.0。 -->
+            <dependency>
+                <groupId>com.github.victools</groupId>
+                <artifactId>jsonschema-generator</artifactId>
+                <version>4.38.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.victools</groupId>
+                <artifactId>jsonschema-module-jackson</artifactId>
+                <version>4.38.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.victools</groupId>
+                <artifactId>jsonschema-module-swagger-2</artifactId>
+                <version>4.38.0</version>
             </dependency>
 
             <!-- 工程模块 -->
@@ -96,6 +127,11 @@
             <dependency>
                 <groupId>cn.ethan.ai</groupId>
                 <artifactId>ai-agent-station-trigger</artifactId>
+                <version>1.0</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.ethan.ai</groupId>
+                <artifactId>ai-agent-station-types</artifactId>
                 <version>1.0</version>
             </dependency>
         </dependencies>
