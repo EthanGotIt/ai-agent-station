@@ -8,7 +8,7 @@
 
 - Java 17、Spring Boot 4.1、Spring AI 2
 - Spring State Machine 4.0（默认运行时）
-- spring-ai-community：`spring-ai-session-management`、`spring-ai-agent-utils`、`mcp-annotations`
+- spring-ai-community：`spring-ai-session-management`、`spring-ai-agent-utils`
 - MySQL、MyBatis
 - Testcontainers
 
@@ -31,27 +31,25 @@ PENDING_APPROVAL
 - Spring State Machine：业务状态图只保留 `INTAKE / PENDING_APPROVAL / COMPLETED / REJECTED`，interrupt/resume 与 checkpoint 语义由 `IAfterSalesStateMachine` 端口封装。
 - spring-ai-session：为规划调用提供结构化会话记忆（`SessionMemoryAdvisor`）。
 - spring-ai-agent-utils：在进入 `PENDING_APPROVAL` 时通过 `TodoWriteTool` 生成退款检查清单。
-- MCP：售后工具通过 `@McpTool` 暴露为 Model Context Protocol Server。
 - Java Policy：`RefundInformationGatheringPolicy` 校验 Plan 动作白名单与收敛性；`AfterSalesRefundEligibilityPolicy` 判定退款资格；`AfterSalesAuthorizationService` 守护审批身份。
 
 缺少订单号时进入补充信息 interrupt；退款执行前必须进入人工审批 interrupt。恢复请求必须携带当前 checkpoint ID，旧 checkpoint 返回 HTTP 409。
 
-## Case、Turn、Run、Step 与 checkpoint
+## Case、Turn 与 checkpoint
 
 - `sessionId`：调用方提供的归组标识，不单独建表。
 - `caseId`：跨多轮的售后业务流程，同时作为状态机 `threadId`。
-- `turnId`：一次用户补充或人工审批交互。
-- `runId`：一次状态机 start/resume/retry 尝试。
-- `agent_step`：实际 Node/Model/Tool 执行记录。
-- checkpoint：由状态机适配器维护的恢复令牌，业务上保存在 `after_sales_case.checkpoint_id`。
+- `turnId`：一次状态机 start/resume/retry 尝试，也是一次用户补充或人工审批交互。
+- `agent_checkpoint`：状态机每次推进后写入的持久化恢复点。
+- checkpoint：由状态机适配器维护的当前恢复令牌，业务上保存在 `after_sales_case.checkpoint_id`。
 
-因此当前模型是 **Session 标识 + Case → Turn → Run → Step**；业务 `caseId` 直接复用为状态机 thread key。
+因此当前模型是 **Session 标识 + Case → Turn → Checkpoint**；业务 `caseId` 直接复用为状态机 thread key。
 
 ## 模块划分
 
 - `ai-agent-station-types`：共享内核，包含强类型 ID 与基础异常。
 - `ai-agent-station-domain`：领域模型、端口、Policy、领域服务。
-- `ai-agent-station-infrastructure`：Spring State Machine、Spring AI、MCP、仓库、网关、事件适配器。
+- `ai-agent-station-infrastructure`：Spring State Machine、Spring AI、仓库、网关、事件适配器。
 - `ai-agent-station-trigger`：HTTP 触发器与 DTO。
 - `ai-agent-station-app`：应用启动与配置。
 
@@ -64,9 +62,9 @@ Get-Content -Raw .\docs\dev-ops\mysql\sql\ai-agent-station.sql |
   & 'D:\Environment\MySQL\bin\mysql.exe' -h 127.0.0.1 -P 3306 -u root -p ai-agent-station
 ```
 
-共 8 张业务表：
+共 7 张业务表：
 
-- 运行审计：`agent_turn`、`agent_run`、`agent_step`
+- 运行审计：`agent_turn`、`agent_checkpoint`
 - 售后业务：`demo_order`、`after_sales_case`、`refund_command`
 - 可靠事件：`after_sales_outbox`、`after_sales_event_consume`
 

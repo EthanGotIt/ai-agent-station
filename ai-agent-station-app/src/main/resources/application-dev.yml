@@ -15,14 +15,16 @@ spring:
     model:
       chat: ${SPRING_AI_MODEL_CHAT:none}
     openai:
-      base-url: ${OPENAI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+      base-url: ${OPENAI_BASE_URL:https://api.deepseek.com/v1}
       api-key: ${OPENAI_API_KEY:}
       chat:
-        model: ${OPENAI_MODEL:qwen3.7-plus}
+        model: ${OPENAI_MODEL:deepseek-v4-pro}
+
+after-sales:
+  execution-model: ${AFTER_SALES_EXECUTION_MODEL:deepseek-v4-flash}
 
 ai-agent:
   after-sales:
-    model-bean-name: ${AI_AGENT_AFTER_SALES_MODEL_BEAN_NAME:}
     commerce-adapter: ${AI_AGENT_AFTER_SALES_COMMERCE_ADAPTER:local}
     commerce-base-url: ${AI_AGENT_AFTER_SALES_COMMERCE_BASE_URL:http://127.0.0.1:18080}
     commerce-timeout: ${AI_AGENT_AFTER_SALES_COMMERCE_TIMEOUT:3s}

@@ -14,7 +14,7 @@ public final class AfterSalesAuthorizationService {
         if (command.action() == AfterSalesResumeCommand.ResumeAction.SUPPLY_INFO) {
             assert caseView.userIdValue() != null;
             if (!caseView.userIdValue().equals(command.actorIdValue())) {
-                throw new SecurityException("只有Case所有者可以补充信息");
+                throw new SecurityException("只有Case 所有者可以补充信息");
             }
             return;
         }

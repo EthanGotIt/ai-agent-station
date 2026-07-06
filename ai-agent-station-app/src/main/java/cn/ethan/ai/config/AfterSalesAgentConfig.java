@@ -4,7 +4,8 @@ import cn.ethan.ai.domain.agent.policy.RefundInformationGatheringPolicy;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesRepository;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesStateMachine;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
-import cn.ethan.ai.domain.agent.port.driven.IAgentRunRepository;
+import cn.ethan.ai.domain.agent.port.driven.IAgentTurnRepository;
+import cn.ethan.ai.domain.agent.port.driven.ICheckpointRepository;
 import cn.ethan.ai.domain.agent.service.AfterSalesAgentService;
 import cn.ethan.ai.domain.agent.service.AfterSalesAuditService;
 import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
@@ -55,7 +56,7 @@ public class AfterSalesAgentConfig {
 
     @Bean
     public RefundPlanningAgent refundPlanningAgent(
-            @Autowired(required = false) @Qualifier("afterSalesChatClient") ChatClient chatClient) {
+            @Autowired(required = false) @Qualifier("afterSalesPlanningChatClient") ChatClient chatClient) {
         return new RefundPlanningAgent(chatClient);
     }
 
@@ -65,14 +66,16 @@ public class AfterSalesAgentConfig {
             IAfterSalesRepository repository,
             RefundPlanningAgent refundPlanningAgent,
             RefundInformationGatheringPolicy refundInformationGatheringPolicy,
-            TodoWriteTool todoWriteTool) {
-        return new SpringStateMachineAdapter(toolPort, repository, refundPlanningAgent, refundInformationGatheringPolicy, todoWriteTool);
+            TodoWriteTool todoWriteTool,
+            ICheckpointRepository checkpointRepository) {
+        return new SpringStateMachineAdapter(toolPort, repository, refundPlanningAgent,
+                refundInformationGatheringPolicy, todoWriteTool, checkpointRepository);
     }
 
     @Bean
     public AfterSalesAgentService afterSalesAgentService(IAfterSalesStateMachine stateMachine,
                                                          IAfterSalesRepository repository,
-                                                         IAgentRunRepository runRepository) {
-        return new AfterSalesAgentService(stateMachine, repository, new AfterSalesAuditService(runRepository));
+                                                         IAgentTurnRepository turnRepository) {
+        return new AfterSalesAgentService(stateMachine, repository, new AfterSalesAuditService(turnRepository));
     }
 }

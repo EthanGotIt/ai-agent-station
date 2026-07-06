@@ -4,31 +4,42 @@ import cn.ethan.ai.domain.agent.model.AfterSalesAgentState;
 import cn.ethan.ai.domain.agent.model.AfterSalesOrderSnapshot;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolRequest;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolResult;
-import cn.ethan.ai.domain.agent.model.plan.PlanStep;
+import cn.ethan.ai.domain.agent.model.Checkpoint;
+import cn.ethan.ai.domain.agent.model.plan.PlannedStep;
 import cn.ethan.ai.domain.agent.model.plan.PlanningContext;
 import cn.ethan.ai.domain.agent.model.plan.RefundPlan;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AfterSalesStage;
 import cn.ethan.ai.domain.agent.policy.AfterSalesRefundEligibilityPolicy;
 import cn.ethan.ai.domain.agent.policy.RefundInformationGatheringPolicy;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
+import cn.ethan.ai.domain.agent.port.driven.ICheckpointRepository;
 import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
+import cn.ethan.ai.types.common.id.CaseId;
+import cn.ethan.ai.types.common.id.CheckpointId;
+import cn.ethan.ai.types.common.id.StepId;
+import cn.ethan.ai.types.common.id.TurnId;
 import org.springaicommunity.agent.tools.TodoWriteTool;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 退款信息收集器（Phase 7.3）。
  *
  * <p>引入 {@link RefundPlanningAgent} 生成结构化 {@link RefundPlan}，
  * 并通过 {@link RefundInformationGatheringPolicy} 校验计划合法性。
- * 当计划步骤执行失败或发现新的缺失信息时，支持最多 3 次 RePlan。</p>
+ * 当计划步骤执行失败或发现新的缺失信息时，支持最多 3 次 RePlan。
+ * 每次状态变更后通过 {@link ICheckpointRepository} 持久化 Checkpoint。</p>
  */
 public final class RefundInformationGatherer {
 
     private static final int MAX_REPLAN_ATTEMPTS = 3;
+    private static final int MAX_STEP_RETRY = 2;
     private static final String REPLAN_BUDGET_EXHAUSTED = "REPLAN_BUDGET_EXHAUSTED";
 
     private final IAfterSalesToolPort toolPort;
@@ -36,55 +47,133 @@ public final class RefundInformationGatherer {
     private final RefundInformationGatheringPolicy policy;
     private final AfterSalesRefundEligibilityPolicy eligibilityPolicy;
     private final TodoWriteTool todoWriteTool;
+    private final ICheckpointRepository checkpointRepository;
 
     public RefundInformationGatherer(IAfterSalesToolPort toolPort,
                                       RefundPlanningAgent planningAgent,
                                       RefundInformationGatheringPolicy policy,
-                                      TodoWriteTool todoWriteTool) {
+                                      TodoWriteTool todoWriteTool,
+                                      ICheckpointRepository checkpointRepository) {
         this.toolPort = toolPort;
         this.planningAgent = planningAgent;
         this.policy = policy;
         this.eligibilityPolicy = new AfterSalesRefundEligibilityPolicy();
         this.todoWriteTool = todoWriteTool;
+        this.checkpointRepository = checkpointRepository;
     }
 
-    public AfterSalesAgentState gather(AfterSalesAgentState state) {
+    public AfterSalesAgentState gather(AfterSalesAgentState state, CaseId caseId, TurnId turnId) {
         Map<String, Object> data = new LinkedHashMap<>(state.data());
         data.remove(AfterSalesAgentState.NEED_USER_INPUT);
+        data.remove(AfterSalesAgentState.CURRENT_STEP_KEY);
+        data.remove(AfterSalesAgentState.CURRENT_STEP_ATTEMPT_COUNT);
         data.put(AfterSalesAgentState.STAGE, AfterSalesStage.INTAKE.name());
 
         AfterSalesAgentState current = new AfterSalesAgentState(data);
+        writeCheckpoint(current, caseId, turnId, null);
+
         int replanCount = current.count(AfterSalesAgentState.REPLAN_COUNT);
+        RefundPlan currentPlan = null;
+        boolean replanNeeded = true;
 
         while (true) {
-            PlanningContext context = buildContext(current, replanCount);
-            RefundPlan plan = planningAgent.plan(context);
+            // 只有在首次进入或明确需要 RePlan 时才重新生成计划；
+            // 同一步骤失败重试期间保持当前计划不变。
+            if (replanNeeded || currentPlan == null) {
+                PlanningContext context = buildContext(current, replanCount);
+                RefundPlan plan = planningAgent.plan(context);
 
-            RefundInformationGatheringPolicy.ValidationResult validation = policy.validate(plan, context);
-            if (!validation.ok()) {
-                plan = planningAgent.deterministicPlan(context);
+                RefundInformationGatheringPolicy.ValidationResult validation = policy.validate(plan, context);
+                if (!validation.ok()) {
+                    plan = planningAgent.deterministicPlan(context);
+                }
+                currentPlan = plan;
+                replanNeeded = false;
+
+                PlannedStep askStep = findAskUserStep(currentPlan);
+                if (askStep != null) {
+                    AfterSalesAgentState askState = askUser(current, askStep.reasonForUser());
+                    writeCheckpoint(askState, caseId, turnId, askStep.stepId());
+                    return askState;
+                }
             }
 
-            PlanStep askStep = findAskUserStep(plan);
-            if (askStep != null) {
-                return askUser(current, askStep.reasonForUser());
+            PlannedStep nextStep = selectNextPendingStep(currentPlan, current);
+            if (nextStep == null) {
+                if (currentPlan.readyToEvaluate() || isReadyToEvaluate(current)) {
+                    AfterSalesAgentState evaluated = evaluateEligibility(current);
+                    writeCheckpoint(evaluated, caseId, turnId, null);
+                    return evaluated;
+                }
+                // 计划无待执行步骤但信息仍不完整，触发一次 RePlan
+                replanCount++;
+                current = prepareReplanState(current, replanCount, "NO_PENDING_STEP", "计划无待执行步骤且信息不完整");
+                writeCheckpoint(current, caseId, turnId, null);
+                currentPlan = null;
+                if (replanCount > MAX_REPLAN_ATTEMPTS) {
+                    AfterSalesAgentState rejected = reject(current, REPLAN_BUDGET_EXHAUSTED);
+                    writeCheckpoint(rejected, caseId, turnId, null);
+                    return rejected;
+                }
+                continue;
             }
 
-            ToolExecutionResult execution = executeToolSteps(current, plan);
+            ToolExecutionResult execution = executeToolStep(current, nextStep);
             current = execution.state();
+            writeCheckpoint(current, caseId, turnId, nextStep.stepId());
 
-            boolean ready = !execution.failed()
-                    && (plan.readyToEvaluate() || isReadyToEvaluate(current));
-            if (ready) {
-                return evaluateEligibility(current);
+            if (!execution.failed()) {
+                // 通过：更新进度，清空当前计划让下一次循环重新规划剩余工作
+                current = markStepDone(current, nextStep);
+                writeCheckpoint(current, caseId, turnId, nextStep.stepId());
+                currentPlan = null;
+                continue;
+            }
+
+            // 失败：先重试同一步，重试耗尽后再 RePlan
+            int stepAttempt = current.count(AfterSalesAgentState.CURRENT_STEP_ATTEMPT_COUNT);
+            if (stepAttempt <= MAX_STEP_RETRY) {
+                current = incrementStepAttempt(current);
+                writeCheckpoint(current, caseId, turnId, nextStep.stepId());
+                continue;
             }
 
             replanCount++;
             current = prepareReplanState(current, replanCount, execution.errorType(), execution.errorMessage());
+            writeCheckpoint(current, caseId, turnId, null);
+            currentPlan = null;
             if (replanCount > MAX_REPLAN_ATTEMPTS) {
-                return reject(current, REPLAN_BUDGET_EXHAUSTED);
+                AfterSalesAgentState rejected = reject(current, REPLAN_BUDGET_EXHAUSTED);
+                writeCheckpoint(rejected, caseId, turnId, null);
+                return rejected;
             }
         }
+    }
+
+    private void writeCheckpoint(AfterSalesAgentState state, CaseId caseId, TurnId turnId, StepId stepId) {
+        if (checkpointRepository == null) {
+            return;
+        }
+        Checkpoint checkpoint = new Checkpoint(
+                CheckpointId.of(java.util.UUID.randomUUID().toString()),
+                caseId,
+                turnId,
+                stepId,
+                ssmStateOf(state.stage()),
+                state,
+                state.stage(),
+                LocalDateTime.now()
+        );
+        checkpointRepository.save(checkpoint);
+    }
+
+    private static String ssmStateOf(AfterSalesStage stage) {
+        return switch (stage) {
+            case INTAKE -> AfterSalesState.INTAKE.name();
+            case PENDING_APPROVAL -> AfterSalesState.PENDING_APPROVAL.name();
+            case COMPLETED -> AfterSalesState.COMPLETED.name();
+            case REJECTED -> AfterSalesState.REJECTED.name();
+        };
     }
 
     private PlanningContext buildContext(AfterSalesAgentState state, int replanCount) {
@@ -105,16 +194,16 @@ public final class RefundInformationGatherer {
     }
 
     private String previousToolError(AfterSalesAgentState state) {
-        String terminalReason = state.text(AfterSalesAgentState.TERMINAL_REASON);
-        if (terminalReason != null && !terminalReason.isBlank()
+        String errorMessage = state.text(AfterSalesAgentState.LAST_ERROR_MESSAGE);
+        if (errorMessage != null && !errorMessage.isBlank()
                 && state.stage() != AfterSalesStage.COMPLETED
                 && state.stage() != AfterSalesStage.REJECTED) {
-            return terminalReason;
+            return errorMessage;
         }
         return null;
     }
 
-    private PlanStep findAskUserStep(RefundPlan plan) {
+    private PlannedStep findAskUserStep(RefundPlan plan) {
         if (plan.steps() == null) {
             return null;
         }
@@ -133,25 +222,51 @@ public final class RefundInformationGatherer {
         return new AfterSalesAgentState(update);
     }
 
-    private ToolExecutionResult executeToolSteps(AfterSalesAgentState state, RefundPlan plan) {
-        AfterSalesAgentState current = state;
+    private PlannedStep selectNextPendingStep(RefundPlan plan, AfterSalesAgentState state) {
         if (plan.steps() == null) {
-            return new ToolExecutionResult(current, false, null, null);
+            return null;
         }
-        for (PlanStep step : plan.steps()) {
-            if (!RefundInformationGatheringPolicy.ACTION_TOOL_CALL.equals(step.action())) {
-                continue;
-            }
-            ToolExecutionResult result = executeToolCall(current, step);
-            current = result.state();
-            if (result.failed()) {
-                return result;
-            }
-        }
-        return new ToolExecutionResult(current, false, null, null);
+        Set<String> executed = state.executedStepKeys();
+        return plan.steps().stream()
+                .filter(s -> RefundInformationGatheringPolicy.ACTION_TOOL_CALL.equals(s.action()))
+                .filter(s -> !executed.contains(s.stepId().value()))
+                .findFirst()
+                .orElse(null);
     }
 
-    private ToolExecutionResult executeToolCall(AfterSalesAgentState state, PlanStep step) {
+    private AfterSalesAgentState markStepDone(AfterSalesAgentState state, PlannedStep step) {
+        Map<String, Object> update = new LinkedHashMap<>(state.data());
+        Set<String> executed = state.executedStepKeys();
+        executed = new HashSet<>(executed);
+        executed.add(step.stepId().value());
+        update.put(AfterSalesAgentState.EXECUTED_STEP_KEYS, executed);
+        update.remove(AfterSalesAgentState.CURRENT_STEP_KEY);
+        update.remove(AfterSalesAgentState.CURRENT_STEP_ATTEMPT_COUNT);
+        update.remove(AfterSalesAgentState.LAST_ERROR_TYPE);
+        update.remove(AfterSalesAgentState.LAST_ERROR_MESSAGE);
+        return new AfterSalesAgentState(update);
+    }
+
+    private AfterSalesAgentState incrementStepAttempt(AfterSalesAgentState state) {
+        Map<String, Object> update = new LinkedHashMap<>(state.data());
+        update.put(AfterSalesAgentState.CURRENT_STEP_ATTEMPT_COUNT,
+                update.getOrDefault(AfterSalesAgentState.CURRENT_STEP_ATTEMPT_COUNT, 0) instanceof Number n
+                        ? n.intValue() + 1 : 1);
+        return new AfterSalesAgentState(update);
+    }
+
+    private ToolExecutionResult executeToolStep(AfterSalesAgentState state, PlannedStep step) {
+        AfterSalesAgentState current = rememberCurrentStep(state, step);
+        return executeToolCall(current, step);
+    }
+
+    private AfterSalesAgentState rememberCurrentStep(AfterSalesAgentState state, PlannedStep step) {
+        Map<String, Object> update = new LinkedHashMap<>(state.data());
+        update.put(AfterSalesAgentState.CURRENT_STEP_KEY, step.stepId().value());
+        return new AfterSalesAgentState(update);
+    }
+
+    private ToolExecutionResult executeToolCall(AfterSalesAgentState state, PlannedStep step) {
         if (!RefundInformationGatheringPolicy.TOOL_QUERY_ORDER.equals(step.toolName())) {
             return toolFailure(state, "TOOL_NOT_ALLOWED", "TOOL_NOT_ALLOWED");
         }
@@ -210,12 +325,13 @@ public final class RefundInformationGatherer {
                                                     String errorType, String errorMessage) {
         Map<String, Object> update = new LinkedHashMap<>(state.data());
         update.put(AfterSalesAgentState.REPLAN_COUNT, replanCount);
+        update.remove(AfterSalesAgentState.CURRENT_STEP_KEY);
+        update.remove(AfterSalesAgentState.CURRENT_STEP_ATTEMPT_COUNT);
         if (errorType != null) {
             update.put(AfterSalesAgentState.LAST_ERROR_TYPE, errorType);
         }
         if (errorMessage != null) {
             update.put(AfterSalesAgentState.LAST_ERROR_MESSAGE, errorMessage);
-            update.put(AfterSalesAgentState.TERMINAL_REASON, errorMessage);
         }
         return new AfterSalesAgentState(update);
     }

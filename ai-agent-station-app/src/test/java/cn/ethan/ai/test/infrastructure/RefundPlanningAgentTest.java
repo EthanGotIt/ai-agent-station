@@ -1,6 +1,6 @@
 package cn.ethan.ai.test.infrastructure;
 
-import cn.ethan.ai.domain.agent.model.plan.PlanStep;
+import cn.ethan.ai.domain.agent.model.plan.PlannedStep;
 import cn.ethan.ai.domain.agent.model.plan.PlanningContext;
 import cn.ethan.ai.domain.agent.model.plan.RefundPlan;
 import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
@@ -79,7 +79,7 @@ public class RefundPlanningAgentTest {
         Assertions.assertNotNull(plan);
         Assertions.assertFalse(plan.readyToEvaluate());
         Assertions.assertEquals(1, plan.steps().size());
-        PlanStep step = plan.steps().get(0);
+        PlannedStep step = plan.steps().get(0);
         Assertions.assertEquals("TOOL_CALL", step.action());
         Assertions.assertEquals("query_order", step.toolName());
         Assertions.assertEquals("ORDER-1", step.input().get("orderId"));

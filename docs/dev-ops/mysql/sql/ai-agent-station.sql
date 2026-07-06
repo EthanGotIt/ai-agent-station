@@ -1,11 +1,10 @@
 -- Durable After-Sales Agent 完整数据库结构。
--- 包含业务交互与运行审计、售后业务、退款幂等、Outbox/Inbox 共 8 张表。
+-- 包含业务交互与运行审计、售后业务、退款幂等、Outbox/Inbox 共 7 张表。
 
 DROP TABLE IF EXISTS `after_sales_event_consume`;
 DROP TABLE IF EXISTS `after_sales_outbox`;
 DROP TABLE IF EXISTS `refund_command`;
-DROP TABLE IF EXISTS `agent_step`;
-DROP TABLE IF EXISTS `agent_run`;
+DROP TABLE IF EXISTS `agent_checkpoint`;
 DROP TABLE IF EXISTS `agent_turn`;
 DROP TABLE IF EXISTS `after_sales_case`;
 DROP TABLE IF EXISTS `demo_order`;
@@ -29,7 +28,7 @@ CREATE TABLE `after_sales_case` (
     `order_id` varchar(64) DEFAULT NULL,
     `stage` varchar(64) NOT NULL,
     `checkpoint_id` varchar(36) DEFAULT NULL,
-    `resume_token` varchar(36) DEFAULT NULL COMMENT '并发恢复租约，Run完成或失败后释放',
+    `resume_token` varchar(36) DEFAULT NULL COMMENT '并发恢复租约，Turn完成或失败后释放',
     `next_node` varchar(128) DEFAULT NULL,
     `terminal_reason` varchar(255) DEFAULT NULL,
     `command_id` varchar(36) DEFAULT NULL,
@@ -41,14 +40,17 @@ CREATE TABLE `after_sales_case` (
 
 CREATE TABLE `agent_turn` (
     `id` bigint NOT NULL AUTO_INCREMENT,
-    `turn_id` varchar(36) NOT NULL COMMENT '一次外部交互ID',
+    `turn_id` varchar(36) NOT NULL COMMENT '一次外部交互ID，同时作为本次执行尝试ID',
     `case_id` varchar(36) NOT NULL COMMENT '所属售后Case',
     `session_id` varchar(128) NOT NULL COMMENT '调用方会话标识，仅用于归组',
     `actor_id` varchar(64) NOT NULL COMMENT '用户或审批人标识',
     `turn_type` varchar(32) NOT NULL COMMENT 'START/SUPPLY_INFO/APPROVE/REJECT/CANCEL',
+    `attempt_no` int NOT NULL DEFAULT 1 COMMENT '同Case内的执行尝试序号',
     `input_summary` text COMMENT '本次交互输入摘要',
     `output_summary` text COMMENT '本次交互结果摘要',
     `status` varchar(32) NOT NULL COMMENT 'RUNNING/SUCCESS/FAILED/CANCELLED',
+    `checkpoint_before` varchar(36) DEFAULT NULL COMMENT '执行前checkpoint',
+    `checkpoint_after` varchar(36) DEFAULT NULL COMMENT '执行后checkpoint',
     `start_time` datetime(6) NOT NULL,
     `end_time` datetime(6) DEFAULT NULL,
     `create_time` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
@@ -57,54 +59,25 @@ CREATE TABLE `agent_turn` (
     UNIQUE KEY `uk_agent_turn_id` (`turn_id`),
     KEY `idx_agent_turn_case` (`case_id`, `create_time`),
     CONSTRAINT `fk_agent_turn_case` FOREIGN KEY (`case_id`) REFERENCES `after_sales_case` (`case_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent外部交互记录';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent外部交互与执行记录';
 
-CREATE TABLE `agent_run` (
-    `id` bigint NOT NULL AUTO_INCREMENT,
-    `run_id` varchar(36) NOT NULL COMMENT '一次状态机执行或恢复尝试ID',
-    `turn_id` varchar(36) NOT NULL COMMENT '触发本次执行的Turn',
-    `case_id` varchar(36) NOT NULL COMMENT '所属售后Case，同时是状态机 thread key',
-    `agent_id` varchar(64) NOT NULL,
-    `trigger_type` varchar(32) NOT NULL COMMENT 'START/RESUME/RETRY',
-    `attempt_no` int NOT NULL DEFAULT 1,
-    `status` varchar(32) NOT NULL COMMENT 'RUNNING/SUCCESS/FAILED/CANCELLED',
-    `final_summary` text COMMENT '本次执行结果摘要',
-    `error_message` varchar(1024) DEFAULT NULL,
-    `cancel_reason` varchar(255) DEFAULT NULL,
-    `checkpoint_before` varchar(36) DEFAULT NULL,
-    `checkpoint_after` varchar(36) DEFAULT NULL,
-    `start_time` datetime(6) NOT NULL,
-    `end_time` datetime(6) DEFAULT NULL,
-    `create_time` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    `update_time` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+CREATE TABLE `agent_checkpoint` (
+    `id` bigint NOT NULL AUTO_INCREMENT COMMENT '自增主键，用于严格排序',
+    `checkpoint_id` varchar(36) NOT NULL COMMENT 'Checkpoint唯一标识',
+    `case_id` varchar(36) NOT NULL COMMENT '所属售后Case',
+    `turn_id` varchar(36) NOT NULL COMMENT '触发本次Checkpoint的Turn',
+    `step_id` varchar(255) DEFAULT NULL COMMENT '触发Checkpoint的步骤ID，空表示Turn边界或终态',
+    `ssm_state` varchar(32) NOT NULL COMMENT 'Spring State Machine状态',
+    `state_payload` json NOT NULL COMMENT 'AfterSalesAgentState.data()序列化',
+    `stage` varchar(32) NOT NULL COMMENT '业务Stage',
+    `created_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_agent_run_id` (`run_id`),
-    UNIQUE KEY `uk_agent_run_turn_attempt` (`turn_id`, `attempt_no`),
-    KEY `idx_agent_run_case` (`case_id`, `create_time`),
-    CONSTRAINT `fk_agent_run_turn` FOREIGN KEY (`turn_id`) REFERENCES `agent_turn` (`turn_id`),
-    CONSTRAINT `fk_agent_run_case` FOREIGN KEY (`case_id`) REFERENCES `after_sales_case` (`case_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent单次执行记录';
-
-CREATE TABLE `agent_step` (
-    `id` bigint NOT NULL AUTO_INCREMENT,
-    `run_id` varchar(36) NOT NULL,
-    `step_id` varchar(36) NOT NULL,
-    `step_name` varchar(128) NOT NULL COMMENT '状态机 Action或Tool名称',
-    `step_order` int NOT NULL,
-    `step_type` varchar(32) NOT NULL COMMENT 'NODE/MODEL/TOOL',
-    `status` varchar(32) NOT NULL COMMENT 'SUCCESS/FAILED',
-    `output_summary` text,
-    `error_message` varchar(1024) DEFAULT NULL,
-    `cost_millis` bigint NOT NULL DEFAULT 0,
-    `start_time` datetime(6) NOT NULL,
-    `end_time` datetime(6) NOT NULL,
-    `create_time` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    `update_time` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_agent_step` (`run_id`, `step_id`),
-    KEY `idx_agent_step_order` (`run_id`, `step_order`),
-    CONSTRAINT `fk_agent_step_agent_run` FOREIGN KEY (`run_id`) REFERENCES `agent_run` (`run_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent节点与工具步骤记录';
+    UNIQUE KEY `uk_agent_checkpoint_id` (`checkpoint_id`),
+    KEY `idx_agent_checkpoint_case` (`case_id`, `id`),
+    KEY `idx_agent_checkpoint_turn` (`turn_id`),
+    CONSTRAINT `fk_agent_checkpoint_case` FOREIGN KEY (`case_id`) REFERENCES `after_sales_case` (`case_id`),
+    CONSTRAINT `fk_agent_checkpoint_turn` FOREIGN KEY (`turn_id`) REFERENCES `agent_turn` (`turn_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent状态机Checkpoint';
 
 CREATE TABLE `refund_command` (
     `command_id` varchar(36) NOT NULL,

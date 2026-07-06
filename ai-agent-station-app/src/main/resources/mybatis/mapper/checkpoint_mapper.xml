@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.ethan.ai.infrastructure.dao.CheckpointMapper">
+
+    <insert id="insert" parameterType="cn.ethan.ai.infrastructure.dao.po.CheckpointPO">
+        INSERT INTO agent_checkpoint
+            (checkpoint_id, case_id, turn_id, step_id, ssm_state, state_payload, stage, created_at)
+        VALUES
+            (#{checkpointId}, #{caseId}, #{turnId}, #{stepId}, #{ssmState}, #{statePayload}, #{stage}, #{createdAt})
+    </insert>
+
+    <select id="selectLatestByCaseId" resultType="cn.ethan.ai.infrastructure.dao.po.CheckpointPO">
+        SELECT id, checkpoint_id, case_id, turn_id, step_id, ssm_state, state_payload, stage, created_at
+        FROM agent_checkpoint
+        WHERE case_id = #{caseId}
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectById" resultType="cn.ethan.ai.infrastructure.dao.po.CheckpointPO">
+        SELECT id, checkpoint_id, case_id, turn_id, step_id, ssm_state, state_payload, stage, created_at
+        FROM agent_checkpoint
+        WHERE checkpoint_id = #{checkpointId}
+    </select>
+
+</mapper>

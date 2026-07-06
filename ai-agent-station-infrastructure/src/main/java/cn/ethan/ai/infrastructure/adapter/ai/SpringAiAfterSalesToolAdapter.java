@@ -9,7 +9,6 @@ import cn.ethan.ai.domain.agent.policy.AfterSalesToolContractValidator;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import lombok.NonNull;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -22,15 +21,12 @@ import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.model.tool.ToolExecutionResult;
-import org.springframework.ai.session.advisor.SessionMemoryAdvisor;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.ai.tool.metadata.ToolMetadata;
-import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -53,25 +49,19 @@ public class SpringAiAfterSalesToolAdapter implements IAfterSalesToolPort {
             如果没有明确订单号，不调用工具。
             """;
 
-    private final ApplicationContext applicationContext;
     private final IOrderGateway orderGateway;
     private final ToolCallingManager toolCallingManager;
-    private final ChatClient chatClient;
-    private final String modelBeanName;
+    private final ChatModel chatModel;
     private final String modelName;
 
-    public SpringAiAfterSalesToolAdapter(ApplicationContext applicationContext,
-                                         IOrderGateway orderGateway,
+    public SpringAiAfterSalesToolAdapter(IOrderGateway orderGateway,
                                          ToolCallingManager toolCallingManager,
-                                         @Autowired(required = false) @Qualifier("afterSalesChatClient") ChatClient chatClient,
-                                         @Value("${ai-agent.after-sales.model-bean-name:}") String modelBeanName,
-                                         @Value("${spring.ai.openai.chat.model:qwen3.7-plus}") String modelName) {
-        this.applicationContext = applicationContext;
+                                         @Autowired(required = false) ChatModel chatModel,
+                                         @Value("${after-sales.execution-model:deepseek-v4-flash}") String modelName) {
         this.orderGateway = orderGateway;
         this.toolCallingManager = toolCallingManager;
-        this.chatClient = chatClient;
-        this.modelBeanName = modelBeanName == null ? "" : modelBeanName.trim();
-        this.modelName = modelName == null || modelName.isBlank() ? "qwen3.7-plus" : modelName.trim();
+        this.chatModel = chatModel;
+        this.modelName = modelName == null || modelName.isBlank() ? "deepseek-v4-flash" : modelName.trim();
     }
 
     @Override
@@ -82,12 +72,8 @@ public class SpringAiAfterSalesToolAdapter implements IAfterSalesToolPort {
                                                    String refundReason,
                                                    String correction) {
         String promptText = buildUserPrompt(userMessage, orderIdHint, refundReason, correction);
-        if (chatClient != null) {
-            return proposeOrderQueryWithChatClient(promptText, sessionId);
-        }
-        ChatModel chatModel = resolveChatModel();
         if (chatModel != null) {
-            return proposeOrderQueryWithRawModel(promptText, userId, chatModel);
+            return proposeOrderQueryWithModel(promptText);
         }
         String orderId = firstText(orderIdHint, extractOrderId(userMessage));
         if (orderId == null) {
@@ -100,28 +86,18 @@ public class SpringAiAfterSalesToolAdapter implements IAfterSalesToolPort {
         );
     }
 
-    private AfterSalesToolRequest proposeOrderQueryWithChatClient(String promptText, String sessionId) {
-        ChatResponse response = chatClient.prompt()
-                .system(SYSTEM_PROMPT)
-                .user(promptText)
-                .tools(queryOrderCallback())
-                .advisors(a -> a.param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, sessionIdFor(sessionId)))
-                .call()
-                .chatResponse();
-        assert response != null;
-        return extractSingleOrderQuery(response);
-    }
-
-    private AfterSalesToolRequest proposeOrderQueryWithRawModel(String promptText, String userId, ChatModel chatModel) {
-        ToolCallback callback = queryOrderCallback();
+    private AfterSalesToolRequest proposeOrderQueryWithModel(String promptText) {
         OpenAiChatOptions options = OpenAiChatOptions.builder()
                 .model(modelName)
-                .toolCallbacks(callback)
-                .toolContext(Map.of(USER_ID_CONTEXT_KEY, userId))
+                .toolCallbacks(queryOrderCallback())
                 .temperature(0.0)
                 .build();
-        Prompt prompt = new Prompt(List.of(new SystemMessage(SYSTEM_PROMPT), new UserMessage(promptText)), options);
+        Prompt prompt = new Prompt(List.of(
+                new SystemMessage(SYSTEM_PROMPT),
+                new UserMessage(promptText)
+        ), options);
         ChatResponse response = chatModel.call(prompt);
+        assert response != null;
         return extractSingleOrderQuery(response);
     }
 
@@ -173,14 +149,6 @@ public class SpringAiAfterSalesToolAdapter implements IAfterSalesToolPort {
         } catch (Exception e) {
             return AfterSalesToolResult.failure("", classifyException(e), e.getMessage());
         }
-    }
-
-    private ChatModel resolveChatModel() {
-        if (!modelBeanName.isBlank()) {
-            return applicationContext.getBean(modelBeanName, ChatModel.class);
-        }
-        Map<String, ChatModel> models = applicationContext.getBeansOfType(ChatModel.class);
-        return models.values().stream().findFirst().orElse(null);
     }
 
     private ToolCallback queryOrderCallback() {

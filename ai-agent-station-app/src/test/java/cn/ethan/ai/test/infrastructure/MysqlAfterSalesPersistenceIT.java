@@ -7,12 +7,9 @@ import cn.ethan.ai.domain.agent.model.AfterSalesOrderSnapshot;
 import cn.ethan.ai.domain.agent.model.AfterSalesRefundResult;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolRequest;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolResult;
-import cn.ethan.ai.domain.agent.model.valobj.AgentRunRecord;
-import cn.ethan.ai.domain.agent.model.valobj.AgentStepRecord;
 import cn.ethan.ai.domain.agent.model.valobj.AgentTurnRecord;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AfterSalesStage;
-import cn.ethan.ai.domain.agent.model.valobj.enums.AgentRunStatus;
-import cn.ethan.ai.domain.agent.model.valobj.enums.AgentStepStatus;
+import cn.ethan.ai.domain.agent.model.valobj.enums.AgentTurnStatus;
 import cn.ethan.ai.domain.agent.policy.RefundInformationGatheringPolicy;
 import cn.ethan.ai.domain.agent.port.driving.IAfterSalesEventHandler;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesRepository;
@@ -23,13 +20,13 @@ import cn.ethan.ai.infrastructure.adapter.commerce.LocalRefundGateway;
 import cn.ethan.ai.infrastructure.adapter.event.AfterSalesOutboxDispatcher;
 import cn.ethan.ai.infrastructure.adapter.event.IdempotentLocalEventPublisher;
 import cn.ethan.ai.infrastructure.adapter.repository.AfterSalesRepository;
-import cn.ethan.ai.infrastructure.adapter.repository.AgentRunRepository;
+import cn.ethan.ai.infrastructure.adapter.repository.AgentTurnRepository;
+import cn.ethan.ai.infrastructure.adapter.repository.CheckpointRepository;
 import cn.ethan.ai.infrastructure.adapter.statemachine.SpringStateMachineAdapter;
 import cn.ethan.ai.infrastructure.dao.AfterSalesCaseMapper;
 import cn.ethan.ai.infrastructure.dao.AfterSalesOutboxMapper;
-import cn.ethan.ai.infrastructure.dao.AgentRunMapper;
-import cn.ethan.ai.infrastructure.dao.AgentStepMapper;
 import cn.ethan.ai.infrastructure.dao.AgentTurnMapper;
+import cn.ethan.ai.infrastructure.dao.CheckpointMapper;
 import cn.ethan.ai.infrastructure.dao.DemoOrderMapper;
 import cn.ethan.ai.infrastructure.dao.RefundCommandMapper;
 import cn.ethan.ai.infrastructure.dao.po.AfterSalesOutboxPO;
@@ -62,8 +59,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class MysqlAfterSalesPersistenceIT {
 
     private static final String[] EXPECTED_TABLES = {
-            "agent_run",
-            "agent_step",
+            "agent_checkpoint",
             "agent_turn",
             "demo_order",
             "after_sales_case",
@@ -73,8 +69,7 @@ public class MysqlAfterSalesPersistenceIT {
     };
 
     private static final String[] MAPPER_FILES = {
-            "agent_run_mapper.xml",
-            "agent_step_mapper.xml",
+            "checkpoint_mapper.xml",
             "agent_turn_mapper.xml",
             "demo_order_mapper.xml",
             "after_sales_case_mapper.xml",
@@ -97,11 +92,10 @@ public class MysqlAfterSalesPersistenceIT {
         Assertions.assertEquals(EXPECTED_TABLES.length, countAllTables(jdbc));
 
         SqlSessionTemplate sqlSessionTemplate = sqlSessionTemplate(dataSource);
-        AgentRunRepository runRepository = new AgentRunRepository(
-                sqlSessionTemplate.getMapper(AgentRunMapper.class),
-                sqlSessionTemplate.getMapper(AgentStepMapper.class),
-                sqlSessionTemplate.getMapper(AgentTurnMapper.class)
-        );
+        AgentTurnRepository turnRepository = new AgentTurnRepository(
+                sqlSessionTemplate.getMapper(AgentTurnMapper.class));
+        CheckpointRepository checkpointRepository = new CheckpointRepository(
+                sqlSessionTemplate.getMapper(CheckpointMapper.class));
         DemoOrderMapper demoOrderMapper = sqlSessionTemplate.getMapper(DemoOrderMapper.class);
         LocalOrderGateway orderGateway = new LocalOrderGateway(demoOrderMapper);
         AfterSalesRepository afterSalesRepository = new AfterSalesRepository(
@@ -115,36 +109,16 @@ public class MysqlAfterSalesPersistenceIT {
 
         LocalDateTime now = LocalDateTime.now();
         afterSalesRepository.createCase("case-1", "demo-user-1", "session-1", "退款");
-        runRepository.createTurn(AgentTurnRecord.builder()
+        turnRepository.createTurn(AgentTurnRecord.builder()
                 .turnId("turn-1")
                 .caseId("case-1")
                 .sessionId("session-1")
                 .actorId("demo-user-1")
                 .turnType("START")
-                .inputSummary("订单退款")
-                .status("RUNNING")
-                .startTime(now)
-                .build());
-        runRepository.createRun(AgentRunRecord.builder()
-                .runId("run-1")
-                .turnId("turn-1")
-                .caseId("case-1")
-                .agentId("durable-after-sales")
-                .triggerType("START")
                 .attemptNo(1)
-                .status(AgentRunStatus.RUNNING)
+                .inputSummary("订单退款")
+                .status(AgentTurnStatus.RUNNING.name())
                 .startTime(now)
-                .build());
-        runRepository.createStep(AgentStepRecord.builder()
-                .runId("run-1")
-                .stepId("step-1")
-                .stepName("INTAKE")
-                .stepOrder(1)
-                .stepType("AFTER_SALES_GRAPH")
-                .status(AgentStepStatus.SUCCESS)
-                .costMillis(1L)
-                .startTime(now)
-                .endTime(now)
                 .build());
         AfterSalesOrderSnapshot order = afterSalesRepository
                 .findOrder("ORDER-PAID-001", "demo-user-1").orElseThrow();
@@ -152,9 +126,9 @@ public class MysqlAfterSalesPersistenceIT {
         Assertions.assertEquals(AfterSalesStage.INTAKE.name(),
                 afterSalesRepository.findCase("case-1").orElseThrow().stage());
 
-        SpringStateMachineAdapter process = graph(dataSource, afterSalesRepository);
+        SpringStateMachineAdapter process = graph(dataSource, afterSalesRepository, checkpointRepository);
         Map<String, Object> input = new LinkedHashMap<>();
-        input.put(AfterSalesAgentState.RUN_ID, "run-1");
+        input.put(AfterSalesAgentState.TURN_ID, "turn-1");
         input.put(AfterSalesAgentState.CASE_ID, "case-1");
         input.put(AfterSalesAgentState.USER_ID, "demo-user-1");
         input.put(AfterSalesAgentState.SESSION_ID, "session-1");
@@ -231,8 +205,7 @@ public class MysqlAfterSalesPersistenceIT {
         Assertions.assertEquals(1, retryDispatcher.dispatchBatch(10, dispatchAt.plusSeconds(3)).delivered());
         Assertions.assertEquals(2, publishAttempts.get());
 
-        assertRowCount(jdbc, "agent_run", 1);
-        assertRowCount(jdbc, "agent_step", 1);
+        assertRowCount(jdbc, "agent_checkpoint", 1);
         assertRowCount(jdbc, "agent_turn", 1);
         assertRowCount(jdbc, "demo_order", 3);
         assertRowCount(jdbc, "after_sales_case", 1);
@@ -252,13 +225,15 @@ public class MysqlAfterSalesPersistenceIT {
     }
 
     private SpringStateMachineAdapter graph(MysqlDataSource dataSource,
-                                            AfterSalesRepository repository) throws Exception {
+                                             AfterSalesRepository repository,
+                                             CheckpointRepository checkpointRepository) throws Exception {
         return new SpringStateMachineAdapter(
                 new UnusedToolPort(),
                 repository,
                 new RefundPlanningAgent(null),
                 new RefundInformationGatheringPolicy(),
-                null);
+                null,
+                checkpointRepository);
     }
 
     private SqlSessionTemplate sqlSessionTemplate(MysqlDataSource dataSource) throws Exception {
@@ -335,14 +310,14 @@ public class MysqlAfterSalesPersistenceIT {
     private static final class UnusedToolPort implements IAfterSalesToolPort {
         @Override
         public AfterSalesToolRequest proposeOrderQuery(String userMessage, String userId, String sessionId,
-                                                       String orderIdHint, String refundReason, String correction) {
+                                                        String orderIdHint, String refundReason, String correction) {
             throw new UnsupportedOperationException();
         }
 
         @Override
         public AfterSalesToolResult executeOrderQuery(AfterSalesToolRequest request,
-                                                      String userId,
-                                                      String userMessage) {
+                                                       String userId,
+                                                       String userMessage) {
             throw new UnsupportedOperationException();
         }
     }

@@ -3,9 +3,12 @@ package cn.ethan.ai.test.domain;
 import cn.ethan.ai.domain.agent.model.AfterSalesAgentState;
 import cn.ethan.ai.domain.agent.model.AfterSalesOrderSnapshot;
 import cn.ethan.ai.domain.agent.model.plan.ChecklistItem;
-import cn.ethan.ai.domain.agent.model.plan.PlanStep;
+import cn.ethan.ai.domain.agent.model.plan.PlannedStep;
 import cn.ethan.ai.domain.agent.model.plan.PlanningContext;
 import cn.ethan.ai.domain.agent.model.plan.RefundPlan;
+import cn.ethan.ai.types.common.id.CaseId;
+import cn.ethan.ai.types.common.id.StepId;
+import cn.ethan.ai.types.common.id.TurnId;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AfterSalesStage;
 import cn.ethan.ai.domain.agent.policy.RefundInformationGatheringPolicy;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
@@ -42,9 +45,10 @@ public class RefundInformationGathererTest {
         RefundPlan secondPlan = queryOrderPlan("ORDER-1");
         RefundPlanningAgent planningAgent = new ReplanningAgent(firstPlan, secondPlan);
         RefundInformationGatherer gatherer = new RefundInformationGatherer(
-                new StubAfterSalesToolPort(repository), planningAgent, policy, null);
+                new StubAfterSalesToolPort(repository), planningAgent, policy, null, null);
 
-        AfterSalesAgentState result = gatherer.gather(initialState("ORDER-MISSING"));
+        AfterSalesAgentState result = gatherer.gather(initialState("ORDER-MISSING"),
+                CaseId.of("case-1"), TurnId.of("turn-1"));
 
         Assertions.assertEquals(AfterSalesStage.PENDING_APPROVAL, result.stage());
         Assertions.assertEquals(1, result.count(AfterSalesAgentState.REPLAN_COUNT));
@@ -56,7 +60,7 @@ public class RefundInformationGathererTest {
     @Test
     void shouldStopAndAskUserWhenPlanContainsAskUser() {
         RefundPlan plan = new RefundPlan(false, List.of(
-                new PlanStep("ASK_USER", "orderId", null, null, "请提供订单号")
+                new PlannedStep(StepId.of("ask-order-id"), "ASK_USER", "orderId", null, null, "请提供订单号")
         ), List.of(
                 new ChecklistItem("userId", "DONE"),
                 new ChecklistItem("orderId", "PENDING"),
@@ -64,9 +68,10 @@ public class RefundInformationGathererTest {
                 new ChecklistItem("refundReason", "DONE")
         ));
         RefundInformationGatherer gatherer = new RefundInformationGatherer(
-                new StubAfterSalesToolPort(repository), new FixedPlanAgent(plan), policy, null);
+                new StubAfterSalesToolPort(repository), new FixedPlanAgent(plan), policy, null, null);
 
-        AfterSalesAgentState result = gatherer.gather(initialState(null));
+        AfterSalesAgentState result = gatherer.gather(initialState(null),
+                CaseId.of("case-1"), TurnId.of("turn-1"));
 
         Assertions.assertEquals(AfterSalesStage.INTAKE, result.stage());
         Assertions.assertTrue(result.flag(AfterSalesAgentState.NEED_USER_INPUT));
@@ -78,9 +83,10 @@ public class RefundInformationGathererTest {
     void shouldRejectWhenRePlanAttemptsExceedMax() {
         RefundPlan plan = queryOrderPlan("ORDER-MISSING");
         RefundInformationGatherer gatherer = new RefundInformationGatherer(
-                new StubAfterSalesToolPort(repository), new FixedPlanAgent(plan), policy, null);
+                new StubAfterSalesToolPort(repository), new FixedPlanAgent(plan), policy, null, null);
 
-        AfterSalesAgentState result = gatherer.gather(initialState("ORDER-MISSING"));
+        AfterSalesAgentState result = gatherer.gather(initialState("ORDER-MISSING"),
+                CaseId.of("case-1"), TurnId.of("turn-1"));
 
         Assertions.assertEquals(AfterSalesStage.REJECTED, result.stage());
         Assertions.assertEquals("REPLAN_BUDGET_EXHAUSTED", result.text(AfterSalesAgentState.TERMINAL_REASON));
@@ -92,9 +98,10 @@ public class RefundInformationGathererTest {
         RefundPlan firstPlan = queryOrderPlan("ORDER-MISSING");
         CapturingAgent agent = new CapturingAgent(firstPlan);
         RefundInformationGatherer gatherer = new RefundInformationGatherer(
-                new StubAfterSalesToolPort(repository), agent, policy, null);
+                new StubAfterSalesToolPort(repository), agent, policy, null, null);
 
-        gatherer.gather(initialState("ORDER-MISSING"));
+        gatherer.gather(initialState("ORDER-MISSING"),
+                CaseId.of("case-1"), TurnId.of("turn-1"));
 
         Assertions.assertFalse(agent.contexts.isEmpty());
         PlanningContext replanContext = agent.contexts.get(agent.contexts.size() - 1);
@@ -115,7 +122,7 @@ public class RefundInformationGathererTest {
 
     private RefundPlan queryOrderPlan(String orderId) {
         return new RefundPlan(false, List.of(
-                new PlanStep("TOOL_CALL", "orderStatus", "query_order",
+                new PlannedStep(StepId.of("query-order-" + orderId), "TOOL_CALL", "orderStatus", "query_order",
                         Map.of("orderId", orderId), null)
         ), List.of(
                 new ChecklistItem("userId", "DONE"),

@@ -90,7 +90,6 @@ public class AfterSalesAgentController {
         return new AfterSalesRunResponseDTO(
                 view.caseIdValue(),
                 null,
-                null,
                 view.stage(),
                 view.checkpointId(),
                 view.nextNode(),
@@ -117,7 +116,6 @@ public class AfterSalesAgentController {
         return new AfterSalesRunResponseDTO(
                 result.caseIdValue(),
                 result.turnIdValue(),
-                result.runIdValue(),
                 result.stage(),
                 result.checkpointId(),
                 result.nextNode(),

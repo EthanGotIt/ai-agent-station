@@ -1,13 +1,11 @@
 package cn.ethan.ai.domain.agent.model.valobj.enums;
 
 /**
- * 智能体运行状态
+ * Turn 执行状态。
  */
-public enum AgentRunStatus {
-
+public enum AgentTurnStatus {
     RUNNING,
     SUCCESS,
     FAILED,
     CANCELLED
-
 }

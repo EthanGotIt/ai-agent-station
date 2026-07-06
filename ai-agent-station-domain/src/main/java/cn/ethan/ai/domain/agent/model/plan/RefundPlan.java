@@ -14,7 +14,7 @@ import java.util.List;
  */
 public record RefundPlan(
         boolean readyToEvaluate,
-        List<PlanStep> steps,
+        List<PlannedStep> steps,
         List<ChecklistItem> checklist
 ) {
 }

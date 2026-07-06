@@ -1,6 +1,5 @@
 package cn.ethan.ai.domain.agent.service;
 
-import cn.ethan.ai.domain.agent.exception.AfterSalesResumeConflictException;
 import cn.ethan.ai.domain.agent.model.AfterSalesCaseView;
 import cn.ethan.ai.domain.agent.model.AfterSalesResumeCommand;
 import cn.ethan.ai.domain.agent.model.AfterSalesRunCommand;
@@ -48,7 +47,7 @@ public final class AfterSalesAgentService {
     public Optional<AfterSalesCaseView> query(String caseId, String requesterId, String requesterRole) {
         Optional<AfterSalesCaseView> result = query(caseId);
         if (result.isPresent() && !authorizationService.canAccess(result.get(), requesterId, requesterRole)) {
-            throw new SecurityException("无权访问该售后Case");
+            throw new SecurityException("售后Case 无权访问");
         }
         return result;
     }
@@ -60,8 +59,9 @@ public final class AfterSalesAgentService {
     public boolean cancel(String caseId, String requesterId, String reason) {
         AfterSalesCaseView current = repository.findCase(caseId)
                 .orElseThrow(() -> new IllegalArgumentException("售后Case不存在，caseId=" + caseId));
+        assert current.userIdValue() != null;
         if (!current.userIdValue().equals(requesterId)) {
-            throw new SecurityException("只有Case所有者可以取消");
+            throw new SecurityException("只有Case 所有者可以取消");
         }
         return cancel(caseId, reason);
     }

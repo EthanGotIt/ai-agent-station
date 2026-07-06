@@ -13,6 +13,7 @@ import cn.ethan.ai.domain.agent.port.driven.IAfterSalesRepository;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
 import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
 import cn.ethan.ai.infrastructure.adapter.statemachine.SpringStateMachineAdapter;
+import cn.ethan.ai.test.fixture.InMemoryCheckpointRepository;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import org.junit.jupiter.api.Assertions;
@@ -42,7 +43,8 @@ public class AfterSalesTrajectoryEvaluationTest {
                 new InMemoryRepository(),
                 new RefundPlanningAgent(null),
                 new RefundInformationGatheringPolicy(),
-                null);
+                null,
+                new InMemoryCheckpointRepository());
     }
 
     @Test
@@ -97,10 +99,6 @@ public class AfterSalesTrajectoryEvaluationTest {
         putNumber(testCase, "repairCount", value -> input.put(AfterSalesAgentState.REPAIR_COUNT, value));
         putNumber(testCase, "retryCount", value -> input.put(AfterSalesAgentState.RETRY_COUNT, value));
         putNumber(testCase, "reloadCount", value -> input.put(AfterSalesAgentState.RELOAD_COUNT, value));
-        if (testCase.containsKey("sameFailureRepeated")) {
-            input.put(AfterSalesAgentState.SAME_FAILURE_REPEATED,
-                    testCase.getBooleanValue("sameFailureRepeated"));
-        }
         return input;
     }
 

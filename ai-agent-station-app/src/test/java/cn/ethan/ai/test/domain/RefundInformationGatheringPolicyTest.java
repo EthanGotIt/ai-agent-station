@@ -1,9 +1,10 @@
 package cn.ethan.ai.test.domain;
 
 import cn.ethan.ai.domain.agent.model.plan.ChecklistItem;
-import cn.ethan.ai.domain.agent.model.plan.PlanStep;
+import cn.ethan.ai.domain.agent.model.plan.PlannedStep;
 import cn.ethan.ai.domain.agent.model.plan.PlanningContext;
 import cn.ethan.ai.domain.agent.model.plan.RefundPlan;
+import cn.ethan.ai.types.common.id.StepId;
 import cn.ethan.ai.domain.agent.policy.RefundInformationGatheringPolicy;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -33,7 +34,7 @@ public class RefundInformationGatheringPolicyTest {
     @Test
     void shouldRejectUnknownAction() {
         RefundPlan plan = new RefundPlan(false, List.of(
-                new PlanStep("REFUND", "orderId", null, null, null)
+                new PlannedStep(StepId.of("refund-step"), "REFUND", "orderId", null, null, null)
         ), List.of());
         PlanningContext context = new PlanningContext("u1", "s1", "msg", null, null, null, null, null, 0, 0, null, null);
 
@@ -46,7 +47,7 @@ public class RefundInformationGatheringPolicyTest {
     @Test
     void shouldRejectDisallowedTool() {
         RefundPlan plan = new RefundPlan(false, List.of(
-                new PlanStep("TOOL_CALL", "orderId", "refund_order", Map.of("orderId", "o1"), null)
+                new PlannedStep(StepId.of("refund-order-step"), "TOOL_CALL", "orderId", "refund_order", Map.of("orderId", "o1"), null)
         ), List.of());
         PlanningContext context = new PlanningContext("u1", "s1", "msg", null, null, null, null, null, 0, 0, null, null);
 
@@ -59,7 +60,7 @@ public class RefundInformationGatheringPolicyTest {
     @Test
     void shouldRejectQueryOrderWithoutOrderId() {
         RefundPlan plan = new RefundPlan(false, List.of(
-                new PlanStep("TOOL_CALL", "orderStatus", "query_order", Map.of(), null)
+                new PlannedStep(StepId.of("query-no-order-id"), "TOOL_CALL", "orderStatus", "query_order", Map.of(), null)
         ), List.of());
         PlanningContext context = new PlanningContext("u1", "s1", "msg", null, null, null, null, null, 0, 0, null, null);
 
@@ -72,7 +73,7 @@ public class RefundInformationGatheringPolicyTest {
     @Test
     void shouldRejectAskingForAlreadyPresentField() {
         RefundPlan plan = new RefundPlan(false, List.of(
-                new PlanStep("ASK_USER", "orderId", null, null, "请提供订单号")
+                new PlannedStep(StepId.of("ask-order-id"), "ASK_USER", "orderId", null, null, "请提供订单号")
         ), List.of());
         PlanningContext context = new PlanningContext("u1", "s1", "msg", "o1", null, null, null, null, 0, 0, null, null);
 
@@ -85,7 +86,7 @@ public class RefundInformationGatheringPolicyTest {
     @Test
     void shouldAllowReAskingWhenRetrying() {
         RefundPlan plan = new RefundPlan(false, List.of(
-                new PlanStep("ASK_USER", "orderId", null, null, "请重新确认订单号")
+                new PlannedStep(StepId.of("ask-order-id-retry"), "ASK_USER", "orderId", null, null, "请重新确认订单号")
         ), List.of());
         PlanningContext context = new PlanningContext("u1", "s1", "msg", "o1", null, null, null, "ORDER_NOT_FOUND", 1, 0, null, null);
 
@@ -97,7 +98,7 @@ public class RefundInformationGatheringPolicyTest {
     @Test
     void shouldAllowValidQueryOrderStep() {
         RefundPlan plan = new RefundPlan(false, List.of(
-                new PlanStep("TOOL_CALL", "orderStatus", "query_order", Map.of("orderId", "o1"), null)
+                new PlannedStep(StepId.of("query-order"), "TOOL_CALL", "orderStatus", "query_order", Map.of("orderId", "o1"), null)
         ), List.of());
         PlanningContext context = new PlanningContext("u1", "s1", "msg", "o1", null, null, null, null, 0, 0, null, null);
 

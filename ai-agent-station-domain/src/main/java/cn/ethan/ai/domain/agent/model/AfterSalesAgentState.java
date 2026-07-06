@@ -1,12 +1,14 @@
 package cn.ethan.ai.domain.agent.model;
 
 import cn.ethan.ai.domain.agent.model.valobj.enums.AfterSalesStage;
-import cn.ethan.ai.domain.agent.model.valobj.enums.ToolErrorType;
 
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 售后Agent状态。
@@ -14,7 +16,6 @@ import java.util.Map;
  */
 public record AfterSalesAgentState(Map<String, Object> data) {
 
-    public static final String RUN_ID = "runId";
     public static final String TURN_ID = "turnId";
     public static final String CASE_ID = "caseId";
     public static final String SESSION_ID = "sessionId";
@@ -41,8 +42,12 @@ public record AfterSalesAgentState(Map<String, Object> data) {
     public static final String REPLAN_COUNT = "replanCount";
     public static final String LAST_ERROR_TYPE = "lastErrorType";
     public static final String LAST_ERROR_MESSAGE = "lastErrorMessage";
-    public static final String SAME_FAILURE_REPEATED = "sameFailureRepeated";
     public static final String CHECKLIST = "checklist";
+
+    // Plan-and-Execute 步骤级进度跟踪
+    public static final String EXECUTED_STEP_KEYS = "executedStepKeys";
+    public static final String CURRENT_STEP_KEY = "currentStepKey";
+    public static final String CURRENT_STEP_ATTEMPT_COUNT = "currentStepAttemptCount";
 
     public AfterSalesAgentState(Map<String, Object> data) {
         this.data = data == null ? new LinkedHashMap<>() : new LinkedHashMap<>(data);
@@ -86,13 +91,21 @@ public record AfterSalesAgentState(Map<String, Object> data) {
         return enumValue(STAGE, AfterSalesStage.class, AfterSalesStage.INTAKE);
     }
 
-    public ToolErrorType errorType() {
-        return enumValue(ERROR_TYPE, ToolErrorType.class, null);
-    }
-
     public boolean hasText(String key) {
         String value = text(key);
         return value != null && !value.isBlank();
+    }
+
+    @SuppressWarnings("unchecked")
+    public Set<String> executedStepKeys() {
+        Object value = data.get(EXECUTED_STEP_KEYS);
+        if (value instanceof Set<?> set) {
+            return (Set<String>) set;
+        }
+        if (value instanceof Collection<?> collection) {
+            return collection.stream().map(String::valueOf).collect(HashSet::new, HashSet::add, HashSet::addAll);
+        }
+        return new HashSet<>();
     }
 
     private <E extends Enum<E>> E enumValue(String key, Class<E> type, E fallback) {

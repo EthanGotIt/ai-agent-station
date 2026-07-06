@@ -30,8 +30,8 @@ public final class AfterSalesCaseLifecycleService {
     private final AfterSalesAuditService auditService;
 
     public AfterSalesCaseLifecycleService(IAfterSalesStateMachine stateMachine,
-                                          IAfterSalesRepository repository,
-                                          AfterSalesAuditService auditService) {
+                                           IAfterSalesRepository repository,
+                                           AfterSalesAuditService auditService) {
         this.stateMachine = stateMachine;
         this.repository = repository;
         this.auditService = auditService;
@@ -41,17 +41,15 @@ public final class AfterSalesCaseLifecycleService {
         validateStart(command);
         String caseId = UUID.randomUUID().toString();
         String turnId = UUID.randomUUID().toString();
-        String runId = UUID.randomUUID().toString();
         LocalDateTime startedAt = LocalDateTime.now();
 
         repository.createCase(caseId, command.userIdValue(), command.sessionIdValue(), command.message());
-        auditService.beginExecution(caseId, turnId, runId, command.sessionIdValue(), command.userIdValue(), "START",
+        auditService.beginExecution(caseId, turnId, command.sessionIdValue(), command.userIdValue(), "START",
                 command.message(), null, startedAt);
 
         Map<String, Object> input = new LinkedHashMap<>();
         input.put(AfterSalesAgentState.CASE_ID, caseId);
         input.put(AfterSalesAgentState.TURN_ID, turnId);
-        input.put(AfterSalesAgentState.RUN_ID, runId);
         input.put(AfterSalesAgentState.USER_ID, command.userIdValue());
         input.put(AfterSalesAgentState.SESSION_ID, command.sessionIdValue());
         input.put(AfterSalesAgentState.USER_MESSAGE, command.message());
@@ -60,9 +58,9 @@ public final class AfterSalesCaseLifecycleService {
 
         try {
             AfterSalesAgentState state = stateMachine.execute(input, caseId);
-            return persistAndMap(state, caseId, turnId, runId);
+            return persistAndMap(state, caseId, turnId);
         } catch (RuntimeException error) {
-            auditService.failExecution(turnId, runId, error);
+            auditService.failExecution(turnId, error);
             throw error;
         }
     }
@@ -79,22 +77,20 @@ public final class AfterSalesCaseLifecycleService {
         }
 
         String turnId = UUID.randomUUID().toString();
-        String runId = UUID.randomUUID().toString();
         LocalDateTime startedAt = LocalDateTime.now();
-        if (!repository.tryAcquireResume(caseId, currentCheckpointId, runId)) {
-            throw new AfterSalesResumeConflictException("checkpoint 正在被其他Run恢复");
+        if (!repository.tryAcquireResume(caseId, currentCheckpointId, turnId)) {
+            throw new AfterSalesResumeConflictException("checkpoint 正在被其他Turn恢复");
         }
         try {
-            auditService.beginExecution(caseId, turnId, runId, caseView.sessionIdValue(), command.actorIdValue(),
+            auditService.beginExecution(caseId, turnId, caseView.sessionIdValue(), command.actorIdValue(),
                     command.action().name(), resumeInputSummary(command), currentCheckpointId, startedAt);
             Map<String, Object> update = resumeUpdate(current.state(), command);
             update.put(AfterSalesAgentState.TURN_ID, turnId);
-            update.put(AfterSalesAgentState.RUN_ID, runId);
             AfterSalesAgentState state = stateMachine.resume(update, caseId, command.checkpointId());
-            return persistAndMap(state, caseId, turnId, runId);
+            return persistAndMap(state, caseId, turnId);
         } catch (RuntimeException error) {
-            repository.releaseResume(caseId, runId);
-            auditService.failExecution(turnId, runId, error);
+            repository.releaseResume(caseId, turnId);
+            auditService.failExecution(turnId, error);
             throw error;
         }
     }
@@ -116,9 +112,8 @@ public final class AfterSalesCaseLifecycleService {
     }
 
     private AfterSalesRunResult persistAndMap(AfterSalesAgentState state,
-                                              String caseId,
-                                              String turnId,
-                                              String runId) {
+                                               String caseId,
+                                               String turnId) {
         AfterSalesAgentStateSnapshot snapshot = stateMachine.currentSnapshot(caseId).orElse(null);
         String checkpointId = snapshot == null ? null : snapshot.checkpointId();
         String nextNode = snapshot == null ? null : snapshot.nextNode();
@@ -134,7 +129,7 @@ public final class AfterSalesCaseLifecycleService {
                 state.text(AfterSalesAgentState.COMMAND_ID)
         );
         repository.updateCase(view);
-        auditService.completeExecution(state, turnId, runId, checkpointId);
+        auditService.completeExecution(state, turnId, checkpointId);
 
         String waitingReason = switch (state.stage()) {
             case INTAKE -> state.flag(AfterSalesAgentState.NEED_USER_INPUT)
@@ -146,7 +141,6 @@ public final class AfterSalesCaseLifecycleService {
         return AfterSalesRunResult.of(
                 caseId,
                 turnId,
-                runId,
                 state.stage().name(),
                 checkpointId,
                 nextNode,

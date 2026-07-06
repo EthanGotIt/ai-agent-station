@@ -8,9 +8,10 @@ import cn.ethan.ai.domain.agent.model.AfterSalesResumeCommand;
 import cn.ethan.ai.domain.agent.model.AfterSalesRunCommand;
 import cn.ethan.ai.domain.agent.model.AfterSalesRunResult;
 import cn.ethan.ai.domain.agent.model.plan.ChecklistItem;
-import cn.ethan.ai.domain.agent.model.plan.PlanStep;
+import cn.ethan.ai.domain.agent.model.plan.PlannedStep;
 import cn.ethan.ai.domain.agent.model.plan.PlanningContext;
 import cn.ethan.ai.domain.agent.model.plan.RefundPlan;
+import cn.ethan.ai.types.common.id.StepId;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AfterSalesStage;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesStateMachine;
 import cn.ethan.ai.domain.agent.service.AfterSalesAgentService;
@@ -19,6 +20,7 @@ import cn.ethan.ai.domain.agent.policy.RefundInformationGatheringPolicy;
 import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
 import cn.ethan.ai.infrastructure.adapter.statemachine.SpringStateMachineAdapter;
 import cn.ethan.ai.test.fixture.InMemoryAfterSalesRepository;
+import cn.ethan.ai.test.fixture.InMemoryCheckpointRepository;
 import cn.ethan.ai.test.fixture.StubAfterSalesToolPort;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,11 +37,13 @@ import java.util.concurrent.Future;
 public class AfterSalesAgentServiceTest {
 
     private InMemoryAfterSalesRepository repository;
+    private InMemoryCheckpointRepository checkpointRepository;
     private AfterSalesAgentService service;
 
     @BeforeEach
     void setUp() {
         repository = new InMemoryAfterSalesRepository();
+        checkpointRepository = new InMemoryCheckpointRepository();
         repository.orders.put("ORDER-1", new AfterSalesOrderSnapshot("ORDER-1", "user-1", "PAID", null));
         repository.orders.put("ORDER-2", new AfterSalesOrderSnapshot("ORDER-2", "user-2", "PAID", null));
         IAfterSalesStateMachine stateMachine = new SpringStateMachineAdapter(
@@ -47,7 +51,8 @@ public class AfterSalesAgentServiceTest {
                 repository,
                 new RefundPlanningAgent(null),
                 new RefundInformationGatheringPolicy(),
-                null);
+                null,
+                checkpointRepository);
         service = new AfterSalesAgentService(stateMachine, repository, new AfterSalesAuditService(null));
     }
 
@@ -191,11 +196,11 @@ public class AfterSalesAgentServiceTest {
     @Test
     void shouldSucceedAfterOneRePlan() {
         RefundPlan firstPlan = new RefundPlan(false, List.of(
-                new PlanStep("TOOL_CALL", "orderStatus", "query_order",
+                new PlannedStep(StepId.of("query-order-missing"), "TOOL_CALL", "orderStatus", "query_order",
                         Map.of("orderId", "ORDER-MISSING"), null)
         ), defaultChecklist());
         RefundPlan secondPlan = new RefundPlan(false, List.of(
-                new PlanStep("TOOL_CALL", "orderStatus", "query_order",
+                new PlannedStep(StepId.of("query-order-1"), "TOOL_CALL", "orderStatus", "query_order",
                         Map.of("orderId", "ORDER-1"), null)
         ), defaultChecklist());
 
@@ -204,7 +209,8 @@ public class AfterSalesAgentServiceTest {
                 repository,
                 new ReplanningAgent(firstPlan, secondPlan),
                 new RefundInformationGatheringPolicy(),
-                null);
+                null,
+                checkpointRepository);
         service = new AfterSalesAgentService(stateMachine, repository, new AfterSalesAuditService(null));
 
         AfterSalesRunResult waiting = service.start(AfterSalesRunCommand.of(

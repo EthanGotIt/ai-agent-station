@@ -19,31 +19,36 @@ PENDING_APPROVAL
   - `ASK_USER` → 在 `INTAKE` 阶段设置 `NEED_USER_INPUT` interrupt；
   - `TOOL_CALL(query_order)` → 调用 `SpringAiAfterSalesToolAdapter` 查询订单；
   - 工具失败或信息仍不完整时触发 RePlan，最多 3 次，超过则进入 `REJECTED`。
+- `SpringAiAfterSalesToolAdapter` 的意图解析/工具调用阶段使用 Spring AI `ChatModel`（OpenAI 兼容协议）直接调用，而不是 `ChatClient.tools()`：在 Spring AI 2.0.0 配合 DeepSeek OpenAI 兼容端点时，`ChatClient.prompt().tools(...)` 未正确发送工具定义，导致模型以普通文本返回函数调用；`ChatModel.call(Prompt)` + `OpenAiChatOptions.toolCallbacks(...)` 可稳定返回 `tool_calls`。
 - `RefundInformationGatheringPolicy` 硬拦截 Plan：动作白名单仅限 `ASK_USER` / `TOOL_CALL`，工具仅限 `query_order`，禁止重复询问已存在字段。
 - 信息完整后由 `AfterSalesRefundEligibilityPolicy` 判定资格，进入 `PENDING_APPROVAL`；进入审批时 `TodoWriteTool` 生成退款检查清单并写入业务状态。
 - 状态机只保留 `INTAKE / PENDING_APPROVAL / COMPLETED / REJECTED` 四个业务状态，由 Spring State Machine 维护内存 checkpoint 和 interrupt/resume 语义。
 - `userId` 来自 HTTP 身份头并通过 `ToolContext` 传给工具，不进入模型参数；模型只能生成 `orderId`。
 - resume 必须携带当前 checkpoint ID；旧 checkpoint 或并发恢复返回 HTTP 409。
 - 退款使用 `caseId:REFUND` 幂等键：事务内准备 Command，事务外调用退款适配器，再在事务内确认 Command、Case 和 Outbox；宕机重放仍复用同一幂等键。
-- `after_sales_case -> agent_turn -> agent_run -> agent_step` 分别记录业务流程、外部交互、状态机运行尝试和 Plan/Tool/Policy 执行记录；checkpoint 由 `SpringStateMachineAdapter` 在内存中维护，业务恢复通过 `after_sales_case` 业务快照实现。
+- `after_sales_case -> agent_turn -> agent_checkpoint` 分别记录业务流程、状态机运行尝试和 Plan/Tool/Policy 执行快照；业务恢复通过 `after_sales_case` 业务快照与持久化 checkpoint 实现。
 - `caseId` 同时作为 Spring State Machine 的状态机标识（thread key），resume 使用数据库条件租约防止同一 checkpoint 被并发消费。
 - Outbox 使用领取租约、指数退避和最大重试，Inbox 以 `eventId + consumerName` 保证消费幂等。
 
 ## 配置
 
-开发环境默认状态机使用内存 checkpoint，避免默认启动时污染主库核心表；需要验证跨进程恢复时依赖 `after_sales_case` 业务快照：
+开发环境默认状态机使用内存 checkpoint，避免默认启动时污染主库核心表；需要验证跨进程恢复时依赖 `after_sales_case` 业务快照。
 
-```yaml
-ai-agent:
-  after-sales:
-    model-bean-name: ""
-    commerce-adapter: local
+模型提供方已切换为 **DeepSeek**（OpenAI 兼容协议），并在 `ai-agent-station-app/.env` 中配置：
+
+```properties
+SPRING_AI_MODEL_CHAT=openai
+OPENAI_BASE_URL=https://api.deepseek.com/v1
+OPENAI_API_KEY=<你的 DeepSeek API key>
+OPENAI_MODEL=deepseek-v4-pro
+AFTER_SALES_EXECUTION_MODEL=deepseek-v4-flash
 ```
 
-- `AI_AGENT_AFTER_SALES_MODEL_BEAN_NAME`：显式指定动态注册的 `ChatModel` Bean；为空时选择可用模型，无模型时仅对明确订单号使用确定性降级。
+- `OPENAI_MODEL=deepseek-v4-pro`：Plan / RePlan 阶段模型，由 `RefundPlanningAgent` 使用。
+- `AFTER_SALES_EXECUTION_MODEL=deepseek-v4-flash`：Execute 阶段模型，由 `SpringAiAfterSalesToolAdapter` 用于意图解析与工具调用。
 - `AI_AGENT_AFTER_SALES_COMMERCE_ADAPTER=local|http`：本地演示订单或真实 HTTP 订单/退款适配器。
 
-执行 `docs/dev-ops/mysql/sql/ai-agent-station.sql`，一次创建 8 张项目表。
+执行 `docs/dev-ops/mysql/sql/ai-agent-station.sql`，一次创建 7 张项目表。
 
 项目表均使用 MyBatis Mapper。checkpoint 由 `SpringStateMachineAdapter` 在内存中维护，业务恢复所需的持久化状态通过 `after_sales_case` 业务快照保存。
 
@@ -94,7 +99,7 @@ $env:JAVA_HOME='D:\Environment\JDK17'
 mvn -pl ai-agent-station-app -am -DskipTests=false "-Dtest=AfterSalesGraphTest,AfterSalesAgentServiceTest,SpringAiAfterSalesToolAdapterTest,AfterSalesTrajectoryEvaluationTest" -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-八张表建表与读写、业务快照恢复、跨实例 resume、幂等 Command、Outbox 重试与 Inbox 幂等消费集成测试：
+7 张表建表与读写、业务快照恢复、跨实例 resume、幂等 Command、Outbox 重试与 Inbox 幂等消费集成测试：
 
 ```powershell
 $env:JAVA_HOME='D:\Environment\JDK17'

@@ -3,10 +3,12 @@ package cn.ethan.ai.types.common.id;
 import lombok.NonNull;
 
 import java.util.Objects;
-import java.util.UUID;
 
 /**
- * 一次用户补充或人工审批交互的标识。
+ * 一次外部输入驱动的 Plan-and-Execute 循环标识。
+ *
+ * <p>一个 Case 可包含多个 Turn；每个 Turn 内部可执行多步 PlannedStep，
+ * 并允许在同 Turn 内进行步骤重试与 RePlan，直到返回终态或等待外部输入。</p>
  */
 public record TurnId(String value) {
 
@@ -14,10 +16,6 @@ public record TurnId(String value) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("TurnId cannot be blank");
         }
-    }
-
-    public static TurnId generate() {
-        return new TurnId(UUID.randomUUID().toString());
     }
 
     public static TurnId of(String value) {

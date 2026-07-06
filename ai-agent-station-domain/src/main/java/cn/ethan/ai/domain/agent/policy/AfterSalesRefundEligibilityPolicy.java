@@ -23,21 +23,23 @@ public final class AfterSalesRefundEligibilityPolicy {
         }
 
         String status = normalize(request.orderStatus());
-        if ("REFUNDED".equals(status)) {
-            return new RefundDecision(RefundOutcome.ALREADY_COMPLETED, "ALREADY_REFUNDED");
-        }
-        if ("PAID".equals(status) || "PROCESSING".equals(status)) {
-            return new RefundDecision(RefundOutcome.ELIGIBLE, "REFUND_REQUIRES_APPROVAL");
-        }
-        if ("DELIVERED".equals(status)) {
-            String reason = normalize(request.refundReason());
-            boolean withinWindow = request.daysSinceDelivery() != null
-                    && request.daysSinceDelivery() >= 0
-                    && request.daysSinceDelivery() <= 7;
-            if (withinWindow && DELIVERED_REFUND_REASONS.contains(reason)) {
+        switch (status) {
+            case "REFUNDED" -> {
+                return new RefundDecision(RefundOutcome.ALREADY_COMPLETED, "ALREADY_REFUNDED");
+            }
+            case "PAID", "PROCESSING" -> {
                 return new RefundDecision(RefundOutcome.ELIGIBLE, "REFUND_REQUIRES_APPROVAL");
             }
-            return new RefundDecision(RefundOutcome.REJECTED, "DELIVERED_REFUND_RULE_NOT_MET");
+            case "DELIVERED" -> {
+                String reason = normalize(request.refundReason());
+                boolean withinWindow = request.daysSinceDelivery() != null
+                        && request.daysSinceDelivery() >= 0
+                        && request.daysSinceDelivery() <= 7;
+                if (withinWindow && DELIVERED_REFUND_REASONS.contains(reason)) {
+                    return new RefundDecision(RefundOutcome.ELIGIBLE, "REFUND_REQUIRES_APPROVAL");
+                }
+                return new RefundDecision(RefundOutcome.REJECTED, "DELIVERED_REFUND_RULE_NOT_MET");
+            }
         }
         return new RefundDecision(RefundOutcome.REJECTED, "ORDER_STATUS_NOT_REFUNDABLE");
     }

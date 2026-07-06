@@ -1,14 +1,14 @@
 # 售后 Agent 真实模型冻结轨迹评估
 
-- 执行时间：2026-07-03（Asia/Shanghai）
+- 执行时间：2026-07-07（Asia/Shanghai）
 - 数据集：`after-sales-trajectory-v1.jsonl`
-- 模型：由本地 `OPENAI_MODEL` 配置提供，报告不记录凭据
+- 模型：Plan/Replan 使用 `deepseek-v4-pro`，Execute 使用 `deepseek-v4-flash`，由本地 `.env` 配置提供，报告不记录凭据
 - 真实模型调用：30 次
 - 模型规划契约通过：30/30（100%）
 - Java 治理路由通过：30/30（100%）
-- 平均延迟：4554 ms
-- P50 延迟：4474 ms
-- P95 延迟：6862 ms
+- 平均延迟：1239 ms
+- P50 延迟：1114 ms
+- P95 延迟：2081 ms
 - 失败：0
 
 评估同时验证两层边界：
@@ -23,3 +23,5 @@ mvn verify -pl ai-agent-station-app -am "-DskipTests=false" `
   "-Dit.test=AfterSalesLiveModelEvaluationIT" `
   "-Dlive.after-sales.evaluation.enabled=true"
 ```
+
+> 实现注意：`SpringAiAfterSalesToolAdapter` 的执行阶段使用 `ChatModel.call(Prompt)` + `OpenAiChatOptions.toolCallbacks(...)` 触发工具调用。Spring AI 2.0.0 的 `ChatClient.prompt().tools(...)` 在 DeepSeek OpenAI 兼容端点下未能正确发送工具定义，因此工具调用链路不经过 `ChatClient`。

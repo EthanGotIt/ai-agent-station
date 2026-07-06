@@ -1,6 +1,6 @@
 package cn.ethan.ai.domain.agent.policy;
 
-import cn.ethan.ai.domain.agent.model.plan.PlanStep;
+import cn.ethan.ai.domain.agent.model.plan.PlannedStep;
 import cn.ethan.ai.domain.agent.model.plan.PlanningContext;
 import cn.ethan.ai.domain.agent.model.plan.RefundPlan;
 
@@ -29,7 +29,7 @@ public final class RefundInformationGatheringPolicy {
             }
             return ValidationResult.invalid("PLAN_EMPTY", "非评估状态下计划步骤不能为空");
         }
-        for (PlanStep step : plan.steps()) {
+        for (PlannedStep step : plan.steps()) {
             ValidationResult stepValidation = validateStep(step);
             if (!stepValidation.ok()) {
                 return stepValidation;
@@ -42,7 +42,7 @@ public final class RefundInformationGatheringPolicy {
         return ValidationResult.valid();
     }
 
-    private ValidationResult validateStep(PlanStep step) {
+    private ValidationResult validateStep(PlannedStep step) {
         String action = step.action();
         if (action == null || !ALLOWED_ACTIONS.contains(action)) {
             return ValidationResult.invalid("ACTION_NOT_ALLOWED",
@@ -75,7 +75,7 @@ public final class RefundInformationGatheringPolicy {
             return ValidationResult.valid();
         }
         Set<String> presentFields = presentFields(context);
-        for (PlanStep step : plan.steps()) {
+        for (PlannedStep step : plan.steps()) {
             if (ACTION_ASK_USER.equals(step.action())
                     && step.targetField() != null
                     && presentFields.contains(step.targetField())) {

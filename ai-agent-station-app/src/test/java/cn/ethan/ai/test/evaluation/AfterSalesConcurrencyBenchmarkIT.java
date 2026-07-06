@@ -13,6 +13,7 @@ import cn.ethan.ai.domain.agent.port.driven.IAfterSalesRepository;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
 import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
 import cn.ethan.ai.infrastructure.adapter.statemachine.SpringStateMachineAdapter;
+import cn.ethan.ai.test.fixture.InMemoryCheckpointRepository;
 import cn.ethan.ai.test.support.DotenvConditions;
 import cn.ethan.ai.test.support.DotenvExtension;
 import com.alibaba.fastjson.JSON;
@@ -64,7 +65,8 @@ public class AfterSalesConcurrencyBenchmarkIT {
                     new NoOpRepository(),
                     new RefundPlanningAgent(null),
                     new RefundInformationGatheringPolicy(),
-                    null);
+                    null,
+                    new InMemoryCheckpointRepository());
             for (int index = 0; index < 20; index++) {
                 execute(runtime, -index - 1, errors);
             }
@@ -111,7 +113,6 @@ public class AfterSalesConcurrencyBenchmarkIT {
         try {
             AfterSalesAgentState state = runtime.execute(Map.of(
                     AfterSalesAgentState.CASE_ID, UUID.randomUUID().toString(),
-                    AfterSalesAgentState.RUN_ID, UUID.randomUUID().toString(),
                     AfterSalesAgentState.USER_ID, "benchmark-user",
                     AfterSalesAgentState.SESSION_ID, "session-benchmark-user",
                     AfterSalesAgentState.USER_MESSAGE, "退款订单 " + orderId,
