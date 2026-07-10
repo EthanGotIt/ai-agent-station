@@ -24,14 +24,12 @@ spring:
         jdbc:
           initialize-schema: never
 
-after-sales:
-  execution-model: ${AFTER_SALES_EXECUTION_MODEL:deepseek-v4-flash}
-
 ai-agent:
   after-sales:
     commerce-adapter: ${AI_AGENT_AFTER_SALES_COMMERCE_ADAPTER:local}
     commerce-base-url: ${AI_AGENT_AFTER_SALES_COMMERCE_BASE_URL:http://127.0.0.1:18080}
     commerce-timeout: ${AI_AGENT_AFTER_SALES_COMMERCE_TIMEOUT:3s}
+    evidence-tools: ${AI_AGENT_AFTER_SALES_EVIDENCE_TOOLS:query_order}
     outbox:
       scheduling-enabled: ${AI_AGENT_AFTER_SALES_OUTBOX_ENABLED:false}
       fixed-delay: ${AI_AGENT_AFTER_SALES_OUTBOX_FIXED_DELAY:1000}

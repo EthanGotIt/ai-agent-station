@@ -1,5 +1,11 @@
 package cn.ethan.ai.domain.agent.model.plan;
 
+import cn.ethan.ai.domain.agent.model.AfterSalesToolCapability;
+import cn.ethan.ai.domain.agent.model.ToolEvidence;
+
+import java.util.Map;
+import java.util.Set;
+
 /**
  * 退款规划上下文。
  *
@@ -33,6 +39,26 @@ public record PlanningContext(
         int retryCount,
         int replanCount,
         String lastErrorType,
-        String lastErrorMessage
+        String lastErrorMessage,
+        Map<String, ToolEvidence> evidence,
+        Set<AfterSalesToolCapability> availableTools
 ) {
+
+    public PlanningContext(String caseId,
+                           String userId,
+                           String sessionId,
+                           String message,
+                           String orderId,
+                           String orderStatus,
+                           String refundReason,
+                           String previousToolOutput,
+                           String previousToolError,
+                           int retryCount,
+                           int replanCount,
+                           String lastErrorType,
+                           String lastErrorMessage) {
+        this(caseId, userId, sessionId, message, orderId, orderStatus, refundReason,
+                previousToolOutput, previousToolError, retryCount, replanCount,
+                lastErrorType, lastErrorMessage, Map.of(), Set.of(AfterSalesToolCapability.QUERY_ORDER));
+    }
 }

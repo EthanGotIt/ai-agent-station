@@ -46,6 +46,23 @@ public final class AfterSalesRuntimeMetrics {
         recordDuration("after_sales.model.plan.duration", elapsedNanos, "outcome", outcome);
     }
 
+    public void recordPlanDecision(String action, String outcome, String reasonCode) {
+        increment("after_sales.plan.decision.total",
+                "action", action == null ? "none" : action,
+                "outcome", outcome == null ? "unknown" : outcome,
+                "reason", reasonCode == null ? "none" : reasonCode);
+    }
+
+    public void recordPlanFallback(String reason) {
+        increment("after_sales.plan.fallback.total", "reason", reason == null ? "unknown" : reason);
+    }
+
+    public void recordEvidenceTool(String tool, long elapsedNanos, String outcome) {
+        recordDuration("after_sales.evidence.tool.duration", elapsedNanos,
+                "tool", tool == null ? "unknown" : tool,
+                "outcome", outcome == null ? "unknown" : outcome);
+    }
+
     public void recordTool(long elapsedNanos, String outcome) {
         recordDuration("after_sales.tool.duration", elapsedNanos,
                 "outcome", outcome == null ? "unknown" : outcome);

@@ -13,8 +13,14 @@ import java.util.List;
  * @param checklist       关键字段检查清单
  */
 public record RefundPlan(
+        int schemaVersion,
         boolean readyToEvaluate,
+        List<EvidenceGap> evidenceGaps,
         List<PlannedStep> steps,
         List<ChecklistItem> checklist
 ) {
+
+    public RefundPlan(boolean readyToEvaluate, List<PlannedStep> steps, List<ChecklistItem> checklist) {
+        this(1, readyToEvaluate, List.of(), steps, checklist);
+    }
 }

@@ -20,6 +20,17 @@ public record PlannedStep(
         String targetField,
         String toolName,
         Map<String, Object> input,
-        String reasonForUser
+        String reasonForUser,
+        String reasonCode,
+        String expectedEvidence
 ) {
+
+    public PlannedStep(StepId stepId,
+                       String action,
+                       String targetField,
+                       String toolName,
+                       Map<String, Object> input,
+                       String reasonForUser) {
+        this(stepId, action, targetField, toolName, input, reasonForUser, null, null);
+    }
 }

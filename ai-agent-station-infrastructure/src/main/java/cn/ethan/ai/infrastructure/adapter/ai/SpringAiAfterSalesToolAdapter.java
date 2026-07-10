@@ -1,307 +1,181 @@
 package cn.ethan.ai.infrastructure.adapter.ai;
 
-import cn.ethan.ai.domain.agent.port.driven.IOrderGateway;
-import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
+import cn.ethan.ai.domain.agent.model.AfterSalesLogisticsSnapshot;
 import cn.ethan.ai.domain.agent.model.AfterSalesOrderSnapshot;
+import cn.ethan.ai.domain.agent.model.AfterSalesRefundHistorySnapshot;
+import cn.ethan.ai.domain.agent.model.AfterSalesToolCapability;
+import cn.ethan.ai.domain.agent.model.AfterSalesToolContext;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolRequest;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolResult;
-import cn.ethan.ai.domain.agent.policy.AfterSalesToolContractValidator;
+import cn.ethan.ai.domain.agent.model.ToolEvidence;
+import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
+import cn.ethan.ai.domain.agent.port.driven.IOrderGateway;
 import cn.ethan.ai.infrastructure.observability.AfterSalesRuntimeMetrics;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
-import lombok.NonNull;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.ToolResponseMessage;
-import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.Generation;
-import org.springframework.ai.chat.model.ToolContext;
-import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.model.tool.ToolCallingManager;
-import org.springframework.ai.model.tool.ToolExecutionResult;
-import org.springframework.ai.openai.OpenAiChatOptions;
-import org.springframework.ai.tool.ToolCallback;
-import org.springframework.ai.tool.definition.ToolDefinition;
-import org.springframework.ai.tool.metadata.ToolMetadata;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
+import java.time.format.DateTimeFormatter;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Set;
 
+/**
+ * 将已通过领域 Policy 的计划步骤执行为只读 commerce 证据。
+ *
+ * <p>规划模型只在 {@link RefundPlanningAgent} 中调用。本适配器不再二次调用模型提取工具参数。</p>
+ */
 @Service
 public class SpringAiAfterSalesToolAdapter implements IAfterSalesToolPort {
 
-    private static final String USER_ID_CONTEXT_KEY = "afterSalesUserId";
-    private static final Pattern ORDER_ID_PATTERN = Pattern.compile(
-            "(?i)(?:订单|order)[号#:\\s-]*([A-Za-z0-9_-]{3,64})"
-    );
-    private static final String SYSTEM_PROMPT = """
-            你是售后退款意图解析器。你只能调用 query_order，只提取用户明确提供的 orderId。
-            不得猜测订单号，不得请求退款工具，不得生成用户身份字段。
-            如果没有明确订单号，不调用工具。
-            """;
-
     private final IOrderGateway orderGateway;
-    private final ToolCallingManager toolCallingManager;
-    private final ChatModel chatModel;
-    private final String modelName;
     private final AfterSalesRuntimeMetrics metrics;
+    private final Set<AfterSalesToolCapability> supportedTools;
 
-    @Autowired
     public SpringAiAfterSalesToolAdapter(IOrderGateway orderGateway,
-                                         ToolCallingManager toolCallingManager,
-                                         ObjectProvider<ChatModel> chatModelProvider,
-                                         @Value("${after-sales.execution-model:deepseek-v4-flash}") String modelName,
-                                         AfterSalesRuntimeMetrics metrics) {
-        this(orderGateway, toolCallingManager, chatModelProvider.getIfAvailable(), modelName, metrics);
-    }
-
-    private SpringAiAfterSalesToolAdapter(IOrderGateway orderGateway,
-                                          ToolCallingManager toolCallingManager,
-                                          ChatModel chatModel,
-                                          String modelName,
-                                          AfterSalesRuntimeMetrics metrics) {
+                                         AfterSalesRuntimeMetrics metrics,
+                                         @Value("${ai-agent.after-sales.evidence-tools:query_order}") String configuredTools) {
         this.orderGateway = orderGateway;
-        this.toolCallingManager = toolCallingManager;
-        this.chatModel = chatModel;
-        this.modelName = modelName == null || modelName.isBlank() ? "deepseek-v4-flash" : modelName.trim();
         this.metrics = metrics;
+        this.supportedTools = parseCapabilities(configuredTools);
     }
 
+    /**
+     * 保留原测试构造器的参数形状，避免测试环境需要 Spring 容器。
+     */
     public SpringAiAfterSalesToolAdapter(IOrderGateway orderGateway,
-                                         ToolCallingManager toolCallingManager,
-                                         ChatModel chatModel,
-                                         String modelName) {
-        this(orderGateway, toolCallingManager, chatModel, modelName, AfterSalesRuntimeMetrics.noop());
+                                         ToolCallingManager ignoredToolCallingManager,
+                                         ChatModel ignoredChatModel,
+                                         String ignoredModelName) {
+        this(orderGateway, AfterSalesRuntimeMetrics.noop(), "query_order");
     }
 
     @Override
-    public AfterSalesToolRequest proposeOrderQuery(String userMessage,
-                                                   String userId,
-                                                   String sessionId,
-                                                   String orderIdHint,
-                                                   String refundReason,
-                                                   String correction) {
-        String promptText = buildUserPrompt(userMessage, orderIdHint, refundReason, correction);
-        if (chatModel != null) {
-            return proposeOrderQueryWithModel(promptText);
-        }
-        String orderId = firstText(orderIdHint, extractOrderId(userMessage));
-        if (orderId == null) {
-            throw new IllegalArgumentException("ORDER_ID_REQUIRED");
-        }
-        return new AfterSalesToolRequest(
-                UUID.randomUUID().toString(),
-                AfterSalesToolContractValidator.QUERY_ORDER_TOOL,
-                JSON.toJSONString(Map.of("orderId", orderId))
-        );
-    }
-
-    private AfterSalesToolRequest proposeOrderQueryWithModel(String promptText) {
-        OpenAiChatOptions options = OpenAiChatOptions.builder()
-                .model(modelName)
-                .toolCallbacks(queryOrderCallback())
-                .temperature(0.0)
-                .build();
-        Prompt prompt = new Prompt(List.of(
-                new SystemMessage(SYSTEM_PROMPT),
-                new UserMessage(promptText)
-        ), options);
-        ChatResponse response = chatModel.call(prompt);
-        if (response == null) {
-            throw new IllegalStateException("模型没有返回工具调用响应");
-        }
-        return extractSingleOrderQuery(response);
-    }
-
-    private AfterSalesToolRequest extractSingleOrderQuery(ChatResponse response) {
-        if (!response.hasToolCalls() || response.getResult() == null) {
-            throw new IllegalArgumentException("ORDER_ID_REQUIRED");
-        }
-        List<AssistantMessage.ToolCall> calls = response.getResult().getOutput().getToolCalls();
-        if (calls.size() != 1) {
-            throw new IllegalArgumentException("EXACTLY_ONE_ORDER_QUERY_REQUIRED");
-        }
-        AssistantMessage.ToolCall call = calls.get(0);
-        return new AfterSalesToolRequest(call.id(), call.name(), call.arguments());
+    public Set<AfterSalesToolCapability> supportedTools() {
+        return supportedTools;
     }
 
     @Override
-    public AfterSalesToolResult executeOrderQuery(AfterSalesToolRequest request,
-                                                  String userId,
-                                                  String userMessage) {
+    public AfterSalesToolResult executeReadOnly(AfterSalesToolRequest request, AfterSalesToolContext context) {
         long startedAt = System.nanoTime();
         AfterSalesToolResult result;
         try {
-            ToolCallback callback = queryOrderCallback();
-            OpenAiChatOptions options = OpenAiChatOptions.builder()
-                    .model(modelName)
-                    .toolCallbacks(callback)
-                    .toolContext(Map.of(USER_ID_CONTEXT_KEY, userId))
-                    .build();
-            Prompt prompt = new Prompt(List.of(
-                    new SystemMessage(SYSTEM_PROMPT),
-                    new UserMessage(userMessage == null ? "查询订单" : userMessage)
-            ), options);
-            AssistantMessage assistantMessage = AssistantMessage.builder()
-                    .content("")
-                    .toolCalls(List.of(new AssistantMessage.ToolCall(
-                            request.callId(), "function", request.toolName(), request.argumentsJson()
-                    )))
-                    .build();
-            ToolExecutionResult execution = toolCallingManager.executeToolCalls(
-                    prompt,
-                    new ChatResponse(List.of(new Generation(assistantMessage)))
-            );
-            String output = extractToolOutput(execution.conversationHistory());
-            result = parseToolResult(output);
-        } catch (IllegalArgumentException e) {
-            result = AfterSalesToolResult.failure("", "TOOL_ARGUMENT_INVALID", e.getMessage());
-        } catch (Exception e) {
-            result = AfterSalesToolResult.failure("", classifyException(e), e.getMessage());
+            if (request == null || context == null || context.userId() == null || context.userId().isBlank()) {
+                result = AfterSalesToolResult.failure("", "TOOL_ARGUMENT_INVALID", "缺少可信工具上下文");
+            } else {
+                AfterSalesToolCapability capability = AfterSalesToolCapability.fromToolName(request.toolName());
+                if (capability == null || !supportedTools.contains(capability)) {
+                    result = AfterSalesToolResult.failure("", "TOOL_NOT_ALLOWED", "当前运行时不允许该工具");
+                } else {
+                    String orderId = requiredOrderId(request.argumentsJson());
+                    result = switch (capability) {
+                        case QUERY_ORDER -> queryOrder(orderId, context.userId());
+                        case QUERY_LOGISTICS -> queryLogistics(orderId, context.userId());
+                        case QUERY_REFUND_HISTORY -> queryRefundHistory(orderId, context.userId());
+                    };
+                }
+            }
+        } catch (IllegalArgumentException error) {
+            result = AfterSalesToolResult.failure("", "TOOL_ARGUMENT_INVALID", error.getMessage());
+        } catch (Exception error) {
+            result = AfterSalesToolResult.failure("", classifyException(error), "只读证据查询失败");
         }
-        metrics.recordTool(System.nanoTime() - startedAt,
-                result.success() ? "success" : result.errorType());
+        metrics.recordEvidenceTool(request == null ? "unknown" : request.toolName(),
+                System.nanoTime() - startedAt, result.success() ? "success" : result.errorType());
         return result;
     }
 
-    private ToolCallback queryOrderCallback() {
-        return new ToolCallback() {
-            @Override
-            public @NonNull ToolDefinition getToolDefinition() {
-                return ToolDefinition.builder()
-                        .name(AfterSalesToolContractValidator.QUERY_ORDER_TOOL)
-                        .description("按用户明确提供的订单号查询订单，只读工具")
-                        .inputSchema("""
-                                {
-                                  "type": "object",
-                                  "properties": {"orderId": {"type": "string"}},
-                                  "required": ["orderId"],
-                                  "additionalProperties": false
-                                }
-                                """)
-                        .build();
-            }
-
-            @Override
-            public @NonNull ToolMetadata getToolMetadata() {
-                return ToolMetadata.builder().returnDirect(false).build();
-            }
-
-            @Override
-            public @NonNull String call(@NonNull String toolInput) {
-                throw new IllegalStateException("query_order requires ToolContext");
-            }
-
-            @Override
-            public @NonNull String call(@NonNull String toolInput, ToolContext toolContext) {
-                JSONObject input = JSON.parseObject(toolInput);
-                String orderId = input == null ? null : input.getString("orderId");
-                if (orderId == null || orderId.isBlank()) {
-                    return error("TOOL_ARGUMENT_INVALID", "orderId 不能为空");
-                }
-                String userId = String.valueOf(toolContext.getContext().get(USER_ID_CONTEXT_KEY));
-                return orderGateway.findOrder(orderId, userId)
-                        .map(SpringAiAfterSalesToolAdapter.this::orderPayload)
-                        .orElseGet(() -> error("ORDER_NOT_FOUND", "订单不存在"));
-            }
-        };
+    private AfterSalesToolResult queryOrder(String orderId, String userId) {
+        return orderGateway.findOrder(orderId, userId)
+                .map(order -> order.ownerId().equals("__FOREIGN__")
+                        ? AfterSalesToolResult.failure("", "ACCESS_DENIED", "没有访问该订单的权限")
+                        : success("query_order", orderPayload(order)))
+                .orElseGet(() -> AfterSalesToolResult.failure("", "ORDER_NOT_FOUND", "订单不存在"));
     }
 
-    private String orderPayload(AfterSalesOrderSnapshot order) {
-        boolean owned = !"__FOREIGN__".equals(order.ownerId());
+    private AfterSalesToolResult queryLogistics(String orderId, String userId) {
+        return orderGateway.findLogistics(orderId, userId)
+                .map(snapshot -> success("query_logistics", logisticsPayload(snapshot)))
+                .orElseGet(() -> AfterSalesToolResult.failure("", "EVIDENCE_UNAVAILABLE", "物流证据不可用"));
+    }
+
+    private AfterSalesToolResult queryRefundHistory(String orderId, String userId) {
+        return orderGateway.findRefundHistory(orderId, userId)
+                .map(snapshot -> success("query_refund_history", refundHistoryPayload(snapshot)))
+                .orElseGet(() -> AfterSalesToolResult.failure("", "EVIDENCE_UNAVAILABLE", "退款历史不可用"));
+    }
+
+    private AfterSalesToolResult success(String toolName, Map<String, Object> payload) {
+        return AfterSalesToolResult.success(JSON.toJSONString(payload), new ToolEvidence(toolName, payload));
+    }
+
+    private Map<String, Object> orderPayload(AfterSalesOrderSnapshot order) {
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("success", true);
         payload.put("orderId", order.orderId());
         payload.put("ownerId", order.ownerId());
         payload.put("status", order.status());
-        if (owned && order.daysSinceDelivery() != null) {
+        if (order.daysSinceDelivery() != null) {
             payload.put("daysSinceDelivery", order.daysSinceDelivery());
         }
-        return JSON.toJSONString(payload);
+        return payload;
     }
 
-    private AfterSalesToolResult parseToolResult(String output) {
-        JSONObject payload = JSON.parseObject(output);
-        if (payload == null || !payload.getBooleanValue("success")) {
-            String errorType = payload == null ? "TOOL_CALL_FAILED" : payload.getString("errorType");
-            String message = payload == null ? "工具没有返回结果" : payload.getString("message");
-            return AfterSalesToolResult.failure(output, errorType, message);
+    private Map<String, Object> logisticsPayload(AfterSalesLogisticsSnapshot snapshot) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("orderId", snapshot.orderId());
+        payload.put("deliveryStatus", snapshot.deliveryStatus());
+        payload.put("returnStatus", snapshot.returnStatus());
+        if (snapshot.deliveredAt() != null) {
+            payload.put("deliveredAt", DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(snapshot.deliveredAt()));
         }
-        Integer days = payload.containsKey("daysSinceDelivery")
-                ? payload.getInteger("daysSinceDelivery") : null;
-        return AfterSalesToolResult.success(output, new AfterSalesOrderSnapshot(
-                payload.getString("orderId"),
-                payload.getString("ownerId"),
-                payload.getString("status"),
-                days
-        ));
+        return payload;
     }
 
-    private String extractToolOutput(List<Message> history) {
-        for (int index = history.size() - 1; index >= 0; index--) {
-            Message message = history.get(index);
-            if (message instanceof ToolResponseMessage responseMessage
-                    && !responseMessage.getResponses().isEmpty()) {
-                return responseMessage.getResponses().get(0).responseData();
+    private Map<String, Object> refundHistoryPayload(AfterSalesRefundHistorySnapshot snapshot) {
+        return Map.of(
+                "orderId", snapshot.orderId(),
+                "activeRefund", snapshot.activeRefund(),
+                "completedRefundCount", snapshot.completedRefundCount(),
+                "latestRefundStatus", snapshot.latestRefundStatus()
+        );
+    }
+
+    private String requiredOrderId(String argumentsJson) {
+        JSONObject input = JSON.parseObject(argumentsJson);
+        String orderId = input == null ? null : input.getString("orderId");
+        if (orderId == null || !orderId.matches("[A-Za-z0-9_-]{3,64}")) {
+            throw new IllegalArgumentException("orderId 格式非法");
+        }
+        if (input.size() != 1) {
+            throw new IllegalArgumentException("工具参数只允许 orderId");
+        }
+        return orderId;
+    }
+
+    private Set<AfterSalesToolCapability> parseCapabilities(String configuredTools) {
+        Set<AfterSalesToolCapability> capabilities = EnumSet.noneOf(AfterSalesToolCapability.class);
+        String[] names = configuredTools == null ? new String[0] : configuredTools.split(",");
+        for (String name : names) {
+            AfterSalesToolCapability capability = AfterSalesToolCapability.fromToolName(name.trim());
+            if (capability != null) {
+                capabilities.add(capability);
             }
         }
-        throw new IllegalStateException("ToolCallingManager did not return a tool response");
+        return capabilities.isEmpty() ? Set.of(AfterSalesToolCapability.QUERY_ORDER) : Set.copyOf(capabilities);
     }
 
-    private String buildUserPrompt(String message, String orderIdHint, String reason, String correction) {
-        return "用户消息：" + safe(message)
-                + "\n订单号提示：" + safe(orderIdHint)
-                + "\n退款原因提示：" + safe(reason)
-                + "\n上次校验反馈：" + safe(correction);
-    }
-
-    private String extractOrderId(String message) {
-        if (message == null) {
-            return null;
-        }
-        Matcher matcher = ORDER_ID_PATTERN.matcher(message);
-        return matcher.find() ? matcher.group(1) : null;
-    }
-
-    private String firstText(String first, String second) {
-        if (first != null && !first.isBlank()) {
-            return first.trim();
-        }
-        return second == null || second.isBlank() ? null : second.trim();
-    }
-
-    private String safe(String value) {
-        return value == null ? "" : value;
-    }
-
-    private String classifyException(Exception exception) {
-        String name = exception.getClass().getSimpleName().toLowerCase();
-        String message = String.valueOf(exception.getMessage()).toLowerCase();
-        if (name.contains("timeout") || message.contains("timeout")) {
+    private String classifyException(Exception error) {
+        String text = String.valueOf(error.getMessage()).toLowerCase();
+        if (text.contains("timeout")) {
             return "TIMEOUT";
         }
-        if (message.contains("429") || message.contains("rate limit")) {
-            return "RATE_LIMITED";
+        if (text.contains("403") || text.contains("access")) {
+            return "ACCESS_DENIED";
         }
         return "TEMPORARY_UNAVAILABLE";
-    }
-
-    private String error(String errorType, String message) {
-        return JSON.toJSONString(Map.of(
-                "success", false,
-                "errorType", errorType,
-                "message", message
-        ));
     }
 }

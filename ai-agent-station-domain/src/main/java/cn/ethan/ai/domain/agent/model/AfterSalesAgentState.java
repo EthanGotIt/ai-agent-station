@@ -43,6 +43,9 @@ public record AfterSalesAgentState(Map<String, Object> data) {
     public static final String LAST_ERROR_TYPE = "lastErrorType";
     public static final String LAST_ERROR_MESSAGE = "lastErrorMessage";
     public static final String CHECKLIST = "checklist";
+    public static final String EVIDENCE = "evidence";
+    public static final String LAST_PLAN = "lastPlan";
+    public static final String LAST_PLAN_OUTCOME = "lastPlanOutcome";
 
     // Plan-and-Execute 步骤级进度跟踪
     public static final String EXECUTED_STEP_KEYS = "executedStepKeys";
@@ -106,6 +109,23 @@ public record AfterSalesAgentState(Map<String, Object> data) {
             return collection.stream().map(String::valueOf).collect(HashSet::new, HashSet::add, HashSet::addAll);
         }
         return new HashSet<>();
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Map<String, Object>> evidence() {
+        Object value = data.get(EVIDENCE);
+        if (!(value instanceof Map<?, ?> entries)) {
+            return Map.of();
+        }
+        Map<String, Map<String, Object>> normalized = new LinkedHashMap<>();
+        entries.forEach((key, raw) -> {
+            if (raw instanceof Map<?, ?> fields) {
+                Map<String, Object> copy = new LinkedHashMap<>();
+                fields.forEach((field, fieldValue) -> copy.put(String.valueOf(field), fieldValue));
+                normalized.put(String.valueOf(key), copy);
+            }
+        });
+        return Collections.unmodifiableMap(normalized);
     }
 
     private <E extends Enum<E>> E enumValue(String key, Class<E> type, E fallback) {

@@ -1,9 +1,10 @@
 package cn.ethan.ai.infrastructure.adapter.statemachine.ssm;
 
 import cn.ethan.ai.domain.agent.model.AfterSalesAgentState;
-import cn.ethan.ai.domain.agent.model.AfterSalesOrderSnapshot;
+import cn.ethan.ai.domain.agent.model.AfterSalesToolContext;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolRequest;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolResult;
+import cn.ethan.ai.domain.agent.model.ToolEvidence;
 import cn.ethan.ai.domain.agent.model.Checkpoint;
 import cn.ethan.ai.domain.agent.model.plan.PlannedStep;
 import cn.ethan.ai.domain.agent.model.plan.PlanningContext;
@@ -15,6 +16,7 @@ import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
 import cn.ethan.ai.domain.agent.port.driven.ICheckpointRepository;
 import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
 import cn.ethan.ai.infrastructure.observability.AfterSalesRuntimeMetrics;
+import com.alibaba.fastjson.JSON;
 import cn.ethan.ai.types.common.id.CaseId;
 import cn.ethan.ai.types.common.id.CheckpointId;
 import cn.ethan.ai.types.common.id.StepId;
@@ -97,18 +99,18 @@ public final class RefundInformationGatherer {
                 RefundPlan plan = planningAgent.plan(context);
 
                 RefundInformationGatheringPolicy.ValidationResult validation = policy.validate(plan, context);
+                String planOutcome = "accepted";
                 if (!validation.ok()) {
                     plan = planningAgent.deterministicPlan(context);
+                    planOutcome = "fallback_" + validation.errorType();
+                    metrics.recordPlanFallback(validation.errorType());
                 }
+                current = rememberPlan(current, plan, planOutcome);
+                PlannedStep plannedStep = firstPlannedStep(plan);
+                metrics.recordPlanDecision(plannedStep == null ? null : plannedStep.action(), planOutcome,
+                        plannedStep == null ? null : plannedStep.reasonCode());
                 currentPlan = plan;
                 replanNeeded = false;
-
-                PlannedStep askStep = findAskUserStep(currentPlan);
-                if (askStep != null) {
-                    AfterSalesAgentState askState = askUser(current, askStep.reasonForUser());
-                    writeCheckpoint(askState, caseId, turnId, askStep.stepId());
-                    return askState;
-                }
             }
 
             PlannedStep nextStep = selectNextPendingStep(currentPlan, current);
@@ -132,7 +134,13 @@ public final class RefundInformationGatherer {
                 continue;
             }
 
-            ToolExecutionResult execution = executeToolStep(current, nextStep);
+            if (RefundInformationGatheringPolicy.ACTION_ASK_USER.equals(nextStep.action())) {
+                AfterSalesAgentState askState = askUser(current, nextStep.reasonForUser());
+                writeCheckpoint(askState, caseId, turnId, nextStep.stepId());
+                return askState;
+            }
+
+            ToolExecutionResult execution = executeToolStep(current, nextStep, caseId, turnId);
             current = execution.state();
             writeCheckpoint(current, caseId, turnId, nextStep.stepId());
 
@@ -206,7 +214,9 @@ public final class RefundInformationGatherer {
                 state.count(AfterSalesAgentState.RETRY_COUNT),
                 replanCount,
                 state.text(AfterSalesAgentState.LAST_ERROR_TYPE),
-                state.text(AfterSalesAgentState.LAST_ERROR_MESSAGE)
+                state.text(AfterSalesAgentState.LAST_ERROR_MESSAGE),
+                trustedEvidence(state),
+                toolPort.supportedTools()
         );
     }
 
@@ -218,16 +228,6 @@ public final class RefundInformationGatherer {
             return errorMessage;
         }
         return null;
-    }
-
-    private PlannedStep findAskUserStep(RefundPlan plan) {
-        if (plan.steps() == null) {
-            return null;
-        }
-        return plan.steps().stream()
-                .filter(s -> RefundInformationGatheringPolicy.ACTION_ASK_USER.equals(s.action()))
-                .findFirst()
-                .orElse(null);
     }
 
     private AfterSalesAgentState askUser(AfterSalesAgentState state, String reason) {
@@ -245,10 +245,13 @@ public final class RefundInformationGatherer {
         }
         Set<String> executed = state.executedStepKeys();
         return plan.steps().stream()
-                .filter(s -> RefundInformationGatheringPolicy.ACTION_TOOL_CALL.equals(s.action()))
                 .filter(s -> !executed.contains(s.stepId().value()))
                 .findFirst()
                 .orElse(null);
+    }
+
+    private PlannedStep firstPlannedStep(RefundPlan plan) {
+        return plan == null || plan.steps() == null || plan.steps().isEmpty() ? null : plan.steps().get(0);
     }
 
     private AfterSalesAgentState markStepDone(AfterSalesAgentState state, PlannedStep step) {
@@ -272,9 +275,9 @@ public final class RefundInformationGatherer {
         return new AfterSalesAgentState(update);
     }
 
-    private ToolExecutionResult executeToolStep(AfterSalesAgentState state, PlannedStep step) {
+    private ToolExecutionResult executeToolStep(AfterSalesAgentState state, PlannedStep step, CaseId caseId, TurnId turnId) {
         AfterSalesAgentState current = rememberCurrentStep(state, step);
-        return executeToolCall(current, step);
+        return executeToolCall(current, step, caseId, turnId);
     }
 
     private AfterSalesAgentState rememberCurrentStep(AfterSalesAgentState state, PlannedStep step) {
@@ -283,45 +286,29 @@ public final class RefundInformationGatherer {
         return new AfterSalesAgentState(update);
     }
 
-    private ToolExecutionResult executeToolCall(AfterSalesAgentState state, PlannedStep step) {
-        if (!RefundInformationGatheringPolicy.TOOL_QUERY_ORDER.equals(step.toolName())) {
-            return toolFailure(state, "TOOL_NOT_ALLOWED", "TOOL_NOT_ALLOWED");
-        }
-        String orderId = step.input() == null ? null : String.valueOf(step.input().get("orderId"));
-        if (orderId == null || orderId.isBlank()) {
-            orderId = state.text(AfterSalesAgentState.ORDER_ID);
-        }
+    private ToolExecutionResult executeToolCall(AfterSalesAgentState state,
+                                                PlannedStep step,
+                                                CaseId caseId,
+                                                TurnId turnId) {
         try {
-            AfterSalesToolRequest request = toolPort.proposeOrderQuery(
-                    state.text(AfterSalesAgentState.USER_MESSAGE),
-                    state.text(AfterSalesAgentState.USER_ID),
-                    state.text(AfterSalesAgentState.SESSION_ID),
-                    orderId,
-                    state.text(AfterSalesAgentState.REFUND_REASON),
-                    state.text(AfterSalesAgentState.DECISION_REASON)
+            AfterSalesToolRequest request = new AfterSalesToolRequest(
+                    turnId.value() + ":" + step.stepId().value(),
+                    step.toolName(),
+                    JSON.toJSONString(step.input() == null ? Map.of() : step.input())
             );
-            AfterSalesToolResult result = toolPort.executeOrderQuery(
-                    request,
-                    state.text(AfterSalesAgentState.USER_ID),
-                    state.text(AfterSalesAgentState.USER_MESSAGE)
-            );
+            AfterSalesToolResult result = toolPort.executeReadOnly(request,
+                    new AfterSalesToolContext(caseId.value(), state.text(AfterSalesAgentState.USER_ID), turnId.value()));
             Map<String, Object> update = new LinkedHashMap<>(state.data());
             update.put(AfterSalesAgentState.TOOL_OUTPUT, result.outputJson());
             update.put(AfterSalesAgentState.TOOL_NAME, request.toolName());
-            if (!result.success() || result.order() == null) {
+            if (!result.success() || result.evidence() == null) {
                 String errorType = result.errorType() != null ? result.errorType() : "TOOL_FAILURE";
                 String errorMessage = result.errorMessage() != null ? result.errorMessage() : "TOOL_FAILURE";
                 update.put(AfterSalesAgentState.LAST_ERROR_TYPE, errorType);
                 update.put(AfterSalesAgentState.LAST_ERROR_MESSAGE, errorMessage);
                 return new ToolExecutionResult(new AfterSalesAgentState(update), true, errorType, errorMessage);
             }
-            AfterSalesOrderSnapshot order = result.order();
-            update.put(AfterSalesAgentState.ORDER_ID, order.orderId());
-            update.put(AfterSalesAgentState.ORDER_OWNER_ID, order.ownerId());
-            update.put(AfterSalesAgentState.ORDER_STATUS, order.status());
-            if (order.daysSinceDelivery() != null) {
-                update.put(AfterSalesAgentState.DAYS_SINCE_DELIVERY, order.daysSinceDelivery());
-            }
+            mergeEvidence(update, result.evidence());
             update.remove(AfterSalesAgentState.LAST_ERROR_TYPE);
             update.remove(AfterSalesAgentState.LAST_ERROR_MESSAGE);
             return new ToolExecutionResult(new AfterSalesAgentState(update), false, null, null);
@@ -329,6 +316,51 @@ public final class RefundInformationGatherer {
             String errorMessage = e.getMessage() != null ? e.getMessage() : "ORDER_QUERY_FAILED";
             return toolFailure(state, "TOOL_EXCEPTION", errorMessage);
         }
+    }
+
+    private void mergeEvidence(Map<String, Object> update, ToolEvidence evidence) {
+        Map<String, Map<String, Object>> allEvidence = new LinkedHashMap<>();
+        Object existing = update.get(AfterSalesAgentState.EVIDENCE);
+        if (existing instanceof Map<?, ?> entries) {
+            entries.forEach((key, raw) -> {
+                if (raw instanceof Map<?, ?> fields) {
+                    Map<String, Object> copy = new LinkedHashMap<>();
+                    fields.forEach((field, value) -> copy.put(String.valueOf(field), value));
+                    allEvidence.put(String.valueOf(key), copy);
+                }
+            });
+        }
+        allEvidence.put(evidence.toolName(), evidence.fields());
+        update.put(AfterSalesAgentState.EVIDENCE, allEvidence);
+        if ("query_order".equals(evidence.toolName())) {
+            putIfPresent(update, AfterSalesAgentState.ORDER_ID, evidence.fields().get("orderId"));
+            putIfPresent(update, AfterSalesAgentState.ORDER_OWNER_ID, evidence.fields().get("ownerId"));
+            putIfPresent(update, AfterSalesAgentState.ORDER_STATUS, evidence.fields().get("status"));
+            putIfPresent(update, AfterSalesAgentState.DAYS_SINCE_DELIVERY, evidence.fields().get("daysSinceDelivery"));
+        }
+    }
+
+    private void putIfPresent(Map<String, Object> update, String key, Object value) {
+        if (value != null) {
+            update.put(key, value);
+        }
+    }
+
+    private Map<String, ToolEvidence> trustedEvidence(AfterSalesAgentState state) {
+        Map<String, ToolEvidence> evidence = new LinkedHashMap<>();
+        state.evidence().forEach((tool, fields) -> evidence.put(tool, new ToolEvidence(tool, fields)));
+        return evidence;
+    }
+
+    private AfterSalesAgentState rememberPlan(AfterSalesAgentState state, RefundPlan plan, String outcome) {
+        Map<String, Object> update = new LinkedHashMap<>(state.data());
+        update.put(AfterSalesAgentState.LAST_PLAN, Map.of(
+                "schemaVersion", plan.schemaVersion(),
+                "evidenceGaps", plan.evidenceGaps() == null ? List.of() : plan.evidenceGaps(),
+                "steps", plan.steps() == null ? List.of() : plan.steps()
+        ));
+        update.put(AfterSalesAgentState.LAST_PLAN_OUTCOME, outcome);
+        return new AfterSalesAgentState(update);
     }
 
     private ToolExecutionResult toolFailure(AfterSalesAgentState state, String errorType, String errorMessage) {
