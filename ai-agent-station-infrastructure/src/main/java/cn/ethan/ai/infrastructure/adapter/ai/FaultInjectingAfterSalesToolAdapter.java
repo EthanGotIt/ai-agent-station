@@ -1,6 +1,8 @@
 package cn.ethan.ai.infrastructure.adapter.ai;
 
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
+import cn.ethan.ai.domain.agent.model.AfterSalesToolCapability;
+import cn.ethan.ai.domain.agent.model.AfterSalesToolContext;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolRequest;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolResult;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -10,6 +12,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Set;
 
 @Primary
 @Component
@@ -31,22 +34,12 @@ public class FaultInjectingAfterSalesToolAdapter implements IAfterSalesToolPort 
     }
 
     @Override
-    public AfterSalesToolRequest proposeOrderQuery(String userMessage,
-                                                   String userId,
-                                                   String sessionId,
-                                                   String orderIdHint,
-                                                   String refundReason,
-                                                   String correction) {
-        if ("PROPOSE_TIMEOUT".equals(mode) && shouldInject()) {
-            throw new IllegalStateException("injected model timeout");
-        }
-        return delegate.proposeOrderQuery(userMessage, userId, sessionId, orderIdHint, refundReason, correction);
+    public Set<AfterSalesToolCapability> supportedTools() {
+        return delegate.supportedTools();
     }
 
     @Override
-    public AfterSalesToolResult executeOrderQuery(AfterSalesToolRequest request,
-                                                  String userId,
-                                                  String userMessage) {
+    public AfterSalesToolResult executeReadOnly(AfterSalesToolRequest request, AfterSalesToolContext context) {
         if (shouldInject()) {
             return switch (mode) {
                 case "RATE_LIMITED" -> AfterSalesToolResult.failure("", "RATE_LIMITED", "injected rate limit");
@@ -55,7 +48,7 @@ public class FaultInjectingAfterSalesToolAdapter implements IAfterSalesToolPort 
                 default -> AfterSalesToolResult.failure("", "TIMEOUT", "injected timeout");
             };
         }
-        return delegate.executeOrderQuery(request, userId, userMessage);
+        return delegate.executeReadOnly(request, context);
     }
 
     private boolean shouldInject() {

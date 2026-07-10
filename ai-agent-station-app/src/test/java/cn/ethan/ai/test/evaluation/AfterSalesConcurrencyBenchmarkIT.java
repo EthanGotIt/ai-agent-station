@@ -9,7 +9,7 @@ import cn.ethan.ai.domain.agent.model.AfterSalesToolResult;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AfterSalesStage;
 import cn.ethan.ai.domain.agent.policy.AfterSalesToolContractValidator;
 import cn.ethan.ai.domain.agent.policy.RefundInformationGatheringPolicy;
-import cn.ethan.ai.domain.agent.port.driven.IAfterSalesRepository;
+import cn.ethan.ai.test.fixture.UnsupportedAfterSalesRepository;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
 import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
 import cn.ethan.ai.infrastructure.adapter.statemachine.SpringStateMachineAdapter;
@@ -124,23 +124,12 @@ public class AfterSalesConcurrencyBenchmarkIT {
 
     private static final class DelayedToolPort implements IAfterSalesToolPort {
         @Override
-        public AfterSalesToolRequest proposeOrderQuery(String userMessage, String userId, String sessionId,
-                                                       String orderIdHint, String refundReason,
-                                                       String correction) {
-            delay();
-            return new AfterSalesToolRequest(UUID.randomUUID().toString(),
-                    AfterSalesToolContractValidator.QUERY_ORDER_TOOL,
-                    JSON.toJSONString(Map.of("orderId", orderIdHint)));
-        }
-
-        @Override
-        public AfterSalesToolResult executeOrderQuery(AfterSalesToolRequest request,
-                                                      String userId,
-                                                      String userMessage) {
+        public AfterSalesToolResult executeReadOnly(AfterSalesToolRequest request,
+                                                    cn.ethan.ai.domain.agent.model.AfterSalesToolContext context) {
             delay();
             String orderId = JSON.parseObject(request.argumentsJson()).getString("orderId");
-            return AfterSalesToolResult.success("{}",
-                    new AfterSalesOrderSnapshot(orderId, userId, "PAID", null));
+            return AfterSalesToolResult.success("{}", new cn.ethan.ai.domain.agent.model.ToolEvidence("query_order",
+                    Map.of("orderId", orderId, "ownerId", context.userId(), "status", "PAID")));
         }
 
         private void delay() {
@@ -153,7 +142,7 @@ public class AfterSalesConcurrencyBenchmarkIT {
         }
     }
 
-    private static final class NoOpRepository implements IAfterSalesRepository {
+    private static final class NoOpRepository extends UnsupportedAfterSalesRepository {
         @Override
         public Optional<AfterSalesOrderSnapshot> findOrder(String orderId, String requesterId) {
             return Optional.empty();
@@ -177,23 +166,5 @@ public class AfterSalesConcurrencyBenchmarkIT {
             return false;
         }
 
-        @Override
-        public boolean tryAcquireResume(String caseId,
-                                        String checkpointId,
-                                        String resumeToken,
-                                        long leaseSeconds) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void releaseResume(String caseId, String resumeToken) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public AfterSalesRefundResult executeRefund(String caseId, String orderId,
-                                                    String userId, String idempotencyKey) {
-            throw new UnsupportedOperationException();
-        }
     }
 }

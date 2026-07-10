@@ -381,15 +381,8 @@ public class MysqlAfterSalesPersistenceIT {
 
     private static final class UnusedToolPort implements IAfterSalesToolPort {
         @Override
-        public AfterSalesToolRequest proposeOrderQuery(String userMessage, String userId, String sessionId,
-                                                        String orderIdHint, String refundReason, String correction) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public AfterSalesToolResult executeOrderQuery(AfterSalesToolRequest request,
-                                                       String userId,
-                                                       String userMessage) {
+        public AfterSalesToolResult executeReadOnly(AfterSalesToolRequest request,
+                                                    cn.ethan.ai.domain.agent.model.AfterSalesToolContext context) {
             throw new UnsupportedOperationException();
         }
     }

@@ -13,8 +13,6 @@ import cn.ethan.ai.domain.agent.port.driven.IOrderGateway;
 import cn.ethan.ai.infrastructure.observability.AfterSalesRuntimeMetrics;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -42,16 +40,6 @@ public class SpringAiAfterSalesToolAdapter implements IAfterSalesToolPort {
         this.orderGateway = orderGateway;
         this.metrics = metrics;
         this.supportedTools = parseCapabilities(configuredTools);
-    }
-
-    /**
-     * 保留原测试构造器的参数形状，避免测试环境需要 Spring 容器。
-     */
-    public SpringAiAfterSalesToolAdapter(IOrderGateway orderGateway,
-                                         ToolCallingManager ignoredToolCallingManager,
-                                         ChatModel ignoredChatModel,
-                                         String ignoredModelName) {
-        this(orderGateway, AfterSalesRuntimeMetrics.noop(), "query_order");
     }
 
     @Override

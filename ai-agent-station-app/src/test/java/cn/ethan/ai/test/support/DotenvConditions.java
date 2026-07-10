@@ -1,10 +1,9 @@
 package cn.ethan.ai.test.support;
 
 /**
- * 从 {@code .env} 读取开关的 JUnit 条件帮助类。
+ * 显式 Maven 开关的 JUnit 条件帮助类。
  *
- * <p>与 {@link DotenvExtension} 不同，这里的方法在 JUnit condition 阶段调用，
- * 因此可以让 {@code @EnabledIf} 根据 {@code .env} 中的属性决定是否启用测试。</p>
+ * <p>条件在 {@link DotenvExtension} 前执行，避免本地 {@code .env} 意外启用外部模型或基准测试。</p>
  */
 public final class DotenvConditions {
 
@@ -16,7 +15,6 @@ public final class DotenvConditions {
      */
     @SuppressWarnings("unused")
     public static boolean isLiveEvaluationEnabled() {
-        DotenvLoader.load();
         return "true".equalsIgnoreCase(System.getProperty("live.after-sales.evaluation.enabled", ""));
     }
 
@@ -25,7 +23,6 @@ public final class DotenvConditions {
      */
     @SuppressWarnings("unused")
     public static boolean isBenchmarkEnabled() {
-        DotenvLoader.load();
         return "true".equalsIgnoreCase(System.getProperty("after-sales.benchmark.enabled", ""));
     }
 }

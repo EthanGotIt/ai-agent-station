@@ -19,8 +19,11 @@ public enum AfterSalesToolCapability {
     }
 
     public static AfterSalesToolCapability fromToolName(String toolName) {
+        if (toolName == null) {
+            return null;
+        }
         for (AfterSalesToolCapability capability : values()) {
-            if (capability.toolName.equals(toolName)) {
+            if (capability.toolName.equalsIgnoreCase(toolName.trim())) {
                 return capability;
             }
         }

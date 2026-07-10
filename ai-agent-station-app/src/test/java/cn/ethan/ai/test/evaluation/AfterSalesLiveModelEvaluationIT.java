@@ -4,9 +4,10 @@ import cn.ethan.ai.domain.agent.model.AfterSalesAgentState;
 import cn.ethan.ai.domain.agent.model.AfterSalesCaseView;
 import cn.ethan.ai.domain.agent.model.AfterSalesOrderSnapshot;
 import cn.ethan.ai.domain.agent.model.AfterSalesRefundResult;
-import cn.ethan.ai.domain.agent.model.AfterSalesToolRequest;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolResult;
-import cn.ethan.ai.domain.agent.policy.AfterSalesToolContractValidator;
+import cn.ethan.ai.domain.agent.model.AfterSalesToolContext;
+import cn.ethan.ai.domain.agent.model.ToolEvidence;
+import cn.ethan.ai.domain.agent.model.plan.PlanningContext;
 import cn.ethan.ai.domain.agent.policy.RefundInformationGatheringPolicy;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesRepository;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
@@ -25,7 +26,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.model.tool.ToolCallingManager;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -61,13 +63,10 @@ public class AfterSalesLiveModelEvaluationIT {
     private ApplicationContext applicationContext;
 
     @Autowired
-    private ToolCallingManager toolCallingManager;
-
-    @Autowired
     private ChatModel chatModel;
 
-    @Value("${after-sales.execution-model:deepseek-v4-flash}")
-    private String executionModel;
+    @Value("${spring.ai.openai.chat.model:deepseek-v4-pro}")
+    private String planningModel;
 
     @Test
     void shouldEvaluateThirtyFrozenCasesWithRealModel() throws Exception {
@@ -78,11 +77,11 @@ public class AfterSalesLiveModelEvaluationIT {
         List<JSONObject> cases = loadCases();
         Assertions.assertEquals(30, cases.size());
 
-        SpringAiAfterSalesToolAdapter adapter = new SpringAiAfterSalesToolAdapter(
-                new DeterministicOrderGateway(cases),
-                toolCallingManager,
-                chatModel,
-                executionModel);
+        // 实时模型评测只验证模型 Plan 契约，Session Memory 由独立集成路径覆盖。
+        ChatClient planningClient = ChatClient.builder(chatModel)
+                .defaultOptions(OpenAiChatOptions.builder().model(planningModel).temperature(0.0))
+                .build();
+        RefundPlanningAgent planningAgent = new RefundPlanningAgent(planningClient);
         List<Long> latencies = new ArrayList<>();
         JSONArray failures = new JSONArray();
         int modelContractPassed = 0;
@@ -90,7 +89,7 @@ public class AfterSalesLiveModelEvaluationIT {
 
         for (JSONObject testCase : cases) {
             Instant startedAt = Instant.now();
-            String contractFailure = evaluateModelContract(adapter, testCase);
+            String contractFailure = evaluateModelContract(planningAgent, testCase);
             latencies.add(java.time.Duration.between(startedAt, Instant.now()).toMillis());
             if (contractFailure == null) {
                 modelContractPassed++;
@@ -124,38 +123,36 @@ public class AfterSalesLiveModelEvaluationIT {
         Assertions.assertEquals(30, governedRoutePassed, report.toJSONString());
     }
 
-    private String evaluateModelContract(SpringAiAfterSalesToolAdapter adapter, JSONObject testCase) {
+    private String evaluateModelContract(RefundPlanningAgent planningAgent, JSONObject testCase) {
         String caseId = testCase.getString("id");
         String expectedOrderId = testCase.getString("orderId");
         boolean expectNoToolCall = "rule-01".equals(caseId);
         if (expectedOrderId == null && !expectNoToolCall) {
             expectedOrderId = "probe-" + caseId;
         }
+        final String expectedOrderIdForPlan = expectedOrderId;
         String message = expectNoToolCall ? "我要退款，商品有问题" : "我要退款，订单号 " + expectedOrderId;
         try {
             String userId = Optional.ofNullable(testCase.getString("userId")).orElse("eval-user");
-            AfterSalesToolRequest request = adapter.proposeOrderQuery(
-                    message,
-                    userId,
-                    "session-" + userId,
-                    null,
+            PlanningContext context = new PlanningContext(
+                    "live-" + caseId, userId, "session-" + userId, message,
+                    expectNoToolCall ? null : expectedOrderIdForPlan, null,
                     Optional.ofNullable(testCase.getString("reason")).orElse("DAMAGED"),
-                    null
-            );
+                    null, null, 0, 0, null, null);
+            var plan = planningAgent.plan(context);
+            var validation = new RefundInformationGatheringPolicy().validate(plan, context);
+            if (!validation.ok()) {
+                return validation.errorType();
+            }
             if (expectNoToolCall) {
-                return "missing orderId should not produce a tool call";
+                return plan.steps().stream().anyMatch(step -> "TOOL_CALL".equals(step.action()))
+                        ? "missing orderId should not produce a tool call" : null;
             }
-            if (!AfterSalesToolContractValidator.QUERY_ORDER_TOOL.equals(request.toolName())) {
-                return "unexpected tool=" + request.toolName();
-            }
-            String actualOrderId = JSON.parseObject(request.argumentsJson()).getString("orderId");
-            return expectedOrderId.equals(actualOrderId)
-                    ? null : "expectedOrderId=" + expectedOrderId + ",actualOrderId=" + actualOrderId;
-        } catch (IllegalArgumentException error) {
-            if (expectNoToolCall && "ORDER_ID_REQUIRED".equals(error.getMessage())) {
-                return null;
-            }
-            return error.getMessage();
+            return plan.steps().stream()
+                    .filter(step -> "TOOL_CALL".equals(step.action()))
+                    .anyMatch(step -> "query_order".equals(step.toolName())
+                            && expectedOrderIdForPlan.equals(String.valueOf(step.input().get("orderId"))))
+                    ? null : "expected query_order plan";
         } catch (RuntimeException error) {
             return error.getClass().getSimpleName() + ":" + error.getMessage();
         }
@@ -280,28 +277,20 @@ public class AfterSalesLiveModelEvaluationIT {
         }
 
         @Override
-        public AfterSalesToolRequest proposeOrderQuery(String userMessage, String userId, String sessionId,
-                                                       String orderIdHint, String refundReason, String correction) {
-            String orderId = orderIdHint != null && !orderIdHint.isBlank()
-                    ? orderIdHint
-                    : testCase.getString("orderId");
-            if (orderId == null || orderId.isBlank()) {
-                throw new IllegalArgumentException("ORDER_ID_REQUIRED");
-            }
-            return new AfterSalesToolRequest(UUID.randomUUID().toString(),
-                    AfterSalesToolContractValidator.QUERY_ORDER_TOOL,
-                    JSON.toJSONString(Map.of("orderId", orderId)));
-        }
-
-        @Override
-        public AfterSalesToolResult executeOrderQuery(AfterSalesToolRequest request,
-                                                      String userId, String userMessage) {
+        public AfterSalesToolResult executeReadOnly(cn.ethan.ai.domain.agent.model.AfterSalesToolRequest request,
+                                                    AfterSalesToolContext context) {
             String orderId = JSON.parseObject(request.argumentsJson()).getString("orderId");
             String ownerId = testCase.getString("ownerId");
             String status = testCase.getString("status");
             Integer days = testCase.containsKey("days") ? testCase.getInteger("days") : null;
-            return AfterSalesToolResult.success("{}",
-                    new AfterSalesOrderSnapshot(orderId, ownerId, status, days));
+            Map<String, Object> evidence = new LinkedHashMap<>();
+            evidence.put("orderId", orderId);
+            evidence.put("ownerId", ownerId);
+            evidence.put("status", status);
+            if (days != null) {
+                evidence.put("daysSinceDelivery", days);
+            }
+            return AfterSalesToolResult.success("{}", new ToolEvidence("query_order", evidence));
         }
     }
 

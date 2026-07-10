@@ -13,8 +13,8 @@ import org.springframework.context.annotation.Configuration;
 /**
  * 售后 Agent 模型配置。
  *
- * <p>基于 OpenAI 兼容协议（当前使用 DeepSeek），使用自动配置的 {@link ChatModel} 构造两个
- * {@link ChatClient}：规划模型负责生成退款信息收集计划；执行阶段直接使用 ChatModel。</p>
+ * <p>基于 OpenAI 兼容协议（当前使用 DeepSeek），使用自动配置的 {@link ChatModel} 构造
+ * {@link ChatClient}：规划模型负责生成退款信息收集计划；只读工具直接执行已校验的计划步骤。</p>
  */
 @Configuration
 @ConditionalOnProperty(name = "spring.ai.model.chat", havingValue = "openai")

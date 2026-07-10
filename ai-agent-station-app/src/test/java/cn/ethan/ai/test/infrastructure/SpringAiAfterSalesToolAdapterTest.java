@@ -11,7 +11,6 @@ import cn.ethan.ai.infrastructure.adapter.ai.SpringAiAfterSalesToolAdapter;
 import cn.ethan.ai.infrastructure.observability.AfterSalesRuntimeMetrics;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.model.tool.ToolCallingManager;
 
 import java.util.Optional;
 import java.time.LocalDateTime;
@@ -22,9 +21,8 @@ public class SpringAiAfterSalesToolAdapterTest {
     void shouldExecuteApprovedOrderRequestWithPrivateUserContext() {
         SpringAiAfterSalesToolAdapter adapter = new SpringAiAfterSalesToolAdapter(
                 new OrderOnlyRepository(),
-                ToolCallingManager.builder().build(),
-                null,
-                "stub"
+                AfterSalesRuntimeMetrics.noop(),
+                "query_order"
         );
 
         AfterSalesToolRequest request = new AfterSalesToolRequest("call-1", "query_order", "{\"orderId\":\"ORDER-1\"}");
@@ -33,8 +31,8 @@ public class SpringAiAfterSalesToolAdapterTest {
 
         Assertions.assertEquals("query_order", request.toolName());
         Assertions.assertTrue(result.success());
-        Assertions.assertEquals("ORDER-1", result.order().orderId());
-        Assertions.assertEquals("user-1", result.order().ownerId());
+        Assertions.assertEquals("ORDER-1", result.evidence().fields().get("orderId"));
+        Assertions.assertEquals("user-1", result.evidence().fields().get("ownerId"));
         Assertions.assertFalse(result.outputJson().contains("user-2"));
     }
 

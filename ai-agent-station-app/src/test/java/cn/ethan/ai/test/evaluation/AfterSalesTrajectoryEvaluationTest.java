@@ -118,36 +118,12 @@ public class AfterSalesTrajectoryEvaluationTest {
     private static final class TrajectoryToolPort implements IAfterSalesToolPort {
 
         @Override
-        public AfterSalesToolRequest proposeOrderQuery(String userMessage,
-                                                       String userId,
-                                                       String sessionId,
-                                                       String orderIdHint,
-                                                       String refundReason,
-                                                       String correction) {
-            if ("ARGUMENT_INVALID".equalsIgnoreCase(refundReason)) {
-                // Produce an invalid tool request to exercise argument repair/recovery.
-                return new AfterSalesToolRequest(UUID.randomUUID().toString(),
-                        AfterSalesToolContractValidator.QUERY_ORDER_TOOL, "{}");
-            }
-            String orderId = orderIdHint != null && !orderIdHint.isBlank()
-                    ? orderIdHint : "dummy-order";
-            return new AfterSalesToolRequest(UUID.randomUUID().toString(),
-                    AfterSalesToolContractValidator.QUERY_ORDER_TOOL,
-                    JSON.toJSONString(Map.of("orderId", orderId)));
-        }
-
-        @Override
-        public AfterSalesToolResult executeOrderQuery(AfterSalesToolRequest request,
-                                                      String userId,
-                                                      String userMessage) {
-            String errorType = userMessage == null ? "" : userMessage.toUpperCase();
-            if (errorType.isBlank() || "ARGUMENT_INVALID".equals(errorType)) {
-                JSONObject arguments = JSON.parseObject(request.argumentsJson());
-                String orderId = arguments == null ? "dummy-order" : arguments.getString("orderId");
-                return AfterSalesToolResult.success("{}",
-                        new AfterSalesOrderSnapshot(orderId, userId, "PAID", null));
-            }
-            return AfterSalesToolResult.failure("", errorType, "injected " + errorType);
+        public AfterSalesToolResult executeReadOnly(AfterSalesToolRequest request,
+                                                    cn.ethan.ai.domain.agent.model.AfterSalesToolContext context) {
+            JSONObject arguments = JSON.parseObject(request.argumentsJson());
+            String orderId = arguments == null ? "dummy-order" : arguments.getString("orderId");
+            return AfterSalesToolResult.success("{}", new cn.ethan.ai.domain.agent.model.ToolEvidence("query_order",
+                    Map.of("orderId", orderId, "ownerId", context.userId(), "status", "PAID")));
         }
     }
 

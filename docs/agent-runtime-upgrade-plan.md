@@ -20,7 +20,7 @@
 
 | 层次 | 负责 | 明确不负责 |
 |---|---|---|
-| Spring AI 2 / spring-ai-community | `ChatClient` Plan 生成、`ToolCallback`/`ToolCallingManager` 只读订单查询、Case 级 `SessionMemoryAdvisor`、`TodoWriteTool` 任务清单 | 不拥有售后状态机，不自动决定 RePlan、审批或终止，不保存业务事实 |
+| Spring AI 2 / spring-ai-community | `ChatClient` Plan 生成、Case 级 `SessionMemoryAdvisor`、`TodoWriteTool` 任务清单 | 不拥有售后状态机，不自动决定 RePlan、审批或终止，不保存业务事实 |
 | Spring State Machine | 轻量状态图（`INTAKE / PENDING_APPROVAL / COMPLETED / REJECTED`）、事件/Guard/Action、按 `ssm_state` 恢复 | 不替代模型 SDK 或 Plan 执行器，不承载业务资格和风险规则 |
 | 项目代码 | `RefundPlanningAgent`、`RefundInformationGatherer`、`AfterSalesAgentState`、Policy Edge、RePlan 预算、幂等 Command、审批、Outbox、轨迹评测 | 不重复实现模型 SDK、通用图执行器或 checkpoint 存储引擎 |
 
@@ -40,7 +40,7 @@ PENDING_APPROVAL
 
 - 缺少订单号或必要信息时，由 `RefundPlanningAgent` 生成 `ASK_USER` 步骤，在 `INTAKE` 内设置 `NEED_USER_INPUT` interrupt。
 - 退款执行前进入 `PENDING_APPROVAL` interrupt，恢复请求必须携带当前 checkpoint ID。
-- `RefundInformationGatheringPolicy` 校验 Plan 动作白名单（`ASK_USER` / `TOOL_CALL`）与工具白名单（`query_order`），非法 Plan 被替换为确定性兜底。
+- `RefundInformationGatheringPolicy` 校验 Plan schema、证据缺口、动作白名单（`ASK_USER` / `TOOL_CALL`）与当前运行时声明的工具白名单；非法 Plan 被替换为确定性兜底。
 - 工具失败或信息不完整触发 RePlan，最多 3 次；超过预算或业务拒绝（跨用户、状态不可退）直接进入 `REJECTED`。
 - 相同 input fingerprint 连续失败时提前终止，禁止 Reflection 死循环。
 - 退款 Command 使用 `caseId:REFUND` 作为业务幂等键；远程退款不跨网络持有数据库事务，成功后再事务性确认 Command、Case 和 Outbox。

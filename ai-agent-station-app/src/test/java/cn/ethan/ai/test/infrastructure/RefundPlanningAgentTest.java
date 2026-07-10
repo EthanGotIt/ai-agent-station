@@ -59,9 +59,13 @@ public class RefundPlanningAgentTest {
     void shouldParseValidPlanFromModel() {
         String json = """
                 {
+                  "schemaVersion": 1,
                   "readyToEvaluate": false,
+                  "evidenceGaps": [
+                    {"field": "orderStatus", "source": "TOOL", "reasonCode": "MISSING_ORDER_STATUS"}
+                  ],
                   "steps": [
-                    {"action": "TOOL_CALL", "targetField": "orderStatus", "toolName": "query_order", "input": {"orderId": "ORDER-1"}}
+                    {"action": "TOOL_CALL", "targetField": "orderStatus", "toolName": "query_order", "input": {"orderId": "ORDER-1"}, "reasonCode": "MISSING_ORDER_STATUS", "expectedEvidence": "orderStatus"}
                   ],
                   "checklist": [
                     {"item": "userId", "status": "DONE"},

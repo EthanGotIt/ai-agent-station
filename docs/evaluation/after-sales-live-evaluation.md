@@ -1,8 +1,19 @@
 # 售后 Agent 真实模型冻结轨迹评估
 
+## 当前规划契约复验
+
+- 执行时间：2026-07-10（Asia/Shanghai）
+- 数据集：`after-sales-trajectory-v1`，30 条
+- 模型：Plan/Replan 使用 `deepseek-v4-pro`；Execute 直接执行经 Policy 校验的只读证据步骤
+- 模型规划契约通过：30/30（100%）
+- Java 治理路由通过：30/30（100%）
+- 平均延迟：5822 ms；P50：5730 ms；P95：8203 ms
+
+## 历史记录
+
 - 执行时间：2026-07-07（Asia/Shanghai）
 - 数据集：`after-sales-trajectory-v1.jsonl`
-- 模型：Plan/Replan 使用 `deepseek-v4-pro`，Execute 使用 `deepseek-v4-flash`，由本地 `.env` 配置提供，报告不记录凭据
+- 模型：本记录在 2026-07-07 使用 `deepseek-v4-pro` 进行 Plan/Replan、`deepseek-v4-flash` 进行 Execute；当前运行时仅在 Plan/Replan 调用模型，Execute 只执行已校验的只读步骤
 - 真实模型调用：30 次
 - 模型规划契约通过：30/30（100%）
 - Java 治理路由通过：30/30（100%）
@@ -24,4 +35,4 @@ mvn verify -pl ai-agent-station-app -am "-DskipTests=false" `
   "-Dlive.after-sales.evaluation.enabled=true"
 ```
 
-> 实现注意：`SpringAiAfterSalesToolAdapter` 的执行阶段使用 `ChatModel.call(Prompt)` + `OpenAiChatOptions.toolCallbacks(...)` 触发工具调用。Spring AI 2.0.0 的 `ChatClient.prompt().tools(...)` 在 DeepSeek OpenAI 兼容端点下未能正确发送工具定义，因此工具调用链路不经过 `ChatClient`。
+> 版本说明：历史记录反映 2026-07-07 的评测实现。当前 `RefundPlanningAgent` 只调用 `ChatClient` 生成结构化 Plan，`SpringAiAfterSalesToolAdapter` 已改为直接执行经 Policy 校验的只读证据步骤，不再二次调用模型。

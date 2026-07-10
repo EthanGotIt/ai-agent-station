@@ -17,10 +17,10 @@ PENDING_APPROVAL
 - `RefundPlanningAgent`（Spring AI `ChatClient` + `SessionMemoryAdvisor`）根据当前上下文输出 JSON Plan，只规划还需要收集的信息；不决定退款、不生成副作用动作。
 - `RefundInformationGatherer` 执行 Plan：
   - `ASK_USER` → 在 `INTAKE` 阶段设置 `NEED_USER_INPUT` interrupt；
-  - `TOOL_CALL(query_order)` → 调用 `SpringAiAfterSalesToolAdapter` 查询订单；
+  - `TOOL_CALL(query_order)` → 调用 `SpringAiAfterSalesToolAdapter` 查询订单；可按运行时能力显式启用 `query_logistics` 与 `query_refund_history`；
   - 工具失败或信息仍不完整时触发 RePlan，最多 3 次，超过则进入 `REJECTED`。
-- `SpringAiAfterSalesToolAdapter` 的意图解析/工具调用阶段使用 Spring AI `ChatModel`（OpenAI 兼容协议）直接调用，而不是 `ChatClient.tools()`：在 Spring AI 2.0.0 配合 DeepSeek OpenAI 兼容端点时，`ChatClient.prompt().tools(...)` 未正确发送工具定义，导致模型以普通文本返回函数调用；`ChatModel.call(Prompt)` + `OpenAiChatOptions.toolCallbacks(...)` 可稳定返回 `tool_calls`。
-- `RefundInformationGatheringPolicy` 硬拦截 Plan：动作白名单仅限 `ASK_USER` / `TOOL_CALL`，工具仅限 `query_order`，禁止重复询问已存在字段。
+- `SpringAiAfterSalesToolAdapter` 不再调用模型：它只执行已通过 Policy 的计划步骤，并以服务端 `caseId / userId / turnId` 上下文访问只读 commerce 证据；模型不能自行构造身份或执行退款动作。
+- `RefundInformationGatheringPolicy` 硬拦截 Plan：校验 schema、证据缺口、动作白名单（`ASK_USER` / `TOOL_CALL`）和当前运行时声明的工具集合，禁止重复询问已存在字段。
 - 信息完整后由 `AfterSalesRefundEligibilityPolicy` 判定资格，进入 `PENDING_APPROVAL`；进入审批时 `TodoWriteTool` 生成退款检查清单并写入业务状态。
 - 状态机只保留 `INTAKE / PENDING_APPROVAL / COMPLETED / REJECTED` 四个业务状态，并从数据库中的 `ssm_state` 与业务状态恢复。
 - `userId` 来自 HTTP 身份头并通过 `ToolContext` 传给工具，不进入模型参数；模型只能生成 `orderId`。
@@ -41,11 +41,11 @@ SPRING_AI_MODEL_CHAT=openai
 OPENAI_BASE_URL=https://api.deepseek.com/v1
 OPENAI_API_KEY=<你的 DeepSeek API key>
 OPENAI_MODEL=deepseek-v4-pro
-AFTER_SALES_EXECUTION_MODEL=deepseek-v4-flash
+AI_AGENT_AFTER_SALES_EVIDENCE_TOOLS=query_order
 ```
 
 - `OPENAI_MODEL=deepseek-v4-pro`：Plan / RePlan 阶段模型，由 `RefundPlanningAgent` 使用。
-- `AFTER_SALES_EXECUTION_MODEL=deepseek-v4-flash`：Execute 阶段模型，由 `SpringAiAfterSalesToolAdapter` 用于意图解析与工具调用。
+- `AI_AGENT_AFTER_SALES_EVIDENCE_TOOLS=query_order`：声明允许执行的只读证据工具。HTTP commerce 契约可用后可显式设为 `query_order,query_logistics,query_refund_history`；本地适配器只支持 `query_order`。
 - `AI_AGENT_AFTER_SALES_COMMERCE_ADAPTER=local|http`：本地演示订单或真实 HTTP 订单/退款适配器。
 
 执行 `docs/dev-ops/mysql/sql/ai-agent-station.sql`，一次创建 9 张项目表。
@@ -106,7 +106,7 @@ $env:JAVA_HOME='D:\Environment\JDK17'
 mvn -pl ai-agent-station-app -am "-DskipTests=false" "-Dit.test=MysqlAfterSalesPersistenceIT" verify
 ```
 
-真实模型与 Java 17 并发指标见 `docs/evaluation/`。真实模型 30/30 Plan 契约与治理路由通过；Java 17 基线 431.03 tasks/s、P95 82 ms、0 错误。
+真实模型与 Java 17 并发指标见 `docs/evaluation/`。2026-07-10 真实模型 30/30 Plan 契约与治理路由通过；Java 17 基线 431.03 tasks/s、P95 82 ms、0 错误。
 
 ## 暂不宣称
 

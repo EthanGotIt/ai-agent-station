@@ -18,7 +18,7 @@
 
 ## Spring AI 与 Spring State Machine 的边界
 
-Spring AI 2 通过 `ChatClient` 让 `RefundPlanningAgent` 输出 JSON Plan；`SpringAiAfterSalesToolAdapter` 使用 `ToolCallingManager + ToolCallback` 执行只读订单查询。模型只参与“还需要收集什么信息”，不参与退款决策或循环控制。Spring State Machine 调度 Guard/Action，并从 Case 指向的持久化 checkpoint 恢复补信息或退款审批边界。
+Spring AI 2 通过 `ChatClient` 让 `RefundPlanningAgent` 输出 JSON Plan；`SpringAiAfterSalesToolAdapter` 直接执行经 Policy 校验的只读证据步骤。模型只参与“还需要收集什么信息”，不参与退款决策、工具参数二次提取或循环控制。Spring State Machine 调度 Guard/Action，并从 Case 指向的持久化 checkpoint 恢复补信息或退款审批边界。
 
 项目不使用现成的 ReAct Agent，也不让 `ToolCallingAdvisor` 与状态机同时控制循环。Plan 由 Spring AI 生成，执行与 RePlan 预算由 Java 控制，状态转移由 SSM 负责——三者边界清晰，避免状态、重试和终止存在两个事实来源。
 
@@ -43,7 +43,7 @@ checkpoint 解决“运行到哪、恢复后从哪个节点继续”；业务幂
 - checkpoint 恢复前后结果一致性；
 - 模型调用数、P95 延迟和终态原因。
 
-真实模型冻结集 30/30 通过 Tool 契约和治理路由；平均 1239 ms、P95 2081 ms。该数字只代表当前冻结集，不外推为生产成功率。
+2026-07-10 的真实模型冻结集 30/30 通过 Plan 契约和治理路由；平均 5822 ms、P95 8203 ms。该数字只代表当前冻结集，不外推为生产成功率。
 
 ## 当前不可宣称边界
 

@@ -26,14 +26,14 @@ public class ModelConnectionSmokeIT {
     @Autowired
     private ChatModel chatModel;
 
-    @Value("${after-sales.execution-model:deepseek-v4-flash}")
-    private String executionModel;
+    @Value("${spring.ai.openai.chat.options.model:${spring.ai.openai.chat.model:deepseek-v4-pro}}")
+    private String planningModel;
 
     @Test
     void shouldEchoSimpleMessage() {
         var response = chatModel.call(new Prompt(
                 new UserMessage("回复一个字的问候：好"),
-                OpenAiChatOptions.builder().model(executionModel).temperature(0.0).build()));
+                OpenAiChatOptions.builder().model(planningModel).temperature(0.0).build()));
         String content = response.getResult().getOutput().getText();
         Assertions.assertNotNull(content);
         Assertions.assertFalse(content.isBlank());

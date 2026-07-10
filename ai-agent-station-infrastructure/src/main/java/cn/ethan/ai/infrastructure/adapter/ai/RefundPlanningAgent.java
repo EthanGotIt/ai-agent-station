@@ -5,6 +5,7 @@ import cn.ethan.ai.domain.agent.model.plan.EvidenceGap;
 import cn.ethan.ai.domain.agent.model.plan.PlannedStep;
 import cn.ethan.ai.domain.agent.model.plan.PlanningContext;
 import cn.ethan.ai.domain.agent.model.plan.RefundPlan;
+import cn.ethan.ai.domain.agent.model.AfterSalesToolCapability;
 import cn.ethan.ai.types.common.id.StepId;
 import cn.ethan.ai.infrastructure.observability.AfterSalesRuntimeMetrics;
 import com.alibaba.fastjson.JSON;
@@ -156,20 +157,7 @@ public class RefundPlanningAgent {
     }
 
     private RefundPlan fallbackPlan(PlanningContext context) {
-        List<PlannedStep> steps = new ArrayList<>();
-        if (isBlank(context.orderId())) {
-            steps.add(askUserStep("orderId", "MISSING_REQUIRED_IDENTITY", "MISSING_ORDER_ID"));
-        }
-        if (isBlank(context.refundReason())) {
-            steps.add(askUserStep("refundReason", "MISSING_REQUIRED_INFORMATION", "MISSING_REFUND_REASON"));
-        }
-        List<ChecklistItem> checklist = List.of(
-                item("userId", context.userId()),
-                item("orderId", context.orderId()),
-                item("orderStatus", context.orderStatus()),
-                item("refundReason", context.refundReason())
-        );
-        return assignStepIds(new RefundPlan(1, false, evidenceGaps(context), steps, checklist));
+        return deterministicPlan(context);
     }
 
     private PlannedStep askUserStep(String targetField, String reasonForUser, String reasonCode) {
@@ -193,7 +181,9 @@ public class RefundPlanningAgent {
         List<PlannedStep> steps = new ArrayList<>(plan.steps().size());
         for (PlannedStep step : plan.steps()) {
             StepId stepId = step.stepId() != null ? step.stepId() : stepIdOf(step);
-            steps.add(new PlannedStep(stepId, step.action(), step.targetField(), step.toolName(), step.input(),
+            AfterSalesToolCapability capability = AfterSalesToolCapability.fromToolName(step.toolName());
+            String toolName = capability == null ? step.toolName() : capability.toolName();
+            steps.add(new PlannedStep(stepId, step.action(), step.targetField(), toolName, step.input(),
                     step.reasonForUser(), step.reasonCode(), step.expectedEvidence()));
         }
         return new RefundPlan(plan.schemaVersion(), plan.readyToEvaluate(),
@@ -227,8 +217,15 @@ public class RefundPlanningAgent {
                 + "- replanCount: " + context.replanCount() + "\n"
                 + "- lastErrorType: " + safe(context.lastErrorType()) + "\n"
                 + "- lastErrorMessage: " + safe(context.lastErrorMessage()) + "\n"
-                + "- availableTools: " + context.availableTools() + "\n"
+                + "- availableTools: " + toolNames(context.availableTools()) + "\n"
                 + "- trustedEvidence: " + context.evidence();
+    }
+
+    private List<String> toolNames(java.util.Set<AfterSalesToolCapability> availableTools) {
+        if (availableTools == null) {
+            return List.of();
+        }
+        return availableTools.stream().map(AfterSalesToolCapability::toolName).sorted().toList();
     }
 
     private List<EvidenceGap> evidenceGaps(PlanningContext context) {
