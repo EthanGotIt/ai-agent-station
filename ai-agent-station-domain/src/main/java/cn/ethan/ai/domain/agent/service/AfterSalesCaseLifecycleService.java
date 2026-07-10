@@ -7,11 +7,14 @@ import cn.ethan.ai.domain.agent.model.AfterSalesCaseView;
 import cn.ethan.ai.domain.agent.model.AfterSalesResumeCommand;
 import cn.ethan.ai.domain.agent.model.AfterSalesRunCommand;
 import cn.ethan.ai.domain.agent.model.AfterSalesRunResult;
+import cn.ethan.ai.domain.agent.model.AfterSalesStateMachineResult;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AfterSalesStage;
+import cn.ethan.ai.domain.agent.port.driven.IAfterSalesBoundaryRepository;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesRepository;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesStateMachine;
 
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -25,16 +28,21 @@ import static cn.ethan.ai.types.common.util.Strings.nullToEmpty;
  */
 public final class AfterSalesCaseLifecycleService {
 
+    private static final Duration RESUME_LEASE_DURATION = Duration.ofSeconds(30);
+
     private final IAfterSalesStateMachine stateMachine;
     private final IAfterSalesRepository repository;
     private final AfterSalesAuditService auditService;
+    private final IAfterSalesBoundaryRepository boundaryRepository;
 
     public AfterSalesCaseLifecycleService(IAfterSalesStateMachine stateMachine,
                                            IAfterSalesRepository repository,
-                                           AfterSalesAuditService auditService) {
+                                           AfterSalesAuditService auditService,
+                                           IAfterSalesBoundaryRepository boundaryRepository) {
         this.stateMachine = stateMachine;
         this.repository = repository;
         this.auditService = auditService;
+        this.boundaryRepository = boundaryRepository;
     }
 
     public AfterSalesRunResult start(AfterSalesRunCommand command) {
@@ -57,8 +65,8 @@ public final class AfterSalesCaseLifecycleService {
         putIfText(input, AfterSalesAgentState.REFUND_REASON, command.refundReason());
 
         try {
-            AfterSalesAgentState state = stateMachine.execute(input, caseId);
-            return persistAndMap(state, caseId, turnId);
+            AfterSalesStateMachineResult result = stateMachine.execute(input, caseId);
+            return persistAndMap(result, caseId, turnId);
         } catch (RuntimeException error) {
             auditService.failExecution(turnId, error);
             throw error;
@@ -78,7 +86,8 @@ public final class AfterSalesCaseLifecycleService {
 
         String turnId = UUID.randomUUID().toString();
         LocalDateTime startedAt = LocalDateTime.now();
-        if (!repository.tryAcquireResume(caseId, currentCheckpointId, turnId)) {
+        if (!repository.tryAcquireResume(caseId, currentCheckpointId, turnId,
+                RESUME_LEASE_DURATION.toSeconds())) {
             throw new AfterSalesResumeConflictException("checkpoint 正在被其他Turn恢复");
         }
         try {
@@ -86,8 +95,8 @@ public final class AfterSalesCaseLifecycleService {
                     command.action().name(), resumeInputSummary(command), currentCheckpointId, startedAt);
             Map<String, Object> update = resumeUpdate(current.state(), command);
             update.put(AfterSalesAgentState.TURN_ID, turnId);
-            AfterSalesAgentState state = stateMachine.resume(update, caseId, command.checkpointId());
-            return persistAndMap(state, caseId, turnId);
+            AfterSalesStateMachineResult result = stateMachine.resume(update, caseId, command.checkpointId());
+            return persistAndMap(result, caseId, turnId);
         } catch (RuntimeException error) {
             repository.releaseResume(caseId, turnId);
             auditService.failExecution(turnId, error);
@@ -111,12 +120,12 @@ public final class AfterSalesCaseLifecycleService {
         return cancelled;
     }
 
-    private AfterSalesRunResult persistAndMap(AfterSalesAgentState state,
+    private AfterSalesRunResult persistAndMap(AfterSalesStateMachineResult execution,
                                                String caseId,
                                                String turnId) {
-        AfterSalesAgentStateSnapshot snapshot = stateMachine.currentSnapshot(caseId).orElse(null);
-        String checkpointId = snapshot == null ? null : snapshot.checkpointId();
-        String nextNode = snapshot == null ? null : snapshot.nextNode();
+        AfterSalesAgentState state = execution.state();
+        String checkpointId = execution.checkpoint().checkpointId().value();
+        String nextNode = execution.nextNode();
         AfterSalesCaseView view = AfterSalesCaseView.of(
                 caseId,
                 state.text(AfterSalesAgentState.USER_ID),
@@ -128,8 +137,8 @@ public final class AfterSalesCaseLifecycleService {
                 state.text(AfterSalesAgentState.TERMINAL_REASON),
                 state.text(AfterSalesAgentState.COMMAND_ID)
         );
-        repository.updateCase(view);
-        auditService.completeExecution(state, turnId, checkpointId);
+        boundaryRepository.commit(view, execution.checkpoint(),
+                auditService.completedExecution(state, turnId, checkpointId));
 
         String waitingReason = switch (state.stage()) {
             case INTAKE -> state.flag(AfterSalesAgentState.NEED_USER_INPUT)

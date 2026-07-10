@@ -48,21 +48,18 @@ public final class AfterSalesAuditService {
                 .build());
     }
 
-    public void completeExecution(AfterSalesAgentState state,
-                                   String turnId,
-                                   String checkpointId) {
-        if (turnRepository == null) {
-            return;
-        }
+    public AgentTurnRecord completedExecution(AfterSalesAgentState state,
+                                              String turnId,
+                                              String checkpointId) {
         LocalDateTime now = LocalDateTime.now();
         String summary = state.stage().name() + optionalReason(state);
-        turnRepository.completeTurn(AgentTurnRecord.builder()
+        return AgentTurnRecord.builder()
                 .turnId(turnId)
                 .outputSummary(summary)
                 .status(AgentTurnStatus.SUCCESS.name())
                 .checkpointAfter(checkpointId)
                 .endTime(now)
-                .build());
+                .build();
     }
 
     public void failExecution(String turnId, RuntimeException error) {

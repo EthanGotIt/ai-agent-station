@@ -14,8 +14,10 @@ import cn.ethan.ai.infrastructure.dao.RefundCommandMapper;
 import cn.ethan.ai.infrastructure.dao.po.AfterSalesCasePO;
 import cn.ethan.ai.infrastructure.dao.po.AfterSalesOutboxPO;
 import cn.ethan.ai.infrastructure.dao.po.RefundCommandPO;
+import cn.ethan.ai.infrastructure.observability.AfterSalesRuntimeMetrics;
 import com.alibaba.fastjson.JSON;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -35,19 +37,33 @@ public class AfterSalesRepository implements IAfterSalesRepository {
     private final RefundCommandMapper refundCommandMapper;
     private final AfterSalesOutboxMapper afterSalesOutboxMapper;
     private final TransactionTemplate transactionTemplate;
+    private final AfterSalesRuntimeMetrics metrics;
 
+    @Autowired
     public AfterSalesRepository(IOrderGateway orderGateway,
                                 IRefundGateway refundGateway,
                                 AfterSalesCaseMapper afterSalesCaseMapper,
                                 RefundCommandMapper refundCommandMapper,
                                 AfterSalesOutboxMapper afterSalesOutboxMapper,
-                                @Qualifier("mysqlTransactionTemplate") TransactionTemplate transactionTemplate) {
+                                @Qualifier("mysqlTransactionTemplate") TransactionTemplate transactionTemplate,
+                                AfterSalesRuntimeMetrics metrics) {
         this.orderGateway = orderGateway;
         this.refundGateway = refundGateway;
         this.afterSalesCaseMapper = afterSalesCaseMapper;
         this.refundCommandMapper = refundCommandMapper;
         this.afterSalesOutboxMapper = afterSalesOutboxMapper;
         this.transactionTemplate = transactionTemplate;
+        this.metrics = metrics;
+    }
+
+    public AfterSalesRepository(IOrderGateway orderGateway,
+                                IRefundGateway refundGateway,
+                                AfterSalesCaseMapper afterSalesCaseMapper,
+                                RefundCommandMapper refundCommandMapper,
+                                AfterSalesOutboxMapper afterSalesOutboxMapper,
+                                TransactionTemplate transactionTemplate) {
+        this(orderGateway, refundGateway, afterSalesCaseMapper, refundCommandMapper,
+                afterSalesOutboxMapper, transactionTemplate, AfterSalesRuntimeMetrics.noop());
     }
 
     @Override
@@ -104,8 +120,14 @@ public class AfterSalesRepository implements IAfterSalesRepository {
     }
 
     @Override
-    public boolean tryAcquireResume(String caseId, String checkpointId, String resumeToken) {
-        return afterSalesCaseMapper.tryAcquireResume(caseId, checkpointId, resumeToken) > 0;
+    public boolean tryAcquireResume(String caseId,
+                                    String checkpointId,
+                                    String resumeToken,
+                                    long leaseSeconds) {
+        boolean acquired = afterSalesCaseMapper.tryAcquireResume(
+                caseId, checkpointId, resumeToken, leaseSeconds) > 0;
+        metrics.recordResumeAcquire(acquired);
+        return acquired;
     }
 
     @Override
@@ -118,6 +140,20 @@ public class AfterSalesRepository implements IAfterSalesRepository {
                                                 String orderId,
                                                 String userId,
                                                 String idempotencyKey) {
+        try {
+            AfterSalesRefundResult result = doExecuteRefund(caseId, orderId, userId, idempotencyKey);
+            metrics.recordRefund(result.success() ? "success" : "rejected");
+            return result;
+        } catch (RuntimeException error) {
+            metrics.recordRefund("error");
+            throw error;
+        }
+    }
+
+    private AfterSalesRefundResult doExecuteRefund(String caseId,
+                                                   String orderId,
+                                                   String userId,
+                                                   String idempotencyKey) {
         PreparedRefund prepared = transactionTemplate.execute(status ->
                 prepareRefund(caseId, orderId, userId, idempotencyKey));
         if (prepared == null) {

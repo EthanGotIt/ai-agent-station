@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -18,6 +20,8 @@ public class AfterSalesCasePO {
     private String orderId;
     private String stage;
     private String checkpointId;
+    private String resumeToken;
+    private LocalDateTime resumeLockedUntil;
     private String nextNode;
     private String terminalReason;
     private String commandId;

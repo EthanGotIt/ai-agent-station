@@ -6,6 +6,7 @@ import cn.ethan.ai.domain.agent.model.AfterSalesRunCommand;
 import cn.ethan.ai.domain.agent.model.AfterSalesRunResult;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesRepository;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesStateMachine;
+import cn.ethan.ai.domain.agent.port.driven.IAfterSalesBoundaryRepository;
 
 import java.util.Optional;
 
@@ -22,8 +23,10 @@ public final class AfterSalesAgentService {
 
     public AfterSalesAgentService(IAfterSalesStateMachine stateMachine,
                                   IAfterSalesRepository repository,
-                                  AfterSalesAuditService auditService) {
-        this.lifecycleService = new AfterSalesCaseLifecycleService(stateMachine, repository, auditService);
+                                  AfterSalesAuditService auditService,
+                                  IAfterSalesBoundaryRepository boundaryRepository) {
+        this.lifecycleService = new AfterSalesCaseLifecycleService(
+                stateMachine, repository, auditService, boundaryRepository);
         this.authorizationService = new AfterSalesAuthorizationService();
         this.repository = repository;
     }
@@ -59,7 +62,9 @@ public final class AfterSalesAgentService {
     public boolean cancel(String caseId, String requesterId, String reason) {
         AfterSalesCaseView current = repository.findCase(caseId)
                 .orElseThrow(() -> new IllegalArgumentException("售后Case不存在，caseId=" + caseId));
-        assert current.userIdValue() != null;
+        if (current.userIdValue() == null) {
+            throw new IllegalStateException("售后Case缺少所有者");
+        }
         if (!current.userIdValue().equals(requesterId)) {
             throw new SecurityException("只有Case 所有者可以取消");
         }

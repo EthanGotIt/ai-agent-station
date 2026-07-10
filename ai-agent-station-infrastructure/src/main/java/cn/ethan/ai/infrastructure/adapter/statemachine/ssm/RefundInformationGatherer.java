@@ -14,6 +14,7 @@ import cn.ethan.ai.domain.agent.policy.RefundInformationGatheringPolicy;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
 import cn.ethan.ai.domain.agent.port.driven.ICheckpointRepository;
 import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
+import cn.ethan.ai.infrastructure.observability.AfterSalesRuntimeMetrics;
 import cn.ethan.ai.types.common.id.CaseId;
 import cn.ethan.ai.types.common.id.CheckpointId;
 import cn.ethan.ai.types.common.id.StepId;
@@ -48,18 +49,30 @@ public final class RefundInformationGatherer {
     private final AfterSalesRefundEligibilityPolicy eligibilityPolicy;
     private final TodoWriteTool todoWriteTool;
     private final ICheckpointRepository checkpointRepository;
+    private final AfterSalesRuntimeMetrics metrics;
+
+    public RefundInformationGatherer(IAfterSalesToolPort toolPort,
+                                     RefundPlanningAgent planningAgent,
+                                     RefundInformationGatheringPolicy policy,
+                                     TodoWriteTool todoWriteTool,
+                                     ICheckpointRepository checkpointRepository) {
+        this(toolPort, planningAgent, policy, todoWriteTool,
+                checkpointRepository, AfterSalesRuntimeMetrics.noop());
+    }
 
     public RefundInformationGatherer(IAfterSalesToolPort toolPort,
                                       RefundPlanningAgent planningAgent,
                                       RefundInformationGatheringPolicy policy,
                                       TodoWriteTool todoWriteTool,
-                                      ICheckpointRepository checkpointRepository) {
+                                      ICheckpointRepository checkpointRepository,
+                                      AfterSalesRuntimeMetrics metrics) {
         this.toolPort = toolPort;
         this.planningAgent = planningAgent;
         this.policy = policy;
         this.eligibilityPolicy = new AfterSalesRefundEligibilityPolicy();
         this.todoWriteTool = todoWriteTool;
         this.checkpointRepository = checkpointRepository;
+        this.metrics = metrics;
     }
 
     public AfterSalesAgentState gather(AfterSalesAgentState state, CaseId caseId, TurnId turnId) {
@@ -107,6 +120,7 @@ public final class RefundInformationGatherer {
                 }
                 // 计划无待执行步骤但信息仍不完整，触发一次 RePlan
                 replanCount++;
+                metrics.recordReplan("NO_PENDING_STEP");
                 current = prepareReplanState(current, replanCount, "NO_PENDING_STEP", "计划无待执行步骤且信息不完整");
                 writeCheckpoint(current, caseId, turnId, null);
                 currentPlan = null;
@@ -139,6 +153,7 @@ public final class RefundInformationGatherer {
             }
 
             replanCount++;
+            metrics.recordReplan(execution.errorType());
             current = prepareReplanState(current, replanCount, execution.errorType(), execution.errorMessage());
             writeCheckpoint(current, caseId, turnId, null);
             currentPlan = null;
@@ -165,6 +180,7 @@ public final class RefundInformationGatherer {
                 LocalDateTime.now()
         );
         checkpointRepository.save(checkpoint);
+        metrics.recordCheckpoint("process", state.stage().name());
     }
 
     private static String ssmStateOf(AfterSalesStage stage) {
@@ -178,6 +194,7 @@ public final class RefundInformationGatherer {
 
     private PlanningContext buildContext(AfterSalesAgentState state, int replanCount) {
         return new PlanningContext(
+                state.text(AfterSalesAgentState.CASE_ID),
                 state.text(AfterSalesAgentState.USER_ID),
                 state.text(AfterSalesAgentState.SESSION_ID),
                 state.text(AfterSalesAgentState.USER_MESSAGE),

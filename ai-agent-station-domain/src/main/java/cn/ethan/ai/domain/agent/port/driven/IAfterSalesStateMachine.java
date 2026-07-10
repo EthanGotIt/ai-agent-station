@@ -1,7 +1,7 @@
 package cn.ethan.ai.domain.agent.port.driven;
 
-import cn.ethan.ai.domain.agent.model.AfterSalesAgentState;
 import cn.ethan.ai.domain.agent.model.AfterSalesAgentStateSnapshot;
+import cn.ethan.ai.domain.agent.model.AfterSalesStateMachineResult;
 
 import java.util.Map;
 import java.util.Optional;
@@ -11,9 +11,9 @@ import java.util.Optional;
  */
 public interface IAfterSalesStateMachine {
 
-    AfterSalesAgentState execute(Map<String, Object> input, String threadId);
+    AfterSalesStateMachineResult execute(Map<String, Object> input, String threadId);
 
-    AfterSalesAgentState resume(Map<String, Object> update, String threadId, String checkpointId);
+    AfterSalesStateMachineResult resume(Map<String, Object> update, String threadId, String checkpointId);
 
     Optional<AfterSalesAgentStateSnapshot> currentSnapshot(String threadId);
 }

@@ -3,6 +3,7 @@ package cn.ethan.ai.test.domain;
 import cn.ethan.ai.domain.agent.exception.AfterSalesResumeConflictException;
 import cn.ethan.ai.domain.agent.model.AfterSalesAgentState;
 import cn.ethan.ai.domain.agent.model.AfterSalesOrderSnapshot;
+import cn.ethan.ai.domain.agent.model.Checkpoint;
 import cn.ethan.ai.domain.agent.model.AfterSalesRefundResult;
 import cn.ethan.ai.domain.agent.model.AfterSalesResumeCommand;
 import cn.ethan.ai.domain.agent.model.AfterSalesRunCommand;
@@ -12,6 +13,9 @@ import cn.ethan.ai.domain.agent.model.plan.PlannedStep;
 import cn.ethan.ai.domain.agent.model.plan.PlanningContext;
 import cn.ethan.ai.domain.agent.model.plan.RefundPlan;
 import cn.ethan.ai.types.common.id.StepId;
+import cn.ethan.ai.types.common.id.CaseId;
+import cn.ethan.ai.types.common.id.CheckpointId;
+import cn.ethan.ai.types.common.id.TurnId;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AfterSalesStage;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesStateMachine;
 import cn.ethan.ai.domain.agent.service.AfterSalesAgentService;
@@ -20,6 +24,7 @@ import cn.ethan.ai.domain.agent.policy.RefundInformationGatheringPolicy;
 import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
 import cn.ethan.ai.infrastructure.adapter.statemachine.SpringStateMachineAdapter;
 import cn.ethan.ai.test.fixture.InMemoryAfterSalesRepository;
+import cn.ethan.ai.test.fixture.InMemoryAfterSalesBoundaryRepository;
 import cn.ethan.ai.test.fixture.InMemoryCheckpointRepository;
 import cn.ethan.ai.test.fixture.StubAfterSalesToolPort;
 import org.junit.jupiter.api.Assertions;
@@ -29,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.time.LocalDateTime;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -53,7 +59,8 @@ public class AfterSalesAgentServiceTest {
                 new RefundInformationGatheringPolicy(),
                 null,
                 checkpointRepository);
-        service = new AfterSalesAgentService(stateMachine, repository, new AfterSalesAuditService(null));
+        service = new AfterSalesAgentService(stateMachine, repository, new AfterSalesAuditService(null),
+                new InMemoryAfterSalesBoundaryRepository(repository, checkpointRepository));
     }
 
     @Test
@@ -75,6 +82,7 @@ public class AfterSalesAgentServiceTest {
 
         Assertions.assertEquals(AfterSalesStage.COMPLETED.name(), completed.stage());
         Assertions.assertEquals("REFUND_VERIFIED", completed.terminalReason());
+        Assertions.assertNotEquals(waiting.checkpointId(), completed.checkpointId());
         Assertions.assertEquals(1, repository.refundExecutions.get());
         Assertions.assertEquals("REFUNDED", repository.orders.get("ORDER-1").status());
 
@@ -83,6 +91,32 @@ public class AfterSalesAgentServiceTest {
                         AfterSalesResumeCommand.ResumeAction.APPROVE, null, null,
                         "approver-1", "AFTER_SALES_APPROVER")
         ));
+        Assertions.assertEquals(1, repository.refundExecutions.get());
+    }
+
+    @Test
+    void shouldResumeFromCommittedCaseCheckpointWhenNewerProcessSnapshotExists() {
+        AfterSalesRunResult waiting = service.start(AfterSalesRunCommand.of(
+                "user-1", "session-1", "退款订单 ORDER-1", "ORDER-1", "DAMAGED"
+        ));
+        Checkpoint committed = checkpointRepository.findById(CheckpointId.of(waiting.checkpointId())).orElseThrow();
+        checkpointRepository.save(new Checkpoint(
+                CheckpointId.of(UUID.randomUUID().toString()),
+                CaseId.of(waiting.caseIdValue()),
+                TurnId.of(UUID.randomUUID().toString()),
+                null,
+                committed.ssmState(),
+                committed.state(),
+                committed.stage(),
+                LocalDateTime.now()
+        ));
+
+        AfterSalesRunResult completed = service.resume(AfterSalesResumeCommand.of(
+                waiting.caseIdValue(), waiting.checkpointId(), AfterSalesResumeCommand.ResumeAction.APPROVE,
+                null, null, "approver-1", "AFTER_SALES_APPROVER"
+        ));
+
+        Assertions.assertEquals(AfterSalesStage.COMPLETED.name(), completed.stage());
         Assertions.assertEquals(1, repository.refundExecutions.get());
     }
 
@@ -172,6 +206,50 @@ public class AfterSalesAgentServiceTest {
         }
     }
 
+    @Test
+    void shouldRecoverExpiredResumeLease() {
+        AfterSalesRunResult waiting = service.start(AfterSalesRunCommand.of(
+                "user-1", "session-1", "退款订单 ORDER-1", "ORDER-1", "DAMAGED"
+        ));
+        Assertions.assertTrue(repository.tryAcquireResume(
+                waiting.caseIdValue(), waiting.checkpointId(), "dead-instance",
+                30));
+        repository.expireResumeLease(waiting.caseIdValue());
+
+        AfterSalesRunResult completed = service.resume(AfterSalesResumeCommand.of(
+                waiting.caseIdValue(), waiting.checkpointId(), AfterSalesResumeCommand.ResumeAction.APPROVE,
+                null, null, "approver-1", "AFTER_SALES_APPROVER"
+        ));
+
+        Assertions.assertEquals(AfterSalesStage.COMPLETED.name(), completed.stage());
+        Assertions.assertEquals(1, repository.refundExecutions.get());
+    }
+
+    @Test
+    void shouldResumeWithNewStateMachineInstanceFromCommittedCheckpoint() {
+        AfterSalesRunResult waiting = service.start(AfterSalesRunCommand.of(
+                "user-1", "session-1", "退款订单 ORDER-1", "ORDER-1", "DAMAGED"
+        ));
+        IAfterSalesStateMachine restartedStateMachine = new SpringStateMachineAdapter(
+                new StubAfterSalesToolPort(repository),
+                repository,
+                new RefundPlanningAgent(null),
+                new RefundInformationGatheringPolicy(),
+                null,
+                checkpointRepository);
+        AfterSalesAgentService restartedService = new AfterSalesAgentService(
+                restartedStateMachine, repository, new AfterSalesAuditService(null),
+                new InMemoryAfterSalesBoundaryRepository(repository, checkpointRepository));
+
+        AfterSalesRunResult completed = restartedService.resume(AfterSalesResumeCommand.of(
+                waiting.caseIdValue(), waiting.checkpointId(), AfterSalesResumeCommand.ResumeAction.APPROVE,
+                null, null, "approver-1", "AFTER_SALES_APPROVER"
+        ));
+
+        Assertions.assertEquals(AfterSalesStage.COMPLETED.name(), completed.stage());
+        Assertions.assertNotEquals(waiting.checkpointId(), completed.checkpointId());
+    }
+
     private Object invokeAfter(CountDownLatch start, AfterSalesResumeCommand command) {
         try {
             start.await();
@@ -211,7 +289,8 @@ public class AfterSalesAgentServiceTest {
                 new RefundInformationGatheringPolicy(),
                 null,
                 checkpointRepository);
-        service = new AfterSalesAgentService(stateMachine, repository, new AfterSalesAuditService(null));
+        service = new AfterSalesAgentService(stateMachine, repository, new AfterSalesAuditService(null),
+                new InMemoryAfterSalesBoundaryRepository(repository, checkpointRepository));
 
         AfterSalesRunResult waiting = service.start(AfterSalesRunCommand.of(
                 "user-1", "session-1", "退款", "ORDER-MISSING", "DAMAGED"

@@ -1,6 +1,8 @@
 -- Durable After-Sales Agent 完整数据库结构。
--- 包含业务交互与运行审计、售后业务、退款幂等、Outbox/Inbox 共 7 张表。
+-- 包含业务交互与运行审计、售后业务、退款幂等、Outbox/Inbox 和模型会话共 9 张表。
 
+DROP TABLE IF EXISTS `AI_SESSION_EVENT`;
+DROP TABLE IF EXISTS `AI_SESSION`;
 DROP TABLE IF EXISTS `after_sales_event_consume`;
 DROP TABLE IF EXISTS `after_sales_outbox`;
 DROP TABLE IF EXISTS `refund_command`;
@@ -20,6 +22,34 @@ CREATE TABLE `demo_order` (
     KEY `idx_demo_order_user_status` (`user_id`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='售后 Agent 本地演示订单';
 
+CREATE TABLE `AI_SESSION` (
+    `id` varchar(255) NOT NULL,
+    `user_id` varchar(255) NOT NULL,
+    `created_at` datetime(6) NOT NULL,
+    `expires_at` datetime(6) DEFAULT NULL,
+    `metadata` longtext,
+    `event_version` bigint NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_ai_session_user_id` (`user_id`),
+    KEY `idx_ai_session_expires_at` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Spring AI Case级模型会话';
+
+CREATE TABLE `AI_SESSION_EVENT` (
+    `id` varchar(255) NOT NULL,
+    `session_id` varchar(255) NOT NULL,
+    `timestamp` datetime(6) NOT NULL,
+    `message_type` varchar(20) NOT NULL,
+    `message_content` longtext,
+    `message_data` longtext,
+    `synthetic` tinyint(1) NOT NULL DEFAULT 0,
+    `branch` varchar(500) DEFAULT NULL,
+    `metadata` longtext,
+    PRIMARY KEY (`id`),
+    KEY `idx_ai_session_event_session_ts` (`session_id`, `timestamp`),
+    CONSTRAINT `fk_ai_session_event_session`
+        FOREIGN KEY (`session_id`) REFERENCES `AI_SESSION` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Spring AI模型会话事件';
+
 CREATE TABLE `after_sales_case` (
     `case_id` varchar(36) NOT NULL,
     `user_id` varchar(64) NOT NULL,
@@ -29,6 +59,7 @@ CREATE TABLE `after_sales_case` (
     `stage` varchar(64) NOT NULL,
     `checkpoint_id` varchar(36) DEFAULT NULL,
     `resume_token` varchar(36) DEFAULT NULL COMMENT '并发恢复租约，Turn完成或失败后释放',
+    `resume_locked_until` datetime(6) DEFAULT NULL COMMENT '恢复租约到期时间，实例异常退出后允许接管',
     `next_node` varchar(128) DEFAULT NULL,
     `terminal_reason` varchar(255) DEFAULT NULL,
     `command_id` varchar(36) DEFAULT NULL,

@@ -19,7 +19,8 @@ public interface AfterSalesCaseMapper {
 
     int tryAcquireResume(@Param("caseId") String caseId,
                          @Param("checkpointId") String checkpointId,
-                         @Param("resumeToken") String resumeToken);
+                         @Param("resumeToken") String resumeToken,
+                         @Param("leaseSeconds") long leaseSeconds);
 
     int releaseResume(@Param("caseId") String caseId, @Param("resumeToken") String resumeToken);
 }

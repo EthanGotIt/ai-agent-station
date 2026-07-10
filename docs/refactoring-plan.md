@@ -25,10 +25,10 @@
 
 | 原组件 | 替换为 |
 |---|---|
-| LangGraph4j StateGraph | Spring State Machine（轻量 3 状态） |
+| LangGraph4j StateGraph | Spring State Machine（轻量 4 状态） |
 | LangGraph4j MemorySaver | spring-ai-session `SessionMemoryAdvisor` |
 | 本地 Tool Adapter | Spring AI `ChatClient` + Tool Calling |
-| LangGraph4j checkpoint | Spring State Machine 内存状态 + 业务 `after_sales_case` 快照 |
+| LangGraph4j checkpoint | 项目持久化 checkpoint + `after_sales_case` 已提交边界指针 |
 | 自研工具编排 | spring-ai-agent-utils `TodoWriteTool` |
 
 ---
@@ -89,12 +89,10 @@ cn.ethan.ai.infrastructure.adapter/
 │   ├── RefundPlanningAgent.java          # 新增：ChatClient Plan
 │   └── RefundInformationGatherer.java    # 新增：执行 Plan + RePlan
 ├── statemachine/
-│   ├── SpringStateMachineAdapter.java    # 3 状态 SSM
+│   ├── SpringStateMachineAdapter.java    # 4 状态 SSM
 │   └── ssm/
 │       ├── AfterSalesState.java
 │       └── AfterSalesEvent.java
-├── mcp/
-│   └── AfterSalesMcpServer.java
 ├── repository/
 ├── commerce/
 └── event/
@@ -104,7 +102,7 @@ cn.ethan.ai.infrastructure.adapter/
 
 ## 三、主链路设计：轻量 Plan-and-Execute
 
-### 3.1 状态机（3 个业务状态）
+### 3.1 状态机（4 个业务状态）
 
 ```text
 INTAKE
@@ -194,9 +192,8 @@ PENDING_APPROVAL
 
 **状态：已完成**
 
-- 添加 `spring-ai-session`、`spring-ai-agent-utils`、`mcp-annotations`。
+- 添加 `spring-ai-session`、`spring-ai-agent-utils`。
 - 配置 `SessionMemoryAdvisor` 与 `TodoWriteTool` bean。
-- 实现 `AfterSalesMcpServer`。
 
 ### Phase 6：删除 LangGraph4j 残留
 
@@ -204,7 +201,7 @@ PENDING_APPROVAL
 
 - 删除 `LangGraph4jStateMachineAdapter`。
 - 移除所有 `langgraph4j` 依赖与配置。
-- 更新文档，表数量改为 8 张项目表。
+- 更新文档，表数量改为 9 张项目表。
 
 ### Phase 7：主链路升级为轻量 Plan-and-Execute
 
@@ -212,7 +209,7 @@ PENDING_APPROVAL
 
 #### 7.1 压缩状态机
 
-**目标：** 把 SSM 从 8 状态压缩到 3 状态。
+**目标：** 把 SSM 从 8 状态压缩到 4 状态。
 
 **关键动作：**
 1. 简化 `AfterSalesStage`：保留 `INTAKE`, `PENDING_APPROVAL`, `COMPLETED`, `REJECTED`。
@@ -233,7 +230,7 @@ PENDING_APPROVAL
 2. 新增 `RefundPlanningAgent`：
    - 使用 `ChatClient` + `SessionMemoryAdvisor`。
    - System Prompt 要求输出 JSON Plan。
-   - 只读工具 `query_order` 注册给 ChatClient。
+   - `SessionMemoryAdvisor` 使用 `caseId` 隔离规划对话。
 3. 新增 `RefundInformationGatheringPolicy`：
    - 校验 Plan action 是否在白名单。
    - 校验 Plan 是否收敛（不重复询问同一字段）。

@@ -19,6 +19,10 @@ spring:
       api-key: ${OPENAI_API_KEY:}
       chat:
         model: ${OPENAI_MODEL:deepseek-v4-pro}
+    session:
+      repository:
+        jdbc:
+          initialize-schema: never
 
 after-sales:
   execution-model: ${AFTER_SALES_EXECUTION_MODEL:deepseek-v4-flash}

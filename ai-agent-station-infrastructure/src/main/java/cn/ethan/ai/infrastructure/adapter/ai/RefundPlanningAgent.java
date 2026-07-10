@@ -5,6 +5,7 @@ import cn.ethan.ai.domain.agent.model.plan.PlannedStep;
 import cn.ethan.ai.domain.agent.model.plan.PlanningContext;
 import cn.ethan.ai.domain.agent.model.plan.RefundPlan;
 import cn.ethan.ai.types.common.id.StepId;
+import cn.ethan.ai.infrastructure.observability.AfterSalesRuntimeMetrics;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import lombok.extern.slf4j.Slf4j;
@@ -62,34 +63,48 @@ public class RefundPlanningAgent {
             """;
 
     private final ChatClient chatClient;
+    private final AfterSalesRuntimeMetrics metrics;
 
     public RefundPlanningAgent(ChatClient chatClient) {
+        this(chatClient, AfterSalesRuntimeMetrics.noop());
+    }
+
+    public RefundPlanningAgent(ChatClient chatClient, AfterSalesRuntimeMetrics metrics) {
         this.chatClient = chatClient;
+        this.metrics = metrics;
     }
 
     public RefundPlan plan(PlanningContext context) {
+        long startedAt = System.nanoTime();
+        String outcome = "model";
         RefundPlan plan;
         if (chatClient == null) {
             plan = deterministicPlan(context);
+            outcome = "deterministic";
         } else {
             try {
                 String content = chatClient.prompt()
                         .system(SYSTEM_PROMPT)
                         .user(buildUserPrompt(context))
-                        .advisors(a -> a.param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, sessionIdFor(context)))
+                        .advisors(a -> a
+                                .param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, memoryIdFor(context))
+                                .param(SessionMemoryAdvisor.USER_ID_CONTEXT_KEY, userIdFor(context)))
                         .call()
                         .content();
                 if (content == null || content.isBlank()) {
-                    log.warn("RefundPlanningAgent received empty response, using fallback");
+                    log.debug("RefundPlanningAgent received empty response, using fallback");
                     plan = fallbackPlan(context);
+                    outcome = "fallback_empty";
                 } else {
                     plan = JSON.parseObject(content, RefundPlan.class);
                 }
             } catch (Exception e) {
-                log.warn("RefundPlanningAgent failed to parse plan, using fallback", e);
+                log.debug("RefundPlanningAgent failed to parse plan, using fallback: {}", e.getMessage());
                 plan = fallbackPlan(context);
+                outcome = "fallback_error";
             }
         }
+        metrics.recordModelPlan(System.nanoTime() - startedAt, outcome);
         return assignStepIds(plan);
     }
 
@@ -201,9 +216,14 @@ public class RefundPlanningAgent {
                 + "- lastErrorMessage: " + safe(context.lastErrorMessage());
     }
 
-    private String sessionIdFor(PlanningContext context) {
-        String sessionId = context.sessionId();
-        return sessionId != null && !sessionId.isBlank() ? sessionId : "anonymous";
+    private String memoryIdFor(PlanningContext context) {
+        String caseId = context.caseId();
+        return caseId != null && !caseId.isBlank() ? caseId : "anonymous-case";
+    }
+
+    private String userIdFor(PlanningContext context) {
+        String userId = context.userId();
+        return userId != null && !userId.isBlank() ? userId : "anonymous-user";
     }
 
     private String safe(String value) {

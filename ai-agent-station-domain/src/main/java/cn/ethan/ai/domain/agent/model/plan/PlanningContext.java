@@ -6,6 +6,7 @@ package cn.ethan.ai.domain.agent.model.plan;
  * <p>收集当前已掌握的全部信息、上一次工具调用的结果/错误，
  * 以及当前 RePlan 状态，作为 {@link cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent} 的输入。</p>
  *
+ * @param caseId            售后 Case 标识，也是模型记忆隔离键
  * @param userId            用户标识
  * @param sessionId         业务会话标识
  * @param message           用户原始消息
@@ -20,6 +21,7 @@ package cn.ethan.ai.domain.agent.model.plan;
  * @param lastErrorMessage  上一次错误描述
  */
 public record PlanningContext(
+        String caseId,
         String userId,
         String sessionId,
         String message,

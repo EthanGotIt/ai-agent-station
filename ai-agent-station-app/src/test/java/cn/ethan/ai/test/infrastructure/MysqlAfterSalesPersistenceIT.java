@@ -5,6 +5,7 @@ import cn.ethan.ai.domain.agent.model.AfterSalesAgentState;
 import cn.ethan.ai.domain.agent.model.AfterSalesCaseView;
 import cn.ethan.ai.domain.agent.model.AfterSalesOrderSnapshot;
 import cn.ethan.ai.domain.agent.model.AfterSalesRefundResult;
+import cn.ethan.ai.domain.agent.model.AfterSalesStateMachineResult;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolRequest;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolResult;
 import cn.ethan.ai.domain.agent.model.valobj.AgentTurnRecord;
@@ -20,6 +21,7 @@ import cn.ethan.ai.infrastructure.adapter.commerce.LocalRefundGateway;
 import cn.ethan.ai.infrastructure.adapter.event.AfterSalesOutboxDispatcher;
 import cn.ethan.ai.infrastructure.adapter.event.IdempotentLocalEventPublisher;
 import cn.ethan.ai.infrastructure.adapter.repository.AfterSalesRepository;
+import cn.ethan.ai.infrastructure.adapter.repository.AfterSalesBoundaryRepository;
 import cn.ethan.ai.infrastructure.adapter.repository.AgentTurnRepository;
 import cn.ethan.ai.infrastructure.adapter.repository.CheckpointRepository;
 import cn.ethan.ai.infrastructure.adapter.statemachine.SpringStateMachineAdapter;
@@ -55,10 +57,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
-@Testcontainers(disabledWithoutDocker = true)
+@Testcontainers
 public class MysqlAfterSalesPersistenceIT {
 
     private static final String[] EXPECTED_TABLES = {
+            "AI_SESSION",
+            "AI_SESSION_EVENT",
             "agent_checkpoint",
             "agent_turn",
             "demo_order",
@@ -84,7 +88,7 @@ public class MysqlAfterSalesPersistenceIT {
             .withPassword("test");
 
     @Test
-    void shouldPersistAllTenTablesAndCompleteOutboxRetryAndIdempotentConsumption() throws Exception {
+    void shouldPersistAllTablesAndCompleteOutboxRetryAndIdempotentConsumption() throws Exception {
         MysqlDataSource dataSource = dataSource();
         createSchema(dataSource);
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
@@ -98,14 +102,17 @@ public class MysqlAfterSalesPersistenceIT {
                 sqlSessionTemplate.getMapper(CheckpointMapper.class));
         DemoOrderMapper demoOrderMapper = sqlSessionTemplate.getMapper(DemoOrderMapper.class);
         LocalOrderGateway orderGateway = new LocalOrderGateway(demoOrderMapper);
+        TransactionTemplate transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
         AfterSalesRepository afterSalesRepository = new AfterSalesRepository(
                 orderGateway,
                 new LocalRefundGateway(demoOrderMapper, orderGateway),
                 sqlSessionTemplate.getMapper(AfterSalesCaseMapper.class),
                 sqlSessionTemplate.getMapper(RefundCommandMapper.class),
                 sqlSessionTemplate.getMapper(AfterSalesOutboxMapper.class),
-                new TransactionTemplate(new DataSourceTransactionManager(dataSource))
+                transactionTemplate
         );
+        AfterSalesBoundaryRepository boundaryRepository = new AfterSalesBoundaryRepository(
+                afterSalesRepository, checkpointRepository, turnRepository, transactionTemplate);
 
         LocalDateTime now = LocalDateTime.now();
         afterSalesRepository.createCase("case-1", "demo-user-1", "session-1", "退款");
@@ -137,24 +144,65 @@ public class MysqlAfterSalesPersistenceIT {
         input.put(AfterSalesAgentState.ORDER_STATUS, "PAID");
         input.put(AfterSalesAgentState.REFUND_REASON, "DAMAGED");
 
-        AfterSalesAgentState waiting = process.execute(input, "case-1");
+        AfterSalesStateMachineResult waitingExecution = process.execute(input, "case-1");
+        AfterSalesAgentState waiting = waitingExecution.state();
+        boundaryRepository.commit(caseView(waitingExecution), waitingExecution.checkpoint(),
+                completedTurn("turn-1", waitingExecution.checkpoint().checkpointId().value()));
         String checkpointId = process.currentSnapshot("case-1").orElseThrow().checkpointId();
         Assertions.assertEquals(AfterSalesStage.PENDING_APPROVAL, waiting.stage());
+        Assertions.assertEquals(waitingExecution.checkpoint().checkpointId().value(), checkpointId);
 
-        AfterSalesAgentState completed = process.resume(
-                Map.of(AfterSalesAgentState.APPROVAL_DECISION, "APPROVE"),
+        checkpointRepository.save(new cn.ethan.ai.domain.agent.model.Checkpoint(
+                cn.ethan.ai.types.common.id.CheckpointId.of("orphan-checkpoint"),
+                cn.ethan.ai.types.common.id.CaseId.of("case-1"),
+                cn.ethan.ai.types.common.id.TurnId.of("turn-1"),
+                null,
+                waitingExecution.checkpoint().ssmState(),
+                waiting,
+                waiting.stage(),
+                LocalDateTime.now()));
+        Assertions.assertEquals(checkpointId, process.currentSnapshot("case-1").orElseThrow().checkpointId());
+        Assertions.assertTrue(afterSalesRepository.tryAcquireResume(
+                "case-1", checkpointId, "dead-instance", 30));
+        jdbc.update("UPDATE after_sales_case SET resume_locked_until = DATE_SUB(NOW(6), INTERVAL 1 SECOND) "
+                + "WHERE case_id = ?", "case-1");
+        Assertions.assertTrue(afterSalesRepository.tryAcquireResume(
+                "case-1", checkpointId, "turn-2", 30));
+
+        turnRepository.createTurn(AgentTurnRecord.builder()
+                .turnId("turn-2")
+                .caseId("case-1")
+                .sessionId("session-1")
+                .actorId("approver-1")
+                .turnType("APPROVE")
+                .attemptNo(2)
+                .inputSummary("APPROVE")
+                .status(AgentTurnStatus.RUNNING.name())
+                .checkpointBefore(checkpointId)
+                .startTime(LocalDateTime.now())
+                .build());
+
+        SpringStateMachineAdapter restartedProcess = graph(dataSource, afterSalesRepository, checkpointRepository);
+        AfterSalesStateMachineResult completedExecution = restartedProcess.resume(
+                Map.of(
+                        AfterSalesAgentState.APPROVAL_DECISION, "APPROVE",
+                        AfterSalesAgentState.TURN_ID, "turn-2"),
                 "case-1",
                 checkpointId
         );
+        AfterSalesAgentState completed = completedExecution.state();
+        boundaryRepository.commit(caseView(completedExecution), completedExecution.checkpoint(),
+                completedTurn("turn-2", completedExecution.checkpoint().checkpointId().value()));
 
         Assertions.assertEquals(AfterSalesStage.COMPLETED, completed.stage());
+        Assertions.assertNotEquals(checkpointId,
+                restartedProcess.currentSnapshot("case-1").orElseThrow().checkpointId());
         AfterSalesRefundResult replay = afterSalesRepository.executeRefund(
                 "case-1", "ORDER-PAID-001", "demo-user-1", "case-1:REFUND");
         Assertions.assertTrue(replay.success());
         Assertions.assertTrue(replay.idempotentReplay());
 
         AfterSalesOutboxMapper outboxMapper = sqlSessionTemplate.getMapper(AfterSalesOutboxMapper.class);
-        TransactionTemplate transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
         AtomicInteger handled = new AtomicInteger();
         IAfterSalesEventHandler handler = new IAfterSalesEventHandler() {
             @Override
@@ -205,8 +253,8 @@ public class MysqlAfterSalesPersistenceIT {
         Assertions.assertEquals(1, retryDispatcher.dispatchBatch(10, dispatchAt.plusSeconds(3)).delivered());
         Assertions.assertEquals(2, publishAttempts.get());
 
-        assertRowCount(jdbc, "agent_checkpoint", 1);
-        assertRowCount(jdbc, "agent_turn", 1);
+        assertRowCount(jdbc, "agent_checkpoint", 5);
+        assertRowCount(jdbc, "agent_turn", 2);
         assertRowCount(jdbc, "demo_order", 3);
         assertRowCount(jdbc, "after_sales_case", 1);
         assertRowCount(jdbc, "refund_command", 1);
@@ -214,6 +262,30 @@ public class MysqlAfterSalesPersistenceIT {
         assertRowCount(jdbc, "after_sales_event_consume", 1);
         Assertions.assertEquals("REFUNDED", afterSalesRepository
                 .findOrder("ORDER-PAID-001", "demo-user-1").orElseThrow().status());
+    }
+
+    private AfterSalesCaseView caseView(AfterSalesStateMachineResult execution) {
+        AfterSalesAgentState state = execution.state();
+        return AfterSalesCaseView.of(
+                state.text(AfterSalesAgentState.CASE_ID),
+                state.text(AfterSalesAgentState.USER_ID),
+                state.text(AfterSalesAgentState.SESSION_ID),
+                state.text(AfterSalesAgentState.ORDER_ID),
+                state.stage().name(),
+                execution.checkpoint().checkpointId().value(),
+                execution.nextNode(),
+                state.text(AfterSalesAgentState.TERMINAL_REASON),
+                state.text(AfterSalesAgentState.COMMAND_ID));
+    }
+
+    private AgentTurnRecord completedTurn(String turnId, String checkpointId) {
+        return AgentTurnRecord.builder()
+                .turnId(turnId)
+                .status(AgentTurnStatus.SUCCESS.name())
+                .outputSummary("COMPLETED")
+                .checkpointAfter(checkpointId)
+                .endTime(LocalDateTime.now())
+                .build();
     }
 
     private MysqlDataSource dataSource() {

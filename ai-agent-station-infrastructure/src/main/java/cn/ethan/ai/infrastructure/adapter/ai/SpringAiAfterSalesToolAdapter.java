@@ -6,6 +6,7 @@ import cn.ethan.ai.domain.agent.model.AfterSalesOrderSnapshot;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolRequest;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolResult;
 import cn.ethan.ai.domain.agent.policy.AfterSalesToolContractValidator;
+import cn.ethan.ai.infrastructure.observability.AfterSalesRuntimeMetrics;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import lombok.NonNull;
@@ -27,6 +28,7 @@ import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.ai.tool.metadata.ToolMetadata;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -53,15 +55,34 @@ public class SpringAiAfterSalesToolAdapter implements IAfterSalesToolPort {
     private final ToolCallingManager toolCallingManager;
     private final ChatModel chatModel;
     private final String modelName;
+    private final AfterSalesRuntimeMetrics metrics;
 
+    @Autowired
     public SpringAiAfterSalesToolAdapter(IOrderGateway orderGateway,
                                          ToolCallingManager toolCallingManager,
-                                         @Autowired(required = false) ChatModel chatModel,
-                                         @Value("${after-sales.execution-model:deepseek-v4-flash}") String modelName) {
+                                         ObjectProvider<ChatModel> chatModelProvider,
+                                         @Value("${after-sales.execution-model:deepseek-v4-flash}") String modelName,
+                                         AfterSalesRuntimeMetrics metrics) {
+        this(orderGateway, toolCallingManager, chatModelProvider.getIfAvailable(), modelName, metrics);
+    }
+
+    private SpringAiAfterSalesToolAdapter(IOrderGateway orderGateway,
+                                          ToolCallingManager toolCallingManager,
+                                          ChatModel chatModel,
+                                          String modelName,
+                                          AfterSalesRuntimeMetrics metrics) {
         this.orderGateway = orderGateway;
         this.toolCallingManager = toolCallingManager;
         this.chatModel = chatModel;
         this.modelName = modelName == null || modelName.isBlank() ? "deepseek-v4-flash" : modelName.trim();
+        this.metrics = metrics;
+    }
+
+    public SpringAiAfterSalesToolAdapter(IOrderGateway orderGateway,
+                                         ToolCallingManager toolCallingManager,
+                                         ChatModel chatModel,
+                                         String modelName) {
+        this(orderGateway, toolCallingManager, chatModel, modelName, AfterSalesRuntimeMetrics.noop());
     }
 
     @Override
@@ -97,7 +118,9 @@ public class SpringAiAfterSalesToolAdapter implements IAfterSalesToolPort {
                 new UserMessage(promptText)
         ), options);
         ChatResponse response = chatModel.call(prompt);
-        assert response != null;
+        if (response == null) {
+            throw new IllegalStateException("模型没有返回工具调用响应");
+        }
         return extractSingleOrderQuery(response);
     }
 
@@ -113,14 +136,12 @@ public class SpringAiAfterSalesToolAdapter implements IAfterSalesToolPort {
         return new AfterSalesToolRequest(call.id(), call.name(), call.arguments());
     }
 
-    private String sessionIdFor(String userId) {
-        return userId == null || userId.isBlank() ? UUID.randomUUID().toString() : userId;
-    }
-
     @Override
     public AfterSalesToolResult executeOrderQuery(AfterSalesToolRequest request,
                                                   String userId,
                                                   String userMessage) {
+        long startedAt = System.nanoTime();
+        AfterSalesToolResult result;
         try {
             ToolCallback callback = queryOrderCallback();
             OpenAiChatOptions options = OpenAiChatOptions.builder()
@@ -143,12 +164,15 @@ public class SpringAiAfterSalesToolAdapter implements IAfterSalesToolPort {
                     new ChatResponse(List.of(new Generation(assistantMessage)))
             );
             String output = extractToolOutput(execution.conversationHistory());
-            return parseToolResult(output);
+            result = parseToolResult(output);
         } catch (IllegalArgumentException e) {
-            return AfterSalesToolResult.failure("", "TOOL_ARGUMENT_INVALID", e.getMessage());
+            result = AfterSalesToolResult.failure("", "TOOL_ARGUMENT_INVALID", e.getMessage());
         } catch (Exception e) {
-            return AfterSalesToolResult.failure("", classifyException(e), e.getMessage());
+            result = AfterSalesToolResult.failure("", classifyException(e), e.getMessage());
         }
+        metrics.recordTool(System.nanoTime() - startedAt,
+                result.success() ? "success" : result.errorType());
+        return result;
     }
 
     private ToolCallback queryOrderCallback() {

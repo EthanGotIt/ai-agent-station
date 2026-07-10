@@ -18,12 +18,12 @@ public interface IAfterSalesRepository {
 
     boolean cancelCase(String caseId, String reason);
 
-    default boolean tryAcquireResume(String caseId, String checkpointId, String resumeToken) {
-        return true;
-    }
+    boolean tryAcquireResume(String caseId,
+                             String checkpointId,
+                             String resumeToken,
+                             long leaseSeconds);
 
-    default void releaseResume(String caseId, String resumeToken) {
-    }
+    void releaseResume(String caseId, String resumeToken);
 
     AfterSalesRefundResult executeRefund(String caseId, String orderId, String userId, String idempotencyKey);
 }

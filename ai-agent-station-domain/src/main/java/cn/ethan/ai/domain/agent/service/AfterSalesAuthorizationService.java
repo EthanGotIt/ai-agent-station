@@ -12,7 +12,7 @@ public final class AfterSalesAuthorizationService {
 
     public void authorizeResume(AfterSalesCaseView caseView, AfterSalesResumeCommand command) {
         if (command.action() == AfterSalesResumeCommand.ResumeAction.SUPPLY_INFO) {
-            assert caseView.userIdValue() != null;
+            requireOwner(caseView);
             if (!caseView.userIdValue().equals(command.actorIdValue())) {
                 throw new SecurityException("只有Case 所有者可以补充信息");
             }
@@ -24,7 +24,7 @@ public final class AfterSalesAuthorizationService {
     }
 
     public boolean canAccess(AfterSalesCaseView caseView, String requesterId, String requesterRole) {
-        assert caseView.userIdValue() != null;
+        requireOwner(caseView);
         return caseView.userIdValue().equals(requesterId)
                 || "AFTER_SALES_APPROVER".equalsIgnoreCase(requesterRole);
     }
@@ -33,6 +33,12 @@ public final class AfterSalesAuthorizationService {
         if (AfterSalesStage.COMPLETED.name().equals(caseView.stage())
                 || AfterSalesStage.REJECTED.name().equals(caseView.stage())) {
             throw new AfterSalesResumeConflictException("售后Case已结束，不能继续恢复");
+        }
+    }
+
+    private void requireOwner(AfterSalesCaseView caseView) {
+        if (caseView.userIdValue() == null) {
+            throw new IllegalStateException("售后Case缺少所有者");
         }
     }
 }

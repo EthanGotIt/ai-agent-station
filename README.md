@@ -10,9 +10,7 @@
 - Spring State Machine 4.0（默认运行时）
 - spring-ai-community：`spring-ai-session-management`、`spring-ai-agent-utils`
 - MySQL、MyBatis
-- Testcontainers
-
-Java 17 有界线程池基线达到 431.03 tasks/s、P95 82 ms、0 错误，当前没有升级 Java 21 虚拟线程的量化依据。
+- Testcontainers MySQL（仅集成测试）
 
 ## 主链路
 
@@ -29,7 +27,7 @@ PENDING_APPROVAL
 - Spring AI `ChatClient`：通过 `RefundPlanningAgent` 生成结构化的信息收集计划（JSON Plan）。
 - `RefundInformationGatherer`：执行 Plan 中的 `ASK_USER` / `TOOL_CALL(query_order)` 步骤，监控执行结果并触发最多 3 次 RePlan。
 - Spring State Machine：业务状态图只保留 `INTAKE / PENDING_APPROVAL / COMPLETED / REJECTED`，interrupt/resume 与 checkpoint 语义由 `IAfterSalesStateMachine` 端口封装。
-- spring-ai-session：为规划调用提供结构化会话记忆（`SessionMemoryAdvisor`）。
+- spring-ai-session：通过 `SessionMemoryAdvisor` 保存 Case 级规划对话；业务状态仍以 checkpoint 和业务表为准。
 - spring-ai-agent-utils：在进入 `PENDING_APPROVAL` 时通过 `TodoWriteTool` 生成退款检查清单。
 - Java Policy：`RefundInformationGatheringPolicy` 校验 Plan 动作白名单与收敛性；`AfterSalesRefundEligibilityPolicy` 判定退款资格；`AfterSalesAuthorizationService` 守护审批身份。
 
@@ -37,11 +35,11 @@ PENDING_APPROVAL
 
 ## Case、Turn 与 checkpoint
 
-- `sessionId`：调用方提供的归组标识，不单独建表。
+- `sessionId`：调用方提供的归组标识，不作为模型记忆键。
 - `caseId`：跨多轮的售后业务流程，同时作为状态机 `threadId`。
 - `turnId`：一次状态机 start/resume/retry 尝试，也是一次用户补充或人工审批交互。
-- `agent_checkpoint`：状态机每次推进后写入的持久化恢复点。
-- checkpoint：由状态机适配器维护的当前恢复令牌，业务上保存在 `after_sales_case.checkpoint_id`。
+- `agent_checkpoint`：保存 Plan、Tool、Policy 的过程快照及 Turn 边界。
+- `after_sales_case.checkpoint_id`：唯一已提交、可由外部 resume 的 checkpoint 指针。
 
 因此当前模型是 **Session 标识 + Case → Turn → Checkpoint**；业务 `caseId` 直接复用为状态机 thread key。
 
@@ -62,13 +60,14 @@ Get-Content -Raw .\docs\dev-ops\mysql\sql\ai-agent-station.sql |
   & 'D:\Environment\MySQL\bin\mysql.exe' -h 127.0.0.1 -P 3306 -u root -p ai-agent-station
 ```
 
-共 7 张业务表：
+共 9 张项目表：
 
 - 运行审计：`agent_turn`、`agent_checkpoint`
 - 售后业务：`demo_order`、`after_sales_case`、`refund_command`
 - 可靠事件：`after_sales_outbox`、`after_sales_event_consume`
+- 模型记忆：`AI_SESSION`、`AI_SESSION_EVENT`
 
-所有表统一通过 MyBatis Mapper 访问。checkpoint 由 `SpringStateMachineAdapter` 在内存中维护；业务恢复所需的持久化状态通过 `after_sales_case` 业务快照保存，不再依赖单独的状态机框架 checkpoint 表。
+业务表统一通过 MyBatis Mapper 访问。状态机按 `ssm_state` 和完整业务状态从数据库 checkpoint 重建；过程快照不会覆盖 Case 已提交的恢复指针。
 
 ## HTTP
 
@@ -100,10 +99,10 @@ $env:Path="$env:JAVA_HOME\bin;$env:Path"
 mvn -pl ai-agent-station-app -am "-DskipTests=false" test
 ```
 
-跨实例 checkpoint、重复恢复、事务幂等和 Outbox：
+使用 Testcontainers 临时 MySQL 验证跨实例 checkpoint、重复恢复、事务幂等和 Outbox；仅该命令要求 Docker：
 
 ```powershell
-mvn -pl ai-agent-station-app -am "-DskipTests=false" -Dit.test=MysqlAfterSalesPersistenceIT verify
+mvn -pl ai-agent-station-app -am "-DskipTests=false" "-Dit.test=MysqlAfterSalesPersistenceIT" verify
 ```
 
 详细边界与验收说明见：

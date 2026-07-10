@@ -105,7 +105,7 @@ public class AfterSalesLiveModelEvaluationIT {
                     new RefundInformationGatheringPolicy(),
                     null,
                     new InMemoryCheckpointRepository())
-                    .execute(toGovernedInput(testCase), "eval-" + testCase.getString("id"));
+                    .execute(toGovernedInput(testCase), "eval-" + testCase.getString("id")).state();
             String expectedStage = testCase.getString("expectedStage");
             if (expectedStage.equals(state.stage().name())) {
                 governedRoutePassed++;
@@ -340,6 +340,19 @@ public class AfterSalesLiveModelEvaluationIT {
         @Override
         public boolean cancelCase(String caseId, String reason) {
             return false;
+        }
+
+        @Override
+        public boolean tryAcquireResume(String caseId,
+                                        String checkpointId,
+                                        String resumeToken,
+                                        long leaseSeconds) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void releaseResume(String caseId, String resumeToken) {
+            throw new UnsupportedOperationException();
         }
 
         @Override

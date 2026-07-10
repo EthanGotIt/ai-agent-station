@@ -10,6 +10,8 @@
         <result column="order_id" property="orderId"/>
         <result column="stage" property="stage"/>
         <result column="checkpoint_id" property="checkpointId"/>
+        <result column="resume_token" property="resumeToken"/>
+        <result column="resume_locked_until" property="resumeLockedUntil"/>
         <result column="next_node" property="nextNode"/>
         <result column="terminal_reason" property="terminalReason"/>
         <result column="command_id" property="commandId"/>
@@ -32,13 +34,14 @@
             terminal_reason = #{terminalReason},
             command_id = #{commandId},
             resume_token = NULL,
+            resume_locked_until = NULL,
             updated_at = NOW(6)
         WHERE case_id = #{caseId}
     </update>
 
     <select id="selectByCaseId" resultMap="AfterSalesCaseMap">
         SELECT case_id, user_id, session_id, user_message, order_id, stage,
-               checkpoint_id, next_node, terminal_reason, command_id
+               checkpoint_id, resume_token, resume_locked_until, next_node, terminal_reason, command_id
         FROM after_sales_case
         WHERE case_id = #{caseId}
     </select>
@@ -47,6 +50,8 @@
         UPDATE after_sales_case
         SET stage = 'REJECTED',
             terminal_reason = #{reason},
+            resume_token = NULL,
+            resume_locked_until = NULL,
             updated_at = NOW(6)
         WHERE case_id = #{caseId}
           AND stage NOT IN ('COMPLETED', 'REJECTED')
@@ -62,15 +67,19 @@
 
     <update id="tryAcquireResume">
         UPDATE after_sales_case
-        SET resume_token = #{resumeToken}, updated_at = NOW(6)
+        SET resume_token = #{resumeToken},
+            resume_locked_until = DATE_ADD(NOW(6), INTERVAL #{leaseSeconds} SECOND),
+            updated_at = NOW(6)
         WHERE case_id = #{caseId}
           AND checkpoint_id = #{checkpointId}
-          AND resume_token IS NULL
+          AND (resume_token IS NULL OR resume_locked_until IS NULL OR resume_locked_until &lt;= NOW(6))
     </update>
 
     <update id="releaseResume">
         UPDATE after_sales_case
-        SET resume_token = NULL, updated_at = NOW(6)
+        SET resume_token = NULL,
+            resume_locked_until = NULL,
+            updated_at = NOW(6)
         WHERE case_id = #{caseId} AND resume_token = #{resumeToken}
     </update>
 

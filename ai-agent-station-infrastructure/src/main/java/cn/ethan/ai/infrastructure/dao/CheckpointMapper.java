@@ -11,7 +11,5 @@ public interface CheckpointMapper {
 
     int insert(CheckpointPO checkpoint);
 
-    Optional<CheckpointPO> selectLatestByCaseId(@Param("caseId") String caseId);
-
     Optional<CheckpointPO> selectById(@Param("checkpointId") String checkpointId);
 }

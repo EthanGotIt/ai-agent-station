@@ -24,7 +24,7 @@ public class RefundInformationGatheringPolicyTest {
                 new ChecklistItem("orderStatus", "DONE"),
                 new ChecklistItem("refundReason", "DONE")
         ));
-        PlanningContext context = new PlanningContext("u1", "s1", "msg", "o1", "PAID", "DAMAGED", null, null, 0, 0, null, null);
+        PlanningContext context = new PlanningContext("case-1", "u1", "s1", "msg", "o1", "PAID", "DAMAGED", null, null, 0, 0, null, null);
 
         RefundInformationGatheringPolicy.ValidationResult result = policy.validate(plan, context);
 
@@ -36,7 +36,7 @@ public class RefundInformationGatheringPolicyTest {
         RefundPlan plan = new RefundPlan(false, List.of(
                 new PlannedStep(StepId.of("refund-step"), "REFUND", "orderId", null, null, null)
         ), List.of());
-        PlanningContext context = new PlanningContext("u1", "s1", "msg", null, null, null, null, null, 0, 0, null, null);
+        PlanningContext context = new PlanningContext("case-1", "u1", "s1", "msg", null, null, null, null, null, 0, 0, null, null);
 
         RefundInformationGatheringPolicy.ValidationResult result = policy.validate(plan, context);
 
@@ -49,7 +49,7 @@ public class RefundInformationGatheringPolicyTest {
         RefundPlan plan = new RefundPlan(false, List.of(
                 new PlannedStep(StepId.of("refund-order-step"), "TOOL_CALL", "orderId", "refund_order", Map.of("orderId", "o1"), null)
         ), List.of());
-        PlanningContext context = new PlanningContext("u1", "s1", "msg", null, null, null, null, null, 0, 0, null, null);
+        PlanningContext context = new PlanningContext("case-1", "u1", "s1", "msg", null, null, null, null, null, 0, 0, null, null);
 
         RefundInformationGatheringPolicy.ValidationResult result = policy.validate(plan, context);
 
@@ -62,7 +62,7 @@ public class RefundInformationGatheringPolicyTest {
         RefundPlan plan = new RefundPlan(false, List.of(
                 new PlannedStep(StepId.of("query-no-order-id"), "TOOL_CALL", "orderStatus", "query_order", Map.of(), null)
         ), List.of());
-        PlanningContext context = new PlanningContext("u1", "s1", "msg", null, null, null, null, null, 0, 0, null, null);
+        PlanningContext context = new PlanningContext("case-1", "u1", "s1", "msg", null, null, null, null, null, 0, 0, null, null);
 
         RefundInformationGatheringPolicy.ValidationResult result = policy.validate(plan, context);
 
@@ -75,7 +75,7 @@ public class RefundInformationGatheringPolicyTest {
         RefundPlan plan = new RefundPlan(false, List.of(
                 new PlannedStep(StepId.of("ask-order-id"), "ASK_USER", "orderId", null, null, "请提供订单号")
         ), List.of());
-        PlanningContext context = new PlanningContext("u1", "s1", "msg", "o1", null, null, null, null, 0, 0, null, null);
+        PlanningContext context = new PlanningContext("case-1", "u1", "s1", "msg", "o1", null, null, null, null, 0, 0, null, null);
 
         RefundInformationGatheringPolicy.ValidationResult result = policy.validate(plan, context);
 
@@ -88,7 +88,7 @@ public class RefundInformationGatheringPolicyTest {
         RefundPlan plan = new RefundPlan(false, List.of(
                 new PlannedStep(StepId.of("ask-order-id-retry"), "ASK_USER", "orderId", null, null, "请重新确认订单号")
         ), List.of());
-        PlanningContext context = new PlanningContext("u1", "s1", "msg", "o1", null, null, null, "ORDER_NOT_FOUND", 1, 0, null, null);
+        PlanningContext context = new PlanningContext("case-1", "u1", "s1", "msg", "o1", null, null, null, "ORDER_NOT_FOUND", 1, 0, null, null);
 
         RefundInformationGatheringPolicy.ValidationResult result = policy.validate(plan, context);
 
@@ -100,7 +100,7 @@ public class RefundInformationGatheringPolicyTest {
         RefundPlan plan = new RefundPlan(false, List.of(
                 new PlannedStep(StepId.of("query-order"), "TOOL_CALL", "orderStatus", "query_order", Map.of("orderId", "o1"), null)
         ), List.of());
-        PlanningContext context = new PlanningContext("u1", "s1", "msg", "o1", null, null, null, null, 0, 0, null, null);
+        PlanningContext context = new PlanningContext("case-1", "u1", "s1", "msg", "o1", null, null, null, null, 0, 0, null, null);
 
         RefundInformationGatheringPolicy.ValidationResult result = policy.validate(plan, context);
 

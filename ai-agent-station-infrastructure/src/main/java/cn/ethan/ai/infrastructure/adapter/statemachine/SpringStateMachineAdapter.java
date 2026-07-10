@@ -2,6 +2,7 @@ package cn.ethan.ai.infrastructure.adapter.statemachine;
 
 import cn.ethan.ai.domain.agent.model.AfterSalesAgentState;
 import cn.ethan.ai.domain.agent.model.AfterSalesAgentStateSnapshot;
+import cn.ethan.ai.domain.agent.model.AfterSalesStateMachineResult;
 import cn.ethan.ai.domain.agent.model.Checkpoint;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AfterSalesStage;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesRepository;
@@ -13,7 +14,9 @@ import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
 import cn.ethan.ai.infrastructure.adapter.statemachine.ssm.AfterSalesEvent;
 import cn.ethan.ai.infrastructure.adapter.statemachine.ssm.AfterSalesState;
 import cn.ethan.ai.infrastructure.adapter.statemachine.ssm.RefundInformationGatherer;
+import cn.ethan.ai.infrastructure.observability.AfterSalesRuntimeMetrics;
 import cn.ethan.ai.types.common.id.CaseId;
+import cn.ethan.ai.types.common.id.CheckpointId;
 import cn.ethan.ai.types.common.id.TurnId;
 import org.springaicommunity.agent.tools.TodoWriteTool;
 import org.springframework.messaging.support.MessageBuilder;
@@ -21,8 +24,11 @@ import org.springframework.statemachine.StateMachine;
 import org.springframework.statemachine.action.Action;
 import org.springframework.statemachine.config.StateMachineBuilder;
 import org.springframework.statemachine.guard.Guard;
+import org.springframework.statemachine.support.DefaultExtendedState;
+import org.springframework.statemachine.support.DefaultStateMachineContext;
 import reactor.core.publisher.Mono;
 
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -49,13 +55,25 @@ public class SpringStateMachineAdapter implements IAfterSalesStateMachine {
                                       RefundInformationGatheringPolicy policy,
                                       TodoWriteTool todoWriteTool,
                                       ICheckpointRepository checkpointRepository) {
+        this(toolPort, repository, planningAgent, policy, todoWriteTool,
+                checkpointRepository, AfterSalesRuntimeMetrics.noop());
+    }
+
+    public SpringStateMachineAdapter(IAfterSalesToolPort toolPort,
+                                     IAfterSalesRepository repository,
+                                     RefundPlanningAgent planningAgent,
+                                     RefundInformationGatheringPolicy policy,
+                                     TodoWriteTool todoWriteTool,
+                                     ICheckpointRepository checkpointRepository,
+                                     AfterSalesRuntimeMetrics metrics) {
         this.repository = repository;
         this.checkpointRepository = checkpointRepository;
-        this.gatherer = new RefundInformationGatherer(toolPort, planningAgent, policy, todoWriteTool, checkpointRepository);
+        this.gatherer = new RefundInformationGatherer(
+                toolPort, planningAgent, policy, todoWriteTool, checkpointRepository, metrics);
     }
 
     @Override
-    public AfterSalesAgentState execute(Map<String, Object> input, String threadId) {
+    public AfterSalesStateMachineResult execute(Map<String, Object> input, String threadId) {
         StateMachine<AfterSalesState, AfterSalesEvent> machine = buildAndStartMachine();
 
         Map<String, Object> data = new LinkedHashMap<>(input);
@@ -70,23 +88,22 @@ public class SpringStateMachineAdapter implements IAfterSalesStateMachine {
         machine.getExtendedState().getVariables().put(VAR_STATE, gathered);
         sendEventAndWait(machine, AfterSalesEvent.ELIGIBLE);
 
-        return currentState(machine);
+        return boundaryResult(machine, caseId, turnId);
     }
 
     @Override
-    public AfterSalesAgentState resume(Map<String, Object> update, String threadId, String checkpointId) {
+    public AfterSalesStateMachineResult resume(Map<String, Object> update, String threadId, String checkpointId) {
         CaseId caseId = CaseId.of(threadId);
-        Checkpoint latest = checkpointRepository.findLatest(caseId)
+        Checkpoint latest = checkpointRepository.findById(CheckpointId.of(checkpointId))
                 .orElseThrow(() -> new IllegalStateException("没有可恢复的 Checkpoint，caseId=" + threadId));
-        if (!latest.checkpointId().value().equals(checkpointId)) {
-            throw new IllegalStateException("checkpoint 已过期，当前 checkpointId=" + latest.checkpointId().value());
+        if (!latest.caseId().equals(caseId)) {
+            throw new IllegalStateException("checkpoint 不属于当前 Case，caseId=" + threadId);
         }
 
-        StateMachine<AfterSalesState, AfterSalesEvent> machine = buildAndStartMachine();
         AfterSalesAgentState restored = merge(latest.state(), update);
-        machine.getExtendedState().getVariables().put(VAR_STATE, restored);
+        StateMachine<AfterSalesState, AfterSalesEvent> machine = buildAndRestoreMachine(latest.ssmState(), restored);
 
-        switch (restored.stage()) {
+        switch (machine.getState().getId()) {
             case INTAKE -> {
                 TurnId turnId = extractTurnId(restored);
                 AfterSalesAgentState gathered = gatherer.gather(restored, caseId, turnId);
@@ -94,7 +111,6 @@ public class SpringStateMachineAdapter implements IAfterSalesStateMachine {
                 sendEventAndWait(machine, AfterSalesEvent.ELIGIBLE);
             }
             case PENDING_APPROVAL -> {
-                sendEventAndWait(machine, AfterSalesEvent.ELIGIBLE);
                 String decision = restored.text(AfterSalesAgentState.APPROVAL_DECISION);
                 AfterSalesEvent event = "APPROVE".equalsIgnoreCase(decision)
                         ? AfterSalesEvent.APPROVE
@@ -106,12 +122,16 @@ public class SpringStateMachineAdapter implements IAfterSalesStateMachine {
             }
         }
 
-        return currentState(machine);
+        return boundaryResult(machine, caseId, extractTurnId(restored));
     }
 
     @Override
     public Optional<AfterSalesAgentStateSnapshot> currentSnapshot(String threadId) {
-        return checkpointRepository.findLatest(CaseId.of(threadId))
+        return repository.findCase(threadId)
+                .map(caseView -> caseView.checkpointId())
+                .filter(checkpointId -> checkpointId != null && !checkpointId.isBlank())
+                .flatMap(checkpointId -> checkpointRepository.findById(CheckpointId.of(checkpointId)))
+                .filter(checkpoint -> checkpoint.caseId().equals(CaseId.of(threadId)))
                 .map(cp -> new AfterSalesAgentStateSnapshot(
                         cp.checkpointId().value(),
                         cp.ssmState(),
@@ -120,6 +140,24 @@ public class SpringStateMachineAdapter implements IAfterSalesStateMachine {
 
     private StateMachine<AfterSalesState, AfterSalesEvent> buildAndStartMachine() {
         StateMachine<AfterSalesState, AfterSalesEvent> machine = buildMachine();
+        machine.startReactively().block();
+        return machine;
+    }
+
+    private StateMachine<AfterSalesState, AfterSalesEvent> buildAndRestoreMachine(String ssmState,
+                                                                                  AfterSalesAgentState state) {
+        StateMachine<AfterSalesState, AfterSalesEvent> machine = buildMachine();
+        AfterSalesState restoredState;
+        try {
+            restoredState = AfterSalesState.valueOf(ssmState);
+        } catch (RuntimeException error) {
+            throw new IllegalStateException("无法恢复状态机状态: " + ssmState, error);
+        }
+        DefaultExtendedState extendedState = new DefaultExtendedState();
+        extendedState.getVariables().put(VAR_STATE, state);
+        machine.getStateMachineAccessor().doWithAllRegions(access ->
+                access.resetStateMachineReactively(new DefaultStateMachineContext<>(
+                        restoredState, null, null, extendedState)).block());
         machine.startReactively().block();
         return machine;
     }
@@ -228,6 +266,24 @@ public class SpringStateMachineAdapter implements IAfterSalesStateMachine {
 
     private void sendEventAndWait(StateMachine<AfterSalesState, AfterSalesEvent> machine, AfterSalesEvent event) {
         machine.sendEvent(Mono.just(MessageBuilder.withPayload(event).build())).blockLast();
+    }
+
+    private AfterSalesStateMachineResult boundaryResult(StateMachine<AfterSalesState, AfterSalesEvent> machine,
+                                                        CaseId caseId,
+                                                        TurnId turnId) {
+        AfterSalesAgentState state = currentState(machine);
+        String ssmState = machine.getState().getId().name();
+        Checkpoint checkpoint = new Checkpoint(
+                CheckpointId.of(UUID.randomUUID().toString()),
+                caseId,
+                turnId,
+                null,
+                ssmState,
+                state,
+                state.stage(),
+                LocalDateTime.now()
+        );
+        return new AfterSalesStateMachineResult(state, checkpoint, ssmState);
     }
 
     private static CaseId extractCaseId(AfterSalesAgentState state) {

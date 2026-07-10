@@ -36,11 +36,6 @@ public class CheckpointRepository implements ICheckpointRepository {
     }
 
     @Override
-    public Optional<Checkpoint> findLatest(CaseId caseId) {
-        return checkpointMapper.selectLatestByCaseId(caseId.value()).map(this::toDomain);
-    }
-
-    @Override
     public Optional<Checkpoint> findById(CheckpointId checkpointId) {
         return checkpointMapper.selectById(checkpointId.value()).map(this::toDomain);
     }

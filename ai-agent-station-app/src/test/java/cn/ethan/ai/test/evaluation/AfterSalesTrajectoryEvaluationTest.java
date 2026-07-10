@@ -57,7 +57,8 @@ public class AfterSalesTrajectoryEvaluationTest {
 
         List<String> failures = new ArrayList<>();
         for (JSONObject testCase : cases) {
-            AfterSalesAgentState state = stateMachine.execute(toInput(testCase), testCase.getString("id"));
+            AfterSalesAgentState state = stateMachine.execute(
+                    toInput(testCase), testCase.getString("id")).state();
             String expected = testCase.getString("expectedStage");
             if (!expected.equals(state.stage().name())) {
                 failures.add(testCase.getString("id") + ": expected=" + expected + ", actual=" + state.stage());
@@ -173,6 +174,19 @@ public class AfterSalesTrajectoryEvaluationTest {
         @Override
         public boolean cancelCase(String caseId, String reason) {
             return false;
+        }
+
+        @Override
+        public boolean tryAcquireResume(String caseId,
+                                        String checkpointId,
+                                        String resumeToken,
+                                        long leaseSeconds) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void releaseResume(String caseId, String resumeToken) {
+            throw new UnsupportedOperationException();
         }
 
         @Override

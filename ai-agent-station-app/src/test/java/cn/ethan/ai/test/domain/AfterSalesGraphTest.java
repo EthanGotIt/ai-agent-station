@@ -137,7 +137,7 @@ public class AfterSalesGraphTest {
     }
 
     private AfterSalesAgentState execute(Map<String, Object> input, String threadId) {
-        return stateMachine.execute(input, threadId);
+        return stateMachine.execute(input, threadId).state();
     }
 
     private Map<String, Object> eligibleInput() {

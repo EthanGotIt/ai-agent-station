@@ -87,6 +87,7 @@ public class RefundPlanningAgentTest {
 
     private PlanningContext contextWithOrderId(String orderId) {
         return new PlanningContext(
+                "case-1",
                 "user-1",
                 "session-1",
                 "退款",

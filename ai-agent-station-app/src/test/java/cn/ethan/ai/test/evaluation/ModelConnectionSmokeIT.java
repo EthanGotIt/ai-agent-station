@@ -5,9 +5,12 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -21,15 +24,17 @@ import org.springframework.test.context.ActiveProfiles;
 public class ModelConnectionSmokeIT {
 
     @Autowired
-    @Qualifier("afterSalesExecutionChatClient")
-    private ChatClient executionChatClient;
+    private ChatModel chatModel;
+
+    @Value("${after-sales.execution-model:deepseek-v4-flash}")
+    private String executionModel;
 
     @Test
     void shouldEchoSimpleMessage() {
-        String content = executionChatClient.prompt()
-                .user("回复一个字的问候：好")
-                .call()
-                .content();
+        var response = chatModel.call(new Prompt(
+                new UserMessage("回复一个字的问候：好"),
+                OpenAiChatOptions.builder().model(executionModel).temperature(0.0).build()));
+        String content = response.getResult().getOutput().getText();
         Assertions.assertNotNull(content);
         Assertions.assertFalse(content.isBlank());
         System.out.println("Model smoke response: " + content);

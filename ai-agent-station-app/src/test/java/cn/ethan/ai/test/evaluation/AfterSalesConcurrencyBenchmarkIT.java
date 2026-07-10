@@ -34,12 +34,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @ExtendWith(DotenvExtension.class)
@@ -51,11 +48,6 @@ public class AfterSalesConcurrencyBenchmarkIT {
     void shouldMeasureJava17BoundedExecutorBaseline() throws Exception {
         int tasks = 200;
         int clientConcurrency = 32;
-        int ioConcurrency = 16;
-        ExecutorService ioExecutor = new ThreadPoolExecutor(
-                ioConcurrency, ioConcurrency, 60L, TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(ioConcurrency * 32),
-                new ThreadPoolExecutor.CallerRunsPolicy());
         ExecutorService clients = Executors.newFixedThreadPool(clientConcurrency);
         AtomicInteger errors = new AtomicInteger();
         List<Long> latencies = new ArrayList<>();
@@ -87,7 +79,6 @@ public class AfterSalesConcurrencyBenchmarkIT {
             report.put("javaVersion", System.getProperty("java.version"));
             report.put("tasks", tasks);
             report.put("clientConcurrency", clientConcurrency);
-            report.put("ioConcurrency", ioConcurrency);
             report.put("errors", errors.get());
             report.put("totalMillis", totalMillis);
             report.put("throughputPerSecond", Math.round(tasks * 1000.0 / totalMillis * 100.0) / 100.0);
@@ -103,7 +94,6 @@ public class AfterSalesConcurrencyBenchmarkIT {
             Assertions.assertTrue(percentile(sorted, 0.95) < 1000, report.toJSONString());
         } finally {
             clients.shutdownNow();
-            ioExecutor.shutdownNow();
         }
     }
 
@@ -118,7 +108,7 @@ public class AfterSalesConcurrencyBenchmarkIT {
                     AfterSalesAgentState.USER_MESSAGE, "退款订单 " + orderId,
                     AfterSalesAgentState.ORDER_ID, orderId,
                     AfterSalesAgentState.REFUND_REASON, "DAMAGED"
-            ), UUID.randomUUID().toString());
+            ), UUID.randomUUID().toString()).state();
             if (state.stage() != AfterSalesStage.PENDING_APPROVAL) {
                 errors.incrementAndGet();
             }
@@ -185,6 +175,19 @@ public class AfterSalesConcurrencyBenchmarkIT {
         @Override
         public boolean cancelCase(String caseId, String reason) {
             return false;
+        }
+
+        @Override
+        public boolean tryAcquireResume(String caseId,
+                                        String checkpointId,
+                                        String resumeToken,
+                                        long leaseSeconds) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void releaseResume(String caseId, String resumeToken) {
+            throw new UnsupportedOperationException();
         }
 
         @Override
