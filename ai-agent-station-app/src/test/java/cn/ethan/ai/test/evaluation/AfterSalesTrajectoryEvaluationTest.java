@@ -1,19 +1,16 @@
 package cn.ethan.ai.test.evaluation;
 
 import cn.ethan.ai.domain.agent.model.AfterSalesAgentState;
-import cn.ethan.ai.domain.agent.model.AfterSalesCaseView;
-import cn.ethan.ai.domain.agent.model.AfterSalesOrderSnapshot;
-import cn.ethan.ai.domain.agent.model.AfterSalesRefundResult;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolRequest;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolResult;
 import cn.ethan.ai.domain.agent.model.valobj.enums.AfterSalesStage;
 import cn.ethan.ai.domain.agent.policy.AfterSalesToolContractValidator;
 import cn.ethan.ai.domain.agent.policy.RefundInformationGatheringPolicy;
-import cn.ethan.ai.domain.agent.port.driven.IAfterSalesRepository;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
 import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
 import cn.ethan.ai.infrastructure.adapter.statemachine.SpringStateMachineAdapter;
 import cn.ethan.ai.test.fixture.InMemoryCheckpointRepository;
+import cn.ethan.ai.test.fixture.UnsupportedAfterSalesRepository;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import org.junit.jupiter.api.Assertions;
@@ -28,7 +25,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
 
@@ -127,48 +123,6 @@ public class AfterSalesTrajectoryEvaluationTest {
         }
     }
 
-    private static final class InMemoryRepository implements IAfterSalesRepository {
-
-        @Override
-        public Optional<AfterSalesOrderSnapshot> findOrder(String orderId, String requesterId) {
-            return Optional.empty();
-        }
-
-        @Override
-        public void createCase(String caseId, String userId, String sessionId, String message) {
-        }
-
-        @Override
-        public void updateCase(AfterSalesCaseView caseView) {
-        }
-
-        @Override
-        public Optional<AfterSalesCaseView> findCase(String caseId) {
-            return Optional.empty();
-        }
-
-        @Override
-        public boolean cancelCase(String caseId, String reason) {
-            return false;
-        }
-
-        @Override
-        public boolean tryAcquireResume(String caseId,
-                                        String checkpointId,
-                                        String resumeToken,
-                                        long leaseSeconds) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void releaseResume(String caseId, String resumeToken) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public AfterSalesRefundResult executeRefund(String caseId, String orderId,
-                                                    String userId, String idempotencyKey) {
-            throw new UnsupportedOperationException();
-        }
+    private static final class InMemoryRepository extends UnsupportedAfterSalesRepository {
     }
 }

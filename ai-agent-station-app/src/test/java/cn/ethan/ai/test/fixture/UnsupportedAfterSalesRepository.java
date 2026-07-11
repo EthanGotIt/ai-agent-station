@@ -52,7 +52,7 @@ public abstract class UnsupportedAfterSalesRepository implements IAfterSalesRepo
         throw unsupported();
     }
 
-    protected final UnsupportedOperationException unsupported() {
+    private UnsupportedOperationException unsupported() {
         return new UnsupportedOperationException("This repository operation is not part of the test scenario");
     }
 }

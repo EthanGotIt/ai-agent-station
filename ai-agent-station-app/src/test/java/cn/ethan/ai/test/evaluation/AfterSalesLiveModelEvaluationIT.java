@@ -1,7 +1,6 @@
 package cn.ethan.ai.test.evaluation;
 
 import cn.ethan.ai.domain.agent.model.AfterSalesAgentState;
-import cn.ethan.ai.domain.agent.model.AfterSalesCaseView;
 import cn.ethan.ai.domain.agent.model.AfterSalesOrderSnapshot;
 import cn.ethan.ai.domain.agent.model.AfterSalesRefundResult;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolResult;
@@ -9,13 +8,13 @@ import cn.ethan.ai.domain.agent.model.AfterSalesToolContext;
 import cn.ethan.ai.domain.agent.model.ToolEvidence;
 import cn.ethan.ai.domain.agent.model.plan.PlanningContext;
 import cn.ethan.ai.domain.agent.policy.RefundInformationGatheringPolicy;
-import cn.ethan.ai.domain.agent.port.driven.IAfterSalesRepository;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
 import cn.ethan.ai.domain.agent.port.driven.IOrderGateway;
 import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
 import cn.ethan.ai.infrastructure.adapter.ai.SpringAiAfterSalesToolAdapter;
 import cn.ethan.ai.infrastructure.adapter.statemachine.SpringStateMachineAdapter;
 import cn.ethan.ai.test.fixture.InMemoryCheckpointRepository;
+import cn.ethan.ai.test.fixture.UnsupportedAfterSalesRepository;
 import cn.ethan.ai.test.support.DotenvConditions;
 import cn.ethan.ai.test.support.DotenvExtension;
 import com.alibaba.fastjson.JSON;
@@ -99,7 +98,7 @@ public class AfterSalesLiveModelEvaluationIT {
 
             AfterSalesAgentState state = new SpringStateMachineAdapter(
                     new TrajectoryToolPort(testCase),
-                    new TrajectoryRepository(testCase),
+                    new TrajectoryRepository(),
                     new RefundPlanningAgent(null),
                     new RefundInformationGatheringPolicy(),
                     null,
@@ -297,53 +296,7 @@ public class AfterSalesLiveModelEvaluationIT {
     /**
      * 用于治理路由评估的仓库：支持退款幂等执行。
      */
-    private static final class TrajectoryRepository implements IAfterSalesRepository {
-        private final JSONObject testCase;
-
-        private TrajectoryRepository(JSONObject testCase) {
-            this.testCase = testCase;
-        }
-
-        @Override
-        public Optional<AfterSalesOrderSnapshot> findOrder(String orderId, String requesterId) {
-            return Optional.of(new AfterSalesOrderSnapshot(
-                    orderId,
-                    testCase.getString("ownerId"),
-                    testCase.getString("status"),
-                    testCase.containsKey("days") ? testCase.getInteger("days") : null));
-        }
-
-        @Override
-        public void createCase(String caseId, String userId, String sessionId, String message) {
-        }
-
-        @Override
-        public void updateCase(AfterSalesCaseView caseView) {
-        }
-
-        @Override
-        public Optional<AfterSalesCaseView> findCase(String caseId) {
-            return Optional.empty();
-        }
-
-        @Override
-        public boolean cancelCase(String caseId, String reason) {
-            return false;
-        }
-
-        @Override
-        public boolean tryAcquireResume(String caseId,
-                                        String checkpointId,
-                                        String resumeToken,
-                                        long leaseSeconds) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void releaseResume(String caseId, String resumeToken) {
-            throw new UnsupportedOperationException();
-        }
-
+    private static final class TrajectoryRepository extends UnsupportedAfterSalesRepository {
         @Override
         public AfterSalesRefundResult executeRefund(String caseId, String orderId,
                                                     String userId, String idempotencyKey) {
