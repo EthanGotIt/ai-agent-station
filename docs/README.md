@@ -10,6 +10,7 @@
 
 - [真实模型冻结轨迹](evaluation/after-sales-live-evaluation.md)：显式开启的真实模型规划评测与历史记录。
 - [并发基线](evaluation/after-sales-java17-benchmark.md)：内存 Runtime 的并发基线，不代表生产容量。
+- [Java 21 与 Redis 升级评估](decisions/java21-redis-evaluation.md)：兼容性、基准、Redis 前置条件与当前决策。
 - [MySQL 初始化脚本](dev-ops/mysql/sql/ai-agent-station.sql)：业务审计、售后与 Session Memory 的统一建表脚本。
 
 ## 历史资料
