@@ -16,7 +16,7 @@ import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
 import cn.ethan.ai.domain.agent.port.driven.ICheckpointRepository;
 import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
 import cn.ethan.ai.infrastructure.observability.AfterSalesRuntimeMetrics;
-import com.alibaba.fastjson.JSON;
+import cn.ethan.ai.infrastructure.json.AfterSalesJsonCodec;
 import cn.ethan.ai.types.common.id.CaseId;
 import cn.ethan.ai.types.common.id.CheckpointId;
 import cn.ethan.ai.types.common.id.StepId;
@@ -52,6 +52,7 @@ public final class RefundInformationGatherer {
     private final TodoWriteTool todoWriteTool;
     private final ICheckpointRepository checkpointRepository;
     private final AfterSalesRuntimeMetrics metrics;
+    private final AfterSalesJsonCodec jsonCodec;
 
     public RefundInformationGatherer(IAfterSalesToolPort toolPort,
                                      RefundPlanningAgent planningAgent,
@@ -59,7 +60,7 @@ public final class RefundInformationGatherer {
                                      TodoWriteTool todoWriteTool,
                                      ICheckpointRepository checkpointRepository) {
         this(toolPort, planningAgent, policy, todoWriteTool,
-                checkpointRepository, AfterSalesRuntimeMetrics.noop());
+                checkpointRepository, AfterSalesRuntimeMetrics.noop(), AfterSalesJsonCodec.defaultCodec());
     }
 
     public RefundInformationGatherer(IAfterSalesToolPort toolPort,
@@ -68,6 +69,17 @@ public final class RefundInformationGatherer {
                                       TodoWriteTool todoWriteTool,
                                       ICheckpointRepository checkpointRepository,
                                       AfterSalesRuntimeMetrics metrics) {
+        this(toolPort, planningAgent, policy, todoWriteTool, checkpointRepository, metrics,
+                AfterSalesJsonCodec.defaultCodec());
+    }
+
+    public RefundInformationGatherer(IAfterSalesToolPort toolPort,
+                                     RefundPlanningAgent planningAgent,
+                                     RefundInformationGatheringPolicy policy,
+                                     TodoWriteTool todoWriteTool,
+                                     ICheckpointRepository checkpointRepository,
+                                     AfterSalesRuntimeMetrics metrics,
+                                     AfterSalesJsonCodec jsonCodec) {
         this.toolPort = toolPort;
         this.planningAgent = planningAgent;
         this.policy = policy;
@@ -75,6 +87,7 @@ public final class RefundInformationGatherer {
         this.todoWriteTool = todoWriteTool;
         this.checkpointRepository = checkpointRepository;
         this.metrics = metrics;
+        this.jsonCodec = jsonCodec;
     }
 
     public AfterSalesAgentState gather(AfterSalesAgentState state, CaseId caseId, TurnId turnId) {
@@ -294,7 +307,7 @@ public final class RefundInformationGatherer {
             AfterSalesToolRequest request = new AfterSalesToolRequest(
                     turnId.value() + ":" + step.stepId().value(),
                     step.toolName(),
-                    JSON.toJSONString(step.input() == null ? Map.of() : step.input())
+                    jsonCodec.write(step.input() == null ? Map.of() : step.input(), "序列化工具参数")
             );
             AfterSalesToolResult result = toolPort.executeReadOnly(request,
                     new AfterSalesToolContext(caseId.value(), state.text(AfterSalesAgentState.USER_ID), turnId.value()));

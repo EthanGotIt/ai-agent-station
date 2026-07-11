@@ -12,6 +12,7 @@ import cn.ethan.ai.domain.agent.service.AfterSalesAuditService;
 import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
 import cn.ethan.ai.infrastructure.adapter.statemachine.SpringStateMachineAdapter;
 import cn.ethan.ai.infrastructure.observability.AfterSalesRuntimeMetrics;
+import cn.ethan.ai.infrastructure.json.AfterSalesJsonCodec;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springaicommunity.agent.tools.TodoWriteTool;
 import org.springframework.ai.chat.client.ChatClient;
@@ -38,8 +39,9 @@ public class AfterSalesAgentConfig {
     @Bean
     public RefundPlanningAgent refundPlanningAgent(
             @Autowired(required = false) @Qualifier("afterSalesPlanningChatClient") ChatClient chatClient,
-            AfterSalesRuntimeMetrics metrics) {
-        return new RefundPlanningAgent(chatClient, metrics);
+            AfterSalesRuntimeMetrics metrics,
+            AfterSalesJsonCodec jsonCodec) {
+        return new RefundPlanningAgent(chatClient, metrics, jsonCodec);
     }
 
     @Bean
@@ -50,9 +52,10 @@ public class AfterSalesAgentConfig {
             RefundInformationGatheringPolicy refundInformationGatheringPolicy,
             TodoWriteTool todoWriteTool,
             ICheckpointRepository checkpointRepository,
-            AfterSalesRuntimeMetrics metrics) {
+            AfterSalesRuntimeMetrics metrics,
+            AfterSalesJsonCodec jsonCodec) {
         return new SpringStateMachineAdapter(toolPort, repository, refundPlanningAgent,
-                refundInformationGatheringPolicy, todoWriteTool, checkpointRepository, metrics);
+                refundInformationGatheringPolicy, todoWriteTool, checkpointRepository, metrics, jsonCodec);
     }
 
     @Bean

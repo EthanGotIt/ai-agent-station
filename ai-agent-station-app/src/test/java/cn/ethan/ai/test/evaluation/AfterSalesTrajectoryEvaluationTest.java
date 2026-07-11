@@ -9,10 +9,10 @@ import cn.ethan.ai.domain.agent.policy.RefundInformationGatheringPolicy;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
 import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
 import cn.ethan.ai.infrastructure.adapter.statemachine.SpringStateMachineAdapter;
+import cn.ethan.ai.infrastructure.json.AfterSalesJsonCodec;
 import cn.ethan.ai.test.fixture.InMemoryCheckpointRepository;
 import cn.ethan.ai.test.fixture.UnsupportedAfterSalesRepository;
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
+import tools.jackson.core.type.TypeReference;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,6 +30,7 @@ import java.util.function.Consumer;
 
 public class AfterSalesTrajectoryEvaluationTest {
 
+    private static final AfterSalesJsonCodec JSON = AfterSalesJsonCodec.defaultCodec();
     private SpringStateMachineAdapter stateMachine;
 
     @BeforeEach
@@ -45,49 +46,50 @@ public class AfterSalesTrajectoryEvaluationTest {
 
     @Test
     void frozenThirtyCaseSetShouldKeepGovernedRoutesDeterministic() throws Exception {
-        List<JSONObject> cases = loadCases();
+        List<Map<String, Object>> cases = loadCases();
         Assertions.assertEquals(30, cases.size());
         Assertions.assertEquals(12, categoryCount(cases, "NORMAL"));
         Assertions.assertEquals(8, categoryCount(cases, "RULE"));
         Assertions.assertEquals(10, categoryCount(cases, "ERROR"));
 
         List<String> failures = new ArrayList<>();
-        for (JSONObject testCase : cases) {
+        for (Map<String, Object> testCase : cases) {
             AfterSalesAgentState state = stateMachine.execute(
-                    toInput(testCase), testCase.getString("id")).state();
-            String expected = testCase.getString("expectedStage");
+                    toInput(testCase), text(testCase, "id")).state();
+            String expected = text(testCase, "expectedStage");
             if (!expected.equals(state.stage().name())) {
-                failures.add(testCase.getString("id") + ": expected=" + expected + ", actual=" + state.stage());
+                failures.add(text(testCase, "id") + ": expected=" + expected + ", actual=" + state.stage());
             }
         }
         Assertions.assertTrue(failures.isEmpty(), String.join("; ", failures));
     }
 
-    private List<JSONObject> loadCases() throws Exception {
+    private List<Map<String, Object>> loadCases() throws Exception {
         InputStream stream = getClass().getResourceAsStream("/evaluation/after-sales-trajectory-v1.jsonl");
         Assertions.assertNotNull(stream);
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             return reader.lines()
                     .filter(line -> !line.isBlank())
-                    .map(JSON::parseObject)
+                    .map(line -> JSON.read(line, new TypeReference<Map<String, Object>>() {
+                    }, "解析冻结轨迹"))
                     .toList();
         }
     }
 
-    private long categoryCount(List<JSONObject> cases, String category) {
-        return cases.stream().filter(item -> category.equals(item.getString("category"))).count();
+    private long categoryCount(List<Map<String, Object>> cases, String category) {
+        return cases.stream().filter(item -> category.equals(text(item, "category"))).count();
     }
 
-    private Map<String, Object> toInput(JSONObject testCase) {
+    private Map<String, Object> toInput(Map<String, Object> testCase) {
         Map<String, Object> input = new LinkedHashMap<>();
-        String userId = testCase.getString("userId");
+        String userId = text(testCase, "userId");
         putText(input, AfterSalesAgentState.USER_ID, userId);
         putText(input, AfterSalesAgentState.SESSION_ID, userId != null ? "session-" + userId : null);
-        putText(input, AfterSalesAgentState.ORDER_ID, testCase.getString("orderId"));
-        putText(input, AfterSalesAgentState.ORDER_OWNER_ID, testCase.getString("ownerId"));
-        putText(input, AfterSalesAgentState.ORDER_STATUS, testCase.getString("status"));
-        String reason = testCase.getString("reason");
-        String errorType = testCase.getString("errorType");
+        putText(input, AfterSalesAgentState.ORDER_ID, text(testCase, "orderId"));
+        putText(input, AfterSalesAgentState.ORDER_OWNER_ID, text(testCase, "ownerId"));
+        putText(input, AfterSalesAgentState.ORDER_STATUS, text(testCase, "status"));
+        String reason = text(testCase, "reason");
+        String errorType = text(testCase, "errorType");
         // Error cases reuse errorType as refundReason/userMessage so the stub tool port can inject failures.
         putText(input, AfterSalesAgentState.REFUND_REASON, reason != null ? reason : errorType);
         putText(input, AfterSalesAgentState.USER_MESSAGE, errorType);
@@ -105,10 +107,15 @@ public class AfterSalesTrajectoryEvaluationTest {
         }
     }
 
-    private void putNumber(JSONObject source, String key, Consumer<Integer> consumer) {
+    private void putNumber(Map<String, Object> source, String key, Consumer<Integer> consumer) {
         if (source.containsKey(key)) {
-            consumer.accept(source.getInteger(key));
+            consumer.accept(((Number) source.get(key)).intValue());
         }
+    }
+
+    private static String text(Map<String, Object> source, String key) {
+        Object value = source.get(key);
+        return value == null ? null : String.valueOf(value);
     }
 
     private static final class TrajectoryToolPort implements IAfterSalesToolPort {
@@ -116,8 +123,9 @@ public class AfterSalesTrajectoryEvaluationTest {
         @Override
         public AfterSalesToolResult executeReadOnly(AfterSalesToolRequest request,
                                                     cn.ethan.ai.domain.agent.model.AfterSalesToolContext context) {
-            JSONObject arguments = JSON.parseObject(request.argumentsJson());
-            String orderId = arguments == null ? "dummy-order" : arguments.getString("orderId");
+            Map<String, Object> arguments = JSON.read(request.argumentsJson(), new TypeReference<>() {
+            }, "解析轨迹工具参数");
+            String orderId = arguments == null ? "dummy-order" : text(arguments, "orderId");
             return AfterSalesToolResult.success("{}", new cn.ethan.ai.domain.agent.model.ToolEvidence("query_order",
                     Map.of("orderId", orderId, "ownerId", context.userId(), "status", "PAID")));
         }

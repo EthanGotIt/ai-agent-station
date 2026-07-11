@@ -13,11 +13,11 @@ import cn.ethan.ai.test.fixture.UnsupportedAfterSalesRepository;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
 import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
 import cn.ethan.ai.infrastructure.adapter.statemachine.SpringStateMachineAdapter;
+import cn.ethan.ai.infrastructure.json.AfterSalesJsonCodec;
 import cn.ethan.ai.test.fixture.InMemoryCheckpointRepository;
 import cn.ethan.ai.test.support.DotenvConditions;
 import cn.ethan.ai.test.support.DotenvExtension;
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
+import tools.jackson.core.type.TypeReference;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
@@ -43,6 +43,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 @EnabledIf(value = "cn.ethan.ai.test.support.DotenvConditions#isBenchmarkEnabled",
         disabledReason = "并发基准测试需通过 .env 开启")
 public class AfterSalesConcurrencyBenchmarkIT {
+
+    private static final AfterSalesJsonCodec JSON = AfterSalesJsonCodec.defaultCodec();
 
     @Test
     void shouldMeasureJava17BoundedExecutorBaseline() throws Exception {
@@ -75,7 +77,7 @@ public class AfterSalesConcurrencyBenchmarkIT {
             }
             long totalMillis = Duration.between(benchmarkStart, Instant.now()).toMillis();
             List<Long> sorted = latencies.stream().sorted(Comparator.naturalOrder()).toList();
-            JSONObject report = new JSONObject(true);
+            Map<String, Object> report = new java.util.LinkedHashMap<>();
             report.put("javaVersion", System.getProperty("java.version"));
             report.put("tasks", tasks);
             report.put("clientConcurrency", clientConcurrency);
@@ -88,10 +90,11 @@ public class AfterSalesConcurrencyBenchmarkIT {
             report.put("latencyMaxMillis", sorted.get(sorted.size() - 1));
             Path output = Path.of("target", "evaluation", "after-sales-java17-benchmark.json");
             Files.createDirectories(output.getParent());
-            Files.writeString(output, JSON.toJSONString(report, true), StandardCharsets.UTF_8);
+            String reportJson = JSON.writePretty(report, "序列化并发基准报告");
+            Files.writeString(output, reportJson, StandardCharsets.UTF_8);
 
-            Assertions.assertEquals(0, errors.get(), report.toJSONString());
-            Assertions.assertTrue(percentile(sorted, 0.95) < 1000, report.toJSONString());
+            Assertions.assertEquals(0, errors.get(), reportJson);
+            Assertions.assertTrue(percentile(sorted, 0.95) < 1000, reportJson);
         } finally {
             clients.shutdownNow();
         }
@@ -127,7 +130,9 @@ public class AfterSalesConcurrencyBenchmarkIT {
         public AfterSalesToolResult executeReadOnly(AfterSalesToolRequest request,
                                                     cn.ethan.ai.domain.agent.model.AfterSalesToolContext context) {
             delay();
-            String orderId = JSON.parseObject(request.argumentsJson()).getString("orderId");
+            Map<String, Object> arguments = JSON.read(request.argumentsJson(), new TypeReference<>() {
+            }, "解析基准工具参数");
+            String orderId = String.valueOf(arguments.get("orderId"));
             return AfterSalesToolResult.success("{}", new cn.ethan.ai.domain.agent.model.ToolEvidence("query_order",
                     Map.of("orderId", orderId, "ownerId", context.userId(), "status", "PAID")));
         }

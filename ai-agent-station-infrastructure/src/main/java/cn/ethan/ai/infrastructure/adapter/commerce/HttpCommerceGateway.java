@@ -6,8 +6,8 @@ import cn.ethan.ai.domain.agent.model.AfterSalesOrderSnapshot;
 import cn.ethan.ai.domain.agent.model.AfterSalesLogisticsSnapshot;
 import cn.ethan.ai.domain.agent.model.AfterSalesRefundHistorySnapshot;
 import cn.ethan.ai.domain.agent.model.RefundGatewayResult;
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
+import cn.ethan.ai.infrastructure.json.AfterSalesJsonCodec;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -22,6 +22,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
+import tools.jackson.core.type.TypeReference;
 
 @Component
 @ConditionalOnProperty(name = "ai-agent.after-sales.commerce-adapter", havingValue = "http")
@@ -30,12 +31,21 @@ public class HttpCommerceGateway implements IOrderGateway, IRefundGateway {
     private final HttpClient httpClient;
     private final String baseUrl;
     private final Duration requestTimeout;
+    private final AfterSalesJsonCodec jsonCodec;
 
     public HttpCommerceGateway(@Value("${ai-agent.after-sales.commerce-base-url}") String baseUrl,
                                @Value("${ai-agent.after-sales.commerce-timeout:3s}") Duration timeout) {
+        this(baseUrl, timeout, AfterSalesJsonCodec.defaultCodec());
+    }
+
+    @Autowired
+    public HttpCommerceGateway(@Value("${ai-agent.after-sales.commerce-base-url}") String baseUrl,
+                               @Value("${ai-agent.after-sales.commerce-timeout:3s}") Duration timeout,
+                               AfterSalesJsonCodec jsonCodec) {
         this.baseUrl = baseUrl.replaceAll("/+$", "");
         this.requestTimeout = timeout;
         this.httpClient = HttpClient.newBuilder().connectTimeout(timeout).build();
+        this.jsonCodec = jsonCodec;
     }
 
     @Override
@@ -54,12 +64,12 @@ public class HttpCommerceGateway implements IOrderGateway, IRefundGateway {
             return Optional.of(new AfterSalesOrderSnapshot(orderId, "__FOREIGN__", "ACCESS_DENIED", null));
         }
         requireSuccess(response, "query order");
-        JSONObject payload = JSON.parseObject(response.body());
+        Map<String, Object> payload = payload(response.body(), "解析订单响应");
         return Optional.of(new AfterSalesOrderSnapshot(
-                payload.getString("orderId"),
+                text(payload, "orderId"),
                 requesterId,
-                payload.getString("status"),
-                payload.getInteger("daysSinceDelivery")
+                text(payload, "status"),
+                integer(payload, "daysSinceDelivery")
         ));
     }
 
@@ -70,12 +80,12 @@ public class HttpCommerceGateway implements IOrderGateway, IRefundGateway {
             return Optional.empty();
         }
         requireReadable(response, "query logistics");
-        JSONObject payload = JSON.parseObject(response.body());
+        Map<String, Object> payload = payload(response.body(), "解析物流响应");
         return Optional.of(new AfterSalesLogisticsSnapshot(
-                payload.getString("orderId"),
-                payload.getString("deliveryStatus"),
-                parseDateTime(payload.getString("deliveredAt")),
-                payload.getString("returnStatus")
+                text(payload, "orderId"),
+                text(payload, "deliveryStatus"),
+                parseDateTime(text(payload, "deliveredAt")),
+                text(payload, "returnStatus")
         ));
     }
 
@@ -86,12 +96,12 @@ public class HttpCommerceGateway implements IOrderGateway, IRefundGateway {
             return Optional.empty();
         }
         requireReadable(response, "query refund history");
-        JSONObject payload = JSON.parseObject(response.body());
+        Map<String, Object> payload = payload(response.body(), "解析退款历史响应");
         return Optional.of(new AfterSalesRefundHistorySnapshot(
-                payload.getString("orderId"),
-                payload.getBooleanValue("activeRefund"),
-                payload.getIntValue("completedRefundCount"),
-                payload.getString("latestRefundStatus")
+                text(payload, "orderId"),
+                bool(payload, "activeRefund"),
+                integerOrZero(payload, "completedRefundCount"),
+                text(payload, "latestRefundStatus")
         ));
     }
 
@@ -103,18 +113,19 @@ public class HttpCommerceGateway implements IOrderGateway, IRefundGateway {
                 .header("X-User-Id", userId)
                 .header("Idempotency-Key", idempotencyKey)
                 .timeout(requestTimeout)
-                .POST(HttpRequest.BodyPublishers.ofString(JSON.toJSONString(Map.of("orderId", orderId))))
+                .POST(HttpRequest.BodyPublishers.ofString(
+                        jsonCodec.write(Map.of("orderId", orderId), "序列化退款请求")))
                 .build();
         HttpResponse<String> response = send(request);
         if (response.statusCode() == 409) {
             return new RefundGatewayResult(false, false, "ORDER_STATE_CONFLICT");
         }
         requireSuccess(response, "execute refund");
-        JSONObject payload = JSON.parseObject(response.body());
+        Map<String, Object> payload = payload(response.body(), "解析退款响应");
         return new RefundGatewayResult(
-                payload.getBooleanValue("success"),
-                payload.getBooleanValue("idempotentReplay"),
-                payload.getString("reason")
+                bool(payload, "success"),
+                bool(payload, "idempotentReplay"),
+                text(payload, "reason")
         );
     }
 
@@ -157,5 +168,29 @@ public class HttpCommerceGateway implements IOrderGateway, IRefundGateway {
 
     private String encode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private Map<String, Object> payload(String value, String operation) {
+        return jsonCodec.read(value, new TypeReference<>() {
+        }, operation);
+    }
+
+    private String text(Map<String, Object> payload, String field) {
+        Object value = payload.get(field);
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private Integer integer(Map<String, Object> payload, String field) {
+        Object value = payload.get(field);
+        return value instanceof Number number ? number.intValue() : null;
+    }
+
+    private boolean bool(Map<String, Object> payload, String field) {
+        return Boolean.TRUE.equals(payload.get(field));
+    }
+
+    private int integerOrZero(Map<String, Object> payload, String field) {
+        Integer value = integer(payload, field);
+        return value == null ? 0 : value;
     }
 }

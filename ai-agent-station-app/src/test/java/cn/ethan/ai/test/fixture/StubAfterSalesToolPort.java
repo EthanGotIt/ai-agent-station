@@ -5,8 +5,8 @@ import cn.ethan.ai.domain.agent.model.AfterSalesToolRequest;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolResult;
 import cn.ethan.ai.domain.agent.model.ToolEvidence;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
+import cn.ethan.ai.infrastructure.json.AfterSalesJsonCodec;
+import tools.jackson.core.type.TypeReference;
 
 import java.util.Map;
 
@@ -15,6 +15,7 @@ import java.util.Map;
  */
 public final class StubAfterSalesToolPort implements IAfterSalesToolPort {
 
+    private static final AfterSalesJsonCodec JSON = AfterSalesJsonCodec.defaultCodec();
     private final InMemoryAfterSalesRepository repository;
 
     public StubAfterSalesToolPort(InMemoryAfterSalesRepository repository) {
@@ -36,7 +37,8 @@ public final class StubAfterSalesToolPort implements IAfterSalesToolPort {
         if (order.daysSinceDelivery() != null) {
             evidence.put("daysSinceDelivery", order.daysSinceDelivery());
         }
-        return AfterSalesToolResult.success(JSON.toJSONString(evidence), new ToolEvidence("query_order", evidence));
+        return AfterSalesToolResult.success(JSON.write(evidence, "序列化测试工具证据"),
+                new ToolEvidence("query_order", evidence));
     }
 
     private String extractOrderId(String argumentsJson) {
@@ -45,8 +47,10 @@ public final class StubAfterSalesToolPort implements IAfterSalesToolPort {
         }
         String trimmed = argumentsJson.trim();
         if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-            JSONObject arguments = JSON.parseObject(trimmed);
-            return arguments == null ? null : arguments.getString("orderId");
+            Map<String, Object> arguments = JSON.read(trimmed, new TypeReference<>() {
+            }, "解析测试工具参数");
+            Object orderId = arguments == null ? null : arguments.get("orderId");
+            return orderId instanceof String value ? value : null;
         }
         return trimmed;
     }

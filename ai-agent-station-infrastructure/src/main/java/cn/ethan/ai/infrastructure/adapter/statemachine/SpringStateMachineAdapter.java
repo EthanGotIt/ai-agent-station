@@ -15,6 +15,7 @@ import cn.ethan.ai.infrastructure.adapter.statemachine.ssm.AfterSalesEvent;
 import cn.ethan.ai.infrastructure.adapter.statemachine.ssm.AfterSalesState;
 import cn.ethan.ai.infrastructure.adapter.statemachine.ssm.RefundInformationGatherer;
 import cn.ethan.ai.infrastructure.observability.AfterSalesRuntimeMetrics;
+import cn.ethan.ai.infrastructure.json.AfterSalesJsonCodec;
 import cn.ethan.ai.types.common.id.CaseId;
 import cn.ethan.ai.types.common.id.CheckpointId;
 import cn.ethan.ai.types.common.id.TurnId;
@@ -56,7 +57,7 @@ public class SpringStateMachineAdapter implements IAfterSalesStateMachine {
                                       TodoWriteTool todoWriteTool,
                                       ICheckpointRepository checkpointRepository) {
         this(toolPort, repository, planningAgent, policy, todoWriteTool,
-                checkpointRepository, AfterSalesRuntimeMetrics.noop());
+                checkpointRepository, AfterSalesRuntimeMetrics.noop(), AfterSalesJsonCodec.defaultCodec());
     }
 
     public SpringStateMachineAdapter(IAfterSalesToolPort toolPort,
@@ -66,10 +67,22 @@ public class SpringStateMachineAdapter implements IAfterSalesStateMachine {
                                      TodoWriteTool todoWriteTool,
                                      ICheckpointRepository checkpointRepository,
                                      AfterSalesRuntimeMetrics metrics) {
+        this(toolPort, repository, planningAgent, policy, todoWriteTool, checkpointRepository, metrics,
+                AfterSalesJsonCodec.defaultCodec());
+    }
+
+    public SpringStateMachineAdapter(IAfterSalesToolPort toolPort,
+                                     IAfterSalesRepository repository,
+                                     RefundPlanningAgent planningAgent,
+                                     RefundInformationGatheringPolicy policy,
+                                     TodoWriteTool todoWriteTool,
+                                     ICheckpointRepository checkpointRepository,
+                                     AfterSalesRuntimeMetrics metrics,
+                                     AfterSalesJsonCodec jsonCodec) {
         this.repository = repository;
         this.checkpointRepository = checkpointRepository;
         this.gatherer = new RefundInformationGatherer(
-                toolPort, planningAgent, policy, todoWriteTool, checkpointRepository, metrics);
+                toolPort, planningAgent, policy, todoWriteTool, checkpointRepository, metrics, jsonCodec);
     }
 
     @Override

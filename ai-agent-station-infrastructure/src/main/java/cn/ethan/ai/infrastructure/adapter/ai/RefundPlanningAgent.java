@@ -8,8 +8,7 @@ import cn.ethan.ai.domain.agent.model.plan.RefundPlan;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolCapability;
 import cn.ethan.ai.types.common.id.StepId;
 import cn.ethan.ai.infrastructure.observability.AfterSalesRuntimeMetrics;
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.serializer.SerializerFeature;
+import cn.ethan.ai.infrastructure.json.AfterSalesJsonCodec;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.session.advisor.SessionMemoryAdvisor;
@@ -71,14 +70,22 @@ public class RefundPlanningAgent {
 
     private final ChatClient chatClient;
     private final AfterSalesRuntimeMetrics metrics;
+    private final AfterSalesJsonCodec jsonCodec;
 
     public RefundPlanningAgent(ChatClient chatClient) {
-        this(chatClient, AfterSalesRuntimeMetrics.noop());
+        this(chatClient, AfterSalesRuntimeMetrics.noop(), AfterSalesJsonCodec.defaultCodec());
     }
 
     public RefundPlanningAgent(ChatClient chatClient, AfterSalesRuntimeMetrics metrics) {
+        this(chatClient, metrics, AfterSalesJsonCodec.defaultCodec());
+    }
+
+    public RefundPlanningAgent(ChatClient chatClient,
+                               AfterSalesRuntimeMetrics metrics,
+                               AfterSalesJsonCodec jsonCodec) {
         this.chatClient = chatClient;
         this.metrics = metrics;
+        this.jsonCodec = jsonCodec;
     }
 
     public RefundPlan plan(PlanningContext context) {
@@ -103,7 +110,7 @@ public class RefundPlanningAgent {
                     plan = fallbackPlan(context);
                     outcome = "fallback_empty";
                 } else {
-                    plan = JSON.parseObject(content, RefundPlan.class);
+                    plan = jsonCodec.read(content, RefundPlan.class, "解析退款规划");
                 }
             } catch (Exception e) {
                 log.debug("RefundPlanningAgent failed to parse plan, using fallback: {}", e.getMessage());
@@ -190,13 +197,13 @@ public class RefundPlanningAgent {
                 plan.evidenceGaps() == null ? List.of() : plan.evidenceGaps(), steps, plan.checklist());
     }
 
-    private static StepId stepIdOf(PlannedStep step) {
+    private StepId stepIdOf(PlannedStep step) {
         String input = step.input() == null ? "" : canonicalJson(step.input());
         return StepId.of(step.action() + "|" + step.toolName() + "|" + step.targetField() + "|" + input);
     }
 
-    private static String canonicalJson(Map<String, Object> map) {
-        return JSON.toJSONString(new TreeMap<>(map), SerializerFeature.MapSortField);
+    private String canonicalJson(Map<String, Object> map) {
+        return jsonCodec.write(new TreeMap<>(map), "生成计划步骤标识");
     }
 
     private ChecklistItem item(String field, String value) {

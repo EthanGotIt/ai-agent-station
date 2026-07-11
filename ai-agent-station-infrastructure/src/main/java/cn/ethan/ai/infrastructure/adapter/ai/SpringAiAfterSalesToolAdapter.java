@@ -11,9 +11,9 @@ import cn.ethan.ai.domain.agent.model.ToolEvidence;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
 import cn.ethan.ai.domain.agent.port.driven.IOrderGateway;
 import cn.ethan.ai.infrastructure.observability.AfterSalesRuntimeMetrics;
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
+import cn.ethan.ai.infrastructure.json.AfterSalesJsonCodec;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.format.DateTimeFormatter;
@@ -21,6 +21,7 @@ import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import tools.jackson.core.type.TypeReference;
 
 /**
  * 将已通过领域 Policy 的计划步骤执行为只读 commerce 证据。
@@ -33,13 +34,23 @@ public class SpringAiAfterSalesToolAdapter implements IAfterSalesToolPort {
     private final IOrderGateway orderGateway;
     private final AfterSalesRuntimeMetrics metrics;
     private final Set<AfterSalesToolCapability> supportedTools;
+    private final AfterSalesJsonCodec jsonCodec;
 
     public SpringAiAfterSalesToolAdapter(IOrderGateway orderGateway,
                                          AfterSalesRuntimeMetrics metrics,
                                          @Value("${ai-agent.after-sales.evidence-tools:query_order}") String configuredTools) {
+        this(orderGateway, metrics, configuredTools, AfterSalesJsonCodec.defaultCodec());
+    }
+
+    @Autowired
+    public SpringAiAfterSalesToolAdapter(IOrderGateway orderGateway,
+                                         AfterSalesRuntimeMetrics metrics,
+                                         @Value("${ai-agent.after-sales.evidence-tools:query_order}") String configuredTools,
+                                         AfterSalesJsonCodec jsonCodec) {
         this.orderGateway = orderGateway;
         this.metrics = metrics;
         this.supportedTools = parseCapabilities(configuredTools);
+        this.jsonCodec = jsonCodec;
     }
 
     @Override
@@ -98,7 +109,8 @@ public class SpringAiAfterSalesToolAdapter implements IAfterSalesToolPort {
     }
 
     private AfterSalesToolResult success(String toolName, Map<String, Object> payload) {
-        return AfterSalesToolResult.success(JSON.toJSONString(payload), new ToolEvidence(toolName, payload));
+        return AfterSalesToolResult.success(jsonCodec.write(payload, "序列化工具证据"),
+                new ToolEvidence(toolName, payload));
     }
 
     private Map<String, Object> orderPayload(AfterSalesOrderSnapshot order) {
@@ -133,8 +145,10 @@ public class SpringAiAfterSalesToolAdapter implements IAfterSalesToolPort {
     }
 
     private String requiredOrderId(String argumentsJson) {
-        JSONObject input = JSON.parseObject(argumentsJson);
-        String orderId = input == null ? null : input.getString("orderId");
+        Map<String, Object> input = jsonCodec.read(argumentsJson, new TypeReference<>() {
+        }, "解析工具参数");
+        Object orderIdValue = input == null ? null : input.get("orderId");
+        String orderId = orderIdValue instanceof String value ? value : null;
         if (orderId == null || !orderId.matches("[A-Za-z0-9_-]{3,64}")) {
             throw new IllegalArgumentException("orderId 格式非法");
         }

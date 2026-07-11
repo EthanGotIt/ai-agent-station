@@ -10,9 +10,10 @@ import cn.ethan.ai.types.common.id.CaseId;
 import cn.ethan.ai.types.common.id.CheckpointId;
 import cn.ethan.ai.types.common.id.StepId;
 import cn.ethan.ai.types.common.id.TurnId;
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.TypeReference;
+import cn.ethan.ai.infrastructure.json.AfterSalesJsonCodec;
 import org.springframework.stereotype.Repository;
+import org.springframework.beans.factory.annotation.Autowired;
+import tools.jackson.core.type.TypeReference;
 
 import java.time.LocalDateTime;
 import java.util.Map;
@@ -25,9 +26,16 @@ import java.util.Optional;
 public class CheckpointRepository implements ICheckpointRepository {
 
     private final CheckpointMapper checkpointMapper;
+    private final AfterSalesJsonCodec jsonCodec;
 
     public CheckpointRepository(CheckpointMapper checkpointMapper) {
+        this(checkpointMapper, AfterSalesJsonCodec.defaultCodec());
+    }
+
+    @Autowired
+    public CheckpointRepository(CheckpointMapper checkpointMapper, AfterSalesJsonCodec jsonCodec) {
         this.checkpointMapper = checkpointMapper;
+        this.jsonCodec = jsonCodec;
     }
 
     @Override
@@ -47,7 +55,7 @@ public class CheckpointRepository implements ICheckpointRepository {
                 .turnId(checkpoint.turnId().value())
                 .stepId(checkpoint.stepId() == null ? null : checkpoint.stepId().value())
                 .ssmState(checkpoint.ssmState())
-                .statePayload(JSON.toJSONString(checkpoint.state().data()))
+                .statePayload(jsonCodec.write(checkpoint.state().data(), "序列化 checkpoint 状态"))
                 .stage(checkpoint.stage().name())
                 .createdAt(checkpoint.createdAt())
                 .build();
@@ -67,8 +75,8 @@ public class CheckpointRepository implements ICheckpointRepository {
     }
 
     private Map<String, Object> parseStatePayload(String payload) {
-        return JSON.parseObject(payload, new TypeReference<>() {
-        });
+        return jsonCodec.read(payload, new TypeReference<>() {
+        }, "解析 checkpoint 状态");
     }
 
     private AfterSalesStage parseStage(String stage) {

@@ -15,7 +15,7 @@ import cn.ethan.ai.infrastructure.dao.po.AfterSalesCasePO;
 import cn.ethan.ai.infrastructure.dao.po.AfterSalesOutboxPO;
 import cn.ethan.ai.infrastructure.dao.po.RefundCommandPO;
 import cn.ethan.ai.infrastructure.observability.AfterSalesRuntimeMetrics;
-import com.alibaba.fastjson.JSON;
+import cn.ethan.ai.infrastructure.json.AfterSalesJsonCodec;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
@@ -38,6 +38,7 @@ public class AfterSalesRepository implements IAfterSalesRepository {
     private final AfterSalesOutboxMapper afterSalesOutboxMapper;
     private final TransactionTemplate transactionTemplate;
     private final AfterSalesRuntimeMetrics metrics;
+    private final AfterSalesJsonCodec jsonCodec;
 
     @Autowired
     public AfterSalesRepository(IOrderGateway orderGateway,
@@ -46,7 +47,8 @@ public class AfterSalesRepository implements IAfterSalesRepository {
                                 RefundCommandMapper refundCommandMapper,
                                 AfterSalesOutboxMapper afterSalesOutboxMapper,
                                 @Qualifier("mysqlTransactionTemplate") TransactionTemplate transactionTemplate,
-                                AfterSalesRuntimeMetrics metrics) {
+                                AfterSalesRuntimeMetrics metrics,
+                                AfterSalesJsonCodec jsonCodec) {
         this.orderGateway = orderGateway;
         this.refundGateway = refundGateway;
         this.afterSalesCaseMapper = afterSalesCaseMapper;
@@ -54,6 +56,7 @@ public class AfterSalesRepository implements IAfterSalesRepository {
         this.afterSalesOutboxMapper = afterSalesOutboxMapper;
         this.transactionTemplate = transactionTemplate;
         this.metrics = metrics;
+        this.jsonCodec = jsonCodec;
     }
 
     public AfterSalesRepository(IOrderGateway orderGateway,
@@ -63,7 +66,8 @@ public class AfterSalesRepository implements IAfterSalesRepository {
                                 AfterSalesOutboxMapper afterSalesOutboxMapper,
                                 TransactionTemplate transactionTemplate) {
         this(orderGateway, refundGateway, afterSalesCaseMapper, refundCommandMapper,
-                afterSalesOutboxMapper, transactionTemplate, AfterSalesRuntimeMetrics.noop());
+                afterSalesOutboxMapper, transactionTemplate, AfterSalesRuntimeMetrics.noop(),
+                AfterSalesJsonCodec.defaultCodec());
     }
 
     @Override
@@ -237,12 +241,12 @@ public class AfterSalesRepository implements IAfterSalesRepository {
                 .eventId(eventId)
                 .aggregateId(caseId)
                 .eventType("REFUND_SUCCEEDED")
-                .payload(JSON.toJSONString(Map.of(
+                .payload(jsonCodec.write(Map.of(
                         "caseId", caseId,
                         "commandId", commandId,
                         "orderId", orderId,
                         "occurredAt", Timestamp.valueOf(LocalDateTime.now()).toString()
-                )))
+                ), "序列化退款成功事件"))
                 .status("PENDING")
                 .build());
         return new AfterSalesRefundResult(true, gatewayResult.idempotentReplay(), commandId, gatewayResult.reason());
