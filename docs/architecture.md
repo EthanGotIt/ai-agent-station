@@ -11,9 +11,12 @@
 | 层次 | 负责 | 不负责 |
 |---|---|---|
 | Spring AI | `RefundPlanningAgent` 的 JSON Plan、Case 级 `SessionMemoryAdvisor`、`TodoWriteTool` 检查清单 | 退款决策、工具自动循环、业务事实存储 |
-| Spring State Machine | 四个业务状态、事件、Guard、Action、按 `ssm_state` 恢复 | 资格规则、退款副作用、模型调用重试策略 |
-| Domain Policy | Plan schema 和能力校验、RePlan 预算、退款资格、授权与幂等边界 | 模型自由推理或外部 HTTP 细节 |
-| Infrastructure | 只读 commerce 证据、MyBatis 持久化、checkpoint/Turn 边界、Outbox/Inbox | 跨服务业务编排 |
+| Application orchestration | Case/Turn 生命周期、start/resume/cancel、恢复租约协调、状态机调用、可恢复边界提交时机 | 资格规则、SQL、外部 HTTP 细节 |
+| Spring State Machine | 四个业务状态、事件、Guard、Action 触发、按 `ssm_state` 恢复 | 资格决策、退款幂等实现、模型调用重试策略 |
+| Domain Policy | Plan schema 和能力校验、RePlan 预算、退款资格、授权、幂等键语义与业务不变量 | 模型自由推理、事务或外部 HTTP 细节 |
+| Infrastructure | 只读 commerce 证据、MyBatis 持久化、事务与恢复锁、checkpoint/Turn 原子提交、Outbox/Inbox | 决定业务边界或跨服务业务编排 |
+
+Application orchestration 当前由 domain 模块的 service 包承载，这是现有六模块内的应用服务职责，不增加新的工程模块。应用层决定一个 Turn 何时形成可恢复边界；Infrastructure 只负责在同一事务中原子提交边界 checkpoint、Case 指针和 Turn 结果。
 
 ## 受控执行流
 
@@ -27,7 +30,7 @@ INTAKE
   -> eligible: PENDING_APPROVAL interrupt
 
 PENDING_APPROVAL
-  -> APPROVE: idempotent refund command, then COMPLETED
+  -> APPROVE: state machine triggers the idempotent refund command, then COMPLETED
   -> REJECT or ineligible: REJECTED
 ```
 
@@ -43,7 +46,7 @@ PENDING_APPROVAL
 
 恢复锁带过期时间。进程异常后，其他实例可接管过期锁，并从上一个已提交 Turn 边界继续。只读工具允许重放；退款 Command 使用稳定的 `caseId:REFUND` 幂等键，避免重复副作用。
 
-Session Memory 只保存规划对话。数据库和 checkpoint 才是业务状态、审批和退款结果的事实来源；记忆组件异常时，确定性 Plan 仍可维持安全主链。
+Session Memory 只保存规划对话。Plan 和过程快照用于认知轨迹与诊断，不决定当前业务位置；Case、Turn、边界 checkpoint、订单证据和退款 Command 记录才是业务状态、审批与退款结果的事实来源。记忆组件异常时，确定性 Plan 仍可维持安全主链。
 
 ## 只读证据能力
 
