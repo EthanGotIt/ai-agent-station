@@ -1,7 +1,6 @@
 package cn.ethan.ai.test.evaluation;
 
 import cn.ethan.ai.domain.agent.model.AfterSalesAgentState;
-import cn.ethan.ai.domain.agent.model.AfterSalesOrderSnapshot;
 import cn.ethan.ai.domain.agent.model.AfterSalesRefundResult;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolResult;
 import cn.ethan.ai.domain.agent.model.AfterSalesToolContext;
@@ -9,7 +8,6 @@ import cn.ethan.ai.domain.agent.model.ToolEvidence;
 import cn.ethan.ai.domain.agent.model.plan.PlanningContext;
 import cn.ethan.ai.domain.agent.policy.RefundInformationGatheringPolicy;
 import cn.ethan.ai.domain.agent.port.driven.IAfterSalesToolPort;
-import cn.ethan.ai.domain.agent.port.driven.IOrderGateway;
 import cn.ethan.ai.infrastructure.adapter.ai.RefundPlanningAgent;
 import cn.ethan.ai.infrastructure.adapter.ai.SpringAiAfterSalesToolAdapter;
 import cn.ethan.ai.infrastructure.adapter.statemachine.SpringStateMachineAdapter;
@@ -244,35 +242,6 @@ public class AfterSalesLiveModelEvaluationIT {
     private static String text(Map<String, Object> source, String key) {
         Object value = source.get(key);
         return value == null ? null : String.valueOf(value);
-    }
-
-    /**
-     * 用于模型契约评估的订单网关：按 orderId 从轨迹数据集查找。
-     */
-    private static final class DeterministicOrderGateway implements IOrderGateway {
-        private final Map<String, Map<String, Object>> casesByOrderId;
-
-        private DeterministicOrderGateway(List<Map<String, Object>> cases) {
-            this.casesByOrderId = new LinkedHashMap<>();
-            for (Map<String, Object> testCase : cases) {
-                String orderId = text(testCase, "orderId");
-                if (orderId != null && !orderId.isBlank()) {
-                    casesByOrderId.put(orderId, testCase);
-                }
-            }
-        }
-
-        @Override
-        public Optional<AfterSalesOrderSnapshot> findOrder(String orderId, String requesterId) {
-            Map<String, Object> testCase = casesByOrderId.get(orderId);
-            if (testCase == null) {
-                return Optional.empty();
-            }
-            String ownerId = text(testCase, "ownerId");
-            String status = text(testCase, "status");
-            Integer days = testCase.containsKey("days") ? ((Number) testCase.get("days")).intValue() : null;
-            return Optional.of(new AfterSalesOrderSnapshot(orderId, ownerId, status, days));
-        }
     }
 
     /**
