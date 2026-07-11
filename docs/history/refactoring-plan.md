@@ -1,8 +1,10 @@
-# AI Agent Station 重构计划
+# 历史重构计划：AI Agent Station
+
+> 本文记录从 LangGraph4j 迁移到当前 Spring AI、Spring State Machine 与 Session Memory 运行时的历史计划。它用于理解演进取舍，不代表当前设计；当前实现以 [架构文档](../architecture.md) 和 [运行手册](../after-sales-agent.md) 为准。
 
 > 目标：弃用 LangGraph4j，转向 **Spring AI + spring-ai-community + Spring State Machine**；主链路升级为**轻量 Plan-and-Execute** 范式，Java 只守护金融副作用边界。
 > 范围：基于当前 `codex/durable-after-sales-agent` 分支修改，不修改项目名称。
-> 状态：本计划为新建文档，不覆盖旧文档。
+> 状态：历史记录，阶段结论以当前代码和验收为准。
 
 ---
 

@@ -1,4 +1,6 @@
-# Durable After-Sales Agent 面试 Defense
+# Durable After-Sales Agent 面试说明
+
+> 架构事实、运行方式和验收命令以 [architecture.md](architecture.md) 与 [after-sales-agent.md](after-sales-agent.md) 为准；本文只整理面试表达与可证明边界。
 
 > 当前分支已接通轻量 Plan-and-Execute：Spring AI `ChatClient` 生成 JSON Plan，`RefundInformationGatherer` 执行并最多 3 次 RePlan，Spring State Machine 守护 `INTAKE / PENDING_APPROVAL / COMPLETED / REJECTED`。离线测试、30 条真实模型轨迹和 Testcontainers MySQL 集成测试覆盖主链路。
 
@@ -10,7 +12,7 @@
 
 不是简单“用了 Spring State Machine”。Spring State Machine 提供状态图和恢复语义，Spring AI 提供模型和工具抽象，spring-ai-community 提供记忆与任务清单；项目自己的部分是：
 
-- 将模型能力收敛为“信息收集规划”：用 JSON Plan 约束模型只输出 `ASK_USER` / `TOOL_CALL(query_order)`；
+- 将模型能力收敛为“信息收集规划”：用 JSON Plan 约束模型只输出 `ASK_USER` / `TOOL_CALL`，并且工具只能来自当前运行时声明的只读能力；
 - 用 `RefundInformationGatheringPolicy` 硬拦截非法 action 与非收敛 Plan，把不确定性关在 Plan 阶段；
 - 用确定性 Edge 决定 `REPLAN / ASK_USER / APPROVE / STOP`，最多 3 次 RePlan；
 - 把退款工具包装成有幂等键、执行凭证和终态记录的业务 Command；
