@@ -1,18 +1,15 @@
-# 文档导航
+# 文档索引
 
-## 当前文档
+| 文档 | 用途 | 何时阅读 |
+|---|---|---|
+| [任务交接](task-handoff.md) | 当前基线、已验证能力与下一步唯一动作 | 恢复跨会话任务前 |
+| [架构说明](architecture.md) | 队列、持久化 Workflow QuestionCard、会话记忆、双框架与提示词边界 | 调整运行内核前 |
+| [执行计划与验收矩阵](execution-plan.md) | 已交付范围、边界与静态审计映射 | 评估变更范围时 |
+| [运行手册](runbook.md) | 环境、启动、API、故障处理与真实验收 | 本地运行或验收时 |
+| [项目协作约定](../AGENTS.md) | 包结构、命名、代码风格和最低验证 | 开始代码改动前 |
+| [MySQL 初始化脚本](dev-ops/mysql/sql/ai-agent-station.sql) | 创建当前数据库对象 | 初始化本地数据库时 |
+| [领域 V2 升级脚本](dev-ops/mysql/sql/manual-upgrade-domain-v2.sql) | 为已有库增加商品、物流和售后申请单 | 完成备份后升级业务闭环时 |
+| [记忆版本升级脚本](dev-ops/mysql/sql/manual-upgrade-memory-version.sql) | 为会话记忆增加乐观锁 `VERSION` | 完成 Memory V2 升级后执行一次 |
+| [人工清理旧表脚本](dev-ops/mysql/sql/manual-cleanup-old-after-sales.sql) | 清理历史售后表 | 完成备份并人工确认后 |
 
-- [architecture.md](architecture.md)：项目定位、运行时边界、恢复语义和后续生产联调方向。
-- [after-sales-agent.md](after-sales-agent.md)：本地配置、HTTP 调用、数据库初始化和验收命令。
-- [interview-defense.md](interview-defense.md)：面试表达、可证明能力与不可宣称边界。
-
-## 评测与数据
-
-- [真实模型冻结轨迹](evaluation/after-sales-live-evaluation.md)：显式开启的真实模型规划评测与历史记录。
-- [并发基线](evaluation/after-sales-java17-benchmark.md)：内存 Runtime 的并发基线，不代表生产容量。
-- [Java 21 与 Redis 升级评估](decisions/java21-redis-evaluation.md)：兼容性、基准、Redis 前置条件与当前决策。
-- [MySQL 初始化脚本](dev-ops/mysql/sql/ai-agent-station.sql)：业务审计、售后与 Session Memory 的统一建表脚本。
-
-## 历史资料
-
-- [重构计划](history/refactoring-plan.md)：从 LangGraph4j 迁移到当前运行时的历史计划与阶段记录，不作为当前设计说明。
+文档记录稳定约束与可复现操作；代码、测试和配置是当前行为的最终依据。

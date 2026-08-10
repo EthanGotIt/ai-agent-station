@@ -1,64 +1,48 @@
-# Durable After-Sales Agent 架构
+# AI Agent Station 架构
 
-## 定位与范围
+## 执行与恢复边界
 
-这是一个可恢复的售后退款流程，不是通用 Agent 平台。第一版覆盖订单识别、信息收集、资格校验、补充信息、人工审批、幂等退款、通知和结果核验；不覆盖换货、补偿、多 Agent、长期业务记忆或生产支付接入。
-
-模型的权限被限制在“下一步需要哪些信息、调用哪个已声明的只读证据工具”。退款资格、状态转换、审批、幂等键和副作用执行都由 Java 控制。
-
-## 责任边界
-
-| 层次 | 负责 | 不负责 |
-|---|---|---|
-| Spring AI | `RefundPlanningAgent` 的 JSON Plan、Case 级 `SessionMemoryAdvisor`、`TodoWriteTool` 检查清单 | 退款决策、工具自动循环、业务事实存储 |
-| Application orchestration | Case/Turn 生命周期、start/resume/cancel、恢复租约协调、状态机调用、可恢复边界提交时机 | 资格规则、SQL、外部 HTTP 细节 |
-| Spring State Machine | 四个业务状态、事件、Guard、Action 触发、按 `ssm_state` 恢复 | 资格决策、退款幂等实现、模型调用重试策略 |
-| Domain Policy | Plan schema 和能力校验、RePlan 预算、退款资格、授权、幂等键语义与业务不变量 | 模型自由推理、事务或外部 HTTP 细节 |
-| Infrastructure | 只读 commerce 证据、MyBatis 持久化、事务与恢复锁、checkpoint/Turn 原子提交、Outbox/Inbox | 决定业务边界或跨服务业务编排 |
-
-Application orchestration 当前由 domain 模块的 service 包承载，这是现有六模块内的应用服务职责，不增加新的工程模块。应用层决定一个 Turn 何时形成可恢复边界；Infrastructure 只负责在同一事务中原子提交边界 checkpoint、Case 指针和 Turn 结果。
-
-## 受控执行流
-
-```text
-INTAKE
-  -> RefundPlanningAgent produces a JSON Plan
-  -> Policy validates schema, evidence gaps, action, tool and input
-  -> Gatherer executes only the first approved step
-     -> ASK_USER: persist interrupt and wait for SUPPLY_INFO
-     -> TOOL_CALL: persist process snapshot and RePlan
-  -> eligible: PENDING_APPROVAL interrupt
-
-PENDING_APPROVAL
-  -> APPROVE: state machine triggers the idempotent refund command, then COMPLETED
-  -> REJECT or ineligible: REJECTED
+```mermaid
+flowchart LR
+  C["Chat / Chat SSE"] --> Q["userId + sessionId FIFO"]
+  A["QuestionCard answers"] --> Q
+  Q --> R{"Router"}
+  R --> W["确定性 Workflow"]
+  R --> X["AgentScope ReAct"]
+  W --> P["WORKFLOW_RUN + QUESTION_JSON"]
+  P --> A
+  X --> I["SSE intervention"]
+  D["POST intervention decision"] -. "旁路，不入 FIFO" .-> X
 ```
 
-每个 Turn 的过程快照可以帮助诊断，但只有 Turn 完成后提交的边界 checkpoint 会写入 `after_sales_case.checkpoint_id`。恢复时新建状态机实例，从 checkpoint 的 `ssm_state` 和扩展状态直接恢复；不会从 `INTAKE` 重放事件来模拟旧状态。
+普通聊天和 Workflow 回答都进入同一个有界 FIFO。QuestionCard 回答进入队列后由 `runId + questionId + checkpointId + expectedVersion + answers` 校验并恢复；`WORKFLOW_RUN` 与追加式 `WORKFLOW_RUN_EVENT` 是事实来源。订单缺参、退款原因、退款确认都使用相同 QuestionCard，且只有该显式 answers 协议可以恢复运行。
 
-## 事实来源与恢复
+Workflow 状态只有 `RUNNING / WAITING_USER_INPUT / COMPLETED / REJECTED / FAILED / CANCELLED`。任何等待问题必须持久化 `QUESTION_JSON`；恢复时校验用户、Session、问题、检查点和乐观锁。Workflow 不经过工具权限系统，也不产生 HITL。
 
-- `sessionId`：调用方归组字段，不作为模型记忆键。
-- `caseId`：售后业务流程、模型记忆隔离键与状态机 thread key。
-- `turnId`：一次 start、resume 或重试尝试。
-- `agent_checkpoint`：Plan、工具和 Policy 的过程快照，以及可恢复边界。
-- `after_sales_case.checkpoint_id`：Case 当前唯一可恢复的位置。
+## ReAct HITL
 
-恢复锁带过期时间。进程异常后，其他实例可接管过期锁，并从上一个已提交 Turn 边界继续。只读工具允许重放；退款 Command 使用稳定的 `caseId:REFUND` 幂等键，避免重复副作用。
+ReAct 只负责复杂只读兜底。AgentScope 工具按自身声明返回 `allow / ask / deny`；`ask` 会产生 `RequireUserConfirmEvent`，服务端将其转成同一 SSE 连接上的 `intervention` 事件。客户端调用 `POST /api/v1/agent/requests/{requestId}/interventions/{replyId}` 提交 `CONFIRM` 或 `REJECT`，该调用直接投递给活跃 ReAct，不进入 FIFO，避免等待中的请求与自身决策互锁。
 
-Session Memory 只保存规划对话。Plan 和过程快照用于认知轨迹与诊断，不决定当前业务位置；Case、Turn、边界 checkpoint、订单证据和退款 Command 记录才是业务状态、审批与退款结果的事实来源。记忆组件异常时，确定性 Plan 仍可维持安全主链。
+服务端核对 `requestId + userId + sessionId + replyId + toolCallIds` 后，使用 AgentScope `ConfirmResult` 和 `Msg.METADATA_CONFIRM_RESULTS` 在同一 `RuntimeContext` 继续当前回合。同步 `/chat` 遇到 `ask` 返回 `REACT_CONFIRM_REQUIRES_STREAM`。这是工具授权而非工作流恢复：每一轮 ReAct 使用 `InMemoryAgentStateStore`，在结束、超时或取消后删除状态，不提供断线恢复。
 
-## 只读证据能力
+关键写入（支付、退款、发货、删除、账号变更）由确定性 Workflow 处理。生产 ReAct 登记近期订单、订单快照、物流、售后状态、售后规则五个只读工具，以及一个固定 `ASK` 的 `save_session_preference`：它只能写入当前会话中可编辑、可软删除的回答偏好。测试可使用 `acceptance` Profile 的可逆探针验证确认协议；它不属于生产功能。
 
-`IAfterSalesToolPort` 接收服务端 `caseId`、`userId`、`turnId` 上下文，并只执行已通过 Policy 的步骤。默认仅启用 `query_order`；HTTP commerce 契约准备好后可显式启用 `query_logistics` 与 `query_refund_history`。本地适配器不伪造物流或退款历史。
+## 提示词与框架校验
 
-模型输出非法 Plan 时会降级为确定性 Plan。最多允许 3 次 RePlan，每一步最多 2 次重试；退款始终保留在人工审批之后。
+Router 使用 Spring AI 结构化输出与 `validateSchema`，只决定固定 Workflow、ReAct、原子响应或澄清。AgentScope 的 typed events、工具 schema、权限和运行时上下文约束 ReAct。Thinking 可用于模型内部推理，但 `AgentScopeEventAssembler` 只发送生命周期进度，不发送原始 Thinking 到 API、SSE 或日志。
 
-## 生产联调方向
+## 会话记忆
 
-1. 对接真实订单、物流、退款测试环境，并以网关认证替代开发请求头。
-2. 将本地 Outbox 消费者替换为生产 MQ，保留 Outbox/Inbox 语义。
-3. 接入 Micrometer 后端并观察 Plan、工具、RePlan、checkpoint、恢复冲突与退款指标。
-4. 使用真实数据库、HTTP 依赖和连接池做容量与故障演练。
+会话记忆是独立的 MySQL 层：`AGENT_MEMORY_SOURCE`、`AGENT_MEMORY_ENTRY`、`AGENT_MEMORY_EVIDENCE`，以 `userId + sessionId` 严格隔离。生成与使用独立控制，默认均关闭；旧记录开关仅兼容映射到生成。成功的 ReAct 或完成的 Workflow 在后台由 Qwen Flash 结构化提取，按会话 30 秒合并并通过独立有界执行器提交。它是 best-effort：提取失败、队列满或进程重启不会影响当前用户响应，也不会持久化任务队列。
 
-运行方式、HTTP 接口和验收命令见 [after-sales-agent.md](after-sales-agent.md)。
+条目仅允许 `PREFERENCE` 与 `TASK_CONTEXT` 的受控键，保存类别、键、值、来源、置信度、TTL 和请求级证据。自动任务上下文默认 24 小时过期；人工编辑优先，tombstone 阻止自动复活。检索排除已删除、过期和 legacy 条目；不引入向量库。ReAct 最多接收 8 条、4000 字符且显式标注为不可信的历史上下文，订单/退款事实仍必须实时查询；Router 不读取记忆。Workflow 只以置信度不低于 `0.90` 的任务上下文构造持久化 QuestionCard 建议，用户提交 answers 后才可成为参数。
+
+设计参考 Codex 的生成/使用分离和可编辑记忆，以及 Claude Code 的受控项目记忆：强约束仍放在代码和 `AGENTS.md`，记忆不是事实来源或指令来源。[OpenAI Codex Memories](https://learn.chatgpt.com/docs/customization/memories) 的本地可控原则与本项目的管理 API、证据审计相匹配。跨会话、跨用户、向量检索和生产 ReAct 写工具均不在本期范围。
+
+## 模块边界
+
+- `core`：路由、队列、QuestionCard、Workflow、记忆和 ReAct 端口；不依赖 Spring、MyBatis 或 AgentScope。
+- `infrastructure`：AgentScope、MyBatis、Session、订单、物流、售后申请与退款适配器。
+- `app`：Bean 装配、HTTP/SSE DTO、异常边界和配置。
+
+详细约定以根目录 [AGENTS.md](../AGENTS.md) 为准。

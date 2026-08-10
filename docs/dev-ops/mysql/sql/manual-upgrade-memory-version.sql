@@ -1,0 +1,5 @@
+-- Session Memory 乐观锁升级脚本。先完成 session-memory-v2 与 domain-v2 升级并备份后执行。
+USE AI_AGENT_STATION;
+
+ALTER TABLE AGENT_MEMORY_ENTRY
+    ADD COLUMN VERSION BIGINT NOT NULL DEFAULT 0 AFTER CONFIDENCE;

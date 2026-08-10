@@ -1,19 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>cn.ethan.ai</groupId>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.0</version>
+    </parent>
+
+    <groupId>cn.ethan</groupId>
     <artifactId>ai-agent-station</artifactId>
     <version>1.0</version>
     <packaging>pom</packaging>
 
     <modules>
-        <module>ai-agent-station-api</module>
-        <module>ai-agent-station-app</module>
-        <module>ai-agent-station-domain</module>
+        <module>ai-agent-station-core</module>
         <module>ai-agent-station-infrastructure</module>
-        <module>ai-agent-station-trigger</module>
-        <module>ai-agent-station-types</module>
+        <module>ai-agent-station-app</module>
     </modules>
 
     <repositories>
@@ -33,39 +38,22 @@
     <properties>
         <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
-        <spring-statemachine.version>4.0.2</spring-statemachine.version>
+        <maven.compiler.release>17</maven.compiler.release>
+        <spring-ai.version>2.0.0</spring-ai.version>
         <spring-ai-session.version>0.5.0</spring-ai-session.version>
-        <spring-ai-agent-utils.version>0.10.0</spring-ai-agent-utils.version>
-        <skipTests>true</skipTests>
-        <test.spring.profile>test</test.spring.profile>
+        <mybatis-plus.version>3.5.17</mybatis-plus.version>
+        <agentscope.version>2.0.0</agentscope.version>
+        <victools-jsonschema.version>5.0.0</victools-jsonschema.version>
     </properties>
-
-    <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.0</version>
-    </parent>
 
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>org.mybatis.spring.boot</groupId>
-                <artifactId>mybatis-spring-boot-starter</artifactId>
-                <version>4.0.1</version>
-            </dependency>
-            <dependency>
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-bom</artifactId>
-                <version>2.0.0</version>
+                <version>${spring-ai.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.springframework.statemachine</groupId>
-                <artifactId>spring-statemachine-core</artifactId>
-                <version>${spring-statemachine.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.springaicommunity</groupId>
@@ -75,35 +63,45 @@
                 <scope>import</scope>
             </dependency>
             <dependency>
-                <groupId>org.springaicommunity</groupId>
-                <artifactId>spring-ai-agent-utils</artifactId>
-                <version>${spring-ai-agent-utils.version}</version>
-            </dependency>
-            <!-- 工程模块 -->
-            <dependency>
-                <groupId>cn.ethan.ai</groupId>
-                <artifactId>ai-agent-station-api</artifactId>
-                <version>1.0</version>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus</artifactId>
+                <version>${mybatis-plus.version}</version>
             </dependency>
             <dependency>
-                <groupId>cn.ethan.ai</groupId>
-                <artifactId>ai-agent-station-domain</artifactId>
-                <version>1.0</version>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
             </dependency>
             <dependency>
-                <groupId>cn.ethan.ai</groupId>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-core</artifactId>
+                <version>${agentscope.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-model-dashscope</artifactId>
+                <version>${agentscope.version}</version>
+            </dependency>
+            <!-- Spring AI 2.0 依赖 5.x API，统一版本避免 AgentScope 的 4.x 传递依赖降级。 -->
+            <dependency>
+                <groupId>com.github.victools</groupId>
+                <artifactId>jsonschema-generator</artifactId>
+                <version>${victools-jsonschema.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.victools</groupId>
+                <artifactId>jsonschema-module-jackson</artifactId>
+                <version>${victools-jsonschema.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.ethan</groupId>
+                <artifactId>ai-agent-station-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.ethan</groupId>
                 <artifactId>ai-agent-station-infrastructure</artifactId>
-                <version>1.0</version>
-            </dependency>
-            <dependency>
-                <groupId>cn.ethan.ai</groupId>
-                <artifactId>ai-agent-station-trigger</artifactId>
-                <version>1.0</version>
-            </dependency>
-            <dependency>
-                <groupId>cn.ethan.ai</groupId>
-                <artifactId>ai-agent-station-types</artifactId>
-                <version>1.0</version>
+                <version>${project.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -116,13 +114,6 @@
                 <configuration>
                     <release>${java.version}</release>
                     <encoding>${project.build.sourceEncoding}</encoding>
-                    <annotationProcessorPaths>
-                        <path>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                            <version>${lombok.version}</version>
-                        </path>
-                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
             <plugin>
@@ -131,11 +122,6 @@
                 <configuration>
                     <encoding>UTF-8</encoding>
                 </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>versions-maven-plugin</artifactId>
-                <version>2.7</version>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -151,7 +137,7 @@
                             <rules>
                                 <requireJavaVersion>
                                     <version>[17,)</version>
-                                    <message>AI Agent Station requires JDK 17 or newer. Configure JAVA_HOME before running Maven.</message>
+                                    <message>AI Agent Station requires JDK 17 or newer.</message>
                                 </requireJavaVersion>
                             </rules>
                         </configuration>
@@ -160,38 +146,5 @@
             </plugin>
         </plugins>
     </build>
-
-    <profiles>
-        <profile>
-            <id>dev</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <properties>
-                <java_jvm>-Xms1G -Xmx1G -server -Xss256K -Dspring.profiles.active=dev -XX:+DisableExplicitGC -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/export/Logs/ai-agent-station-boot -Xlog:gc*:file=/export/Logs/ai-agent-station-boot/gc-ai-agent-station-boot.log:time,uptime,level,tags</java_jvm>
-                <profileActive>dev</profileActive>
-            </properties>
-        </profile>
-        <profile>
-            <id>test</id>
-            <properties>
-                <java_jvm>-Xms1G -Xmx1G -server -Xss256K -Dspring.profiles.active=test -XX:+DisableExplicitGC -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/export/Logs/ai-agent-station-boot -Xlog:gc*:file=/export/Logs/ai-agent-station-boot/gc-ai-agent-station-boot.log:time,uptime,level,tags</java_jvm>
-                <profileActive>test</profileActive>
-            </properties>
-        </profile>
-        <profile>
-            <id>integration</id>
-            <properties>
-                <test.spring.profile>dev</test.spring.profile>
-            </properties>
-        </profile>
-        <profile>
-            <id>prod</id>
-            <properties>
-                <java_jvm>-Xms6G -Xmx6G -server -Xss256K -Dspring.profiles.active=prod -XX:+DisableExplicitGC -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/export/Logs/ai-agent-station-boot -Xlog:gc*:file=/export/Logs/ai-agent-station-boot/gc-ai-agent-station-boot.log:time,uptime,level,tags</java_jvm>
-                <profileActive>prod</profileActive>
-            </properties>
-        </profile>
-    </profiles>
 
 </project>
