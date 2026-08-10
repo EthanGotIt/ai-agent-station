@@ -12,4 +12,16 @@ describe("appendSseChunk", () => {
     expect(events).toEqual([["result", { cardType: "order_overview" }]]);
     expect(remainder).toBe("event: done\ndata: {\"status\":\"COM");
   });
+
+  it("flushes a final unterminated frame when the stream closes", () => {
+    const events: Array<[string, unknown]> = [];
+    const remainder = appendSseChunk(
+      "event: done\r\ndata: {\"status\":\"COMPLETED\"}",
+      (type, data) => events.push([type, data])
+    );
+
+    appendSseChunk(`${remainder}\n\n`, (type, data) => events.push([type, data]));
+
+    expect(events).toEqual([["done", { status: "COMPLETED" }]]);
+  });
 });

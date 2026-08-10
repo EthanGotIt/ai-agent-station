@@ -16,4 +16,27 @@ describe("StructuredCard", () => {
     expect(screen.getByText("IN_TRANSIT")).toBeTruthy();
     expect(screen.getByText("上海 · 运输中")).toBeTruthy();
   });
+
+  it("uses the field names emitted by order and diagnosis workflows", () => {
+    const { rerender } = render(<StructuredCard data={{
+      cardType: "order_overview",
+      data: {
+        orderId: "ORDER-001", status: "PAID", paidAmount: "99.00", currency: "CNY",
+        items: [{ productName: "演示耳机", quantity: 1, unitPrice: "99.00" }]
+      }
+    }} />);
+
+    expect(screen.getAllByText("99.00").length).toBeGreaterThan(0);
+    expect(screen.getByText("演示耳机 × 1 · 99.00")).toBeTruthy();
+
+    rerender(<StructuredCard data={{
+      cardType: "order_diagnosis",
+      data: {
+        orderId: "ORDER-001", issueType: "LOGISTICS_STALLED", diagnosisType: "LOGISTICS_STALLED",
+        recommendation: "建议提供物流停滞信息并等待进一步处理。"
+      }
+    }} />);
+
+    expect(screen.getByText("建议提供物流停滞信息并等待进一步处理。")).toBeTruthy();
+  });
 });

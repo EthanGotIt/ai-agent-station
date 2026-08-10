@@ -66,4 +66,6 @@ npm run dev
 
 Vite 会将 `/api` 代理到本地 8090 端口；控制台不会在 `localStorage` 保存 Prompt、工具参数或记忆正文。
 
+单机在线演示可使用根目录 [docker-compose.yml](docker-compose.yml) 部署 Nginx、控制台、Java 服务和 MySQL；TLS 证书、Basic Auth 与备份恢复步骤见 [运行手册](docs/runbook.md#linux-vm-docker-compose-在线演示)。
+
 详细说明见 [文档索引](docs/README.md)、[架构文档](docs/architecture.md)、[运行手册](docs/runbook.md)、[执行验收矩阵](docs/execution-plan.md) 和 [任务交接](docs/task-handoff.md)。

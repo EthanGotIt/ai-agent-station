@@ -51,3 +51,9 @@ build/
 ### Mac OS ###
 .DS_Store
 /ai-agent-station-app/.env
+
+### Deployment secrets and TLS material ###
+/deployment/.env
+/deployment/certs/*.pem
+/deployment/certs/*.key
+/deployment/backups/

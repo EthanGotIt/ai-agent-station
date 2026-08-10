@@ -18,6 +18,7 @@ import cn.ethan.core.workflow.model.WorkflowRunModel;
 import cn.ethan.core.workflow.port.WorkflowRunStore;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -81,6 +82,88 @@ class OrderInquiryWorkflowTest {
         assertEquals("LOGISTICS_STALLED", completed.structuredResult().data().get("diagnosisType"));
     }
 
+    @Test
+    void diagnosesFiveIssueCategoriesAndHonorsTimeBoundaries() {
+        assertDiagnosis(
+                new OrderSnapshotModel(
+                        "ORDER-PAID-DELAY", "user-1", OrderStatusEnum.PAID, null,
+                        CLOCK.instant().minus(Duration.ofHours(48)), null, null, null,
+                        new BigDecimal("99.00"), "CNY"
+                ),
+                "NOT_SHIPPED", List.of(), "SHIPMENT_DELAY"
+        );
+        assertDiagnosis(
+                new OrderSnapshotModel(
+                        "ORDER-DELIVERY-OVERDUE", "user-1", OrderStatusEnum.SHIPPED, null,
+                        CLOCK.instant().minus(Duration.ofHours(96)), CLOCK.instant().minusSeconds(1),
+                        CLOCK.instant().minus(Duration.ofHours(12)), "DELIVERING",
+                        new BigDecimal("99.00"), "CNY"
+                ),
+                "DELIVERY_OVERDUE", List.of(), "DELIVERY_OVERDUE"
+        );
+        assertDiagnosis(
+                new OrderSnapshotModel(
+                        "ORDER-LOGISTICS-STALLED", "user-1", OrderStatusEnum.SHIPPED, null,
+                        CLOCK.instant().minus(Duration.ofHours(96)), CLOCK.instant().plus(Duration.ofHours(24)),
+                        CLOCK.instant().minus(Duration.ofHours(48)), "IN_TRANSIT",
+                        new BigDecimal("99.00"), "CNY"
+                ),
+                "LOGISTICS_STALLED", List.of(new LogisticsEventModel(
+                        "event-stalled", "ORDER-LOGISTICS-STALLED", "IN_TRANSIT", "上海",
+                        "包裹停滞", CLOCK.instant().minus(Duration.ofHours(48))
+                )), "LOGISTICS_STALLED"
+        );
+        assertDiagnosis(
+                new OrderSnapshotModel(
+                        "ORDER-DELIVERY-DISPUTE", "user-1", OrderStatusEnum.DELIVERED, 1,
+                        CLOCK.instant().minus(Duration.ofDays(1)), null, CLOCK.instant(), "SIGNED",
+                        new BigDecimal("99.00"), "CNY"
+                ),
+                "DELIVERED_NOT_RECEIVED", List.of(), "DELIVERY_DISPUTE"
+        );
+        assertDiagnosis(
+                new OrderSnapshotModel(
+                        "ORDER-OTHER", "user-1", OrderStatusEnum.SHIPPED, null,
+                        CLOCK.instant().minus(Duration.ofHours(1)), null, null, null,
+                        new BigDecimal("99.00"), "CNY"
+                ),
+                "OTHER", List.of(), "INSUFFICIENT_DATA"
+        );
+    }
+
+    @Test
+    void resumesPersistedQuestionAfterWorkflowIsRebuilt() {
+        InMemoryRunStore runs = new InMemoryRunStore();
+        WorkflowResultModel paused = workflow(runs).execute(context("我的物流到哪了"));
+        WorkflowRunModel run = (WorkflowRunModel) paused.context().value("workflowRun");
+
+        WorkflowResultModel completed = workflow(runs).answer(
+                answer(run, paused, "answer-after-restart", Map.of("orderId", "ORDER-001")),
+                "user-1", new CancellationToken()
+        );
+
+        assertEquals("COMPLETED", completed.status().name());
+        assertEquals("logistics_timeline", completed.structuredResult().cardType());
+    }
+
+    private void assertDiagnosis(
+            OrderSnapshotModel order,
+            String issueType,
+            List<LogisticsEventModel> trace,
+            String expectedDiagnosis
+    ) {
+        InMemoryRunStore runs = new InMemoryRunStore();
+        OrderInquiryWorkflow workflow = diagnosticWorkflow(runs, order, trace);
+        WorkflowResultModel result = workflow.execute(context(
+                "履约诊断",
+                Map.of("operation", "DIAGNOSE", "orderId", order.orderId(), "issueType", issueType)
+        ));
+
+        assertEquals("COMPLETED", result.status().name());
+        assertEquals("order_diagnosis", result.structuredResult().cardType());
+        assertEquals(expectedDiagnosis, result.structuredResult().data().get("diagnosisType"));
+    }
+
     private OrderInquiryWorkflow workflow(InMemoryRunStore runs) {
         OrderGateway orders = new OrderGateway() {
             @Override
@@ -111,6 +194,37 @@ class OrderInquiryWorkflowTest {
     private WorkflowContextModel context(String message) {
         return new WorkflowContextModel(
                 new AgentRequestModel("request-1", "session-1", message), "user-1", new CancellationToken(), Map.of()
+        );
+    }
+
+    private WorkflowContextModel context(String message, Map<String, Object> values) {
+        return new WorkflowContextModel(
+                new AgentRequestModel("request-1", "session-1", message), "user-1", new CancellationToken(), values
+        );
+    }
+
+    private OrderInquiryWorkflow diagnosticWorkflow(
+            InMemoryRunStore runs,
+            OrderSnapshotModel order,
+            List<LogisticsEventModel> trace
+    ) {
+        OrderGateway orders = new OrderGateway() {
+            @Override
+            public OrderLookupResultModel findOrder(String orderId, String userId) {
+                return order.orderId().equals(orderId) && order.userId().equals(userId)
+                        ? OrderLookupResultModel.found(order) : OrderLookupResultModel.notFound();
+            }
+
+            @Override
+            public List<RecentOrderModel> listRecentOrders(String userId, int limit) {
+                return List.of(new RecentOrderModel(order.orderId(), order.status(), order.createdAt()));
+            }
+        };
+        return new OrderInquiryWorkflow(
+                orders,
+                (orderId, userId) -> trace,
+                new GraphExecutor(), new OrderRequestAnalysisService(), CLOCK,
+                Duration.ofHours(48), Duration.ofHours(48), runs, event -> { }
         );
     }
 

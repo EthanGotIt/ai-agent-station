@@ -131,3 +131,34 @@ cd agent-console; npm test; npm run build
 ```
 
 `scripts.live_acceptance` 覆盖订单多阶段 QuestionCard、自动退款、人工审核、状态查询、重启恢复、五个只读工具、真实 `save_session_preference` 的确认/拒绝/超时/取消和 FIFO 取消。百炼模型原生工具（含联网搜索）必须保持关闭；后续外部能力仅通过框架 MCP 组件接入并单独验收。它以 `acceptance` Profile 保留确认探针作为协议诊断，但主要 ASK 场景是生产偏好写入。运行前必须准备独立非生产 MySQL 与 DashScope 凭据；不要用真实凭据执行未经审查的数据库重置。
+
+## Linux VM Docker Compose 在线演示
+
+根目录 `docker-compose.yml` 只对外暴露 Nginx 的 `80/443`；Java 服务和 MySQL 仅位于 Compose 内网。Nginx 在 HTTPS 上为控制台与 `/api/` 启用 Basic Auth，并为 API 限流；`/actuator/health` 不鉴权，供负载均衡和健康探测使用。SSE 代理关闭缓冲并将读写超时设为 255 秒。
+
+在一台已安装 Docker Engine 与 Compose 插件的 Linux VM 上执行：
+
+```sh
+cp deployment/.env.example deployment/.env
+chmod 600 deployment/.env
+mkdir -p deployment/certs
+# 将受信任证书写入 deployment/certs/fullchain.pem 和 deployment/certs/privkey.pem，权限设为 600。
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
+DEMO_DOMAIN=demo.example.com # 替换为证书中的域名
+curl --fail --resolve "${DEMO_DOMAIN}:443:127.0.0.1" "https://${DEMO_DOMAIN}/actuator/health"
+```
+
+`deployment/.env` 必须设置 `MYSQL_PASSWORD`、`MYSQL_ROOT_PASSWORD`、`DASHSCOPE_API_KEY`、`NGINX_BASIC_AUTH_USERNAME` 和 `NGINX_BASIC_AUTH_PASSWORD`；该文件与 `deployment/certs/*.pem` 已被 Git 忽略，禁止将真实密钥或证书提交入库。演示环境初次创建 MySQL 卷时会运行 `ai-agent-station.sql` 并写入演示订单。升级已有非生产库前，仍必须按本手册开头的历史脚本顺序先备份再升级，不能用 Compose 初始化脚本覆盖历史库。
+
+证书续期后需执行 `docker compose restart nginx`。默认 API 限流为每 IP 每分钟 30 次、突发 20 次，可通过 `NGINX_API_RATE_LIMIT` 和 `NGINX_API_RATE_BURST` 调整；不要通过公开 Java 或 MySQL 端口绕过 Nginx。
+
+备份与恢复脚本均在根目录运行。恢复要求显式确认，且应先停止演示流量：
+
+```sh
+sh deployment/scripts/backup-mysql.sh
+CONFIRM_MYSQL_RESTORE=RESTORE_AI_AGENT_STATION sh deployment/scripts/restore-mysql.sh deployment/backups/<backup>.sql
+```
+
+上线后的最小冒烟流程为：订单诊断 → 人工审核退款 → 保持 SSE 连接确认 `save_session_preference` → 回答一个等待中的 QuestionCard 后重启 `app` 容器，再用原 `runId`、`checkpointId` 和 `version` 完成恢复。真实模型验收和数据库重置仅可在已备份的非生产环境执行。

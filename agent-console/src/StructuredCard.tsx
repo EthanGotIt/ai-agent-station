@@ -4,7 +4,14 @@ type CardData = Record<string, unknown>;
 type Props = { data: unknown };
 
 function value(data: CardData, name: string) {
-  const current = data[name];
+  const aliases: Record<string, string[]> = {
+    amount: ["paidAmount", "refundAmount"],
+    expectedDeliveryAt: ["estimatedDeliveryAt"],
+    recommendation: ["suggestedAction"]
+  };
+  const current = [name, ...(aliases[name] ?? [])]
+    .map((candidate) => data[candidate])
+    .find((candidate) => candidate !== null && candidate !== undefined && candidate !== "");
   return current === null || current === undefined || current === "" ? "—" : String(current);
 }
 
@@ -15,16 +22,23 @@ function Fields({ data, names }: { data: CardData; names: Array<[string, string]
 }
 
 function OrderOverview({ data }: { data: CardData }) {
-  return <Fields data={data} names={[
-    ["orderId", "订单号"], ["status", "订单状态"], ["amount", "金额"],
-    ["createdAt", "创建时间"], ["estimatedDeliveryAt", "预计送达"]
-  ]} />;
+  const items = Array.isArray(data.items) ? data.items as CardData[] : [];
+  return <>
+    <Fields data={data} names={[
+      ["orderId", "订单号"], ["status", "订单状态"], ["amount", "金额"], ["currency", "币种"]
+    ]} />
+    {items.length > 0 ? <ul className="item-list">{items.map((item, index) =>
+      <li key={`${value(item, "productName")}-${index}`}>
+        {value(item, "productName")} × {value(item, "quantity")} · {value(item, "unitPrice")}
+      </li>
+    )}</ul> : null}
+  </>;
 }
 
 function LogisticsTimeline({ data }: { data: CardData }) {
   const events = Array.isArray(data.events) ? data.events as CardData[] : [];
   return <>
-    <Fields data={data} names={[["orderId", "订单号"], ["estimatedDeliveryAt", "预计送达"]]} />
+    <Fields data={data} names={[["orderId", "订单号"], ["expectedDeliveryAt", "预计送达"]]} />
     <ol className="timeline-list">
       {events.map((event, index) => <li key={`${value(event, "occurredAt")}-${index}`}>
         <strong>{value(event, "status")}</strong><span>{value(event, "occurredAt")}</span>
@@ -36,7 +50,9 @@ function LogisticsTimeline({ data }: { data: CardData }) {
 
 function Diagnosis({ data }: { data: CardData }) {
   return <>
-    <Fields data={data} names={[["orderId", "订单号"], ["diagnosisType", "诊断"], ["suggestedAction", "建议动作"]]} />
+    <Fields data={data} names={[
+      ["orderId", "订单号"], ["issueType", "问题类型"], ["diagnosisType", "诊断"], ["recommendation", "建议动作"]
+    ]} />
     {Array.isArray(data.evidence) ? <ul>{(data.evidence as CardData[]).map((item, index) =>
       <li key={index}>{value(item, "field")}: {value(item, "value")}</li>)}</ul> : null}
   </>;

@@ -9,6 +9,7 @@ import cn.ethan.core.agent.service.AgentMemoryService;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.tool.ToolCallParam;
@@ -56,6 +57,25 @@ class SaveSessionPreferenceToolTest {
         assertEquals("session-1", entry.sessionId());
         assertEquals(AgentMemoryCategoryEnum.PREFERENCE, entry.category());
         assertEquals("markdown", entry.value());
+    }
+
+    @Test
+    void deniesUnsupportedValuesAndNeverWritesWithoutRuntimeOwnership() {
+        InMemoryStore store = new InMemoryStore();
+        SaveSessionPreferenceTool tool = new SaveSessionPreferenceTool(new AgentMemoryService(
+                false, true, 0.75, store, Clock.fixed(Instant.parse("2026-08-10T00:00:00Z"), ZoneOffset.UTC)
+        ));
+        Map<String, Object> unsupported = Map.of("key", "response.language", "value", "中文");
+        Map<String, Object> valid = Map.of("key", "response.language", "value", "zh-CN");
+
+        assertEquals(PermissionBehavior.DENY, tool.checkPermissions(unsupported, null).block().getBehavior());
+        assertEquals(ToolResultState.ERROR, tool.callAsync(parameter(unsupported)).block().getState());
+        assertEquals(ToolResultState.ERROR, tool.callAsync(ToolCallParam.builder()
+                .toolUseBlock(ToolUseBlock.builder().id("tool-call-2")
+                        .name(SaveSessionPreferenceTool.NAME).input(valid).build())
+                .input(valid)
+                .build()).block().getState());
+        assertTrue(store.entries.isEmpty());
     }
 
     private ToolCallParam parameter(Map<String, Object> input) {

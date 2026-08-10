@@ -1,0 +1,73 @@
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: AI_AGENT_STATION
+      MYSQL_USER: ai_agent
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请在 deployment/.env 中设置 MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 deployment/.env 中设置 MYSQL_ROOT_PASSWORD}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docs/dev-ops/mysql/sql/ai-agent-station.sql:/docker-entrypoint-initdb.d/01-ai-agent-station.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  app:
+    build:
+      context: .
+      dockerfile: deployment/app/Dockerfile
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8090
+      MYSQL_URL: jdbc:mysql://mysql:3306/AI_AGENT_STATION?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      MYSQL_USERNAME: ai_agent
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请在 deployment/.env 中设置 MYSQL_PASSWORD}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:?请在 deployment/.env 中设置 DASHSCOPE_API_KEY}
+      QWEN_BASE_URL: ${QWEN_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      AI_AGENT_REACT_BASE_URL: ${AI_AGENT_REACT_BASE_URL:-}
+      AI_AGENT_ROUTER_MODEL: ${AI_AGENT_ROUTER_MODEL:-qwen3.7-plus}
+      AI_AGENT_REACT_MODEL: ${AI_AGENT_REACT_MODEL:-qwen3.7-plus}
+      AI_AGENT_MEMORY_GENERATION_ENABLED: ${AI_AGENT_MEMORY_GENERATION_ENABLED:-false}
+      AI_AGENT_MEMORY_USAGE_ENABLED: ${AI_AGENT_MEMORY_USAGE_ENABLED:-false}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8090/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 45s
+
+  nginx:
+    build:
+      context: .
+      dockerfile: deployment/nginx/Dockerfile
+    restart: unless-stopped
+    environment:
+      NGINX_BASIC_AUTH_USERNAME: ${NGINX_BASIC_AUTH_USERNAME:?请在 deployment/.env 中设置 NGINX_BASIC_AUTH_USERNAME}
+      NGINX_BASIC_AUTH_PASSWORD: ${NGINX_BASIC_AUTH_PASSWORD:?请在 deployment/.env 中设置 NGINX_BASIC_AUTH_PASSWORD}
+      NGINX_API_RATE_LIMIT: ${NGINX_API_RATE_LIMIT:-30r/m}
+      NGINX_API_RATE_BURST: ${NGINX_API_RATE_BURST:-20}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deployment/certs:/etc/nginx/certs:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mysql-data:

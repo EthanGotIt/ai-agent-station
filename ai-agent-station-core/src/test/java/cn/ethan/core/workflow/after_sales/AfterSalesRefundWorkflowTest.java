@@ -44,6 +44,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * 售后退款 Workflow 测试：验证确认问题、幂等回答和重新校验边界。
@@ -167,6 +168,103 @@ class AfterSalesRefundWorkflowTest {
         assertEquals(AfterSalesCaseStatusEnum.PENDING_REVIEW, created.status());
     }
 
+    @Test
+    void collectsMissingOrderReasonDescriptionAndConfirmationBeforeAutomaticRefund() {
+        MutableOrderGateway orders = new MutableOrderGateway(paidOrder());
+        InMemoryRefundGateway refunds = new InMemoryRefundGateway();
+        InMemoryRunStore runs = new InMemoryRunStore();
+        InMemoryCaseGateway cases = new InMemoryCaseGateway();
+        AfterSalesRefundWorkflow workflow = workflow(orders, refunds, runs, cases);
+
+        WorkflowResultModel orderQuestion = workflow.execute(context("我要申请退款"));
+        WorkflowRunModel orderRun = run(orderQuestion);
+        assertEquals("resolve_order", orderRun.checkpointId());
+
+        WorkflowResultModel reasonQuestion = workflow.answer(answer(
+                orderRun, orderQuestion, "answer-order", Map.of("orderId", "ORDER-PAID-001")
+        ), "user-1", new CancellationToken());
+        WorkflowRunModel reasonRun = run(reasonQuestion);
+        assertEquals("collect_reason", reasonRun.checkpointId());
+
+        WorkflowResultModel descriptionQuestion = workflow.answer(answer(
+                reasonRun, reasonQuestion, "answer-reason", Map.of("refundReason", "QUALITY_ISSUE")
+        ), "user-1", new CancellationToken());
+        WorkflowRunModel descriptionRun = run(descriptionQuestion);
+        assertEquals("collect_description", descriptionRun.checkpointId());
+
+        WorkflowResultModel confirmation = workflow.answer(answer(
+                descriptionRun, descriptionQuestion, "answer-description",
+                Map.of("description", "耳机无法正常充电，已经尝试更换电源仍无改善。")
+        ), "user-1", new CancellationToken());
+        WorkflowRunModel confirmationRun = run(confirmation);
+        assertEquals("confirm_submission", confirmationRun.checkpointId());
+
+        WorkflowResultModel completed = workflow.answer(answer(
+                confirmationRun, confirmation, "answer-confirm", Map.of("decision", "CONFIRM")
+        ), "user-1", new CancellationToken());
+
+        assertEquals("COMPLETED", completed.status().name());
+        assertEquals(1, refunds.createdCount.get());
+        assertEquals(AfterSalesCaseStatusEnum.REFUND_PROCESSING,
+                cases.findByOrder("ORDER-PAID-001", "user-1").orElseThrow().status());
+    }
+
+    @Test
+    void queryStatusAndRepeatedApplicationReadExistingCaseWithoutARefundCommand() {
+        MutableOrderGateway orders = new MutableOrderGateway(paidOrder());
+        InMemoryRefundGateway refunds = new InMemoryRefundGateway();
+        InMemoryRunStore runs = new InMemoryRunStore();
+        InMemoryCaseGateway cases = new InMemoryCaseGateway();
+        AfterSalesCaseModel existing = new AfterSalesCaseModel(
+                "case-existing", "run-existing", "user-1", "ORDER-PAID-001", RefundReasonEnum.NOT_RECEIVED,
+                "包裹没有送达", AfterSalesHandlingModeEnum.MANUAL_REVIEW,
+                AfterSalesCaseStatusEnum.PENDING_REVIEW, new BigDecimal("99.00"), "CNY", "", 0,
+                CLOCK.instant(), CLOCK.instant()
+        );
+        cases.create(existing);
+        AfterSalesRefundWorkflow workflow = workflow(orders, refunds, runs, cases);
+
+        WorkflowResultModel status = workflow.execute(statusContext("查询订单 ORDER-PAID-001 的退款状态"));
+        WorkflowResultModel duplicate = workflow.execute(context("订单 ORDER-PAID-001 退款，没收到"));
+
+        assertEquals("after_sales_status", status.structuredResult().cardType());
+        assertEquals("PENDING_REVIEW", status.structuredResult().data().get("status"));
+        assertEquals("COMPLETED", duplicate.status().name());
+        assertEquals(0, refunds.createdCount.get());
+        assertEquals(1, cases.casesByOrder.size());
+    }
+
+    @Test
+    void rejectsIneligibleOrderAndRejectsStaleConfirmationAnswers() {
+        MutableOrderGateway rejectedOrders = new MutableOrderGateway(new OrderSnapshotModel(
+                "ORDER-CANCELLED-001", "user-1", OrderStatusEnum.CANCELLED, null,
+                CLOCK.instant(), null, null, null, new BigDecimal("99.00"), "CNY"
+        ));
+        AfterSalesRefundWorkflow rejectedWorkflow = workflow(
+                rejectedOrders, new InMemoryRefundGateway(), new InMemoryRunStore(), new InMemoryCaseGateway()
+        );
+
+        WorkflowResultModel rejected = rejectedWorkflow.execute(context("订单 ORDER-CANCELLED-001 退款，没收到"));
+        assertEquals("after_sales_rejected", rejected.structuredResult().cardType());
+
+        MutableOrderGateway paidOrders = new MutableOrderGateway(paidOrder());
+        InMemoryRunStore runs = new InMemoryRunStore();
+        AfterSalesRefundWorkflow workflow = workflow(
+                paidOrders, new InMemoryRefundGateway(), runs, new InMemoryCaseGateway()
+        );
+        WorkflowResultModel confirmation = workflow.execute(context("订单 ORDER-PAID-001 退款，没收到"));
+        WorkflowRunModel run = run(confirmation);
+        WorkflowAnswerRequestModel accepted = answer(
+                run, confirmation, "answer-confirm", Map.of("decision", "CONFIRM")
+        );
+        workflow.answer(accepted, "user-1", new CancellationToken());
+
+        assertThrows(cn.ethan.core.workflow.exception.WorkflowRunConflictException.class, () -> workflow.answer(
+                answer(run, confirmation, "answer-stale", Map.of("decision", "REJECT")),
+                "user-1", new CancellationToken()
+        ));
+    }
+
     private AfterSalesRefundWorkflow workflow(
             OrderGateway orders,
             RefundCommandGateway refunds,
@@ -200,6 +298,31 @@ class AfterSalesRefundWorkflowTest {
                 "user-1",
                 new CancellationToken(),
                 Map.of("operation", AfterSalesOperationEnum.APPLY.name())
+        );
+    }
+
+    private WorkflowContextModel statusContext(String message) {
+        return new WorkflowContextModel(
+                new AgentRequestModel("request-status", "session-1", message),
+                "user-1",
+                new CancellationToken(),
+                Map.of("operation", AfterSalesOperationEnum.QUERY_STATUS.name())
+        );
+    }
+
+    private WorkflowRunModel run(WorkflowResultModel result) {
+        return (WorkflowRunModel) result.context().value("workflowRun");
+    }
+
+    private WorkflowAnswerRequestModel answer(
+            WorkflowRunModel run,
+            WorkflowResultModel result,
+            String requestId,
+            Map<String, String> answers
+    ) {
+        return new WorkflowAnswerRequestModel(
+                requestId, "session-1", run.runId(), result.question().questionId(),
+                run.checkpointId(), run.version(), answers
         );
     }
 
