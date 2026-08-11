@@ -22,9 +22,11 @@
 - Router 不读取记忆。订单、物流、退款业务事实永远重新查询；Workflow 建议值必须经 answers API 显式提交。
 - 本轮不引入向量库、跨会话记忆、Redis、分布式 ReAct 协调、Flyway 或 Testcontainers。
 
-## 上线与演示顺序
+## 本地交付与验收顺序
 
 1. 在备份后的非生产 MySQL 按运行手册中的升级顺序执行历史脚本和记忆版本脚本，验证版本冲突、恢复与退款幂等。
 2. 先开启记忆生成并人工审阅，再独立开启 ReAct 使用，最后开启 Workflow 建议值；三个开关均可独立回退。
-3. 演示：近期订单选择并诊断物流 → 多阶段退款（自动/人工）→ ReAct 多工具分析 → ASK 保存回答偏好 → 重启后回答未完成 QuestionCard。
-4. 运行规则回归和真实 `live_acceptance`，将生成的 Markdown 报告与 README 演示步骤一同保存。
+3. 本地验证可按近期订单选择并诊断物流 → 多阶段退款（自动/人工）→ ReAct 多工具分析 → ASK 保存回答偏好 → 重启后回答未完成 QuestionCard 的顺序执行。
+4. 运行规则回归；仅在另行批准真实模型验收时，才运行 `live_acceptance` 并保存 Markdown 报告。
+
+当前交付不包含上线和现场演示，因此 Docker、Docker Compose、Nginx、TLS 证书和公网访问均不属于必需环境。
