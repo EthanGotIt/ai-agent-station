@@ -24,7 +24,7 @@
 - `D:\Application\miniconda3\python.exe -m scripts.plan_audit --strict`：23/23 通过。
 - `mvn clean '-DskipTests=false' test`：通过。
 - `agent-console` 的 `npm test -- --run`、`npm run build`：通过。
-- Docker 镜像、容器与数据卷已清空；Docker 构建缓存未主动清理，以避免影响其他本地项目。
+- Docker 镜像、容器、数据卷与构建缓存均已清空；未保留 Docker 本地运行状态。
 - `.idea` 和本地 `.env` 未纳入提交。
 
 ## 当前交付范围
