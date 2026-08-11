@@ -955,7 +955,7 @@ def _run_react_ask_case(
             raise AcceptanceFailure("CONFIRM 后未找到已规范化的会话偏好记忆")
         preference_request = _payload(
             session_id,
-            "用一句话说明正常情况下天空的颜色；不要调用工具，也不要解释回答语言。",
+            "请复盘订单 ORDER-PAID-001 的商品、金额和订单状态，只做只读分析。",
         )
         preference_request["memory"] = {"generate": False, "use": True}
         preference_conversation = SseConversation(host, port, user_id, preference_request, 120)
