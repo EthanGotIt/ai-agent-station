@@ -1,6 +1,9 @@
 package cn.ethan.infrastructure.agentscope.executor;
 
 import cn.ethan.core.agent.service.AgentMemoryService;
+import cn.ethan.core.agent.enums.AgentMemoryCategoryEnum;
+import cn.ethan.core.agent.enums.AgentMemoryOriginEnum;
+import cn.ethan.core.agent.model.AgentMemoryEntryModel;
 import cn.ethan.core.after_sales.model.AfterSalesCaseModel;
 import cn.ethan.core.after_sales.model.RefundCommandModel;
 import cn.ethan.core.after_sales.model.RefundCommandResultModel;
@@ -17,6 +20,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -45,6 +49,7 @@ class AgentScopeReActExecutorTest {
             try {
                 assertTrue(agent.getSysPrompt().contains("agent-station-business-orchestration"));
                 assertTrue(agent.getSysPrompt().contains("load_skill_through_path"));
+                assertTrue(agent.getSysPrompt().contains("服务端存储且已校验的展示配置"));
                 assertFalse(agent.getSysPrompt().contains("get_order_snapshot"));
 
                 DynamicSkillMiddleware middleware = agent.getMiddlewares().stream()
@@ -73,6 +78,23 @@ class AgentScopeReActExecutorTest {
                 executor.close();
             }
         }
+    }
+
+    @Test
+    void rendersLanguagePreferenceAsTrustedOutputConstraint() {
+        Instant now = Instant.parse("2026-08-11T00:00:00Z");
+        AgentMemoryEntryModel preference = new AgentMemoryEntryModel(
+                "entry-1", null, "user-1", "session-1", AgentMemoryCategoryEnum.PREFERENCE,
+                "response.language", "en-US", AgentMemoryOriginEnum.MANUAL, 1.0, 0,
+                false, null, now, now
+        );
+
+        String prompt = AgentScopeReActExecutor.renderUserMessage(
+                List.of(), List.of(preference), "请复盘订单 ORDER-PAID-001"
+        );
+
+        assertTrue(prompt.contains("最终回答必须仅使用英文，不得出现中文"));
+        assertFalse(prompt.contains("- PREFERENCE response.language"));
     }
 
     private OrderGateway orderGateway() {
