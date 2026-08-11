@@ -1,6 +1,7 @@
 package cn.ethan.controller;
 
 import cn.ethan.config.AgentRuntimeProperties;
+import cn.ethan.core.agent.enums.OutputEventTypeEnum;
 import cn.ethan.core.agent.model.AgentRequestModel;
 import cn.ethan.core.agent.model.OutputEventModel;
 import cn.ethan.core.agent.model.QueuedExecutionModel;
@@ -203,6 +204,11 @@ public final class AgentController {
             emitter.send(SseEmitter.event()
                     .name(eventDto.type())
                     .data(eventDto.data()));
+            if (event.type() == OutputEventTypeEnum.DONE
+                    && streamOpen.compareAndSet(true, false)) {
+                // 已发送终态事件后立即收敛 HTTP 流，避免取消场景等待异步 Future 回调而悬挂。
+                emitter.complete();
+            }
         } catch (IOException failure) {
             if (streamOpen.compareAndSet(true, false)) {
                 runtimeService.cancel(requestId, userId);
