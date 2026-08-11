@@ -16,9 +16,12 @@ import cn.ethan.core.workflow.order.OrderInquiryWorkflow;
 import cn.ethan.core.workflow.after_sales.AfterSalesRefundWorkflow;
 import cn.ethan.core.workflow.service.WorkflowRegistryService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -30,6 +33,28 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
  * @date 2026-08-05
  */
 class AgentRouterServiceTest {
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("ruleFirstBusinessCases")
+    void knownBusinessIntentDoesNotCallModelRouter(RuleFirstCase testCase) {
+        AtomicBoolean modelCalled = new AtomicBoolean(false);
+        AgentRouterService router = router((request, userId, token) -> {
+            modelCalled.set(true);
+            return RouteDecisionModel.clarify("UNEXPECTED", List.of());
+        });
+
+        RouteDecisionModel decision = router.route(
+                request(testCase.message()),
+                "user-1",
+                new CancellationToken()
+        );
+
+        assertEquals(testCase.routeType(), decision.routeType());
+        assertEquals(testCase.executorId(), decision.executorId());
+        assertEquals(testCase.operation(), decision.operation());
+        assertEquals(testCase.reasonCode(), decision.reasonCode());
+        assertFalse(modelCalled.get());
+    }
 
     @Test
     void clockRuleDoesNotCallModel() {
@@ -210,6 +235,59 @@ class AgentRouterServiceTest {
         assertEquals("ROUTER_INVALID", decision.reasonCode());
     }
 
+    private static Stream<RuleFirstCase> ruleFirstBusinessCases() {
+        return Stream.of(
+                new RuleFirstCase(
+                        "单订单查询", "查询订单 ORDER-001", RouteTypeEnum.WORKFLOW,
+                        OrderInquiryWorkflow.ID, "QUERY", "RULE_ORDER_QUERY"
+                ),
+                new RuleFirstCase(
+                        "物流追踪", "跟踪订单 ORDER-001 的物流轨迹", RouteTypeEnum.WORKFLOW,
+                        OrderInquiryWorkflow.ID, "TRACK", "RULE_ORDER_TRACK"
+                ),
+                new RuleFirstCase(
+                        "履约诊断", "订单 ORDER-001 为什么一直没发货", RouteTypeEnum.WORKFLOW,
+                        OrderInquiryWorkflow.ID, "DIAGNOSE", "RULE_ORDER_DIAGNOSIS"
+                ),
+                new RuleFirstCase(
+                        "多订单比较", "比较我最近几笔订单的金额和状态趋势", RouteTypeEnum.REACT,
+                        AgentRouterService.REACT_EXECUTOR_ID, "", "RULE_ORDER_REACT_ANALYSIS"
+                ),
+                new RuleFirstCase(
+                        "单订单复盘", "请复盘订单 ORDER-001 的商品和金额", RouteTypeEnum.REACT,
+                        AgentRouterService.REACT_EXECUTOR_ID, "", "RULE_ORDER_REACT_ANALYSIS"
+                ),
+                new RuleFirstCase(
+                        "跨工具分析", "综合分析订单 ORDER-001 的状态和物流风险", RouteTypeEnum.REACT,
+                        AgentRouterService.REACT_EXECUTOR_ID, "", "RULE_ORDER_REACT_ANALYSIS"
+                ),
+                new RuleFirstCase(
+                        "退款申请", "订单 ORDER-PAID-001 因质量问题申请退款", RouteTypeEnum.WORKFLOW,
+                        AfterSalesRefundWorkflow.ID, "APPLY", "RULE_REFUND_APPLY"
+                ),
+                new RuleFirstCase(
+                        "退款状态", "查询订单 ORDER-PAID-001 的退款状态", RouteTypeEnum.WORKFLOW,
+                        AfterSalesRefundWorkflow.ID, "QUERY_STATUS", "RULE_REFUND_STATUS"
+                ),
+                new RuleFirstCase(
+                        "售后政策", "售后退款的政策和支持范围是什么", RouteTypeEnum.REACT,
+                        AgentRouterService.REACT_EXECUTOR_ID, "", "RULE_AFTER_SALES_POLICY_ANALYSIS"
+                ),
+                new RuleFirstCase(
+                        "自然语言偏好保存", "以后请默认用英文回答并保持简洁", RouteTypeEnum.REACT,
+                        AgentRouterService.REACT_EXECUTOR_ID, "", "RULE_SESSION_PREFERENCE_SAVE"
+                ),
+                new RuleFirstCase(
+                        "未支持取消购买", "请取消购买这笔订单", RouteTypeEnum.CLARIFY,
+                        "", "", "RULE_ORDER_WRITE_UNSUPPORTED"
+                ),
+                new RuleFirstCase(
+                        "未支持改地址", "请修改这笔订单的收货地址", RouteTypeEnum.CLARIFY,
+                        "", "", "RULE_ORDER_WRITE_UNSUPPORTED"
+                )
+        );
+    }
+
     private AgentRequestModel request(String message) {
         return new AgentRequestModel("request-1", "session-1", message);
     }
@@ -247,5 +325,20 @@ class AgentRouterServiceTest {
                 new WorkflowRegistryService(List.of(workflow, afterSalesWorkflow)),
                 analysis
         );
+    }
+
+    private record RuleFirstCase(
+            String name,
+            String message,
+            RouteTypeEnum routeType,
+            String executorId,
+            String operation,
+            String reasonCode
+    ) {
+
+        @Override
+        public String toString() {
+            return name;
+        }
     }
 }

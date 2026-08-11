@@ -41,7 +41,7 @@ public class AgentScopeConfiguration {
     ) {
         boolean enableAcceptanceProbe = acceptanceConfirmationProbeEnabled
                 && environment.acceptsProfiles(Profiles.of("acceptance"));
-        return new AgentScopeReActExecutor(
+        return AgentScopeReActExecutor.createWithClasspathSkillRepository(
                 properties.apiKey(),
                 properties.baseUrl(),
                 modelName,

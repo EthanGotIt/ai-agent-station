@@ -30,9 +30,10 @@ DELETE /api/v1/agent/requests/{requestId}
 
 ## 模型、提示词与数据
 
-- Router：Spring AI Chat Completions，`qwen3.7-plus`，默认开启上限为 512 Token 的 Thinking，Schema 校验。
+- Router：Core 规则优先；未覆盖的开放问题才由 Spring AI Chat Completions、`qwen3.7-plus`、512 Token 上限的 Thinking 和 Schema 校验兜底。随包发布的 [`agent-router-policy.md`](ai-agent-station-infrastructure/src/main/resources/prompt/agent-router-policy.md) 只定义受控 executor、operation 与冲突优先级，缺失或空白会阻止启动。
 - ReAct：AgentScope 2.0，默认 `qwen3.7-plus` 并开启 Thinking；百炼模型原生工具保持关闭，后续外部能力只通过框架 MCP 组件接入。只有对照验收通过后才允许显式升级为 `qwen3.8-max`。
-- 提示词描述判断目标、可用能力和用户可见的答案风格；JSON 结构交给 Schema，工具范围交给服务端工具集与权限，Thinking 隔离交给事件边界。
+- ReAct 注册唯一的 classpath AgentSkill [`agent-station-business-orchestration`](ai-agent-station-infrastructure/src/main/resources/agentscope/skills/agent-station-business-orchestration/SKILL.md)，用来指导 Tool 选择和只读无代码编排。它不是 Router Policy，不承载退款资格等业务事实，也不改变 Tool Schema、权限或 Workflow 边界。
+- 不使用运行时 ToolGroup 隐藏业务 Tool：六个生产 Tool 始终由服务端注册，Skill 只提供指导；JSON 结构交给 Schema，工具范围交给服务端工具集与权限，Thinking 隔离交给事件边界。
 - Thinking 原文只参与模型内部推理，不进入同步响应、SSE 或日志；SSE 仅公开 `thinking_started`、`thinking_completed` 进度。
 - `order-inquiry` 支持 `QUERY`、`TRACK`、`DIAGNOSE`：缺少订单号时从近期订单生成选择卡；诊断缺少问题类型时继续生成卡；每次恢复都会实时复查订单归属。
 - `after-sales-refund` 支持 `APPLY`、`QUERY_STATUS`：退款原因/说明/最终确认均由持久化 QuestionCard 收集。未发货且金额完整时创建幂等退款命令，已发货或签收七天内进入可查询的人工审核申请；取消、已退款或超期订单被拒绝。
@@ -67,5 +68,7 @@ npm run dev
 Vite 会将 `/api` 代理到本地 8090 端口；控制台不会在 `localStorage` 保存 Prompt、工具参数或记忆正文。
 
 当前交付只覆盖本地开发与自动验证，不要求上线或现场演示，也不依赖 Docker、Docker Compose、Nginx 或 TLS 证书。
+
+真实 DashScope 验收需要用户另行授权，并使用独立非生产环境。获准后可额外执行 `python -m scripts.live_acceptance --skill-stability-runs 5`，只重复 Router/Skill 场景并输出脱敏的 5/5 成功率报告；默认验证不会调用该命令。
 
 详细说明见 [文档索引](docs/README.md)、[架构文档](docs/architecture.md)、[运行手册](docs/runbook.md)、[执行验收矩阵](docs/execution-plan.md) 和 [任务交接](docs/task-handoff.md)。

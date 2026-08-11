@@ -21,17 +21,34 @@ public final class AfterSalesRequestAnalysisService {
 
     public boolean looksLikeRefundApply(String message) {
         String normalized = normalize(message);
-        return normalized.contains("退款") || normalized.contains("退钱") || normalized.contains("refund");
+        return hasAfterSalesSubject(normalized)
+                && !looksLikeRefundStatus(normalized)
+                && !looksLikeAfterSalesPolicyAnalysis(normalized);
     }
 
     public boolean looksLikeRefundStatus(String message) {
         String normalized = normalize(message);
-        return (normalized.contains("退款") || normalized.contains("售后") || normalized.contains("refund"))
+        return hasAfterSalesSubject(normalized)
                 && (normalized.contains("状态")
                 || normalized.contains("进度")
                 || normalized.contains("到账")
                 || normalized.contains("查询")
                 || normalized.contains("status"));
+    }
+
+    public boolean looksLikeAfterSalesPolicyAnalysis(String message) {
+        String normalized = normalize(message);
+        return hasAfterSalesSubject(normalized)
+                && (normalized.contains("规则")
+                || normalized.contains("政策")
+                || normalized.contains("条件")
+                || normalized.contains("范围")
+                || normalized.contains("资格")
+                || normalized.contains("能否")
+                || normalized.contains("是否可以")
+                || normalized.contains("怎么处理")
+                || normalized.contains("说明")
+                || normalized.contains("介绍"));
     }
 
     public String extractOrderId(String message) {
@@ -58,5 +75,10 @@ public final class AfterSalesRequestAnalysisService {
 
     private String normalize(String message) {
         return message == null ? "" : message.toLowerCase(Locale.ROOT);
+    }
+
+    private boolean hasAfterSalesSubject(String normalized) {
+        return normalized.contains("退款") || normalized.contains("退钱") || normalized.contains("refund")
+                || normalized.contains("售后");
     }
 }

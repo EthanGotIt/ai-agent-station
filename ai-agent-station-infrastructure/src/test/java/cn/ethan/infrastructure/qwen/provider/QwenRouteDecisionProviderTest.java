@@ -20,6 +20,7 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -29,6 +30,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * @date 2026-08-05
  */
 class QwenRouteDecisionProviderTest {
+
+    private static final String ROUTER_POLICY = "POLICY_MARKER: trusted-router-boundary";
 
     private final AtomicReference<String> requestPath = new AtomicReference<>();
     private final AtomicReference<String> requestBody = new AtomicReference<>();
@@ -64,7 +67,8 @@ class QwenRouteDecisionProviderTest {
         QwenRouteDecisionProvider provider = new QwenRouteDecisionProvider(
                 ChatClient.builder(chatModel).build(),
                 true,
-                512
+                512,
+                ROUTER_POLICY
         );
 
         RouteDecisionModel decision = provider.decide(
@@ -83,6 +87,15 @@ class QwenRouteDecisionProviderTest {
         assertTrue(requestBody.get().contains("\"enable_thinking\":true"));
         assertTrue(requestBody.get().contains("\"thinking_budget\":512"));
         assertTrue(requestBody.get().contains("routeType"));
+        assertTrue(requestBody.get().contains("POLICY_MARKER: trusted-router-boundary"));
+    }
+
+    @Test
+    void rejectsBlankRouterPolicy() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new QwenRouteDecisionProvider(null, true, 512, "  ")
+        );
     }
 
     private void respond(HttpExchange exchange) throws IOException {

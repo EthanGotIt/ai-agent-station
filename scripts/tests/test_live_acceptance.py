@@ -10,6 +10,8 @@ from scripts.live_acceptance.runner import (
     AcceptanceFailure,
     JdbcConnectionModel,
     SseConversation,
+    SseEventModel,
+    _assert_tool_subsequence,
     parse_dotenv,
     parse_jdbc_connection,
     redact_text,
@@ -138,6 +140,40 @@ class LiveAcceptanceTest(unittest.TestCase):
 
         self.assertIn("`react_case`", markdown)
         self.assertNotIn("must never appear", markdown)
+
+    def test_skill_stability_report_shows_only_aggregate_success_rate(self) -> None:
+        report = {
+            "status": "PASSED",
+            "environment": {"models": {}},
+            "cases": [],
+            "skillStability": {
+                "runs": 5,
+                "scenarios": {
+                    "single_order_review": {"passedRuns": 5, "requiredRuns": 5},
+                },
+            },
+        }
+
+        markdown = _render_report_markdown(report)
+
+        self.assertIn("## Skill 稳定性", markdown)
+        self.assertIn("5/5", markdown)
+
+    def test_tool_subsequence_accepts_lifecycle_status_suffixes(self) -> None:
+        events = (
+            SseEventModel("tool", "load_skill_through_path", 0.0),
+            SseEventModel("tool", "load_skill_through_path:SUCCESS", 0.1),
+            SseEventModel("tool", "get_order_snapshot", 0.2),
+            SseEventModel("tool", "get_logistics_trace:SUCCESS", 0.3),
+        )
+
+        _assert_tool_subsequence(
+            events,
+            ("load_skill_through_path", "get_order_snapshot", "get_logistics_trace"),
+        )
+
+        with self.assertRaises(AcceptanceFailure):
+            _assert_tool_subsequence(events, ("get_after_sales_policy",))
 
 
 if __name__ == "__main__":

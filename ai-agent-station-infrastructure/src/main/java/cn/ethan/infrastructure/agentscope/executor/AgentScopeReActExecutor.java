@@ -19,6 +19,7 @@ import cn.ethan.core.after_sales.port.RefundCommandGateway;
 import cn.ethan.core.order.port.LogisticsGateway;
 import cn.ethan.core.order.port.OrderGateway;
 import cn.ethan.infrastructure.agentscope.assembler.AgentScopeEventAssembler;
+import cn.ethan.infrastructure.agentscope.provider.AgentScopeBusinessSkillRepositoryProvider;
 import cn.ethan.infrastructure.agentscope.tool.AfterSalesPolicyTool;
 import cn.ethan.infrastructure.agentscope.tool.AfterSalesStatusTool;
 import cn.ethan.infrastructure.agentscope.tool.LogisticsTraceTool;
@@ -48,6 +49,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
@@ -59,6 +61,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
@@ -80,12 +83,9 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
             你处理 AI Agent Station 中确定性流程未覆盖的复杂问题。
             给出简洁、可核验的回答。百炼原生工具已禁用；若问题依赖外部实时资料，
             请明确说明当前工具集中没有对应 MCP 工具，不得编造或假装联网检索。
-            订单详情、物流追踪、退款申请、履约诊断等确定性事务优先交给 Workflow；
-            不要通过 ReAct 创建退款、修改订单或执行其他关键写操作。
-            可使用 list_recent_orders、get_order_snapshot、get_logistics_trace、
-            get_after_sales_status、get_after_sales_policy 获取当前用户的只读数据。
-            用户明确点名 save_session_preference 且给出合法 key/value 时，必须调用该工具；
-            它一定需要确认，不得直接承诺已保存或绕过工具写入。
+            退款申请、订单修改及其他关键写入必须交给确定性 Workflow，不得通过 ReAct 执行。
+            业务分析或会话偏好请求必须先通过 load_skill_through_path 加载
+            agent-station-business-orchestration，再按 Tool Schema、权限和运行时用户隔离执行。
             """;
     private static final OutputObservationProvider NO_OP_OBSERVATION = new OutputObservationProvider() {
         @Override
@@ -121,6 +121,7 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
     private final AfterSalesCaseGateway afterSalesCaseGateway;
     private final RefundCommandGateway refundGateway;
     private final AgentMemoryService memories;
+    private final AgentSkillRepository skillRepository;
     private final OutputObservationProvider observations;
     private final AgentScopeEventAssembler eventAssembler;
     private final InMemoryAgentStateStore stateStore;
@@ -145,6 +146,7 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
             AfterSalesCaseGateway afterSalesCaseGateway,
             RefundCommandGateway refundGateway,
             AgentMemoryService memories,
+            AgentSkillRepository skillRepository,
             boolean acceptanceConfirmationProbeEnabled,
             OutputObservationProvider observations
     ) {
@@ -162,12 +164,47 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
         this.afterSalesCaseGateway = afterSalesCaseGateway;
         this.refundGateway = refundGateway;
         this.memories = memories;
+        this.skillRepository = Objects.requireNonNull(skillRepository, "skillRepository");
         this.observations = observations == null ? NO_OP_OBSERVATION : observations;
         this.acceptanceTools = acceptanceConfirmationProbeEnabled
                 ? List.of(new ReversibleConfirmationProbeTool())
                 : List.of();
         this.eventAssembler = new AgentScopeEventAssembler();
         this.stateStore = new InMemoryAgentStateStore();
+    }
+
+    /**
+     * 使用应用包内唯一的只读业务 Skill 构造 ReAct 执行器，避免 App 模块依赖 AgentScope 类型。
+     */
+    public static AgentScopeReActExecutor createWithClasspathSkillRepository(
+            String apiKey,
+            String baseUrl,
+            String modelName,
+            Duration timeout,
+            int maxIterations,
+            int maxOutputTokens,
+            int maxRetries,
+            boolean thinkingEnabled,
+            int thinkingBudget,
+            OrderGateway orderGateway,
+            LogisticsGateway logisticsGateway,
+            AfterSalesCaseGateway afterSalesCaseGateway,
+            RefundCommandGateway refundGateway,
+            AgentMemoryService memories,
+            boolean acceptanceConfirmationProbeEnabled,
+            OutputObservationProvider observations
+    ) {
+        AgentSkillRepository repository = AgentScopeBusinessSkillRepositoryProvider.loadReadonlyRepository();
+        try {
+            return new AgentScopeReActExecutor(
+                    apiKey, baseUrl, modelName, timeout, maxIterations, maxOutputTokens, maxRetries,
+                    thinkingEnabled, thinkingBudget, orderGateway, logisticsGateway, afterSalesCaseGateway,
+                    refundGateway, memories, repository, acceptanceConfirmationProbeEnabled, observations
+            );
+        } catch (RuntimeException constructionFailure) {
+            repository.close();
+            throw constructionFailure;
+        }
     }
 
     @Override
@@ -368,6 +405,7 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
             currentAgent.close();
         }
         stateStore.clearAll();
+        skillRepository.close();
     }
 
     private void acceptEvent(
@@ -497,7 +535,7 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
         }
     }
 
-    private ReActAgent buildAgent() {
+    ReActAgent buildAgent() {
         if (apiKey.isBlank()) {
             throw new IllegalStateException("DASHSCOPE_API_KEY is not configured");
         }
@@ -530,6 +568,7 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
                 .sysPrompt(SYSTEM_PROMPT)
                 .model(modelBuilder.build())
                 .toolkit(toolkit)
+                .skillRepository(skillRepository)
                 .stateStore(stateStore)
                 .maxIters(maxIterations)
                 .maxRetries(maxRetries)

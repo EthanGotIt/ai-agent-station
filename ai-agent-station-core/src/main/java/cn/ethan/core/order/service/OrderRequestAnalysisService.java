@@ -84,17 +84,16 @@ public final class OrderRequestAnalysisService {
      * 判断是否需要跳过确定性订单流程，交由 ReAct 执行跨工具的只读分析。
      *
      * @param message 用户消息
-     * @return 同时包含明确订单号与多维分析意图时返回 true
+     * @return 包含订单主题和多维分析意图时返回 true
      */
     public boolean requiresReActOrderResearch(String message) {
         String normalized = normalize(message);
-        if (extractOrderId(normalized) == null) {
-            return false;
-        }
-        return normalized.contains("对比")
+        return hasOrderSubject(normalized) && (normalized.contains("对比")
                 || normalized.contains("比较")
                 || normalized.contains("综合分析")
-                || normalized.contains("复盘");
+                || normalized.contains("复盘")
+                || normalized.contains("趋势")
+                || normalized.contains("总结"));
     }
 
     /**
@@ -105,10 +104,17 @@ public final class OrderRequestAnalysisService {
      */
     public boolean requiresUnsupportedOrderWrite(String message) {
         String normalized = normalize(message);
+        boolean addressChange = normalized.contains("修改地址")
+                || normalized.contains("改地址")
+                || normalized.contains("改收货地址")
+                || normalized.contains("换地址")
+                || (normalized.contains("修改") && normalized.contains("地址"));
         return hasOrderSubject(normalized)
                 && (normalized.contains("退货")
                 || normalized.contains("取消订单")
-                || normalized.contains("修改地址")
+                || normalized.contains("取消购买")
+                || normalized.contains("取消交易")
+                || addressChange
                 || normalized.contains("重新发货")
                 || normalized.contains("补发"));
     }
@@ -142,7 +148,10 @@ public final class OrderRequestAnalysisService {
                 || normalized.contains("订单")
                 || ORDER_WORD.matcher(normalized).find()
                 || normalized.contains("物流")
-                || normalized.contains("配送");
+                || normalized.contains("配送")
+                || normalized.contains("购买")
+                || normalized.contains("交易")
+                || normalized.contains("收货地址");
     }
 
     private String normalize(String message) {

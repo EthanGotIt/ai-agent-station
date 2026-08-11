@@ -28,6 +28,7 @@ import cn.ethan.core.workflow.port.WorkflowRunStore;
 import cn.ethan.core.workflow.service.WorkflowRegistryService;
 import cn.ethan.infrastructure.qwen.provider.QwenRouteDecisionProvider;
 import cn.ethan.infrastructure.qwen.provider.QwenMemoryExtractionProvider;
+import cn.ethan.infrastructure.qwen.provider.RouterPolicyPromptProvider;
 import cn.ethan.infrastructure.memory.mapper.AgentMemoryEntryMapper;
 import cn.ethan.infrastructure.memory.mapper.AgentMemoryEvidenceMapper;
 import cn.ethan.infrastructure.memory.mapper.AgentMemorySourceMapper;
@@ -81,13 +82,20 @@ public class AgentConfiguration {
     @Bean
     public RouteDecisionProvider qwenRouteDecisionProvider(
             ChatClient routerChatClient,
-            AgentRouterProperties properties
+            AgentRouterProperties properties,
+            RouterPolicyPromptProvider routerPolicyPrompt
     ) {
         return new QwenRouteDecisionProvider(
                 routerChatClient,
                 properties.thinkingEnabled(),
-                properties.thinkingBudget()
+                properties.thinkingBudget(),
+                routerPolicyPrompt.content()
         );
+    }
+
+    @Bean
+    public RouterPolicyPromptProvider routerPolicyPromptProvider() {
+        return RouterPolicyPromptProvider.fromClasspath();
     }
 
     @Bean

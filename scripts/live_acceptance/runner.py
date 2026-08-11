@@ -1070,6 +1070,128 @@ def _run_react_ask_case(
     return cases[-1]
 
 
+def _tool_names(events: Sequence[SseEventModel]) -> list[str]:
+    """从 SSE Tool 生命周期事件提取稳定的 Tool 名称，忽略执行状态后缀。"""
+
+    return [
+        event.data.split(":", 1)[0]
+        for event in events
+        if event.event_type == "tool" and event.data
+    ]
+
+
+def _assert_tool_subsequence(events: Sequence[SseEventModel], expected: Sequence[str]) -> None:
+    """验证 Tool 生命周期至少按预期子序列出现，不约束无关的框架事件。"""
+
+    observed = _tool_names(events)
+    cursor = 0
+    for tool_name in observed:
+        if cursor < len(expected) and tool_name == expected[cursor]:
+            cursor += 1
+    if cursor != len(expected):
+        raise AcceptanceFailure(
+            f"Tool 有序子序列不符合预期：expected={list(expected)}, observed={observed}"
+        )
+
+
+def _run_skill_stability_cases(
+        host: str,
+        port: int,
+        cases: list[AcceptanceCaseModel],
+        runs: int,
+        summary: dict[str, Any],
+) -> None:
+    """重复验收 Router/Skill 场景，不重置数据库或重复完整 Workflow 套件。"""
+
+    scenarios = (
+        (
+            "recent_order_comparison",
+            "请比较我最近几笔订单的金额和状态趋势，只做只读分析。",
+            ("load_skill_through_path", "list_recent_orders"),
+            False,
+        ),
+        (
+            "single_order_review",
+            "请复盘订单 ORDER-PAID-001 的商品、金额和订单状态，只做只读分析。",
+            ("load_skill_through_path", "get_order_snapshot"),
+            False,
+        ),
+        (
+            "order_and_logistics",
+            "请综合分析订单 ORDER-SHIPPED-STALLED-001 的当前状态与物流轨迹风险，不执行任何操作。",
+            ("load_skill_through_path", "get_order_snapshot", "get_logistics_trace"),
+            False,
+        ),
+        (
+            "after_sales_policy",
+            "请比较订单 ORDER-PAID-001 的已有售后状态与系统支持范围，不要申请退款。",
+            ("load_skill_through_path", "get_after_sales_status", "get_after_sales_policy"),
+            False,
+        ),
+        (
+            "session_preference",
+            "以后请默认使用英文回答，并保持简洁；请保存这个会话偏好。",
+            ("load_skill_through_path", "save_session_preference"),
+            True,
+        ),
+    )
+    summary["runs"] = runs
+    summary["scenarios"] = {}
+    failures: list[str] = []
+    for scenario_name, message, expected_tools, requires_confirmation in scenarios:
+        passed_runs = 0
+        for run_index in range(1, runs + 1):
+            def execute(
+                    current_name: str = scenario_name,
+                    current_message: str = message,
+                    current_tools: Sequence[str] = expected_tools,
+                    current_confirmation: bool = requires_confirmation,
+                    current_run: int = run_index,
+            ) -> dict[str, Any]:
+                session_id = f"live-skill-{current_name}-{current_run}"
+                request = _payload(session_id, current_message)
+                conversation = SseConversation(host, port, "demo-user-1", request, 150)
+                conversation.start()
+                conversation.wait_for("route", "REACT", 60)
+                if current_confirmation:
+                    intervention = conversation.wait_for("intervention", timeout_seconds=120)
+                    reply_id, tool_call_ids, tool_names = _intervention_payload(intervention)
+                    if tool_names != ["save_session_preference"]:
+                        raise AcceptanceFailure(
+                            f"Skill 偏好场景未请求保存会话偏好：{tool_names}"
+                        )
+                    code, result = _http_json(
+                        host,
+                        port,
+                        "POST",
+                        f"/api/v1/agent/requests/{request['requestId']}/interventions/{reply_id}",
+                        "demo-user-1",
+                        {
+                            "sessionId": session_id,
+                            "toolCallIds": tool_call_ids,
+                            "decision": "CONFIRM",
+                        },
+                        30,
+                    )
+                    if code != 200 or result.get("accepted") is not True:
+                        raise AcceptanceFailure("Skill 偏好场景确认未被接受")
+                conversation.wait_for("done", "COMPLETED", 150)
+                _assert_tool_subsequence(conversation.events, current_tools)
+                return {"requestId": request["requestId"], "run": current_run}
+
+            try:
+                _record_case(cases, f"skill_stability_{scenario_name}_{run_index}", execute)
+                passed_runs += 1
+            except AcceptanceFailure as exception:
+                failures.append(f"{scenario_name} 第 {run_index}/{runs} 次：{redact_text(str(exception))}")
+        summary["scenarios"][scenario_name] = {
+            "passedRuns": passed_runs,
+            "requiredRuns": runs,
+        }
+    if failures:
+        raise AcceptanceFailure("Skill 稳定性验收未达到全部命中：" + "；".join(failures))
+
+
 def _run_cancellation_fifo_case(
         host: str,
         port: int,
@@ -1188,6 +1310,17 @@ def _render_report_markdown(report: Mapping[str, Any]) -> str:
             status = str(case.get("status", "UNKNOWN")).replace("|", "\\|")
             duration = case.get("duration_ms", 0)
             lines.append(f"| `{name}` | {status} | {duration} |")
+    stability = report.get("skillStability")
+    if isinstance(stability, Mapping):
+        lines.extend(("", "## Skill 稳定性", "", "| 场景 | 成功率 |", "| --- | ---: |"))
+        scenarios = stability.get("scenarios", {})
+        if isinstance(scenarios, Mapping):
+            for name, result in scenarios.items():
+                if not isinstance(result, Mapping):
+                    continue
+                passed_runs = result.get("passedRuns", 0)
+                required_runs = result.get("requiredRuns", stability.get("runs", 0))
+                lines.append(f"| `{name}` | {passed_runs}/{required_runs} |")
     failure = report.get("failure")
     if failure:
         lines.extend(("", "## 失败摘要", "", str(failure)))
@@ -1199,6 +1332,8 @@ def run_live_acceptance(options: argparse.Namespace) -> Path:
     """执行完整真实模型验收并返回脱敏报告路径。"""
 
     root = repository_root(options.root)
+    if options.skill_stability_runs < 1 or options.skill_stability_runs > 10:
+        raise AcceptanceFailure("--skill-stability-runs 必须在 1 到 10 之间")
     environment = parse_dotenv((root / options.env).resolve())
     _required_environment(environment)
     report: dict[str, Any] = {
@@ -1237,6 +1372,12 @@ def run_live_acceptance(options: argparse.Namespace) -> Path:
         react_case.detail["tokenUsage"] = token_usage
         _run_react_read_tools_case("127.0.0.1", port, case_results)
         _run_react_ask_case("127.0.0.1", port, case_results)
+        if options.skill_stability_runs > 1:
+            stability_summary: dict[str, Any] = {}
+            report["skillStability"] = stability_summary
+            _run_skill_stability_cases(
+                "127.0.0.1", port, case_results, options.skill_stability_runs, stability_summary
+            )
         _run_cancellation_fifo_case("127.0.0.1", port, case_results)
         report["status"] = "PASSED"
     except (AcceptanceFailure, ValueError, OSError, subprocess.SubprocessError) as exception:
@@ -1284,6 +1425,12 @@ def main(arguments: Sequence[str] | None = None) -> int:
     parser.add_argument("--reset-database", action="store_true", help="重建本机验收数据库")
     parser.add_argument("--confirm-drop", help="删除旧库的精确确认值")
     parser.add_argument("--skip-build", action="store_true", help="跳过 Maven 打包")
+    parser.add_argument(
+        "--skill-stability-runs",
+        type=int,
+        default=1,
+        help="重复 Router/Skill 场景次数（2-10 启用，建议 5）",
+    )
     options = parser.parse_args(arguments)
     try:
         report_path = run_live_acceptance(options)

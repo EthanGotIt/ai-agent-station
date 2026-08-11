@@ -27,9 +27,13 @@ ReAct 只负责复杂只读兜底。AgentScope 工具按自身声明返回 `allo
 
 关键写入（支付、退款、发货、删除、账号变更）由确定性 Workflow 处理。生产 ReAct 登记近期订单、订单快照、物流、售后状态、售后规则五个只读工具，以及一个固定 `ASK` 的 `save_session_preference`：它只能写入当前会话中可编辑、可软删除的回答偏好。测试可使用 `acceptance` Profile 的可逆探针验证确认协议；它不属于生产功能。
 
-## 提示词与框架校验
+## 提示词与框架校验：Router Policy 与 AgentSkill
 
-Router 使用 Spring AI 结构化输出与 `validateSchema`，只决定固定 Workflow、ReAct、原子响应或澄清。AgentScope 的 typed events、工具 schema、权限和运行时上下文约束 ReAct。Thinking 可用于模型内部推理，但 `AgentScopeEventAssembler` 只发送生命周期进度，不发送原始 Thinking 到 API、SSE 或日志。
+Router 先运行 Core 的确定性规则；仅规则未覆盖的开放问题才使用 Spring AI 结构化输出与 `validateSchema`。classpath `prompt/agent-router-policy.md` 是 Router 的可信决策说明：只列固定 executor、domain、operation 白名单和冲突优先级，资源缺失或空白时应用启动失败。它不是 AgentScope Skill，也不包含 Tool 调用配方或退款资格、金额、时限等业务规则。
+
+ReAct 通过只读 `ClasspathSkillRepository("agentscope/skills")` 注册唯一的 `agent-station-business-orchestration` AgentSkill。Skill 指导模型加载后怎样选择当前用户的只读 Tool、何时停止和怎样处理低风险会话偏好 `ASK`；它不激活 ToolGroup、不隐藏 Tool，也不能突破 Tool schema、权限、RuntimeContext 用户隔离或 Workflow。Skill 未加载、内容过时或模型选择错误时，以这些代码边界和实时结果为准。`load_skill_through_path` 仍作为普通 Tool 生命周期事件出现在 SSE，但 Skill 正文和原始 Tool 结果不写入 API 或日志。
+
+AgentScope 的 typed events、工具 schema、权限和运行时上下文约束 ReAct。Thinking 可用于模型内部推理，但 `AgentScopeEventAssembler` 只发送生命周期进度，不发送原始 Thinking 到 API、SSE 或日志。
 
 ## 会话记忆
 

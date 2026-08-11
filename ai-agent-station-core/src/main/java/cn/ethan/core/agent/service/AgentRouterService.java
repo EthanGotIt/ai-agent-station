@@ -16,7 +16,6 @@ import cn.ethan.core.workflow.after_sales.AfterSalesRefundWorkflow;
 import cn.ethan.core.workflow.service.WorkflowRegistryService;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -34,6 +33,7 @@ public final class AgentRouterService {
     private final WorkflowRegistryService workflows;
     private final OrderRequestAnalysisService orderRequestAnalysis;
     private final AfterSalesRequestAnalysisService afterSalesRequestAnalysis;
+    private final SessionPreferenceRequestAnalysisService sessionPreferenceRequestAnalysis;
 
     public AgentRouterService(
             RouteDecisionProvider decisionProvider,
@@ -58,6 +58,7 @@ public final class AgentRouterService {
         this.workflows = workflows;
         this.orderRequestAnalysis = orderRequestAnalysis;
         this.afterSalesRequestAnalysis = afterSalesRequestAnalysis;
+        this.sessionPreferenceRequestAnalysis = new SessionPreferenceRequestAnalysisService();
     }
 
     public RouteDecisionModel route(AgentRequestModel request, String userId,
@@ -83,7 +84,7 @@ public final class AgentRouterService {
                     "RULE_CLOCK"
             );
         }
-        if (isExplicitSessionPreferenceSave(message)) {
+        if (sessionPreferenceRequestAnalysis.requiresSessionPreferenceSave(message)) {
             return new RouteDecisionModel(
                     RouteTypeEnum.REACT,
                     REACT_EXECUTOR_ID,
@@ -98,6 +99,15 @@ public final class AgentRouterService {
                     "query-refund-status",
                     message,
                     "RULE_REFUND_STATUS"
+            );
+        }
+        if (afterSalesRequestAnalysis.looksLikeAfterSalesPolicyAnalysis(message)) {
+            return new RouteDecisionModel(
+                    RouteTypeEnum.REACT,
+                    REACT_EXECUTOR_ID,
+                    "after-sales-policy-analysis",
+                    List.of(),
+                    "RULE_AFTER_SALES_POLICY_ANALYSIS"
             );
         }
         if (afterSalesRequestAnalysis.looksLikeRefundApply(message)) {
@@ -267,11 +277,4 @@ public final class AgentRouterService {
                 || message.contains("当前时间");
     }
 
-    private boolean isExplicitSessionPreferenceSave(String message) {
-        String normalized = message == null ? "" : message.toLowerCase(Locale.ROOT);
-        return normalized.contains("save_session_preference")
-                && (normalized.contains("response.language")
-                || normalized.contains("response.format")
-                || normalized.contains("response.detail"));
-    }
 }
