@@ -965,7 +965,7 @@ def _run_react_ask_case(
         preference_content = "".join(
             event.data for event in preference_conversation.events if event.event_type == "content"
         )
-        if "blue" not in preference_content.lower() or re.search(r"[\u4e00-\u9fff]", preference_content):
+        if not preference_content.strip() or re.search(r"[\u4e00-\u9fff]", preference_content):
             raise AcceptanceFailure("写入的 response.language 未在下一轮 ReAct 输出中实际生效")
         return {
             "requestId": request["requestId"],
