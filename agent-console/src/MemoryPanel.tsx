@@ -1,4 +1,5 @@
 import { useCallback, useState, type FormEvent } from "react";
+import { readJsonResponse } from "./http";
 import type { MemoryEntry, MemoryEvidence } from "./types";
 
 const API = "/api/v1/agent/memories";
@@ -8,12 +9,6 @@ const KEYS: Record<"PREFERENCE" | "TASK_CONTEXT", string[]> = {
 };
 
 type Props = { userId: string; sessionId: string; disabled: boolean };
-
-async function json<T>(response: Response): Promise<T> {
-  if (response.ok) return response.json() as Promise<T>;
-  const error = await response.json().catch(() => ({})) as { code?: string; message?: string };
-  throw new Error(error.message ?? error.code ?? `Request failed: ${response.status}`);
-}
 
 export function MemoryPanel({ userId, sessionId, disabled }: Props) {
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
@@ -28,7 +23,7 @@ export function MemoryPanel({ userId, sessionId, disabled }: Props) {
     if (!userId || !sessionId) return;
     try {
       const query = new URLSearchParams({ sessionId, includeDeleted: String(includeDeleted) });
-      const loaded = await json<MemoryEntry[]>(await fetch(`${API}?${query}`, {
+      const loaded = await readJsonResponse<MemoryEntry[]>(await fetch(`${API}?${query}`, {
         headers: { "X-User-Id": userId }
       }));
       setEntries(loaded);
@@ -43,7 +38,7 @@ export function MemoryPanel({ userId, sessionId, disabled }: Props) {
     event.preventDefault();
     if (!userId || !sessionId || !memoryValue.trim()) return;
     try {
-      await json(await fetch(API, {
+      await readJsonResponse(await fetch(API, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-User-Id": userId },
         body: JSON.stringify({ sessionId, category, memoryKey, value: memoryValue.trim() })
@@ -58,7 +53,7 @@ export function MemoryPanel({ userId, sessionId, disabled }: Props) {
   const remove = useCallback(async (entry: MemoryEntry) => {
     try {
       const query = new URLSearchParams({ sessionId, expectedVersion: String(entry.version) });
-      await json(await fetch(`${API}/${encodeURIComponent(entry.entryId)}?${query}`, {
+      await readJsonResponse(await fetch(`${API}/${encodeURIComponent(entry.entryId)}?${query}`, {
         method: "DELETE", headers: { "X-User-Id": userId }
       }));
       await load();
@@ -71,7 +66,7 @@ export function MemoryPanel({ userId, sessionId, disabled }: Props) {
     const next = window.prompt("修改记忆值", entry.value);
     if (next === null || !next.trim()) return;
     try {
-      await json(await fetch(`${API}/${encodeURIComponent(entry.entryId)}`, {
+      await readJsonResponse(await fetch(`${API}/${encodeURIComponent(entry.entryId)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", "X-User-Id": userId },
         body: JSON.stringify({
@@ -88,7 +83,7 @@ export function MemoryPanel({ userId, sessionId, disabled }: Props) {
   const showEvidence = useCallback(async (entry: MemoryEntry) => {
     try {
       const query = new URLSearchParams({ sessionId });
-      const loaded = await json<MemoryEvidence[]>(await fetch(
+      const loaded = await readJsonResponse<MemoryEvidence[]>(await fetch(
         `${API}/${encodeURIComponent(entry.entryId)}/evidence?${query}`, { headers: { "X-User-Id": userId } }
       ));
       setEvidence(loaded);

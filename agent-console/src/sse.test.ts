@@ -16,12 +16,38 @@ describe("appendSseChunk", () => {
   it("flushes a final unterminated frame when the stream closes", () => {
     const events: Array<[string, unknown]> = [];
     const remainder = appendSseChunk(
-      "event: done\r\ndata: {\"status\":\"COMPLETED\"}",
+      "event: done\r\ndata: COMPLETED",
       (type, data) => events.push([type, data])
     );
 
     appendSseChunk(`${remainder}\n\n`, (type, data) => events.push([type, data]));
 
-    expect(events).toEqual([["done", { status: "COMPLETED" }]]);
+    expect(events).toEqual([["done", "COMPLETED"]]);
+  });
+
+  it("preserves textual lifecycle events without treating them as JSON", () => {
+    const events: Array<[string, unknown]> = [];
+
+    appendSseChunk(
+      "event: route\ndata: WORKFLOW\n\nevent: progress\ndata: request_started\n\nevent: tool\ndata: query_order:SUCCESS\n\n",
+      (type, data) => events.push([type, data])
+    );
+
+    expect(events).toEqual([
+      ["route", "WORKFLOW"],
+      ["progress", "request_started"],
+      ["tool", "query_order:SUCCESS"]
+    ]);
+  });
+
+  it("reports malformed structured events", () => {
+    const events: Array<[string, unknown]> = [];
+
+    appendSseChunk(
+      "event: intervention\ndata: not-json\n\n",
+      (type, data) => events.push([type, data])
+    );
+
+    expect(events).toEqual([["error", "SSE payload could not be parsed"]]);
   });
 });

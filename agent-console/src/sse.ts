@@ -1,4 +1,6 @@
 /** 将 Fetch ReadableStream 中的不完整 SSE 帧归并为稳定事件。 */
+const STRUCTURED_EVENT_TYPES = new Set(["result", "workflow_question", "intervention"]);
+
 export function appendSseChunk(
   buffer: string,
   append: (type: string, data: unknown) => void
@@ -15,6 +17,10 @@ export function appendSseChunk(
     }
     if (data.length === 0) continue;
     const payload = data.join("\n");
+    if (!STRUCTURED_EVENT_TYPES.has(event)) {
+      append(event, payload);
+      continue;
+    }
     try {
       append(event, JSON.parse(payload));
     } catch {
