@@ -11,6 +11,7 @@ from scripts.live_acceptance.runner import (
     JdbcConnectionModel,
     SseConversation,
     SseEventModel,
+    _require_only_tool_names,
     _assert_tool_subsequence,
     parse_dotenv,
     parse_jdbc_connection,
@@ -180,6 +181,20 @@ class LiveAcceptanceTest(unittest.TestCase):
 
         with self.assertRaises(AcceptanceFailure):
             _assert_tool_subsequence(events, ("get_after_sales_policy",))
+
+    def test_preference_intervention_accepts_multiple_preference_writes_only(self) -> None:
+        _require_only_tool_names(
+            ["save_session_preference", "save_session_preference"],
+            "save_session_preference",
+            "Skill 偏好场景",
+        )
+
+        with self.assertRaisesRegex(AcceptanceFailure, "Skill 偏好场景"):
+            _require_only_tool_names(
+                ["save_session_preference", "get_order_snapshot"],
+                "save_session_preference",
+                "Skill 偏好场景",
+            )
 
 
 if __name__ == "__main__":

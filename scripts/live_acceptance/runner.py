@@ -908,6 +908,13 @@ def _intervention_payload(event: SseEventModel) -> tuple[str, list[str], list[st
     return reply_id, tool_call_ids, tool_names
 
 
+def _require_only_tool_names(tool_names: Sequence[str], expected_name: str, scenario: str) -> None:
+    """确认 ASK 只包含允许的同类 Tool，支持一次请求保存多项会话偏好。"""
+
+    if not tool_names or any(tool_name != expected_name for tool_name in tool_names):
+        raise AcceptanceFailure(f"{scenario} 未请求允许的 Tool：{tool_names}")
+
+
 def _run_react_ask_case(
         host: str,
         port: int,
@@ -1165,10 +1172,9 @@ def _run_skill_stability_cases(
                 if current_confirmation:
                     intervention = conversation.wait_for("intervention", timeout_seconds=120)
                     reply_id, tool_call_ids, tool_names = _intervention_payload(intervention)
-                    if tool_names != ["save_session_preference"]:
-                        raise AcceptanceFailure(
-                            f"Skill 偏好场景未请求保存会话偏好：{tool_names}"
-                        )
+                    _require_only_tool_names(
+                        tool_names, "save_session_preference", "Skill 偏好场景"
+                    )
                     code, result = _http_json(
                         host,
                         port,

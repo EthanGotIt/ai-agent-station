@@ -93,14 +93,6 @@ public final class AgentRouterService {
                     "RULE_SESSION_PREFERENCE_SAVE"
             );
         }
-        if (afterSalesRequestAnalysis.looksLikeRefundStatus(message)) {
-            return afterSalesDecision(
-                    AfterSalesOperationEnum.QUERY_STATUS,
-                    "query-refund-status",
-                    message,
-                    "RULE_REFUND_STATUS"
-            );
-        }
         if (afterSalesRequestAnalysis.looksLikeAfterSalesPolicyAnalysis(message)) {
             return new RouteDecisionModel(
                     RouteTypeEnum.REACT,
@@ -108,6 +100,14 @@ public final class AgentRouterService {
                     "after-sales-policy-analysis",
                     List.of(),
                     "RULE_AFTER_SALES_POLICY_ANALYSIS"
+            );
+        }
+        if (afterSalesRequestAnalysis.looksLikeRefundStatus(message)) {
+            return afterSalesDecision(
+                    AfterSalesOperationEnum.QUERY_STATUS,
+                    "query-refund-status",
+                    message,
+                    "RULE_REFUND_STATUS"
             );
         }
         if (afterSalesRequestAnalysis.looksLikeRefundApply(message)) {

@@ -274,6 +274,11 @@ class AgentRouterServiceTest {
                         AgentRouterService.REACT_EXECUTOR_ID, "", "RULE_AFTER_SALES_POLICY_ANALYSIS"
                 ),
                 new RuleFirstCase(
+                        "售后状态与政策比较", "请比较订单 ORDER-001 的已有售后状态与系统支持范围，不要申请退款",
+                        RouteTypeEnum.REACT, AgentRouterService.REACT_EXECUTOR_ID, "",
+                        "RULE_AFTER_SALES_POLICY_ANALYSIS"
+                ),
+                new RuleFirstCase(
                         "自然语言偏好保存", "以后请默认用英文回答并保持简洁", RouteTypeEnum.REACT,
                         AgentRouterService.REACT_EXECUTOR_ID, "", "RULE_SESSION_PREFERENCE_SAVE"
                 ),
