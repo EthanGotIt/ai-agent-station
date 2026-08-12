@@ -22,6 +22,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ReversibleConfirmationProbeToolTest {
 
     @Test
+    void limitsProbeDescriptionToExplicitProtocolDiagnostics() {
+        ReversibleConfirmationProbeTool tool = new ReversibleConfirmationProbeTool();
+
+        assertTrue(tool.getDescription().contains("明确包含字面量 confirmation_probe"));
+        assertTrue(tool.getDescription().contains("不得替代 save_session_preference"));
+    }
+
+    @Test
     void alwaysAsksBeforeExecutingAndCountsOnlyActualCalls() {
         ReversibleConfirmationProbeTool tool = new ReversibleConfirmationProbeTool();
 

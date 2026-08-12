@@ -34,7 +34,9 @@ public final class ReversibleConfirmationProbeTool extends ToolBase {
     public ReversibleConfirmationProbeTool() {
         super(ToolBase.builder()
                 .name(NAME)
-                .description("仅用于 acceptance 验收的可逆确认探针。")
+                .description("仅用于 acceptance 确认协议诊断。只有当前用户消息明确包含字面量 "
+                        + "confirmation_probe 时才允许调用；不得用于会话偏好或任何业务请求，"
+                        + "不得替代 save_session_preference。")
                 .inputSchema(INPUT_SCHEMA)
                 .readOnly(false)
                 .concurrencySafe(true)
