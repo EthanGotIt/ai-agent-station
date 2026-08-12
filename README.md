@@ -67,8 +67,6 @@ npm run dev
 
 Vite 会将 `/api` 代理到本地 8090 端口；控制台不会在 `localStorage` 保存 Prompt、工具参数或记忆正文。
 
-当前交付只覆盖本地开发与自动验证，不要求上线或现场演示，也不依赖 Docker、Docker Compose、Nginx 或 TLS 证书。
-
-真实 DashScope 验收需要用户另行授权，并使用独立非生产环境。获准后可额外执行 `python -m scripts.live_acceptance --skill-stability-runs 5`，只重复 Router/Skill 场景并输出脱敏的 5/5 成功率报告；默认验证不会调用该命令。
+V2 已在独立非生产 MySQL 与 DashScope 环境完成交付验收：完整真实验收 45/45 通过，五类 Router/Skill 稳定性场景均为 5/5，控制台人工串联通过。验收不包含上线、并发压测、故障注入或生产安全评审，也不依赖 Docker、Docker Compose、Nginx 或 TLS 证书。后续能力扩展按 V2.1 另行评审。
 
 详细说明见 [文档索引](docs/README.md)、[架构文档](docs/architecture.md)、[运行手册](docs/runbook.md)、[执行验收矩阵](docs/execution-plan.md) 和 [任务交接](docs/task-handoff.md)。

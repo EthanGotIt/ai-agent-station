@@ -5,6 +5,7 @@
 | [任务交接](task-handoff.md) | 当前基线、已验证能力与下一步唯一动作 | 恢复跨会话任务前 |
 | [架构说明](architecture.md) | 队列、持久化 Workflow QuestionCard、会话记忆、双框架与提示词边界 | 调整运行内核前 |
 | [执行计划与验收矩阵](execution-plan.md) | 已交付范围、边界与静态审计映射 | 评估变更范围时 |
+| [V2 验收报告](acceptance/v2-20260812.md) | 非生产真实模型、MySQL、控制台与离线门禁结果 | 核对 V2 交付结论时 |
 | [运行手册](runbook.md) | 环境、启动、API、故障处理与真实验收 | 本地运行或验收时 |
 | [项目协作约定](../AGENTS.md) | 包结构、命名、代码风格和最低验证 | 开始代码改动前 |
 | [MySQL 初始化脚本](dev-ops/mysql/sql/ai-agent-station.sql) | 创建当前数据库对象 | 初始化本地数据库时 |

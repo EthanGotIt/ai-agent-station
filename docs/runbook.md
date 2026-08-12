@@ -132,13 +132,15 @@ cd agent-console; npm test; npm run build
 
 `scripts.live_acceptance` 覆盖订单多阶段 QuestionCard、自动退款、人工审核、状态查询、重启恢复、五个只读工具、真实 `save_session_preference` 的确认/拒绝/超时/取消和 FIFO 取消。百炼模型原生工具（含联网搜索）必须保持关闭；后续外部能力仅通过框架 MCP 组件接入并单独验收。它以 `acceptance` Profile 保留确认探针作为协议诊断，但主要 ASK 场景是生产偏好写入。运行前必须准备独立非生产 MySQL 与 DashScope 凭据；不要用真实凭据执行未经审查的数据库重置。
 
-Router Policy 与 ReAct AgentSkill 的五轮稳定性验收必须在另行授权后运行，不属于默认交付验证：
+Router Policy 与 ReAct AgentSkill 的五轮稳定性验收会调用真实模型并重置非生产数据，必须获得明确授权后运行：
 
 ```powershell
 python -m scripts.live_acceptance --skill-stability-runs 5
 ```
 
 该模式不重复数据库重置、Workflow 恢复或完整套件，只使用独立 Session 重复 Router/Skill 场景。每个场景必须为 5/5：路由为预期 `REACT`，且 SSE 中的 Tool 生命周期包含预期有序子序列。报告只显示脱敏聚合成功率；若任何一次未命中，命令失败。
+
+V2 已于 2026-08-12 按该方式完成验收；结果见 [V2 验收报告](acceptance/v2-20260812.md)。再次运行仍视为新的真实外部验收，不能因已有结论跳过环境隔离和授权检查。
 
 ## 交付范围
 
