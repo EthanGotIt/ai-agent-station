@@ -111,7 +111,7 @@ class AgentScopeReActExecutorTest {
                         "load_skill_through_path",
                         "load_skill_through_path:SUCCESS"
                 ), events.stream().map(OutputEventModel::value).toList());
-                assertTrue(agent.getToolkit().getActiveGroups().contains("skill-build-in-tools"));
+                assertFalse(agent.getToolkit().getActiveGroups().contains("skill-build-in-tools"));
                 assertFalse(events.stream().anyMatch(event -> event.value().contains("Tool 矩阵")));
             } finally {
                 agent.close();

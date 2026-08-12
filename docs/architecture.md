@@ -31,7 +31,7 @@ ReAct 只负责复杂只读兜底。AgentScope 工具按自身声明返回 `allo
 
 Router 先运行 Core 的确定性规则；仅规则未覆盖的开放问题才使用 Spring AI 结构化输出与 `validateSchema`。classpath `prompt/agent-router-policy.md` 是 Router 的可信决策说明：只列固定 executor、domain、operation 白名单和冲突优先级，资源缺失或空白时应用启动失败。它不是 AgentScope Skill，也不包含 Tool 调用配方或退款资格、金额、时限等业务规则。
 
-ReAct 通过只读 `ClasspathSkillRepository("agentscope/skills")` 注册唯一的 `agent-station-business-orchestration` AgentSkill。每个 ReAct 回合在模型调用前确定性执行 AgentScope 的 `load_skill_through_path`，校验成功后才把 Skill 正文作为可信运行时说明注入本回合；加载失败则闭合失败，不让模型在缺少编排约束时继续。这里仅激活 AgentScope 内建 loader 所属的 `skill-build-in-tools`，不使用业务 SkillToolGroup、不隐藏生产 Tool。Skill 指导模型怎样选择当前用户的只读 Tool、何时停止和怎样处理低风险会话偏好 `ASK`，但不能突破 Tool schema、权限、RuntimeContext 用户隔离或 Workflow；内容过时或模型选择错误时，以这些代码边界和实时结果为准。`load_skill_through_path` 的开始与成功/失败仍作为普通 Tool 生命周期事件出现在 SSE，但 Skill 正文和原始 Tool 结果不写入 API 或日志。
+ReAct 通过只读 `ClasspathSkillRepository("agentscope/skills")` 注册唯一的 `agent-station-business-orchestration` AgentSkill。每个 ReAct 回合在模型调用前确定性执行 AgentScope 的 `load_skill_through_path`，校验成功后才把 Skill 正文作为可信运行时说明注入本回合；加载失败则闭合失败，不让模型在缺少编排约束时继续。前置加载后保持 AgentScope 内建 loader 所属的 `skill-build-in-tools` 关闭，避免模型在同一回合重复加载；这不使用业务 SkillToolGroup，也不隐藏六个生产 Tool。Skill 指导模型怎样选择当前用户的只读 Tool、何时停止和怎样处理低风险会话偏好 `ASK`，但不能突破 Tool schema、权限、RuntimeContext 用户隔离或 Workflow；内容过时或模型选择错误时，以这些代码边界和实时结果为准。`load_skill_through_path` 的开始与成功/失败仍作为普通 Tool 生命周期事件出现在 SSE，但 Skill 正文和原始 Tool 结果不写入 API 或日志。
 
 AgentScope 的 typed events、工具 schema、权限和运行时上下文约束 ReAct。Thinking 可用于模型内部推理，但 `AgentScopeEventAssembler` 只发送生命周期进度，不发送原始 Thinking 到 API、SSE 或日志。
 

@@ -601,14 +601,14 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
                             "AgentScope dynamic skill middleware is unavailable"
                     ));
             middleware.onSystemPrompt(currentAgent, context, currentAgent.getSysPrompt()).block(timeout);
-            // AgentScope 2.0.0 注册内建 Skill loader 时不会自动激活所属 ToolGroup。
-            currentAgent.getToolkit().updateToolGroups(List.of(SKILL_LOADER_GROUP), true);
             if (currentAgent.getToolkit().getTool(SKILL_LOAD_TOOL) == null) {
                 throw new ReActExecutionException(
                         "REACT_SKILL_LOADER_MISSING",
                         "AgentScope business skill loader was not registered"
                 );
             }
+            // 前置加载由服务端直接执行；保持内建 ToolGroup 关闭，避免模型在同一回合重复加载。
+            currentAgent.getToolkit().updateToolGroups(List.of(SKILL_LOADER_GROUP), false);
             skillLoaderInitializedAgent = currentAgent;
         }
     }
