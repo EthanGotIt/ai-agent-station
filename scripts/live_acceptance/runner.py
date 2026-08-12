@@ -140,12 +140,21 @@ class SseConversation:
                 self._changed.wait(timeout=remaining)
 
     def wait_until_finished(self, timeout_seconds: float | None = None) -> None:
-        """等待 SSE 流自然结束，并检查传输层错误。"""
+        """等待稳定终态事件或传输结束，并检查传输层错误。"""
 
-        if not self._finished.wait(timeout_seconds or self._timeout_seconds):
-            raise AcceptanceFailure("SSE 流未在限定时间内结束")
-        if self.error is not None:
-            raise AcceptanceFailure(f"SSE 请求传输失败：{self.error}")
+        deadline = time.monotonic() + (timeout_seconds or self._timeout_seconds)
+        with self._changed:
+            while True:
+                if any(event.event_type == "done" for event in self._events):
+                    return
+                if self._error is not None:
+                    raise AcceptanceFailure(f"SSE 请求传输失败：{self._error}")
+                if self._finished.is_set():
+                    return
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise AcceptanceFailure("SSE 请求未在限定时间进入终态")
+                self._changed.wait(timeout=remaining)
 
     def _consume(self) -> None:
         connection: http.client.HTTPConnection | None = None

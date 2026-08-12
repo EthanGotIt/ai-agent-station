@@ -104,6 +104,12 @@ class LiveAcceptanceTest(unittest.TestCase):
         with self.assertRaisesRegex(AcceptanceFailure, "收到 intervention 前"):
             conversation.wait_for("intervention", timeout_seconds=1)
 
+    def test_sse_wait_until_finished_accepts_terminal_event_without_transport_eof(self) -> None:
+        conversation = SseConversation("127.0.0.1", 8090, "user", {}, 1)
+        conversation._dispatch("done", ["CANCELLED"])
+
+        conversation.wait_until_finished(1)
+
     def test_real_acceptance_requires_bounded_router_thinking(self) -> None:
         environment = {
             "MYSQL_URL": "jdbc:mysql://localhost/AI_AGENT_STATION",
