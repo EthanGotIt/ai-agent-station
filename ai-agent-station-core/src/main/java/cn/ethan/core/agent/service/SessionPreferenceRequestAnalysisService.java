@@ -1,6 +1,9 @@
 package cn.ethan.core.agent.service;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * 会话偏好请求分析服务：识别用户以自然语言明确要求持久化的回答偏好。
@@ -16,6 +19,64 @@ public final class SessionPreferenceRequestAnalysisService {
             return true;
         }
         return containsPreference(normalized) && containsPersistenceIntent(normalized);
+    }
+
+    /**
+     * 提取用户明确要求持久化且可无歧义规范化的会话偏好；歧义项留给 ReAct 澄清。
+     */
+    public Map<String, String> resolveSessionPreferences(String message) {
+        if (!requiresSessionPreferenceSave(message)) {
+            return Map.of();
+        }
+        String normalized = message == null ? "" : message.toLowerCase(Locale.ROOT);
+        Map<String, String> preferences = new LinkedHashMap<>();
+        resolveExclusive(
+                containsAny(normalized, "en-us", "english", "英文"),
+                containsAny(normalized, "zh-cn", "chinese", "中文", "简体中文"),
+                "response.language", "en-US", "zh-CN", preferences
+        );
+        resolveExclusive(
+                containsAny(normalized, "markdown", " md "),
+                containsAny(normalized, "bullet_list", "bullets", "列表", "要点"),
+                "response.format", "markdown", "bullet_list", preferences
+        );
+        if (!preferences.containsKey("response.format")
+                && containsAny(normalized, "paragraph", "plain text", "段落", "纯文本")) {
+            preferences.put("response.format", "paragraph");
+        }
+        resolveExclusive(
+                containsAny(normalized, "concise", "brief", "简洁"),
+                containsAny(normalized, "detailed", "详细"),
+                "response.detail", "concise", "detailed", preferences
+        );
+        if (!preferences.containsKey("response.detail")
+                && containsAny(normalized, "standard", "标准")) {
+            preferences.put("response.detail", "standard");
+        }
+        return Collections.unmodifiableMap(preferences);
+    }
+
+    private void resolveExclusive(
+            boolean first,
+            boolean second,
+            String key,
+            String firstValue,
+            String secondValue,
+            Map<String, String> preferences
+    ) {
+        if (first == second) {
+            return;
+        }
+        preferences.put(key, first ? firstValue : secondValue);
+    }
+
+    private boolean containsAny(String normalized, String... candidates) {
+        for (String candidate : candidates) {
+            if (normalized.contains(candidate)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean containsPreference(String normalized) {

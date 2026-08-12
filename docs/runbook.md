@@ -70,7 +70,7 @@ Invoke-RestMethod -Method Post `
 
 该决定不进入 FIFO；服务端核对请求、用户、会话和全部工具调用 ID 后继续同一 ReAct 回合。同步 `/chat` 无法承载确认，会返回 `REACT_CONFIRM_REQUIRES_STREAM`。确认超时、取消或回合结束均不保留 ReAct 中断状态。
 
-生产 ReAct 工具包括五个只读查询工具和一个 `save_session_preference` 写工具。只有后者固定返回 `ASK`，且仅能保存 `response.language`、`response.format`、`response.detail` 的规范化值到当前会话；拒绝、超时或取消不会写入。`acceptance` Profile 的 `confirmation_probe` 仅用于验证协议，不是生产功能。
+生产 ReAct 工具包括五个只读查询工具和一个 `save_session_preference` 写工具。只有后者固定返回 `ASK`，且仅能保存 `response.language`、`response.format`、`response.detail` 的规范化值到当前会话；明确且无歧义的自然语言偏好由执行器确定性编排该 Tool，歧义表达不会写入。拒绝在执行器边界直接完成，超时或取消中断等待，三者均不会执行 Tool。`acceptance` Profile 的 `confirmation_probe` 仅用于验证协议，不是生产功能。
 
 ## 会话记忆
 

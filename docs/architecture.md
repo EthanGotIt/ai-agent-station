@@ -25,7 +25,7 @@ ReAct 只负责复杂只读兜底。AgentScope 工具按自身声明返回 `allo
 
 服务端核对 `requestId + userId + sessionId + replyId + toolCallIds` 后，确认时使用 AgentScope `ConfirmResult` 和 `Msg.METADATA_CONFIRM_RESULTS` 在同一 `RuntimeContext` 继续当前回合；全部拒绝时按 `stopOnReject` 语义在执行器边界确定性完成，规避 AgentScope 2.0.0 偶发不产生终态的拒绝恢复等待。同步 `/chat` 遇到 `ask` 返回 `REACT_CONFIRM_REQUIRES_STREAM`。这是工具授权而非工作流恢复：每一轮 ReAct 使用 `InMemoryAgentStateStore`，在结束、超时或取消后删除状态，不提供断线恢复。
 
-关键写入（支付、退款、发货、删除、账号变更）由确定性 Workflow 处理。生产 ReAct 登记近期订单、订单快照、物流、售后状态、售后规则五个只读工具，以及一个固定 `ASK` 的 `save_session_preference`：它只能写入当前会话中可编辑、可软删除的回答偏好。测试可使用 `acceptance` Profile 的可逆探针验证确认协议；它不属于生产功能。
+关键写入（支付、退款、发货、删除、账号变更）由确定性 Workflow 处理。生产 ReAct 登记近期订单、订单快照、物流、售后状态、售后规则五个只读工具，以及一个固定 `ASK` 的 `save_session_preference`：它只能写入当前会话中可编辑、可软删除的回答偏好。对明确要求持久化且可无歧义规范化的语言、格式、详略偏好，ReAct 执行器确定性编排同一个 Tool 与同一 intervention 协议，避免把是否写入交给模型概率选择；歧义表达仍由 ReAct 澄清，不会写入。测试可使用 `acceptance` Profile 的可逆探针验证确认协议；它不属于生产功能。
 
 ## 提示词与框架校验：Router Policy 与 AgentSkill
 

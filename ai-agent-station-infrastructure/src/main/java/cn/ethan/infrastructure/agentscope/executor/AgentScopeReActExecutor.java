@@ -13,6 +13,7 @@ import cn.ethan.core.agent.model.ToolInterventionToolModel;
 import cn.ethan.core.agent.port.ReActExecutor;
 import cn.ethan.core.agent.port.OutputObservationProvider;
 import cn.ethan.core.agent.service.AgentMemoryService;
+import cn.ethan.core.agent.service.SessionPreferenceRequestAnalysisService;
 import cn.ethan.core.agent.support.CancellationToken;
 import cn.ethan.core.after_sales.port.AfterSalesCaseGateway;
 import cn.ethan.core.after_sales.port.RefundCommandGateway;
@@ -52,6 +53,8 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.DynamicSkillMiddleware;
@@ -142,6 +145,7 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
     private final OutputObservationProvider observations;
     private final AgentScopeEventAssembler eventAssembler;
     private final InMemoryAgentStateStore stateStore;
+    private final SessionPreferenceRequestAnalysisService sessionPreferenceAnalysis;
     private final List<ToolBase> acceptanceTools;
     private final Map<String, RuntimeContext> activeContexts = new ConcurrentHashMap<>();
     private final Map<String, PendingIntervention> pendingInterventions = new ConcurrentHashMap<>();
@@ -194,6 +198,7 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
                 : List.of();
         this.eventAssembler = new AgentScopeEventAssembler();
         this.stateStore = new InMemoryAgentStateStore();
+        this.sessionPreferenceAnalysis = new SessionPreferenceRequestAnalysisService();
     }
 
     /**
@@ -287,6 +292,15 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
             String skillInstructions = loadBusinessSkill(
                     currentAgent, context, request.requestId(), token, sink
             );
+            Map<String, String> requestedPreferences = sessionPreferenceAnalysis.resolveSessionPreferences(
+                    request.normalizedMessage()
+            );
+            if (!requestedPreferences.isEmpty()) {
+                return executeSessionPreferenceSave(
+                        currentAgent, context, request, userId, requestedPreferences,
+                        memories, accumulator, token, sink
+                );
+            }
             Msg input = new UserMessage(renderAgentInput(
                     skillInstructions, history, memories, request.normalizedMessage()
             ));
@@ -313,7 +327,7 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
                 List<ConfirmResult> results = awaitDecision(pending, token);
                 if (allRejected(results)) {
                     // AgentScope 2.0.0 的拒绝恢复偶尔不会产生终态；全部拒绝时直接按 stopOnReject 语义收敛。
-                    return accumulator.finishRejected(rejectionMessage(memories), token, sink);
+                    return accumulator.finishDeterministic(rejectionMessage(memories), token, sink);
                 }
                 input = UserMessage.builder()
                         .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, results))
@@ -427,14 +441,17 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
     }
 
     private static String rejectionMessage(List<AgentMemoryEntryModel> memories) {
-        boolean english = memories != null && memories.stream().anyMatch(memory ->
+        return prefersEnglish(memories)
+                ? "Tool call rejected; no write was performed."
+                : "工具调用已拒绝，未执行任何写入。";
+    }
+
+    private static boolean prefersEnglish(List<AgentMemoryEntryModel> memories) {
+        return memories != null && memories.stream().anyMatch(memory ->
                 memory.category() == cn.ethan.core.agent.enums.AgentMemoryCategoryEnum.PREFERENCE
                         && "response.language".equals(memory.memoryKey())
                         && "en-US".equals(memory.value())
         );
-        return english
-                ? "Tool call rejected; no write was performed."
-                : "工具调用已拒绝，未执行任何写入。";
     }
 
     @Override
@@ -527,6 +544,112 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
             accumulator.toolResultContent.append(toolResult.getData());
         }
         eventAssembler.assemble(event).ifPresent(outputEvent -> emit(sink, outputEvent));
+    }
+
+    private ReActResultModel executeSessionPreferenceSave(
+            ReActAgent currentAgent,
+            RuntimeContext context,
+            AgentRequestModel request,
+            String userId,
+            Map<String, String> preferences,
+            List<AgentMemoryEntryModel> currentMemories,
+            StreamAccumulator accumulator,
+            CancellationToken token,
+            Consumer<OutputEventModel> sink
+    ) {
+        AgentTool tool = currentAgent.getToolkit().getTool(SaveSessionPreferenceTool.NAME);
+        if (!(tool instanceof ToolBase permissionAwareTool)) {
+            throw new ReActExecutionException(
+                    "REACT_PREFERENCE_TOOL_MISSING",
+                    "AgentScope session preference tool is unavailable"
+            );
+        }
+        int index = 0;
+        for (Map.Entry<String, String> preference : preferences.entrySet()) {
+            token.throwIfCancelled();
+            index++;
+            Map<String, Object> input = Map.of(
+                    "key", preference.getKey(),
+                    "value", preference.getValue()
+            );
+            PermissionDecision permission = permissionAwareTool.checkPermissions(input, null).block(timeout);
+            if (permission == null || permission.getBehavior() != PermissionBehavior.ASK) {
+                throw new ReActExecutionException(
+                        "REACT_PREFERENCE_PERMISSION_INVALID",
+                        "Session preference tool must require confirmation"
+                );
+            }
+
+            String toolCallId = request.requestId() + "-preference-" + index;
+            String replyId = request.requestId() + "-preference-confirm-" + index;
+            ToolUseBlock toolUse = ToolUseBlock.builder()
+                    .id(toolCallId)
+                    .name(SaveSessionPreferenceTool.NAME)
+                    .input(input)
+                    .build();
+            emitAgentEvent(sink, new ToolCallStartEvent(
+                    replyId, toolCallId, SaveSessionPreferenceTool.NAME
+            ));
+            PendingIntervention pending = registerIntervention(
+                    request,
+                    userId,
+                    context,
+                    new RequireUserConfirmEvent(replyId, List.of(toolUse)),
+                    sink
+            );
+            List<ConfirmResult> results = awaitDecision(pending, token);
+            if (allRejected(results)) {
+                return accumulator.finishDeterministic(
+                        rejectionMessage(currentMemories), token, sink
+                );
+            }
+
+            ToolResultBlock result;
+            try {
+                result = tool.callAsync(ToolCallParam.builder()
+                                .toolUseBlock(toolUse)
+                                .input(input)
+                                .agent(currentAgent)
+                                .runtimeContext(context)
+                                .build())
+                        .block(timeout);
+            } catch (RuntimeException failure) {
+                emitAgentEvent(sink, new ToolResultEndEvent(
+                        replyId, toolCallId, SaveSessionPreferenceTool.NAME, ToolResultState.ERROR
+                ));
+                throw new ReActExecutionException(
+                        "REACT_PREFERENCE_SAVE_FAILED",
+                        "Session preference tool failed",
+                        failure
+                );
+            }
+            ToolResultState state = result == null || result.getState() == null
+                    ? ToolResultState.ERROR
+                    : result.getState();
+            emitAgentEvent(sink, new ToolResultEndEvent(
+                    replyId, toolCallId, SaveSessionPreferenceTool.NAME, state
+            ));
+            if (state != ToolResultState.SUCCESS) {
+                throw new ReActExecutionException(
+                        "REACT_PREFERENCE_SAVE_FAILED",
+                        "Session preference tool returned a non-success state"
+                );
+            }
+        }
+        return accumulator.finishDeterministic(
+                preferenceSavedMessage(preferences, currentMemories), token, sink
+        );
+    }
+
+    private static String preferenceSavedMessage(
+            Map<String, String> preferences,
+            List<AgentMemoryEntryModel> currentMemories
+    ) {
+        boolean englishRequested = "en-US".equals(preferences.get("response.language"));
+        if (englishRequested || prefersEnglish(currentMemories)) {
+            return "Session preferences saved.";
+        }
+        return "会话偏好已保存。";
     }
 
     String loadBusinessSkill(
@@ -892,7 +1015,7 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
             return reactResult;
         }
 
-        private ReActResultModel finishRejected(
+        private ReActResultModel finishDeterministic(
                 String content,
                 CancellationToken token,
                 Consumer<OutputEventModel> sink
