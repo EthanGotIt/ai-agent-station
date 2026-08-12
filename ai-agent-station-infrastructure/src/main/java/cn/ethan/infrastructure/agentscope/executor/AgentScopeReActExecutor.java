@@ -311,6 +311,10 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
                 }
                 PendingIntervention pending = registerIntervention(request, userId, context, pendingConfirmation, sink);
                 List<ConfirmResult> results = awaitDecision(pending, token);
+                if (allRejected(results)) {
+                    // AgentScope 2.0.0 的拒绝恢复偶尔不会产生终态；全部拒绝时直接按 stopOnReject 语义收敛。
+                    return accumulator.finishRejected(rejectionMessage(memories), token, sink);
+                }
                 input = UserMessage.builder()
                         .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, results))
                         .build();
@@ -416,6 +420,21 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
             return java.util.Optional.of("- " + label + "：zh-CN。最终回答必须使用中文。\n");
         }
         return java.util.Optional.of("- " + label + "：" + value + '\n');
+    }
+
+    static boolean allRejected(List<ConfirmResult> results) {
+        return results != null && !results.isEmpty() && results.stream().noneMatch(ConfirmResult::isConfirmed);
+    }
+
+    private static String rejectionMessage(List<AgentMemoryEntryModel> memories) {
+        boolean english = memories != null && memories.stream().anyMatch(memory ->
+                memory.category() == cn.ethan.core.agent.enums.AgentMemoryCategoryEnum.PREFERENCE
+                        && "response.language".equals(memory.memoryKey())
+                        && "en-US".equals(memory.value())
+        );
+        return english
+                ? "Tool call rejected; no write was performed."
+                : "工具调用已拒绝，未执行任何写入。";
     }
 
     @Override
@@ -870,6 +889,24 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
                     outputTokens
             );
             appendRemainingContent(reactResult.finalContent(), sink);
+            return reactResult;
+        }
+
+        private ReActResultModel finishRejected(
+                String content,
+                CancellationToken token,
+                Consumer<OutputEventModel> sink
+        ) {
+            token.throwIfCancelled();
+            ReActResultModel reactResult = new ReActResultModel(
+                    content,
+                    List.of(),
+                    inputTokens,
+                    outputTokens
+            );
+            if (sink != null) {
+                sink.accept(new OutputEventModel(OutputEventTypeEnum.CONTENT, content));
+            }
             return reactResult;
         }
 

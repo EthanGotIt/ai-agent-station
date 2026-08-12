@@ -23,7 +23,7 @@ Workflow 状态只有 `RUNNING / WAITING_USER_INPUT / COMPLETED / REJECTED / FAI
 
 ReAct 只负责复杂只读兜底。AgentScope 工具按自身声明返回 `allow / ask / deny`；`ask` 会产生 `RequireUserConfirmEvent`，服务端将其转成同一 SSE 连接上的 `intervention` 事件。客户端调用 `POST /api/v1/agent/requests/{requestId}/interventions/{replyId}` 提交 `CONFIRM` 或 `REJECT`，该调用直接投递给活跃 ReAct，不进入 FIFO，避免等待中的请求与自身决策互锁。
 
-服务端核对 `requestId + userId + sessionId + replyId + toolCallIds` 后，使用 AgentScope `ConfirmResult` 和 `Msg.METADATA_CONFIRM_RESULTS` 在同一 `RuntimeContext` 继续当前回合。同步 `/chat` 遇到 `ask` 返回 `REACT_CONFIRM_REQUIRES_STREAM`。这是工具授权而非工作流恢复：每一轮 ReAct 使用 `InMemoryAgentStateStore`，在结束、超时或取消后删除状态，不提供断线恢复。
+服务端核对 `requestId + userId + sessionId + replyId + toolCallIds` 后，确认时使用 AgentScope `ConfirmResult` 和 `Msg.METADATA_CONFIRM_RESULTS` 在同一 `RuntimeContext` 继续当前回合；全部拒绝时按 `stopOnReject` 语义在执行器边界确定性完成，规避 AgentScope 2.0.0 偶发不产生终态的拒绝恢复等待。同步 `/chat` 遇到 `ask` 返回 `REACT_CONFIRM_REQUIRES_STREAM`。这是工具授权而非工作流恢复：每一轮 ReAct 使用 `InMemoryAgentStateStore`，在结束、超时或取消后删除状态，不提供断线恢复。
 
 关键写入（支付、退款、发货、删除、账号变更）由确定性 Workflow 处理。生产 ReAct 登记近期订单、订单快照、物流、售后状态、售后规则五个只读工具，以及一个固定 `ASK` 的 `save_session_preference`：它只能写入当前会话中可编辑、可软删除的回答偏好。测试可使用 `acceptance` Profile 的可逆探针验证确认协议；它不属于生产功能。
 

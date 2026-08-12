@@ -16,6 +16,8 @@ import cn.ethan.core.order.port.LogisticsGateway;
 import cn.ethan.core.order.port.OrderGateway;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.skill.DynamicSkillMiddleware;
 import io.agentscope.core.skill.repository.ClasspathSkillRepository;
 import org.junit.jupiter.api.Test;
@@ -25,6 +27,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -135,6 +138,24 @@ class AgentScopeReActExecutorTest {
 
         assertTrue(prompt.contains("最终回答必须仅使用英文，不得出现中文"));
         assertFalse(prompt.contains("- PREFERENCE response.language"));
+    }
+
+    @Test
+    void recognizesOnlyFullyRejectedConfirmationResults() {
+        ToolUseBlock first = ToolUseBlock.builder()
+                .id("tool-call-1").name("save_session_preference").input(Map.of()).build();
+        ToolUseBlock second = ToolUseBlock.builder()
+                .id("tool-call-2").name("save_session_preference").input(Map.of()).build();
+
+        assertTrue(AgentScopeReActExecutor.allRejected(List.of(
+                new ConfirmResult(false, first),
+                new ConfirmResult(false, second)
+        )));
+        assertFalse(AgentScopeReActExecutor.allRejected(List.of(
+                new ConfirmResult(false, first),
+                new ConfirmResult(true, second)
+        )));
+        assertFalse(AgentScopeReActExecutor.allRejected(List.of()));
     }
 
     private OrderGateway orderGateway() {
