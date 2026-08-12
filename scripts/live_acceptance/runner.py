@@ -915,6 +915,56 @@ def _require_only_tool_names(tool_names: Sequence[str], expected_name: str, scen
         raise AcceptanceFailure(f"{scenario} 未请求允许的 Tool：{tool_names}")
 
 
+def _confirm_preference_interventions(
+        host: str,
+        port: int,
+        user_id: str,
+        request: Mapping[str, Any],
+        conversation: SseConversation,
+        timeout_seconds: float,
+) -> None:
+    """在同一 ReAct 回合中确认全部偏好 ASK，直到收到稳定完成终态。"""
+
+    handled_reply_ids: set[str] = set()
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        for event in conversation.events:
+            if event.event_type != "intervention":
+                continue
+            reply_id, tool_call_ids, tool_names = _intervention_payload(event)
+            if reply_id in handled_reply_ids:
+                continue
+            _require_only_tool_names(
+                tool_names, "save_session_preference", "Skill 偏好场景"
+            )
+            code, result = _http_json(
+                host,
+                port,
+                "POST",
+                f"/api/v1/agent/requests/{request['requestId']}/interventions/{reply_id}",
+                user_id,
+                {
+                    "sessionId": request["sessionId"],
+                    "toolCallIds": tool_call_ids,
+                    "decision": "CONFIRM",
+                },
+                30,
+            )
+            if code != 200 or result.get("accepted") is not True:
+                raise AcceptanceFailure("Skill 偏好场景确认未被接受")
+            handled_reply_ids.add(reply_id)
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise AcceptanceFailure("Skill 偏好场景未在限定时间完成")
+        try:
+            conversation.wait_for("done", "COMPLETED", min(remaining, 5))
+            return
+        except AcceptanceFailure as exception:
+            if not str(exception).startswith("等待 SSE 事件超时"):
+                raise
+
+
 def _run_react_ask_case(
         host: str,
         port: int,
@@ -1170,27 +1220,11 @@ def _run_skill_stability_cases(
                 conversation.start()
                 conversation.wait_for("route", "REACT", 60)
                 if current_confirmation:
-                    intervention = conversation.wait_for("intervention", timeout_seconds=120)
-                    reply_id, tool_call_ids, tool_names = _intervention_payload(intervention)
-                    _require_only_tool_names(
-                        tool_names, "save_session_preference", "Skill 偏好场景"
+                    _confirm_preference_interventions(
+                        host, port, "demo-user-1", request, conversation, 150
                     )
-                    code, result = _http_json(
-                        host,
-                        port,
-                        "POST",
-                        f"/api/v1/agent/requests/{request['requestId']}/interventions/{reply_id}",
-                        "demo-user-1",
-                        {
-                            "sessionId": session_id,
-                            "toolCallIds": tool_call_ids,
-                            "decision": "CONFIRM",
-                        },
-                        30,
-                    )
-                    if code != 200 or result.get("accepted") is not True:
-                        raise AcceptanceFailure("Skill 偏好场景确认未被接受")
-                conversation.wait_for("done", "COMPLETED", 150)
+                else:
+                    conversation.wait_for("done", "COMPLETED", 150)
                 _assert_tool_subsequence(conversation.events, current_tools)
                 return {"requestId": request["requestId"], "run": current_run}
 

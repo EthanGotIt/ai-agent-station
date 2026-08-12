@@ -2,7 +2,9 @@
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Timer
 import unittest
+from unittest.mock import patch
 
 from scripts.live_acceptance.runner import (
     DROP_CONFIRMATION,
@@ -11,6 +13,7 @@ from scripts.live_acceptance.runner import (
     JdbcConnectionModel,
     SseConversation,
     SseEventModel,
+    _confirm_preference_interventions,
     _require_only_tool_names,
     _assert_tool_subsequence,
     parse_dotenv,
@@ -195,6 +198,24 @@ class LiveAcceptanceTest(unittest.TestCase):
                 "save_session_preference",
                 "Skill 偏好场景",
             )
+
+    def test_preference_interventions_confirm_each_reply_until_completed(self) -> None:
+        conversation = SseConversation("127.0.0.1", 8090, "user", {}, 1)
+        conversation._dispatch("intervention", [
+            '{"replyId":"reply-1","tools":[{"toolCallId":"tool-1",'
+            '"toolName":"save_session_preference"}]}'
+        ])
+        timer = Timer(0.01, lambda: conversation._dispatch("done", ["COMPLETED"]))
+        timer.start()
+        try:
+            with patch("scripts.live_acceptance.runner._http_json", return_value=(200, {"accepted": True})) as http:
+                _confirm_preference_interventions(
+                    "127.0.0.1", 8090, "user", {"requestId": "request-1", "sessionId": "session-1"},
+                    conversation, 1,
+                )
+            self.assertEqual(1, http.call_count)
+        finally:
+            timer.cancel()
 
 
 if __name__ == "__main__":
