@@ -1,9 +1,11 @@
 package cn.ethan.infrastructure.agentscope.executor;
 
-import cn.ethan.core.agent.service.AgentMemoryService;
 import cn.ethan.core.agent.enums.AgentMemoryCategoryEnum;
 import cn.ethan.core.agent.enums.AgentMemoryOriginEnum;
 import cn.ethan.core.agent.model.AgentMemoryEntryModel;
+import cn.ethan.core.agent.model.OutputEventModel;
+import cn.ethan.core.agent.service.AgentMemoryService;
+import cn.ethan.core.agent.support.CancellationToken;
 import cn.ethan.core.after_sales.model.AfterSalesCaseModel;
 import cn.ethan.core.after_sales.model.RefundCommandModel;
 import cn.ethan.core.after_sales.model.RefundCommandResultModel;
@@ -21,10 +23,12 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -49,6 +53,7 @@ class AgentScopeReActExecutorTest {
             try {
                 assertTrue(agent.getSysPrompt().contains("agent-station-business-orchestration"));
                 assertTrue(agent.getSysPrompt().contains("load_skill_through_path"));
+                assertTrue(agent.getSysPrompt().contains("服务端会在每个业务分析或会话偏好回合开始前"));
                 assertTrue(agent.getSysPrompt().contains("服务端存储且已校验的展示配置"));
                 assertFalse(agent.getSysPrompt().contains("get_order_snapshot"));
 
@@ -73,6 +78,41 @@ class AgentScopeReActExecutorTest {
                         "get_after_sales_status", "get_after_sales_policy", "save_session_preference"
                 )));
                 assertFalse(toolNames.contains("reset_equipped_tools"));
+            } finally {
+                agent.close();
+                executor.close();
+            }
+        }
+    }
+
+    @Test
+    void loadsBusinessSkillBeforeModelAndExposesOnlyToolLifecycle() throws Exception {
+        try (ClasspathSkillRepository repository = new ClasspathSkillRepository("agentscope/skills", "test")) {
+            AgentScopeReActExecutor executor = new AgentScopeReActExecutor(
+                    "test-key", "", "qwen3.7-plus", Duration.ofSeconds(10), 4, 512, 1,
+                    true, 256, orderGateway(), logisticsGateway(), afterSalesCaseGateway(),
+                    refundCommandGateway(), new AgentMemoryService(false, false, 0.75, null, Clock.systemUTC()),
+                    repository, false, null
+            );
+            ReActAgent agent = executor.buildAgent();
+            try {
+                List<OutputEventModel> events = new ArrayList<>();
+                String content = executor.loadBusinessSkill(
+                        agent,
+                        RuntimeContext.builder().userId("user-1").sessionId("session-1").build(),
+                        "request-1",
+                        new CancellationToken(),
+                        events::add
+                );
+
+                assertTrue(content.contains("`get_order_snapshot`"));
+                assertTrue(content.contains("`save_session_preference`"));
+                assertEquals(List.of(
+                        "load_skill_through_path",
+                        "load_skill_through_path:SUCCESS"
+                ), events.stream().map(OutputEventModel::value).toList());
+                assertTrue(agent.getToolkit().getActiveGroups().contains("skill-build-in-tools"));
+                assertFalse(events.stream().anyMatch(event -> event.value().contains("Tool 矩阵")));
             } finally {
                 agent.close();
                 executor.close();

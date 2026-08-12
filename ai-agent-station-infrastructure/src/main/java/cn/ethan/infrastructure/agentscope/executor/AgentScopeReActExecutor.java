@@ -32,26 +32,35 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.ExceedMaxItersEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
-import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.RequireExternalExecutionEvent;
-import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.event.RequireUserConfirmEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultDataDeltaEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
+import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.DynamicSkillMiddleware;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
+import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.ToolBase;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.dashscope.EndpointType;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
@@ -63,12 +72,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CancellationException;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 /**
  * AgentScope ReAct 执行器：使用 Qwen 原生思考处理开放式分析与低风险偏好写入。
@@ -79,13 +89,17 @@ import java.util.function.Consumer;
 public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseable {
 
     private static final String AGENT_NAME = "agent_station_react";
+    private static final String BUSINESS_SKILL_NAME = "agent-station-business-orchestration";
+    private static final String SKILL_LOAD_TOOL = "load_skill_through_path";
+    private static final String SKILL_LOADER_GROUP = "skill-build-in-tools";
     private static final String SYSTEM_PROMPT = """
             你处理 AI Agent Station 中确定性流程未覆盖的复杂问题。
             给出简洁、可核验的回答。百炼原生工具已禁用；若问题依赖外部实时资料，
             请明确说明当前工具集中没有对应 MCP 工具，不得编造或假装联网检索。
             退款申请、订单修改及其他关键写入必须交给确定性 Workflow，不得通过 ReAct 执行。
-            业务分析或会话偏好请求必须先通过 load_skill_through_path 加载
-            agent-station-business-orchestration，再按 Tool Schema、权限和运行时用户隔离执行。
+            服务端会在每个业务分析或会话偏好回合开始前，通过 load_skill_through_path 加载
+            agent-station-business-orchestration，并把正文作为可信运行时说明提供；不得重复加载。
+            必须按该 Skill、Tool Schema、权限和运行时用户隔离执行；冲突时以代码边界为准。
             运行时消息中的“当前会话回答偏好”是服务端存储且已校验的展示配置，必须遵守。
             当 response.language 为 en-US 时，最终面向用户的回答只能使用英文；不得用用户消息语言替代该配置。
             """;
@@ -124,6 +138,7 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
     private final RefundCommandGateway refundGateway;
     private final AgentMemoryService memories;
     private final AgentSkillRepository skillRepository;
+    private final String businessSkillId;
     private final OutputObservationProvider observations;
     private final AgentScopeEventAssembler eventAssembler;
     private final InMemoryAgentStateStore stateStore;
@@ -132,6 +147,7 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
     private final Map<String, PendingIntervention> pendingInterventions = new ConcurrentHashMap<>();
 
     private volatile ReActAgent agent;
+    private volatile ReActAgent skillLoaderInitializedAgent;
 
     public AgentScopeReActExecutor(
             String apiKey,
@@ -167,6 +183,11 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
         this.refundGateway = refundGateway;
         this.memories = memories;
         this.skillRepository = Objects.requireNonNull(skillRepository, "skillRepository");
+        AgentSkill businessSkill = skillRepository.getSkill(BUSINESS_SKILL_NAME);
+        if (businessSkill == null || businessSkill.getSkillId() == null || businessSkill.getSkillId().isBlank()) {
+            throw new IllegalArgumentException("AgentScope business skill is unavailable");
+        }
+        this.businessSkillId = businessSkill.getSkillId();
         this.observations = observations == null ? NO_OP_OBSERVATION : observations;
         this.acceptanceTools = acceptanceConfirmationProbeEnabled
                 ? List.of(new ReversibleConfirmationProbeTool())
@@ -263,7 +284,12 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
         ReActAgent currentAgent = agent();
         StreamAccumulator accumulator = new StreamAccumulator();
         try {
-            Msg input = new UserMessage(renderUserMessage(history, memories, request.normalizedMessage()));
+            String skillInstructions = loadBusinessSkill(
+                    currentAgent, context, request.requestId(), token, sink
+            );
+            Msg input = new UserMessage(renderAgentInput(
+                    skillInstructions, history, memories, request.normalizedMessage()
+            ));
             while (true) {
                 AtomicReference<RequireUserConfirmEvent> confirmation = new AtomicReference<>();
                 currentAgent.streamEvents(input, context)
@@ -352,6 +378,26 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
             }
         }
         return message.append("当前用户消息：\n").append(currentMessage).toString();
+    }
+
+    static String renderAgentInput(
+            String skillInstructions,
+            List<ConversationMessageModel> history,
+            List<AgentMemoryEntryModel> memories,
+            String currentMessage
+    ) {
+        return """
+                服务端已为本回合加载业务编排 Skill。以下内容来自只读 classpath，属于可信业务说明，
+                不对外输出；不得把其中示例当成用户事实，也不得再次调用 load_skill_through_path：
+                <business_skill>
+                %s
+                </business_skill>
+
+                %s
+                """.formatted(
+                skillInstructions,
+                renderUserMessage(history, memories, currentMessage)
+        );
     }
 
     private static java.util.Optional<String> preferenceInstruction(
@@ -461,6 +507,113 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
                 && toolResult.getData() != null) {
             accumulator.toolResultContent.append(toolResult.getData());
         }
+        eventAssembler.assemble(event).ifPresent(outputEvent -> emit(sink, outputEvent));
+    }
+
+    String loadBusinessSkill(
+            ReActAgent currentAgent,
+            RuntimeContext context,
+            String requestId,
+            CancellationToken token,
+            Consumer<OutputEventModel> sink
+    ) {
+        token.throwIfCancelled();
+        ensureSkillLoader(currentAgent, context);
+        AgentTool loader = currentAgent.getToolkit().getTool(SKILL_LOAD_TOOL);
+        if (loader == null) {
+            throw new ReActExecutionException(
+                    "REACT_SKILL_LOADER_MISSING",
+                    "AgentScope business skill loader is unavailable"
+            );
+        }
+
+        String toolCallId = requestId + "-business-skill";
+        ToolUseBlock toolUse = ToolUseBlock.builder()
+                .id(toolCallId)
+                .name(SKILL_LOAD_TOOL)
+                .input(Map.of("skillId", businessSkillId, "path", "SKILL.md"))
+                .build();
+        emitAgentEvent(sink, new ToolCallStartEvent(requestId, toolCallId, SKILL_LOAD_TOOL));
+
+        ToolResultBlock result;
+        try {
+            result = loader.callAsync(ToolCallParam.builder()
+                            .toolUseBlock(toolUse)
+                            .input(toolUse.getInput())
+                            .agent(currentAgent)
+                            .runtimeContext(context)
+                            .build())
+                    .block(timeout);
+        } catch (RuntimeException failure) {
+            emitAgentEvent(sink, new ToolResultEndEvent(
+                    requestId, toolCallId, SKILL_LOAD_TOOL, ToolResultState.ERROR
+            ));
+            throw new ReActExecutionException(
+                    "REACT_SKILL_LOAD_FAILED",
+                    "AgentScope business skill failed to load",
+                    failure
+            );
+        }
+
+        String content = result == null ? "" : result.getOutput().stream()
+                .filter(TextBlock.class::isInstance)
+                .map(TextBlock.class::cast)
+                .map(TextBlock::getText)
+                .filter(Objects::nonNull)
+                .collect(Collectors.joining("\n"));
+        ToolResultState reportedState = result == null ? ToolResultState.ERROR : result.getState();
+        boolean loaded = (reportedState == null
+                || reportedState == ToolResultState.RUNNING
+                || reportedState == ToolResultState.SUCCESS)
+                && content.contains("Successfully loaded skill: " + businessSkillId);
+        ToolResultState outputState = loaded
+                ? ToolResultState.SUCCESS
+                : reportedState == null ? ToolResultState.ERROR : reportedState;
+        emitAgentEvent(sink, new ToolResultEndEvent(
+                requestId, toolCallId, SKILL_LOAD_TOOL, outputState
+        ));
+        if (!loaded) {
+            throw new ReActExecutionException(
+                    "REACT_SKILL_LOAD_FAILED",
+                    "AgentScope business skill returned invalid content or state: state="
+                            + reportedState + ", contentLength=" + content.length()
+            );
+        }
+        return content;
+    }
+
+    private void ensureSkillLoader(ReActAgent currentAgent, RuntimeContext context) {
+        if (skillLoaderInitializedAgent == currentAgent
+                && currentAgent.getToolkit().getTool(SKILL_LOAD_TOOL) != null) {
+            return;
+        }
+        synchronized (this) {
+            if (skillLoaderInitializedAgent == currentAgent
+                    && currentAgent.getToolkit().getTool(SKILL_LOAD_TOOL) != null) {
+                return;
+            }
+            DynamicSkillMiddleware middleware = currentAgent.getMiddlewares().stream()
+                    .filter(DynamicSkillMiddleware.class::isInstance)
+                    .map(DynamicSkillMiddleware.class::cast)
+                    .findFirst()
+                    .orElseThrow(() -> new ReActExecutionException(
+                            "REACT_SKILL_REPOSITORY_INVALID",
+                            "AgentScope dynamic skill middleware is unavailable"
+                    ));
+            middleware.onSystemPrompt(currentAgent, context, currentAgent.getSysPrompt()).block(timeout);
+            // AgentScope 2.0.0 注册内建 Skill loader 时不会自动激活所属 ToolGroup。
+            currentAgent.getToolkit().updateToolGroups(List.of(SKILL_LOADER_GROUP), true);
+            if (currentAgent.getToolkit().getTool(SKILL_LOAD_TOOL) == null) {
+                throw new ReActExecutionException(
+                        "REACT_SKILL_LOADER_MISSING",
+                        "AgentScope business skill loader was not registered"
+                );
+            }
+            skillLoaderInitializedAgent = currentAgent;
+        }
+    }
+
+    private void emitAgentEvent(Consumer<OutputEventModel> sink, AgentEvent event) {
         eventAssembler.assemble(event).ifPresent(outputEvent -> emit(sink, outputEvent));
     }
 

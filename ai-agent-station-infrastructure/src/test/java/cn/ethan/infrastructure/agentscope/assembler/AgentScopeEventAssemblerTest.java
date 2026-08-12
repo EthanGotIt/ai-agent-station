@@ -9,6 +9,8 @@ import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockEndEvent;
 import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.message.ToolResultState;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
@@ -63,6 +65,11 @@ class AgentScopeEventAssemblerTest {
         OutputEventModel tool = assembler.assemble(
                 new ToolCallStartEvent("reply-1", "tool-call-1", "native_search")
         ).orElseThrow();
+        OutputEventModel toolResult = assembler.assemble(
+                new ToolResultEndEvent(
+                        "reply-1", "tool-call-1", "native_search", ToolResultState.SUCCESS
+                )
+        ).orElseThrow();
 
         assertEquals(OutputEventTypeEnum.CONTENT, text.type());
         assertEquals("公开内容", text.value());
@@ -70,5 +77,7 @@ class AgentScopeEventAssemblerTest {
         assertEquals("model_call_started", progress.value());
         assertEquals(OutputEventTypeEnum.TOOL, tool.type());
         assertEquals("native_search", tool.value());
+        assertEquals(OutputEventTypeEnum.TOOL, toolResult.type());
+        assertEquals("native_search:SUCCESS", toolResult.value());
     }
 }

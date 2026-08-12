@@ -32,6 +32,7 @@ class AgentScopeBusinessSkillRepositoryTest {
 
             assertNotNull(skill);
             assertEquals("agent-station-business-orchestration", skill.getName());
+            assertEquals("agent-station-business-orchestration_test-agent-station", skill.getSkillId());
             assertEquals("v1", skill.getMetadataValue("version"));
             assertTrue(skill.getResources().isEmpty());
             assertTrue(skill.getSkillContent().contains("list_recent_orders"));
