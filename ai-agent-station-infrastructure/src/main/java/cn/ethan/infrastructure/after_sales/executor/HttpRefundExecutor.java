@@ -17,9 +17,12 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.math.BigDecimal;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * HTTP 退款执行器：以退款单号作为外部幂等键，并将渠道异常归一为稳定失败码。
@@ -38,6 +41,7 @@ public final class HttpRefundExecutor implements RefundExecutor {
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpRefundExecutor.class);
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(3);
     private static final Duration MAX_TIMEOUT = Duration.ofSeconds(30);
+    private static final Pattern FAILURE_CODE_PATTERN = Pattern.compile("[A-Z0-9][A-Z0-9_]{0,63}");
 
     private final RestClient client;
 
@@ -46,16 +50,13 @@ public final class HttpRefundExecutor implements RefundExecutor {
             @Value("${ai-agent.after-sales.refund-channel.base-url:http://127.0.0.1:18081}") String baseUrl,
             @Value("${ai-agent.after-sales.refund-channel.timeout:PT3S}") Duration timeout
     ) {
-        if (baseUrl == null || baseUrl.isBlank()) {
-            throw new IllegalArgumentException("refund channel base URL is required");
-        }
         Duration effectiveTimeout = normalizeTimeout(timeout);
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(
                 HttpClient.newBuilder().connectTimeout(effectiveTimeout).build()
         );
         requestFactory.setReadTimeout(effectiveTimeout);
         this.client = builder.clone()
-                .baseUrl(baseUrl.strip())
+                .baseUrl(requireBaseUrl(baseUrl))
                 .requestFactory(requestFactory)
                 .build();
     }
@@ -94,8 +95,11 @@ public final class HttpRefundExecutor implements RefundExecutor {
         if ("COMPLETED".equals(status)) {
             return RefundExecutionResultModel.succeeded();
         }
-        if ("FAILED".equals(status) && response.failureCode() != null && !response.failureCode().isBlank()) {
-            return RefundExecutionResultModel.failed(response.failureCode());
+        if ("FAILED".equals(status) && response.failureCode() != null) {
+            String failureCode = response.failureCode().strip();
+            if (FAILURE_CODE_PATTERN.matcher(failureCode).matches()) {
+                return RefundExecutionResultModel.failed(failureCode);
+            }
         }
         return RefundExecutionResultModel.failed(INVALID_RESPONSE);
     }
@@ -113,6 +117,26 @@ public final class HttpRefundExecutor implements RefundExecutor {
             throw new IllegalArgumentException("refund channel timeout must be between PT0S and PT30S");
         }
         return effective;
+    }
+
+    private static String requireBaseUrl(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new IllegalArgumentException("refund channel base URL is required");
+        }
+        try {
+            URI value = new URI(baseUrl.strip());
+            if (!value.isAbsolute()
+                    || !("http".equalsIgnoreCase(value.getScheme()) || "https".equalsIgnoreCase(value.getScheme()))
+                    || value.getHost() == null
+                    || value.getUserInfo() != null
+                    || value.getQuery() != null
+                    || value.getFragment() != null) {
+                throw new IllegalArgumentException("refund channel base URL must be an absolute HTTP(S) endpoint");
+            }
+            return value.toString();
+        } catch (URISyntaxException invalid) {
+            throw new IllegalArgumentException("refund channel base URL must be an absolute HTTP(S) endpoint", invalid);
+        }
     }
 
     private record RefundRequestDto(

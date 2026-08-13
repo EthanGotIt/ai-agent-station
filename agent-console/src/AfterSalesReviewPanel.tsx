@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { readJsonResponse } from "./http";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { HttpRequestError, isRequestAbort, requestJson } from "./http";
 import type { AfterSalesCase, AfterSalesCasePage } from "./types";
 
 const API = "/api/v1/after-sales/cases";
@@ -44,92 +44,169 @@ export function AfterSalesReviewPanel({ operatorId }: Props) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const listControllerRef = useRef<AbortController | null>(null);
+  const detailControllerRef = useRef<AbortController | null>(null);
+  const listRequestRef = useRef(0);
+  const detailRequestRef = useRef(0);
+  const actionIdsRef = useRef(new Map<string, string>());
+
+  const clearCaseActionIds = useCallback((caseId: string) => {
+    for (const key of actionIdsRef.current.keys()) {
+      if (key.includes(`:${caseId}:`)) actionIdsRef.current.delete(key);
+    }
+  }, []);
 
   const load = useCallback(async () => {
+    const normalizedOperatorId = operatorId.trim();
+    listControllerRef.current?.abort();
+    if (!normalizedOperatorId) {
+      setData(null);
+      setSelected(null);
+      setLoading(false);
+      setError("");
+      return;
+    }
+    const controller = new AbortController();
+    const requestNumber = ++listRequestRef.current;
+    listControllerRef.current = controller;
     setLoading(true);
     setError("");
     const query = new URLSearchParams({ page: String(page), size: "20" });
     if (status) query.set("status", status);
     try {
-      const response = await fetch(`${API}?${query}`, { headers: { "X-Operator-Id": operatorId.trim() } });
-      const next = await readJsonResponse<AfterSalesCasePage>(response);
+      const next = await requestJson<AfterSalesCasePage>(`${API}?${query}`, {
+        headers: { "X-Operator-Id": normalizedOperatorId }, signal: controller.signal
+      });
+      if (requestNumber !== listRequestRef.current) return;
       setData(next);
-      setSelected((current) => next.items.find((item) => item.caseId === current?.caseId) ?? null);
+      setSelected((current) => {
+        const refreshed = next.items.find((item) => item.caseId === current?.caseId) ?? null;
+        if (current && refreshed && refreshed.version !== current.version) clearCaseActionIds(current.caseId);
+        if (current && refreshed && current.version >= refreshed.version) return current;
+        return refreshed;
+      });
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "审核队列暂时无法加载，请稍后刷新。");
+      if (requestNumber === listRequestRef.current && !isRequestAbort(failure)) {
+        setError(failure instanceof Error ? failure.message : "审核队列暂时无法加载，请稍后刷新。");
+      }
     } finally {
-      setLoading(false);
+      if (requestNumber === listRequestRef.current) setLoading(false);
     }
-  }, [operatorId, page, status]);
+  }, [clearCaseActionIds, operatorId, page, status]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    return () => listControllerRef.current?.abort();
+  }, [load]);
 
-  const select = useCallback(async (caseId: string) => {
+  useEffect(() => () => detailControllerRef.current?.abort(), []);
+
+  const select = useCallback(async (caseId: string, refreshedMessage = "") => {
+    const normalizedOperatorId = operatorId.trim();
+    if (!normalizedOperatorId) return;
+    detailControllerRef.current?.abort();
+    const controller = new AbortController();
+    const requestNumber = ++detailRequestRef.current;
+    detailControllerRef.current = controller;
     setError("");
     try {
-      const response = await fetch(`${API}/${encodeURIComponent(caseId)}`, {
-        headers: { "X-Operator-Id": operatorId.trim() }
+      const next = await requestJson<AfterSalesCase>(`${API}/${encodeURIComponent(caseId)}`, {
+        headers: { "X-Operator-Id": normalizedOperatorId }, signal: controller.signal
       });
-      setSelected(await readJsonResponse<AfterSalesCase>(response));
+      if (requestNumber !== detailRequestRef.current) return;
+      setSelected((current) => {
+        if (current?.caseId === next.caseId && current.version !== next.version) clearCaseActionIds(next.caseId);
+        return next;
+      });
       setNote("");
+      if (refreshedMessage) setError(refreshedMessage);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "售后详情暂时无法加载，请稍后重试。");
+      if (requestNumber === detailRequestRef.current && !isRequestAbort(failure)) {
+        setError(failure instanceof Error ? failure.message : "售后详情暂时无法加载，请稍后重试。");
+      }
     }
-  }, [operatorId]);
+  }, [clearCaseActionIds, operatorId]);
+
+  const actionId = useCallback((key: string) => {
+    const existing = actionIdsRef.current.get(key);
+    if (existing) return existing;
+    const next = crypto.randomUUID();
+    actionIdsRef.current.set(key, next);
+    return next;
+  }, []);
 
   const decide = useCallback(async (decision: Decision) => {
     if (!selected || saving || !operatorId.trim()) return;
-    if (decision === "REJECT" && !note.trim()) {
+    const trimmedNote = note.trim();
+    if (decision === "REJECT" && !trimmedNote) {
       setError("请填写驳回说明，方便用户了解下一步。");
       return;
     }
+    const key = `review:${selected.caseId}:${selected.version}:${decision}:${trimmedNote}`;
     setSaving(true);
     setError("");
     try {
-      const response = await fetch(`${API}/${encodeURIComponent(selected.caseId)}/review-decisions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Operator-Id": operatorId.trim() },
-        body: JSON.stringify({ decisionId: crypto.randomUUID(), expectedVersion: selected.version, decision, note })
-      });
-      const result = await readJsonResponse<{ caseModel: AfterSalesCase }>(response);
+      const result = await requestJson<{ caseModel: AfterSalesCase }>(
+        `${API}/${encodeURIComponent(selected.caseId)}/review-decisions`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Operator-Id": operatorId.trim() },
+          body: JSON.stringify({
+            decisionId: actionId(key), expectedVersion: selected.version, decision, note: trimmedNote
+          })
+        }
+      );
+      clearCaseActionIds(selected.caseId);
       setSelected(result.caseModel);
       setData((current) => current ? { ...current, items: updateCase(current.items, result.caseModel) } : current);
       setNote("");
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "审核提交失败，请刷新后重试。");
+      if (failure instanceof HttpRequestError && failure.status === 409) {
+        await select(selected.caseId, "售后申请状态已变化，已刷新详情。");
+      } else {
+        setError(failure instanceof Error ? failure.message : "审核提交失败，请刷新后重试。");
+      }
     } finally {
       setSaving(false);
     }
-  }, [note, operatorId, saving, selected]);
+  }, [actionId, clearCaseActionIds, note, operatorId, saving, select, selected]);
 
   const retry = useCallback(async () => {
     if (!selected || saving || !operatorId.trim()) return;
+    const key = `retry:${selected.caseId}:${selected.version}`;
     setSaving(true);
     setError("");
     try {
-      const response = await fetch(`${API}/${encodeURIComponent(selected.caseId)}/refund-retries`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Operator-Id": operatorId.trim() },
-        body: JSON.stringify({ retryId: crypto.randomUUID(), expectedVersion: selected.version })
-      });
-      const result = await readJsonResponse<{ caseModel: AfterSalesCase }>(response);
+      const result = await requestJson<{ caseModel: AfterSalesCase }>(
+        `${API}/${encodeURIComponent(selected.caseId)}/refund-retries`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Operator-Id": operatorId.trim() },
+          body: JSON.stringify({ retryId: actionId(key), expectedVersion: selected.version })
+        }
+      );
+      clearCaseActionIds(selected.caseId);
       setSelected(result.caseModel);
       setData((current) => current ? { ...current, items: updateCase(current.items, result.caseModel) } : current);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "退款重试提交失败，请刷新后重试。");
+      if (failure instanceof HttpRequestError && failure.status === 409) {
+        await select(selected.caseId, "售后申请状态已变化，已刷新详情。");
+      } else {
+        setError(failure instanceof Error ? failure.message : "退款重试提交失败，请刷新后重试。");
+      }
     } finally {
       setSaving(false);
     }
-  }, [operatorId, saving, selected]);
+  }, [actionId, clearCaseActionIds, operatorId, saving, select, selected]);
 
   const items = data?.items ?? [];
   const canReview = selected?.status === "PENDING_REVIEW";
   const canRetry = selected?.status === "REFUND_FAILED";
 
-  return <section className="review-panel" aria-labelledby="review-heading">
+  return <section className="review-panel" aria-labelledby="review-heading" aria-busy={loading || saving}>
     <div className="review-heading">
       <div><h2 id="review-heading">售后审核队列</h2><p>审核人工申请，追踪异步退款的最终状态。</p></div>
-      <button className="secondary" type="button" disabled={loading || saving} onClick={() => void load()}>刷新</button>
+      <button className="secondary" type="button" disabled={loading || saving || !operatorId.trim()} onClick={() => void load()}>刷新</button>
     </div>
     <label className="review-filter">状态筛选
       <select value={status} disabled={loading || saving} onChange={(event) => { setStatus(event.target.value); setPage(0); }}>
@@ -138,7 +215,7 @@ export function AfterSalesReviewPanel({ operatorId }: Props) {
     </label>
     {error ? <p className="review-error" role="alert">{error}</p> : null}
     {loading ? <p className="muted review-loading">正在更新审核队列…</p> : null}
-    {!loading && items.length === 0 ? <p className="review-empty">当前筛选下没有售后申请。新的人工审核申请会显示在这里。</p> : null}
+    {!loading && items.length === 0 && operatorId.trim() ? <p className="review-empty">当前筛选下没有售后申请。新的人工审核申请会显示在这里。</p> : null}
     <div className="review-list" aria-live="polite">
       {items.map((item) => <button className={`review-row ${selected?.caseId === item.caseId ? "selected" : ""}`} type="button"
         key={item.caseId} onClick={() => void select(item.caseId)} aria-pressed={selected?.caseId === item.caseId}>
@@ -147,9 +224,9 @@ export function AfterSalesReviewPanel({ operatorId }: Props) {
       </button>)}
     </div>
     {data && (page > 0 || data.hasNext) ? <div className="review-pagination">
-      <button className="secondary" type="button" disabled={page === 0 || loading} onClick={() => setPage((current) => current - 1)}>上一页</button>
+      <button className="secondary" type="button" disabled={page === 0 || loading || saving} onClick={() => setPage((current) => current - 1)}>上一页</button>
       <span>第 {page + 1} 页</span>
-      <button className="secondary" type="button" disabled={!data.hasNext || loading} onClick={() => setPage((current) => current + 1)}>下一页</button>
+      <button className="secondary" type="button" disabled={!data.hasNext || loading || saving} onClick={() => setPage((current) => current + 1)}>下一页</button>
     </div> : null}
     {selected ? <section className="review-detail" aria-labelledby="review-detail-heading">
       <h3 id="review-detail-heading">申请详情</h3>

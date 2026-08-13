@@ -69,6 +69,97 @@ describe("AfterSalesReviewPanel", () => {
 
     expect((await screen.findByRole("button", { name: "驳回申请" })).hasAttribute("disabled")).toBe(true);
   });
+
+  it("does not request the review queue without an operator identity", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<AfterSalesReviewPanel operatorId="  " />);
+
+    await waitFor(() => expect(fetchMock).not.toHaveBeenCalled());
+  });
+
+  it("ignores an older queue response after a refresh replaces it", async () => {
+    const initial = deferred<Response>();
+    const fetchMock = vi.fn()
+      .mockReturnValueOnce(initial.promise)
+      .mockResolvedValueOnce(json({ items: [{ ...pendingCase, orderId: "ORDER-NEW" }], page: 0, size: 20, hasNext: false }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const view = render(<AfterSalesReviewPanel operatorId="operator-1" />);
+    view.rerender(<AfterSalesReviewPanel operatorId="operator-2" />);
+    await screen.findByText("ORDER-NEW");
+    initial.resolve(json({ items: [{ ...pendingCase, orderId: "ORDER-OLD" }], page: 0, size: 20, hasNext: false }));
+
+    await waitFor(() => expect(screen.queryByText("ORDER-OLD")).toBeNull());
+  });
+
+  it("submits only one write for rapid clicks and reuses the idempotency key after an ambiguous failure", async () => {
+    const completion = deferred<Response>();
+    const randomUUID = vi.fn().mockReturnValue("decision-stable");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json({ items: [pendingCase], page: 0, size: 20, hasNext: false }))
+      .mockResolvedValueOnce(json(pendingCase))
+      .mockRejectedValueOnce(new TypeError("offline"))
+      .mockReturnValueOnce(completion.promise);
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID });
+
+    render(<AfterSalesReviewPanel operatorId="operator-1" />);
+    await screen.findByText("ORDER-001");
+    fireEvent.click(screen.getByRole("button", { name: /ORDER-001/ }));
+    await screen.findByRole("button", { name: "批准并创建退款任务" });
+
+    fireEvent.click(screen.getByRole("button", { name: "批准并创建退款任务" }));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "批准并创建退款任务" }));
+    fireEvent.click(screen.getByRole("button", { name: "批准并创建退款任务" }));
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    const firstWrite = JSON.parse(fetchMock.mock.calls[2][1].body);
+    const secondWrite = JSON.parse(fetchMock.mock.calls[3][1].body);
+    expect(firstWrite.decisionId).toBe("decision-stable");
+    expect(secondWrite.decisionId).toBe("decision-stable");
+    expect(randomUUID).toHaveBeenCalledTimes(1);
+
+    completion.resolve(json({ caseModel: { ...pendingCase, status: "REFUND_PROCESSING", version: 4 } }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "批准并创建退款任务" })).toBeNull());
+  });
+
+  it("refreshes the detail after a version conflict", async () => {
+    const latest = { ...pendingCase, version: 4, description: "已由其他操作员更新" };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json({ items: [pendingCase], page: 0, size: 20, hasNext: false }))
+      .mockResolvedValueOnce(json(pendingCase))
+      .mockResolvedValueOnce(new Response(
+        '{"code":"AFTER_SALES_CASE_CONFLICT","message":"状态已变化"}', { status: 409 }
+      ))
+      .mockResolvedValueOnce(json(latest));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: () => "decision-1" });
+
+    render(<AfterSalesReviewPanel operatorId="operator-1" />);
+    await screen.findByText("ORDER-001");
+    fireEvent.click(screen.getByRole("button", { name: /ORDER-001/ }));
+    await screen.findByRole("button", { name: "批准并创建退款任务" });
+    fireEvent.click(screen.getByRole("button", { name: "批准并创建退款任务" }));
+
+    await screen.findByText("已由其他操作员更新");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(screen.getByRole("alert").textContent).toContain("已刷新详情");
+  });
+
+  it("renders long CJK and emoji identifiers without truncating their content", async () => {
+    const longOrderId = `订单🧧-${"退款状态需要人工复核".repeat(12)}`;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({
+      items: [{ ...pendingCase, orderId: longOrderId, description: `${longOrderId}，请尽快处理。` }],
+      page: 0, size: 20, hasNext: false
+    })));
+
+    render(<AfterSalesReviewPanel operatorId="operator-1" />);
+
+    expect(await screen.findByText(longOrderId)).not.toBeNull();
+  });
 });
 
 function json(body: unknown) {
@@ -76,4 +167,10 @@ function json(body: unknown) {
     status: 200,
     headers: { "Content-Type": "application/json" }
   });
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => { resolve = complete; });
+  return { promise, resolve };
 }

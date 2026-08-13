@@ -14,7 +14,6 @@ import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -78,6 +77,8 @@ public final class SessionExecutionQueueManager {
 
         QueueEntry entry = new QueueEntry(request, handle, execution);
         QueueEntry dispatchEntry = null;
+        QueueEntry nextEntryAfterSchedulingFailure = null;
+        SessionQueueException schedulingFailure = null;
         synchronized (monitor) {
             String sessionKey = sessionKey(handle.userId(), handle.sessionId());
             SessionQueue sessionQueue = sessionQueues.computeIfAbsent(
@@ -115,10 +116,23 @@ public final class SessionExecutionQueueManager {
                         waitTimeout.toMillis(),
                         TimeUnit.MILLISECONDS
                 );
-            } catch (RuntimeException schedulingFailure) {
-                removeWaitingEntry(sessionQueue, entry);
-                throw schedulingFailure;
+            } catch (RuntimeException rejected) {
+                nextEntryAfterSchedulingFailure = removeWaitingEntry(sessionQueue, entry);
+                schedulingFailure = new SessionQueueException(
+                        GLOBAL_QUEUE_FULL,
+                        "请求调度器暂时无法接收新的请求",
+                        null
+                );
             }
+        }
+
+        if (schedulingFailure != null) {
+            entry.handle.token().cancel();
+            entry.completion.completeExceptionally(schedulingFailure);
+            if (nextEntryAfterSchedulingFailure != null) {
+                dispatch(nextEntryAfterSchedulingFailure);
+            }
+            throw schedulingFailure;
         }
 
         if (dispatchEntry != null) {
@@ -168,7 +182,7 @@ public final class SessionExecutionQueueManager {
     private void dispatch(QueueEntry entry, boolean propagateRejection) {
         try {
             executor.execute(() -> runEntry(entry));
-        } catch (RejectedExecutionException rejectedExecution) {
+        } catch (RuntimeException rejectedExecution) {
             SessionQueueException queueFailure = new SessionQueueException(
                     GLOBAL_QUEUE_FULL,
                     "执行线程池暂时无法接收新的请求",

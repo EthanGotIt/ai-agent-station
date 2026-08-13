@@ -120,7 +120,7 @@ public final class AgentExceptionHandler {
         return ResponseEntity.badRequest()
                 .body(new AgentErrorResponseDto(
                         "INVALID_REQUEST",
-                        exception.getMessage(),
+                        "请求参数不合法",
                         null
                 ));
     }

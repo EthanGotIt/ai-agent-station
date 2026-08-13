@@ -13,9 +13,12 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * HTTP 订单网关测试：验证外部响应归属、超时和成功映射边界。
@@ -29,12 +32,14 @@ class HttpOrderGatewayTest {
 
     private HttpServer server;
     private String responseBody;
-    private long responseDelayMillis;
+    private boolean holdResponse;
+    private CountDownLatch responseRelease;
 
     @BeforeEach
     void startServer() throws IOException {
         responseBody = "{}";
-        responseDelayMillis = 0;
+        holdResponse = false;
+        responseRelease = new CountDownLatch(1);
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", this::respond);
         server.start();
@@ -42,6 +47,7 @@ class HttpOrderGatewayTest {
 
     @AfterEach
     void stopServer() {
+        responseRelease.countDown();
         server.stop(0);
     }
 
@@ -84,7 +90,7 @@ class HttpOrderGatewayTest {
 
     @Test
     void timeoutBecomesTemporaryFailure() {
-        responseDelayMillis = 250;
+        holdResponse = true;
         responseBody = """
                 {
                   "orderId": "ORDER-001",
@@ -99,6 +105,19 @@ class HttpOrderGatewayTest {
         assertEquals(OrderLookupStatusEnum.TEMPORARY_FAILURE, result.status());
     }
 
+    @Test
+    void rejectsMalformedBaseUrls() {
+        assertThrows(IllegalArgumentException.class, () -> new HttpOrderGateway(
+                RestClient.builder(), "orders.example.test", Duration.ofSeconds(1)
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new HttpOrderGateway(
+                RestClient.builder(), "https://user:secret@orders.example.test", Duration.ofSeconds(1)
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new HttpOrderGateway(
+                RestClient.builder(), "https://orders.example.test#fragment", Duration.ofSeconds(1)
+        ));
+    }
+
     private HttpOrderGateway gateway(Duration timeout) {
         return new HttpOrderGateway(
                 RestClient.builder(),
@@ -110,9 +129,9 @@ class HttpOrderGatewayTest {
     private void respond(HttpExchange exchange) throws IOException {
         try (exchange) {
             requestUserId.set(exchange.getRequestHeaders().getFirst("X-User-Id"));
-            if (responseDelayMillis > 0) {
+            if (holdResponse) {
                 try {
-                    Thread.sleep(responseDelayMillis);
+                    responseRelease.await(5, TimeUnit.SECONDS);
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                     return;

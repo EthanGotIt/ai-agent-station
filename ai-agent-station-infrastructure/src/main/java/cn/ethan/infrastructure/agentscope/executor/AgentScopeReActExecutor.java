@@ -69,6 +69,7 @@ import io.agentscope.extensions.model.dashscope.EndpointType;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 
 import java.time.Duration;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -79,6 +80,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -147,8 +149,10 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
     private final InMemoryAgentStateStore stateStore;
     private final SessionPreferenceRequestAnalysisService sessionPreferenceAnalysis;
     private final List<ToolBase> acceptanceTools;
+    private final Clock clock;
     private final Map<String, RuntimeContext> activeContexts = new ConcurrentHashMap<>();
     private final Map<String, PendingIntervention> pendingInterventions = new ConcurrentHashMap<>();
+    private final AtomicBoolean closed = new AtomicBoolean();
 
     private volatile ReActAgent agent;
     private volatile ReActAgent skillLoaderInitializedAgent;
@@ -170,7 +174,8 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
             AgentMemoryService memories,
             AgentSkillRepository skillRepository,
             boolean acceptanceConfirmationProbeEnabled,
-            OutputObservationProvider observations
+            OutputObservationProvider observations,
+            Clock clock
     ) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.baseUrl = baseUrl == null ? "" : baseUrl.trim();
@@ -186,6 +191,7 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
         this.afterSalesCaseGateway = afterSalesCaseGateway;
         this.refundGateway = refundGateway;
         this.memories = memories;
+        this.clock = Objects.requireNonNull(clock, "clock");
         this.skillRepository = Objects.requireNonNull(skillRepository, "skillRepository");
         AgentSkill businessSkill = skillRepository.getSkill(BUSINESS_SKILL_NAME);
         if (businessSkill == null || businessSkill.getSkillId() == null || businessSkill.getSkillId().isBlank()) {
@@ -220,14 +226,15 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
             RefundCommandGateway refundGateway,
             AgentMemoryService memories,
             boolean acceptanceConfirmationProbeEnabled,
-            OutputObservationProvider observations
+            OutputObservationProvider observations,
+            Clock clock
     ) {
         AgentSkillRepository repository = AgentScopeBusinessSkillRepositoryProvider.loadReadonlyRepository();
         try {
             return new AgentScopeReActExecutor(
                     apiKey, baseUrl, modelName, timeout, maxIterations, maxOutputTokens, maxRetries,
                     thinkingEnabled, thinkingBudget, orderGateway, logisticsGateway, afterSalesCaseGateway,
-                    refundGateway, memories, repository, acceptanceConfirmationProbeEnabled, observations
+                    refundGateway, memories, repository, acceptanceConfirmationProbeEnabled, observations, clock
             );
         } catch (RuntimeException constructionFailure) {
             repository.close();
@@ -274,6 +281,9 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
             CancellationToken token,
             Consumer<OutputEventModel> sink
     ) {
+        if (closed.get()) {
+            throw new CancellationException("ReAct executor is closed");
+        }
         token.throwIfCancelled();
         RuntimeContext context = RuntimeContext.builder()
                 .userId(userId)
@@ -477,6 +487,9 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
 
     @Override
     public boolean decide(ToolInterventionRequestModel request, String userId) {
+        if (closed.get()) {
+            return false;
+        }
         PendingIntervention pending = pendingInterventions.get(request.replyId());
         if (pending == null || !pending.requestId.equals(request.requestId())
                 || !pending.userId.equals(userId) || !pending.sessionId.equals(request.sessionId())
@@ -497,12 +510,31 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
 
     @Override
     public void close() {
-        ReActAgent currentAgent = agent;
-        if (currentAgent != null) {
-            currentAgent.close();
+        if (!closed.compareAndSet(false, true)) {
+            return;
         }
-        stateStore.clearAll();
-        skillRepository.close();
+        ReActAgent currentAgent = agent;
+        try {
+            if (currentAgent != null) {
+                activeContexts.values().forEach(currentAgent::interrupt);
+            }
+            pendingInterventions.values().forEach(pending -> {
+                if (pending.decision.completeExceptionally(new CancellationException("ReAct executor closed"))) {
+                    observeIntervention("cancelled", pending.waitDuration());
+                }
+            });
+        } finally {
+            activeContexts.clear();
+            pendingInterventions.clear();
+            stateStore.clearAll();
+            try {
+                if (currentAgent != null) {
+                    currentAgent.close();
+                }
+            } finally {
+                skillRepository.close();
+            }
+        }
     }
 
     private void acceptEvent(
@@ -771,7 +803,7 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
             throw new ReActExecutionException("REACT_CONFIRMATION_INVALID", "confirmation has no tool calls");
         }
         PendingIntervention pending = new PendingIntervention(
-                request.requestId(), userId, request.sessionId(), context, event.getReplyId(), toolCalls
+                request.requestId(), userId, request.sessionId(), context, event.getReplyId(), toolCalls, clock
         );
         PendingIntervention previous = pendingInterventions.putIfAbsent(event.getReplyId(), pending);
         if (previous != null) {
@@ -937,7 +969,8 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
         private final List<ToolUseBlock> toolCalls;
         private final java.util.Set<String> toolCallIds;
         private final CompletableFuture<List<ConfirmResult>> decision = new CompletableFuture<>();
-        private final Instant waitingSince = Instant.now();
+        private final Clock clock;
+        private final Instant waitingSince;
 
         private PendingIntervention(
                 String requestId,
@@ -945,7 +978,8 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
                 String sessionId,
                 RuntimeContext context,
                 String replyId,
-                List<ToolUseBlock> toolCalls
+                List<ToolUseBlock> toolCalls,
+                Clock clock
         ) {
             this.requestId = requestId;
             this.userId = userId;
@@ -954,10 +988,12 @@ public final class AgentScopeReActExecutor implements ReActExecutor, AutoCloseab
             this.replyId = replyId;
             this.toolCalls = toolCalls;
             this.toolCallIds = toolCalls.stream().map(ToolUseBlock::getId).collect(java.util.stream.Collectors.toUnmodifiableSet());
+            this.clock = Objects.requireNonNull(clock, "clock");
+            this.waitingSince = clock.instant();
         }
 
         private Duration waitDuration() {
-            Duration duration = Duration.between(waitingSince, Instant.now());
+            Duration duration = Duration.between(waitingSince, clock.instant());
             return duration.isNegative() ? Duration.ZERO : duration;
         }
     }

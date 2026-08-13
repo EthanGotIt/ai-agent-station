@@ -77,6 +77,24 @@ ANNOTATION_IDENTIFIER_PATTERN = re.compile(
 )
 SILENT_CATCH_PATTERN = re.compile(r"catch\s*\([^)]*\bignored\b[^)]*\)")
 SOURCE_SECRET_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")
+DIRECT_DEPENDENCIES = {
+    "ai-agent-station-infrastructure": {
+        ("com.fasterxml.jackson.core", "jackson-databind"),
+        ("com.fasterxml.jackson.core", "jackson-core"),
+        ("com.baomidou", "mybatis-plus-core"),
+        ("com.baomidou", "mybatis-plus-annotation"),
+        ("io.projectreactor", "reactor-core"),
+    },
+    "ai-agent-station-app": {("com.fasterxml.jackson.core", "jackson-databind")},
+}
+FORBIDDEN_DIRECT_DEPENDENCIES = {
+    "ai-agent-station-infrastructure": {
+        ("tools.jackson.core", "jackson-databind"),
+        ("com.baomidou", "mybatis-plus"),
+    },
+}
+DIRECT_INSTANT_NOW_PATTERN = re.compile(r"\bInstant\.now\(\s*\)")
+THREAD_SLEEP_PATTERN = re.compile(r"\bThread\.sleep\s*\(")
 
 
 @dataclass(frozen=True, order=True)
@@ -113,6 +131,8 @@ class ConventionChecker:
         self._check_forbidden_source_text()
         self._check_database_identifiers()
         self._check_module_dependencies()
+        self._check_direct_dependencies()
+        self._check_time_boundaries()
         self._check_framework_boundaries()
         self._check_build_safety()
         return tuple(sorted(set(self.issues)))
@@ -362,6 +382,66 @@ class ConventionChecker:
                 pom,
                 "application.yml 禁止开启 Maven 资源过滤，避免密钥被写入制品",
             )
+
+    def _check_direct_dependencies(self) -> None:
+        """校验源码直接使用且跨版本敏感的基础库显式由模块声明。"""
+
+        namespace = {"m": "http://maven.apache.org/POM/4.0.0"}
+        for module, expected in DIRECT_DEPENDENCIES.items():
+            pom = self.root / module / "pom.xml"
+            if not pom.exists():
+                continue
+            project = ElementTree.parse(pom).getroot()
+            declared = {
+                (
+                    dependency.findtext("m:groupId", default="", namespaces=namespace),
+                    dependency.findtext("m:artifactId", default="", namespaces=namespace),
+                )
+                for dependency in project.findall("m:dependencies/m:dependency", namespace)
+            }
+            for group_id, artifact_id in sorted(expected):
+                if (group_id, artifact_id) not in declared:
+                    self._add(
+                        "MAVEN_DIRECT_DEPENDENCY",
+                        pom,
+                        f"源码使用的 {group_id}:{artifact_id} 必须直接声明",
+                    )
+            for group_id, artifact_id in sorted(FORBIDDEN_DIRECT_DEPENDENCIES.get(module, set())):
+                if (group_id, artifact_id) in declared:
+                    self._add(
+                        "MAVEN_FORBIDDEN_DEPENDENCY",
+                        pom,
+                        f"禁止直接声明 {group_id}:{artifact_id}，避免错误 API 或聚合依赖掩盖真实依赖",
+                    )
+
+    def _check_time_boundaries(self) -> None:
+        """禁止业务实现和测试依赖不可控墙钟或等待时间。"""
+
+        for source_root_text in JAVA_SOURCE_ROOTS:
+            source_root = self.root / source_root_text
+            if not source_root.exists():
+                continue
+            is_test_root = "/src/test/" in source_root_text
+            for path in sorted(source_root.rglob("*.java")):
+                text = path.read_text(encoding="utf-8")
+                if not is_test_root:
+                    instant_now = DIRECT_INSTANT_NOW_PATTERN.search(text)
+                    if instant_now is not None:
+                        self._add(
+                            "JAVA_CLOCK_BOUNDARY",
+                            path,
+                            "业务时间必须通过注入的 Clock 获取，禁止直接调用 Instant.now()",
+                            self._line_at(text, instant_now.start()),
+                        )
+                if is_test_root:
+                    thread_sleep = THREAD_SLEEP_PATTERN.search(text)
+                    if thread_sleep is not None:
+                        self._add(
+                            "JAVA_TEST_SLEEP",
+                            path,
+                            "测试禁止使用 Thread.sleep；应使用 latch、可控时钟或确定性同步",
+                            self._line_at(text, thread_sleep.start()),
+                        )
 
     def _check_framework_boundaries(self) -> None:
         """确保具体 Agent 框架不会泄漏到 Core 或 App 的业务协议。"""

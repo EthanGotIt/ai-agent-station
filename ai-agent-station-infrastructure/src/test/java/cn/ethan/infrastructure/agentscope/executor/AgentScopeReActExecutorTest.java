@@ -22,17 +22,26 @@ import io.agentscope.core.skill.DynamicSkillMiddleware;
 import io.agentscope.core.skill.repository.ClasspathSkillRepository;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -50,7 +59,7 @@ class AgentScopeReActExecutorTest {
                     "test-key", "", "qwen3.7-plus", Duration.ofSeconds(10), 4, 512, 1,
                     true, 256, orderGateway(), logisticsGateway(), afterSalesCaseGateway(),
                     refundCommandGateway(), new AgentMemoryService(false, false, 0.75, null, Clock.systemUTC()),
-                    repository, false, null
+                    repository, false, null, Clock.systemUTC()
             );
             ReActAgent agent = executor.buildAgent();
             try {
@@ -95,7 +104,7 @@ class AgentScopeReActExecutorTest {
                     "test-key", "", "qwen3.7-plus", Duration.ofSeconds(10), 4, 512, 1,
                     true, 256, orderGateway(), logisticsGateway(), afterSalesCaseGateway(),
                     refundCommandGateway(), new AgentMemoryService(false, false, 0.75, null, Clock.systemUTC()),
-                    repository, false, null
+                    repository, false, null, Clock.systemUTC()
             );
             ReActAgent agent = executor.buildAgent();
             try {
@@ -158,6 +167,60 @@ class AgentScopeReActExecutorTest {
         assertFalse(AgentScopeReActExecutor.allRejected(List.of()));
     }
 
+    @Test
+    void closeUnblocksPendingInterventionAndUsesInjectedClock() throws Exception {
+        MutableClock clock = new MutableClock(Instant.parse("2026-08-13T00:00:00Z"));
+        try (ClasspathSkillRepository repository = new ClasspathSkillRepository("agentscope/skills", "test")) {
+            AgentScopeReActExecutor executor = new AgentScopeReActExecutor(
+                    "test-key", "", "qwen3.7-plus", Duration.ofSeconds(10), 4, 512, 1,
+                    true, 256, orderGateway(), logisticsGateway(), afterSalesCaseGateway(),
+                    refundCommandGateway(), new AgentMemoryService(false, false, 0.75, null, clock),
+                    repository, false, null, clock
+            );
+            Object pending = pendingIntervention(clock);
+            CompletableFuture<?> decision = pendingDecision(pending);
+            pendingMap(executor).put("reply-1", pending);
+            clock.advance(Duration.ofSeconds(4));
+
+            assertEquals(Duration.ofSeconds(4), pendingWaitDuration(pending));
+            executor.close();
+            executor.close();
+
+            assertInstanceOf(CancellationException.class,
+                    assertThrows(CancellationException.class, decision::join));
+            assertTrue(pendingMap(executor).isEmpty());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> pendingMap(AgentScopeReActExecutor executor) throws Exception {
+        Field field = AgentScopeReActExecutor.class.getDeclaredField("pendingInterventions");
+        field.setAccessible(true);
+        return (Map<String, Object>) field.get(executor);
+    }
+
+    @SuppressWarnings("unchecked")
+    private CompletableFuture<?> pendingDecision(Object pending) throws Exception {
+        Field field = pending.getClass().getDeclaredField("decision");
+        field.setAccessible(true);
+        return (CompletableFuture<?>) field.get(pending);
+    }
+
+    private Object pendingIntervention(Clock clock) throws Exception {
+        Class<?> type = Class.forName(AgentScopeReActExecutor.class.getName() + "$PendingIntervention");
+        Constructor<?> constructor = type.getDeclaredConstructor(
+                String.class, String.class, String.class, RuntimeContext.class, String.class, List.class, Clock.class
+        );
+        constructor.setAccessible(true);
+        return constructor.newInstance("request-1", "user-1", "session-1", null, "reply-1", List.of(), clock);
+    }
+
+    private Duration pendingWaitDuration(Object pending) throws Exception {
+        Method method = pending.getClass().getDeclaredMethod("waitDuration");
+        method.setAccessible(true);
+        return (Duration) method.invoke(pending);
+    }
+
     private OrderGateway orderGateway() {
         return (orderId, userId) -> OrderLookupResultModel.notFound();
     }
@@ -202,5 +265,33 @@ class AgentScopeReActExecutorTest {
                 return Optional.empty();
             }
         };
+    }
+
+    private static final class MutableClock extends Clock {
+
+        private Instant instant;
+
+        private MutableClock(Instant instant) {
+            this.instant = instant;
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
+        }
+
+        private void advance(Duration duration) {
+            instant = instant.plus(duration);
+        }
     }
 }

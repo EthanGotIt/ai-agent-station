@@ -11,11 +11,14 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 会话记忆后台协调器：以单实例 best-effort debounce 合并相邻完成回合。
@@ -34,6 +37,7 @@ public final class AgentMemoryExtractionCoordinator implements AutoCloseable {
     private final AgentMemoryExtractionProvider provider;
     private final AgentMemoryService memories;
     private final Map<String, PendingBatch> pending = new ConcurrentHashMap<>();
+    private final AtomicBoolean closed = new AtomicBoolean();
 
     public AgentMemoryExtractionCoordinator(
             Duration idleDelay,
@@ -46,28 +50,49 @@ public final class AgentMemoryExtractionCoordinator implements AutoCloseable {
             throw new IllegalArgumentException("memory idle delay must be positive");
         }
         this.idleDelay = idleDelay;
-        this.scheduler = scheduler;
-        this.executor = executor;
-        this.provider = provider;
-        this.memories = memories;
+        this.scheduler = Objects.requireNonNull(scheduler, "scheduler must not be null");
+        this.executor = Objects.requireNonNull(executor, "executor must not be null");
+        this.provider = Objects.requireNonNull(provider, "provider must not be null");
+        this.memories = Objects.requireNonNull(memories, "memories must not be null");
     }
 
     public void schedule(AgentMemoryExtractionInputModel input) {
-        memories.recordExtractionOutcome("scheduled");
+        Objects.requireNonNull(input, "input must not be null");
+        if (closed.get()) {
+            return;
+        }
         String key = input.userId() + '\u0000' + input.sessionId();
-        PendingBatch batch = pending.compute(key, (ignored, existing) -> {
+        AtomicReference<RuntimeException> rejection = new AtomicReference<>();
+        pending.compute(key, (ignored, existing) -> {
+            if (closed.get()) {
+                return existing;
+            }
             PendingBatch target = existing == null ? new PendingBatch() : existing;
             target.append(input);
-            target.reschedule(key);
-            return target;
+            try {
+                target.reschedule(key);
+                return target;
+            } catch (RuntimeException schedulingFailure) {
+                // 新任务未创建时保留旧 future；首次调度失败则不把空批次写入映射。
+                rejection.set(schedulingFailure);
+                return existing;
+            }
         });
-        if (batch == null) {
-            throw new IllegalStateException("memory batch was not created");
+        RuntimeException schedulingFailure = rejection.get();
+        if (schedulingFailure == null) {
+            memories.recordExtractionOutcome("scheduled");
+            return;
         }
+        memories.recordExtractionOutcome("rejected");
+        LOGGER.warn("记忆提取调度被拒绝，sessionKeyHash={}，exception={}",
+                Integer.toHexString(key.hashCode()), schedulingFailure.getClass().getSimpleName());
     }
 
     @Override
     public void close() {
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
         if (!pending.isEmpty()) {
             memories.recordExtractionOutcome("cancelled");
         }
@@ -118,12 +143,14 @@ public final class AgentMemoryExtractionCoordinator implements AutoCloseable {
         }
 
         private synchronized void reschedule(String key) {
-            if (future != null) {
-                future.cancel(false);
-            }
-            future = scheduler.schedule(
+            ScheduledFuture<?> nextFuture = scheduler.schedule(
                     () -> extract(key, this), idleDelay.toMillis(), TimeUnit.MILLISECONDS
             );
+            ScheduledFuture<?> previous = future;
+            future = nextFuture;
+            if (previous != null) {
+                previous.cancel(false);
+            }
         }
 
         private synchronized List<AgentMemoryExtractionInputModel> drain() {

@@ -1,4 +1,5 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { HttpRequestError, readJsonResponse, requestJson } from "./http";
 import { appendSseChunk } from "./sse";
 import type { Intervention, MemoryOptions, TimelineEvent, WorkflowQuestionEvent } from "./types";
 
@@ -34,6 +35,7 @@ export function useAgentStream(userId: string) {
   const [deciding, setDeciding] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
   const activeRequestIdRef = useRef<string | null>(null);
+  const streamSequenceRef = useRef(0);
 
   const append = useCallback((type: string, data: unknown) => {
     setTimeline((current) => [...current, { id: crypto.randomUUID(), type, data, at: new Date().toISOString() }]);
@@ -43,7 +45,9 @@ export function useAgentStream(userId: string) {
   }, []);
 
   const consume = useCallback(async (path: string, body: StreamRequest | AnswerRequest) => {
+    controllerRef.current?.abort();
     const controller = new AbortController();
+    const sequence = ++streamSequenceRef.current;
     controllerRef.current = controller;
     activeRequestIdRef.current = body.requestId;
     setBusy(true);
@@ -55,8 +59,8 @@ export function useAgentStream(userId: string) {
         signal: controller.signal
       });
       if (!response.ok || !response.body) {
-        const error = await response.json().catch(() => ({})) as { code?: string; message?: string };
-        throw new Error(error.message ?? error.code ?? `Request failed: ${response.status}`);
+        if (!response.ok) await readJsonResponse(response);
+        throw new HttpRequestError("SSE 响应未建立，请稍后重试。", "network", response.status);
       }
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -68,15 +72,19 @@ export function useAgentStream(userId: string) {
       }
       if (buffered.trim()) appendSseChunk(`${buffered}\n\n`, append);
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === "AbortError")) {
+      if (!controller.signal.aborted && sequence === streamSequenceRef.current) {
         append("error", error instanceof Error ? error.message : "Unknown request error");
       }
     } finally {
-      controllerRef.current = null;
-      activeRequestIdRef.current = null;
-      setBusy(false);
+      if (controllerRef.current === controller) {
+        controllerRef.current = null;
+        activeRequestIdRef.current = null;
+      }
+      if (sequence === streamSequenceRef.current) setBusy(false);
     }
   }, [append, userId]);
+
+  useEffect(() => () => controllerRef.current?.abort(), []);
 
   const sendChat = useCallback((sessionId: string, message: string, memory: MemoryOptions) => {
     setQuestion(null);
@@ -95,13 +103,14 @@ export function useAgentStream(userId: string) {
     if (deciding || !intervention || !activeRequestIdRef.current) return;
     setDeciding(true);
     try {
-      const response = await fetch(`${API}/requests/${encodeURIComponent(activeRequestIdRef.current)}/interventions/${encodeURIComponent(intervention.replyId)}`, {
+      await requestJson<void>(`${API}/requests/${encodeURIComponent(activeRequestIdRef.current)}/interventions/${encodeURIComponent(intervention.replyId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-User-Id": userId },
         body: JSON.stringify({ sessionId, toolCallIds: intervention.tools.map((tool) => tool.toolCallId), decision })
       });
-      if (!response.ok) append("error", `Intervention decision failed: ${response.status}`);
-      else setIntervention(null);
+      setIntervention(null);
+    } catch (error) {
+      append("error", error instanceof Error ? error.message : "工具确认提交失败，请重试。");
     } finally {
       setDeciding(false);
     }
@@ -110,10 +119,15 @@ export function useAgentStream(userId: string) {
   const cancel = useCallback(async () => {
     const currentRequestId = activeRequestIdRef.current;
     controllerRef.current?.abort();
-    if (currentRequestId) await fetch(`${API}/requests/${encodeURIComponent(currentRequestId)}`, {
-      method: "DELETE", headers: { "X-User-Id": userId }
-    });
-  }, [userId]);
+    if (!currentRequestId) return;
+    try {
+      await requestJson<void>(`${API}/requests/${encodeURIComponent(currentRequestId)}`, {
+        method: "DELETE", headers: { "X-User-Id": userId }
+      });
+    } catch (error) {
+      append("error", error instanceof Error ? error.message : "取消请求失败，请稍后重试。");
+    }
+  }, [append, userId]);
 
   return { answer, busy, cancel, decide, deciding, intervention, question, sendChat, timeline };
 }

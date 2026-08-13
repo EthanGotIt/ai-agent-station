@@ -24,6 +24,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -245,6 +246,50 @@ class SessionExecutionQueueManagerTest {
         assertEquals(0, manager.pendingCount());
     }
 
+    @Test
+    void schedulerRejectionCancelsRequestAndRollsBackAdmission() {
+        RejectingScheduler rejectingScheduler = new RejectingScheduler();
+        try {
+            CancellationToken token = new CancellationToken();
+            SessionExecutionQueueManager manager = new SessionExecutionQueueManager(
+                    4, 16, Duration.ofSeconds(2), Runnable::run, rejectingScheduler
+            );
+
+            SessionQueueException failure = assertThrows(
+                    SessionQueueException.class,
+                    () -> manager.submit(request("request-scheduler"), handle("request-scheduler", token),
+                            () -> response("unexpected"))
+            );
+
+            assertEquals("GLOBAL_QUEUE_FULL", failure.getCode());
+            assertTrue(token.isCancelled());
+            assertEquals(0, manager.pendingCount());
+        } finally {
+            rejectingScheduler.shutdownNow();
+        }
+    }
+
+    @Test
+    void unexpectedWorkerAdmissionFailureDoesNotBlockFollowingRequest() {
+        FirstExecutionFailsThenQueues worker = new FirstExecutionFailsThenQueues();
+        SessionExecutionQueueManager manager = manager(4, 16, worker, Duration.ofSeconds(2));
+
+        SessionQueueException failure = assertThrows(
+                SessionQueueException.class,
+                () -> submit(manager, "request-failed", "user-1", "session-1", () -> response("unexpected"))
+        );
+        assertEquals("GLOBAL_QUEUE_FULL", failure.getCode());
+        assertEquals(0, manager.pendingCount());
+
+        QueuedExecutionModel following = submit(
+                manager, "request-following", "user-1", "session-1", () -> response("following")
+        );
+        worker.runQueued();
+
+        assertEquals("following", following.completion().join().content());
+        assertEquals(0, manager.pendingCount());
+    }
+
     private SessionExecutionQueueManager manager(
             int maxPendingPerSession,
             int maxPendingGlobal,
@@ -270,18 +315,17 @@ class SessionExecutionQueueManagerTest {
             String sessionId,
             java.util.concurrent.Callable<AgentResponseModel> execution
     ) {
-        AgentRequestModel request = new AgentRequestModel(
-                requestId,
-                sessionId,
-                "message"
-        );
-        RequestHandleModel handle = new RequestHandleModel(
-                requestId,
-                userId,
-                sessionId,
-                new CancellationToken()
-        );
+        AgentRequestModel request = request(requestId);
+        RequestHandleModel handle = new RequestHandleModel(requestId, userId, sessionId, new CancellationToken());
         return manager.submit(request, handle, execution);
+    }
+
+    private AgentRequestModel request(String requestId) {
+        return new AgentRequestModel(requestId, "session-1", "message");
+    }
+
+    private RequestHandleModel handle(String requestId, CancellationToken token) {
+        return new RequestHandleModel(requestId, "user-1", "session-1", token);
     }
 
     private AgentResponseModel response(String requestIdOrContent) {
@@ -316,6 +360,43 @@ class SessionExecutionQueueManagerTest {
             List<Runnable> snapshot = List.copyOf(tasks);
             tasks.clear();
             snapshot.get(snapshot.size() - 1).run();
+        }
+    }
+
+    private static final class FirstExecutionFailsThenQueues implements Executor {
+
+        private final List<Runnable> tasks = new ArrayList<>();
+        private boolean rejectFirst = true;
+
+        @Override
+        public void execute(@NonNull Runnable command) {
+            if (rejectFirst) {
+                rejectFirst = false;
+                throw new IllegalStateException("worker is unavailable");
+            }
+            tasks.add(command);
+        }
+
+        private void runQueued() {
+            List<Runnable> snapshot = List.copyOf(tasks);
+            tasks.clear();
+            snapshot.forEach(Runnable::run);
+        }
+    }
+
+    private static final class RejectingScheduler extends ScheduledThreadPoolExecutor {
+
+        private RejectingScheduler() {
+            super(1);
+        }
+
+        @Override
+        public java.util.concurrent.ScheduledFuture<?> schedule(
+                Runnable command,
+                long delay,
+                TimeUnit unit
+        ) {
+            throw new RejectedExecutionException("scheduler is unavailable");
         }
     }
 }

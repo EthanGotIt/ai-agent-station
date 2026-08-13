@@ -15,6 +15,8 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -36,13 +38,15 @@ class HttpRefundExecutorTest {
     private HttpServer server;
     private int responseStatus;
     private String responseBody;
-    private long responseDelayMillis;
+    private boolean holdResponse;
+    private CountDownLatch responseRelease;
 
     @BeforeEach
     void startServer() throws IOException {
         responseStatus = 200;
         responseBody = "{\"status\":\"COMPLETED\"}";
-        responseDelayMillis = 0;
+        holdResponse = false;
+        responseRelease = new CountDownLatch(1);
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/refunds", this::respond);
         server.start();
@@ -50,6 +54,7 @@ class HttpRefundExecutorTest {
 
     @AfterEach
     void stopServer() {
+        responseRelease.countDown();
         server.stop(0);
     }
 
@@ -89,7 +94,7 @@ class HttpRefundExecutorTest {
 
     @Test
     void mapsTimeoutToTemporaryFailure() {
-        responseDelayMillis = 200;
+        holdResponse = true;
 
         RefundExecutionResultModel result = executor(Duration.ofMillis(30)).execute(command());
 
@@ -105,6 +110,23 @@ class HttpRefundExecutorTest {
         responseBody = "not-json";
         RefundExecutionResultModel malformed = executor(Duration.ofSeconds(1)).execute(command());
         assertEquals(HttpRefundExecutor.INVALID_RESPONSE, malformed.failureCode());
+    }
+
+    @Test
+    void rejectsMalformedBaseUrlsAndFailureCodes() {
+        assertThrows(IllegalArgumentException.class, () -> new HttpRefundExecutor(
+                RestClient.builder(), "ftp://refund.example.test", Duration.ofSeconds(1)
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new HttpRefundExecutor(
+                RestClient.builder(), "https://user:secret@refund.example.test", Duration.ofSeconds(1)
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new HttpRefundExecutor(
+                RestClient.builder(), "https://refund.example.test?token=secret", Duration.ofSeconds(1)
+        ));
+
+        responseBody = "{\"status\":\"FAILED\",\"failureCode\":\"not-a-stable-code\"}";
+        RefundExecutionResultModel invalidCode = executor(Duration.ofSeconds(1)).execute(command());
+        assertEquals(HttpRefundExecutor.INVALID_RESPONSE, invalidCode.failureCode());
     }
 
     @Test
@@ -134,9 +156,9 @@ class HttpRefundExecutorTest {
         try (exchange) {
             idempotencyKey.set(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
             requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            if (responseDelayMillis > 0) {
+            if (holdResponse) {
                 try {
-                    Thread.sleep(responseDelayMillis);
+                    responseRelease.await(5, TimeUnit.SECONDS);
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                     return;

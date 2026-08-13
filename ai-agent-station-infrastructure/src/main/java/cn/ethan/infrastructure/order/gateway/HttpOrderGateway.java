@@ -18,6 +18,8 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 import java.net.http.HttpClient;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.Duration;
 import java.time.Instant;
 import java.math.BigDecimal;
@@ -52,7 +54,7 @@ public final class HttpOrderGateway implements OrderGateway {
         );
         requestFactory.setReadTimeout(effectiveTimeout);
         this.client = builder.clone()
-                .baseUrl(baseUrl)
+                .baseUrl(requireBaseUrl(baseUrl))
                 .requestFactory(requestFactory)
                 .build();
     }
@@ -167,6 +169,26 @@ public final class HttpOrderGateway implements OrderGateway {
             throw new IllegalArgumentException("order HTTP timeout must be between PT0S and PT30S");
         }
         return timeout;
+    }
+
+    private static String requireBaseUrl(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new IllegalArgumentException("order base URL is required");
+        }
+        try {
+            URI value = new URI(baseUrl.strip());
+            if (!value.isAbsolute()
+                    || !("http".equalsIgnoreCase(value.getScheme()) || "https".equalsIgnoreCase(value.getScheme()))
+                    || value.getHost() == null
+                    || value.getUserInfo() != null
+                    || value.getQuery() != null
+                    || value.getFragment() != null) {
+                throw new IllegalArgumentException("order base URL must be an absolute HTTP(S) endpoint");
+            }
+            return value.toString();
+        } catch (URISyntaxException invalid) {
+            throw new IllegalArgumentException("order base URL must be an absolute HTTP(S) endpoint", invalid);
+        }
     }
 
     private record HttpOrderResponseDto(

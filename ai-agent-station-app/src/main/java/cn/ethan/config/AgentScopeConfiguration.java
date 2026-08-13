@@ -15,6 +15,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 
+import java.time.Clock;
+
 /**
  * AgentScope 装配配置：将基础设施 ReAct 执行器接入 Core 端口。
  *
@@ -34,6 +36,7 @@ public class AgentScopeConfiguration {
             RefundCommandGateway refundCommandGateway,
             AgentMemoryService agentMemoryService,
             OutputObservationProvider observationProvider,
+            Clock clock,
             Environment environment,
             @Value("${ai-agent.model.react:qwen3.7-plus}") String modelName
             , @Value("${ai-agent.agentscope.react.acceptance-confirmation-probe-enabled:false}")
@@ -57,7 +60,8 @@ public class AgentScopeConfiguration {
                 refundCommandGateway,
                 agentMemoryService,
                 enableAcceptanceProbe,
-                observationProvider
+                observationProvider,
+                clock
         );
     }
 }

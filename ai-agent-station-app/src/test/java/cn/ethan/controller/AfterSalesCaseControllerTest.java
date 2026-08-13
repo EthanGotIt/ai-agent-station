@@ -65,7 +65,8 @@ class AfterSalesCaseControllerTest {
 
         mockMvc.perform(get("/api/v1/after-sales/cases?status=PENDING_REVIEW"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("请求参数不合法"));
 
         mockMvc.perform(get("/api/v1/after-sales/cases?status=PENDING_REVIEW")
                         .header("X-Operator-Id", "operator-1"))
