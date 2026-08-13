@@ -13,6 +13,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
+import java.util.List;
 
 /**
  * 本地售后申请网关：以用户和订单的唯一约束阻止重复退款申请。
@@ -49,6 +50,27 @@ public final class LocalAfterSalesCaseGateway implements AfterSalesCaseGateway {
     }
 
     @Override
+    public Optional<AfterSalesCaseModel> findByCaseId(String caseId) {
+        if (blank(caseId)) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(mapper.selectById(caseId)).map(this::toModel);
+    }
+
+    @Override
+    public List<AfterSalesCaseModel> findPage(AfterSalesCaseStatusEnum status, int offset, int limit) {
+        int safeOffset = Math.max(offset, 0);
+        int safeLimit = Math.max(1, Math.min(limit, 50));
+        LambdaQueryWrapper<DemoAfterSalesCaseEntity> query = new LambdaQueryWrapper<DemoAfterSalesCaseEntity>()
+                .orderByDesc(DemoAfterSalesCaseEntity::getUpdatedAt)
+                .last("LIMIT " + safeLimit + " OFFSET " + safeOffset);
+        if (status != null) {
+            query.eq(DemoAfterSalesCaseEntity::getStatus, status.name());
+        }
+        return mapper.selectList(query).stream().map(this::toModel).toList();
+    }
+
+    @Override
     public AfterSalesCaseModel create(AfterSalesCaseModel caseModel) {
         Optional<AfterSalesCaseModel> existing = findByWorkflowRunId(caseModel.workflowRunId());
         if (existing.isPresent()) {
@@ -76,6 +98,11 @@ public final class LocalAfterSalesCaseGateway implements AfterSalesCaseGateway {
                 .eq(DemoAfterSalesCaseEntity::getVersion, expected.version())
                 .set(DemoAfterSalesCaseEntity::getStatus, updated.status().name())
                 .set(DemoAfterSalesCaseEntity::getRefundId, updated.refundId())
+                .set(DemoAfterSalesCaseEntity::getOperatorId, updated.operatorId())
+                .set(DemoAfterSalesCaseEntity::getDecisionId, updated.decisionId())
+                .set(DemoAfterSalesCaseEntity::getDecisionNote, updated.decisionNote())
+                .set(DemoAfterSalesCaseEntity::getReviewedAt, updated.reviewedAt())
+                .set(DemoAfterSalesCaseEntity::getFailureCode, updated.failureCode())
                 .set(DemoAfterSalesCaseEntity::getVersion, updated.version())
                 .set(DemoAfterSalesCaseEntity::getUpdatedAt, updated.updatedAt())) == 1;
     }
@@ -94,6 +121,11 @@ public final class LocalAfterSalesCaseGateway implements AfterSalesCaseGateway {
         entity.setAmount(model.amount());
         entity.setCurrency(model.currency());
         entity.setRefundId(model.refundId());
+        entity.setOperatorId(model.operatorId());
+        entity.setDecisionId(model.decisionId());
+        entity.setDecisionNote(model.decisionNote());
+        entity.setReviewedAt(model.reviewedAt());
+        entity.setFailureCode(model.failureCode());
         entity.setVersion(model.version());
         entity.setCreatedAt(model.createdAt());
         entity.setUpdatedAt(model.updatedAt());
@@ -106,7 +138,9 @@ public final class LocalAfterSalesCaseGateway implements AfterSalesCaseGateway {
                 RefundReasonEnum.valueOf(entity.getRefundReason()), entity.getDescription(),
                 AfterSalesHandlingModeEnum.valueOf(entity.getHandlingMode()),
                 AfterSalesCaseStatusEnum.valueOf(entity.getStatus()), entity.getAmount(), entity.getCurrency(),
-                entity.getRefundId(), entity.getVersion(), entity.getCreatedAt(), entity.getUpdatedAt()
+                entity.getRefundId(), entity.getOperatorId(), entity.getDecisionId(), entity.getDecisionNote(),
+                entity.getReviewedAt(), entity.getFailureCode(), entity.getVersion(), entity.getCreatedAt(),
+                entity.getUpdatedAt()
         );
     }
 

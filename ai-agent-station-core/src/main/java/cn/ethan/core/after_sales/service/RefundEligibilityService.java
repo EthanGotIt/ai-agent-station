@@ -26,12 +26,7 @@ public final class RefundEligibilityService {
             return manualReview(order, "订单签收未超过 7 天，需要人工审核后处理。");
         }
         if (order.status().name().equals("SHIPPED")) {
-            return new RefundEligibilityModel(
-                    RefundEligibilityEnum.MANUAL_REVIEW_REQUIRED,
-                    "订单已发货，当前需要人工处理，暂不能自动创建退款。",
-                    null,
-                    ""
-            );
+            return manualReview(order, "订单已发货，当前需要人工处理，暂不能自动创建退款。");
         }
         return new RefundEligibilityModel(
                 RefundEligibilityEnum.REJECTED,

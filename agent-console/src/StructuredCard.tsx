@@ -61,7 +61,8 @@ function Diagnosis({ data }: { data: CardData }) {
 function AfterSales({ data }: { data: CardData }) {
   return <Fields data={data} names={[
     ["orderId", "订单号"], ["caseId", "售后单"], ["status", "状态"],
-    ["handlingMode", "处理方式"], ["refundId", "退款单"], ["amount", "退款金额"]
+    ["handlingMode", "处理方式"], ["refundId", "退款单"], ["refundCommandStatus", "退款任务"],
+    ["attemptCount", "尝试次数"], ["failureCode", "失败原因"], ["amount", "退款金额"]
   ]} />;
 }
 

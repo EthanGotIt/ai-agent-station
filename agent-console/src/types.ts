@@ -65,3 +65,49 @@ export type TimelineEvent = {
 };
 
 export type AgentError = { code?: string; message?: string };
+
+export type RefundCommand = {
+  refundId: string;
+  workflowRunId: string;
+  status: "PENDING" | "PROCESSING" | "RETRY_WAIT" | "COMPLETED" | "FAILED";
+  amount: number;
+  currency: string;
+  retryId: string;
+  attemptCount: number;
+  nextAttemptAt: string;
+  leaseUntil: string | null;
+  failureCode: string;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AfterSalesCase = {
+  caseId: string;
+  workflowRunId: string;
+  userId: string;
+  orderId: string;
+  reason: string;
+  description: string;
+  handlingMode: "AUTO_REFUND" | "MANUAL_REVIEW";
+  status: "PENDING_REVIEW" | "REFUND_PROCESSING" | "COMPLETED" | "REFUND_FAILED" | "REJECTED";
+  amount: number | null;
+  currency: string;
+  refundId: string;
+  operatorId: string;
+  decisionId: string;
+  decisionNote: string;
+  reviewedAt: string | null;
+  failureCode: string;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  refundCommand: RefundCommand | null;
+};
+
+export type AfterSalesCasePage = {
+  items: AfterSalesCase[];
+  page: number;
+  size: number;
+  hasNext: boolean;
+};

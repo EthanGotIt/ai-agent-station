@@ -3,6 +3,8 @@ package cn.ethan.handler;
 import cn.ethan.core.agent.exception.RequestLifecycleException;
 import cn.ethan.core.agent.exception.ReActExecutionException;
 import cn.ethan.core.agent.exception.SessionQueueException;
+import cn.ethan.core.after_sales.exception.AfterSalesCaseConflictException;
+import cn.ethan.core.after_sales.exception.AfterSalesCaseNotFoundException;
 import cn.ethan.core.agent.exception.AgentMemoryConflictException;
 import cn.ethan.core.agent.exception.AgentMemoryNotFoundException;
 import cn.ethan.dto.AgentErrorResponseDto;
@@ -60,6 +62,20 @@ public final class AgentExceptionHandler {
                         "WORKFLOW_RUN_NOT_FOUND",
                         "Workflow 运行不存在或不属于当前用户会话",
                         null
+                ));
+    }
+
+    @ExceptionHandler(AfterSalesCaseNotFoundException.class)
+    public ResponseEntity<AgentErrorResponseDto> afterSalesNotFound(AfterSalesCaseNotFoundException exception) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new AgentErrorResponseDto("AFTER_SALES_CASE_NOT_FOUND", "售后申请不存在", null));
+    }
+
+    @ExceptionHandler(AfterSalesCaseConflictException.class)
+    public ResponseEntity<AgentErrorResponseDto> afterSalesConflict(AfterSalesCaseConflictException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new AgentErrorResponseDto(
+                        "AFTER_SALES_CASE_CONFLICT", "售后申请状态或版本已变化，请刷新后重试", null
                 ));
     }
 

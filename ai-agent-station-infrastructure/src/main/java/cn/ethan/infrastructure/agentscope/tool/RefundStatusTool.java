@@ -89,6 +89,8 @@ public final class RefundStatusTool extends ToolBase {
                         + " status=" + safe(refund.status())
                         + " amount=" + refund.amount().toPlainString()
                         + " currency=" + safe(refund.currency())
+                        + " attemptCount=" + refund.attemptCount()
+                        + " failureCode=" + safe(refund.failureCode())
         ).withState(ToolResultState.SUCCESS);
     }
 

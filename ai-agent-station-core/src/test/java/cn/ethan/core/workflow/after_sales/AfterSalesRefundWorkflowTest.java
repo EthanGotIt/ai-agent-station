@@ -166,6 +166,8 @@ class AfterSalesRefundWorkflowTest {
         AfterSalesCaseModel created = cases.findByOrder("ORDER-SHIPPED-001", "user-1").orElseThrow();
         assertEquals(AfterSalesHandlingModeEnum.MANUAL_REVIEW, created.handlingMode());
         assertEquals(AfterSalesCaseStatusEnum.PENDING_REVIEW, created.status());
+        assertEquals(new BigDecimal("99.00"), created.amount());
+        assertEquals("CNY", created.currency());
     }
 
     @Test

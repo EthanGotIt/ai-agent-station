@@ -9,10 +9,12 @@ import cn.ethan.core.after_sales.enums.AfterSalesOperationEnum;
 import cn.ethan.core.after_sales.enums.RefundEligibilityEnum;
 import cn.ethan.core.after_sales.enums.RefundReasonEnum;
 import cn.ethan.core.after_sales.model.AfterSalesCaseModel;
+import cn.ethan.core.after_sales.model.AfterSalesRefundSubmissionResultModel;
 import cn.ethan.core.after_sales.model.RefundCommandModel;
 import cn.ethan.core.after_sales.model.RefundCommandResultModel;
 import cn.ethan.core.after_sales.model.RefundEligibilityModel;
 import cn.ethan.core.after_sales.port.AfterSalesCaseGateway;
+import cn.ethan.core.after_sales.port.AfterSalesRefundSubmissionGateway;
 import cn.ethan.core.after_sales.port.RefundCommandGateway;
 import cn.ethan.core.after_sales.service.AfterSalesRequestAnalysisService;
 import cn.ethan.core.after_sales.service.RefundEligibilityService;
@@ -72,6 +74,7 @@ public final class AfterSalesRefundWorkflow implements ResumableWorkflowExecutor
     private final OrderGateway orders;
     private final RefundCommandGateway refunds;
     private final AfterSalesCaseGateway cases;
+    private final AfterSalesRefundSubmissionGateway automaticRefunds;
     private final WorkflowRunStore runs;
     private final WorkflowRunEventStore events;
     private final AfterSalesRequestAnalysisService requests;
@@ -105,9 +108,26 @@ public final class AfterSalesRefundWorkflow implements ResumableWorkflowExecutor
             GraphExecutor executor,
             Clock clock
     ) {
+        this(orders, refunds, cases, directAutomaticRefunds(cases, refunds), runs, events,
+                requests, eligibility, executor, clock);
+    }
+
+    public AfterSalesRefundWorkflow(
+            OrderGateway orders,
+            RefundCommandGateway refunds,
+            AfterSalesCaseGateway cases,
+            AfterSalesRefundSubmissionGateway automaticRefunds,
+            WorkflowRunStore runs,
+            WorkflowRunEventStore events,
+            AfterSalesRequestAnalysisService requests,
+            RefundEligibilityService eligibility,
+            GraphExecutor executor,
+            Clock clock
+    ) {
         this.orders = orders;
         this.refunds = refunds;
         this.cases = cases;
+        this.automaticRefunds = automaticRefunds;
         this.runs = runs;
         this.events = events;
         this.requests = requests;
@@ -368,13 +388,26 @@ public final class AfterSalesRefundWorkflow implements ResumableWorkflowExecutor
         AfterSalesHandlingModeEnum mode = evaluated.decision() == RefundEligibilityEnum.APPROVED
                 ? AfterSalesHandlingModeEnum.AUTO_REFUND : AfterSalesHandlingModeEnum.MANUAL_REVIEW;
         Instant now = clock.instant();
-        AfterSalesCaseModel created = cases.create(new AfterSalesCaseModel(
+        AfterSalesCaseModel candidate = new AfterSalesCaseModel(
                 UUID.randomUUID().toString(), run.runId(), run.userId(), lookup.order().orderId(), reason,
                 state.getOrDefault("description", ""), mode,
                 mode == AfterSalesHandlingModeEnum.AUTO_REFUND
                         ? AfterSalesCaseStatusEnum.REFUND_PROCESSING : AfterSalesCaseStatusEnum.PENDING_REVIEW,
                 evaluated.refundAmount(), evaluated.currency(), "", 0, now, now
-        ));
+        );
+        AfterSalesCaseModel created;
+        RefundCommandResultModel refund = null;
+        if (mode == AfterSalesHandlingModeEnum.AUTO_REFUND) {
+            AfterSalesRefundSubmissionResultModel submitted = automaticRefunds.submit(candidate,
+                    new RefundCommandModel(
+                            run.runId(), candidate.caseId(), candidate.orderId(), candidate.userId(), candidate.reason(),
+                            candidate.amount(), candidate.currency(), now
+                    ));
+            created = submitted.caseModel();
+            refund = submitted.refundCommand();
+        } else {
+            created = cases.create(candidate);
+        }
         if (!run.runId().equals(created.workflowRunId())) {
             return completeExistingCase(run, request, state, created, cancellationToken);
         }
@@ -387,13 +420,9 @@ public final class AfterSalesRefundWorkflow implements ResumableWorkflowExecutor
             state.put("currency", created.currency());
         }
         if (created.handlingMode() == AfterSalesHandlingModeEnum.AUTO_REFUND) {
-            RefundCommandResultModel refund = refunds.create(new RefundCommandModel(
-                    run.runId(), created.caseId(), created.orderId(), created.userId(), created.reason(),
-                    created.amount(), created.currency(), now
-            ));
-            AfterSalesCaseModel updatedCase = created.withRefund(refund.refundId(), clock.instant());
-            if (!cases.update(created, updatedCase)) {
-                throw new WorkflowRunConflictException("after-sales case version has changed");
+            if (refund == null) {
+                refund = refunds.findByCaseId(created.caseId())
+                        .orElseThrow(() -> new WorkflowRunConflictException("refund command is unavailable"));
             }
             state.put("refundId", refund.refundId());
         }
@@ -621,12 +650,42 @@ public final class AfterSalesRefundWorkflow implements ResumableWorkflowExecutor
     }
 
     private StructuredResultModel caseCard(AfterSalesCaseModel caseModel) {
-        return new StructuredResultModel("1", "after_sales_status", Map.of(
-                "caseId", caseModel.caseId(), "orderId", caseModel.orderId(),
-                "status", caseModel.status().name(), "handlingMode", caseModel.handlingMode().name(),
-                "refundId", caseModel.refundId(), "amount", caseModel.amount() == null ? "" : caseModel.amount(),
-                "currency", caseModel.currency()
-        ));
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("caseId", caseModel.caseId());
+        data.put("orderId", caseModel.orderId());
+        data.put("status", caseModel.status().name());
+        data.put("handlingMode", caseModel.handlingMode().name());
+        data.put("refundId", caseModel.refundId());
+        data.put("amount", caseModel.amount() == null ? "" : caseModel.amount());
+        data.put("currency", caseModel.currency());
+        data.put("failureCode", caseModel.failureCode());
+        refunds.findByCaseId(caseModel.caseId()).ifPresent(command -> {
+            data.put("refundCommandStatus", command.status());
+            data.put("attemptCount", command.attemptCount());
+            data.put("refundFailureCode", command.failureCode());
+        });
+        return new StructuredResultModel("1", "after_sales_status", data);
+    }
+
+    private static AfterSalesRefundSubmissionGateway directAutomaticRefunds(
+            AfterSalesCaseGateway cases,
+            RefundCommandGateway refunds
+    ) {
+        return (caseModel, command) -> {
+            AfterSalesCaseModel created = cases.create(caseModel);
+            if (!created.workflowRunId().equals(caseModel.workflowRunId())) {
+                return new AfterSalesRefundSubmissionResultModel(
+                        created,
+                        refunds.findByCaseId(created.caseId()).orElse(null)
+                );
+            }
+            RefundCommandResultModel refund = refunds.create(command);
+            AfterSalesCaseModel updated = created.withRefund(refund.refundId(), command.createdAt());
+            if (!cases.update(created, updated)) {
+                throw new WorkflowRunConflictException("after-sales case version has changed");
+            }
+            return new AfterSalesRefundSubmissionResultModel(updated, refund);
+        };
     }
 
     private WorkflowRunEventModel event(WorkflowRunModel run, String type, Instant now) {

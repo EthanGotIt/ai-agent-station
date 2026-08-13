@@ -15,7 +15,11 @@ import cn.ethan.core.agent.service.RequestLifecycleManager;
 import cn.ethan.core.agent.service.SessionExecutionQueueManager;
 import cn.ethan.core.after_sales.port.RefundCommandGateway;
 import cn.ethan.core.after_sales.port.AfterSalesCaseGateway;
+import cn.ethan.core.after_sales.port.AfterSalesRefundSubmissionGateway;
+import cn.ethan.core.after_sales.port.RefundExecutor;
 import cn.ethan.core.after_sales.service.AfterSalesRequestAnalysisService;
+import cn.ethan.core.after_sales.service.AfterSalesReviewService;
+import cn.ethan.core.after_sales.service.RefundCommandLifecycleService;
 import cn.ethan.core.after_sales.service.RefundEligibilityService;
 import cn.ethan.core.order.port.OrderGateway;
 import cn.ethan.core.order.port.LogisticsGateway;
@@ -33,6 +37,8 @@ import cn.ethan.infrastructure.memory.mapper.AgentMemoryEntryMapper;
 import cn.ethan.infrastructure.memory.mapper.AgentMemoryEvidenceMapper;
 import cn.ethan.infrastructure.memory.mapper.AgentMemorySourceMapper;
 import cn.ethan.infrastructure.memory.store.MybatisAgentMemoryStore;
+import cn.ethan.infrastructure.after_sales.manager.RefundCommandSettlementManager;
+import cn.ethan.infrastructure.after_sales.worker.RefundCommandWorker;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.ai.chat.client.ChatClient;
@@ -42,6 +48,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 import java.time.Clock;
 import java.util.List;
@@ -65,7 +72,8 @@ import java.util.concurrent.atomic.AtomicInteger;
         AgentRuntimeProperties.class,
         AgentRouterProperties.class,
         OrderDiagnosisProperties.class,
-        AgentMemoryProperties.class
+        AgentMemoryProperties.class,
+        RefundWorkerProperties.class
 })
 public class AgentConfiguration {
 
@@ -268,6 +276,51 @@ public class AgentConfiguration {
     }
 
     @Bean
+    public AfterSalesReviewService afterSalesReviewService(
+            AfterSalesCaseGateway afterSalesCaseGateway,
+            RefundCommandGateway refundCommandGateway,
+            Clock clock
+    ) {
+        return new AfterSalesReviewService(afterSalesCaseGateway, refundCommandGateway, clock);
+    }
+
+    @Bean
+    public RefundCommandLifecycleService refundCommandLifecycleService(
+            AfterSalesCaseGateway afterSalesCaseGateway,
+            RefundCommandGateway refundCommandGateway,
+            Clock clock,
+            RefundWorkerProperties properties
+    ) {
+        return new RefundCommandLifecycleService(
+                afterSalesCaseGateway, refundCommandGateway, clock,
+                properties.maxAttempts(), properties.retryDelay(), properties.leaseDuration()
+        );
+    }
+
+    @Bean
+    public RefundCommandWorker refundCommandWorker(
+            RefundCommandLifecycleService refundCommandLifecycleService,
+            RefundExecutor refundExecutor,
+            RefundCommandSettlementManager refundCommandSettlementManager,
+            RefundWorkerProperties properties
+    ) {
+        return new RefundCommandWorker(
+                refundCommandLifecycleService, refundExecutor, refundCommandSettlementManager,
+                properties.batchSize()
+        );
+    }
+
+    @Bean(name = "taskScheduler", destroyMethod = "shutdown")
+    public ThreadPoolTaskScheduler taskScheduler() {
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(1);
+        scheduler.setThreadNamePrefix("refund-command-worker-");
+        scheduler.setWaitForTasksToCompleteOnShutdown(false);
+        scheduler.initialize();
+        return scheduler;
+    }
+
+    @Bean
     public OrderInquiryWorkflow orderInquiryWorkflow(
             OrderGateway gateway,
             LogisticsGateway logisticsGateway,
@@ -296,6 +349,7 @@ public class AgentConfiguration {
             OrderGateway orderGateway,
             RefundCommandGateway refundCommandGateway,
             AfterSalesCaseGateway afterSalesCaseGateway,
+            AfterSalesRefundSubmissionGateway afterSalesRefundSubmissionGateway,
             WorkflowRunStore workflowRunStore,
             WorkflowRunEventStore workflowRunEventStore,
             AfterSalesRequestAnalysisService afterSalesRequestAnalysis,
@@ -307,6 +361,7 @@ public class AgentConfiguration {
                 orderGateway,
                 refundCommandGateway,
                 afterSalesCaseGateway,
+                afterSalesRefundSubmissionGateway,
                 workflowRunStore,
                 workflowRunEventStore,
                 afterSalesRequestAnalysis,

@@ -49,6 +49,18 @@ ai-agent:
     diagnosis:
       shipment-delay-threshold: ${AI_AGENT_ORDER_DIAGNOSIS_SHIPMENT_DELAY_THRESHOLD:PT48H}
       logistics-stall-threshold: ${AI_AGENT_ORDER_DIAGNOSIS_LOGISTICS_STALL_THRESHOLD:PT48H}
+  after-sales:
+    refund-channel:
+      mode: ${AI_AGENT_REFUND_CHANNEL_MODE:local}
+      base-url: ${AI_AGENT_REFUND_CHANNEL_BASE_URL:http://127.0.0.1:18081}
+      timeout: ${AI_AGENT_REFUND_CHANNEL_TIMEOUT:PT3S}
+    refund-worker:
+      poll-interval: ${AI_AGENT_REFUND_WORKER_POLL_INTERVAL:PT5S}
+      initial-delay: ${AI_AGENT_REFUND_WORKER_INITIAL_DELAY:PT10S}
+      batch-size: ${AI_AGENT_REFUND_WORKER_BATCH_SIZE:8}
+      max-attempts: ${AI_AGENT_REFUND_WORKER_MAX_ATTEMPTS:3}
+      retry-delay: ${AI_AGENT_REFUND_WORKER_RETRY_DELAY:PT15S}
+      lease-duration: ${AI_AGENT_REFUND_WORKER_LEASE_DURATION:PT30S}
   runtime:
     request-terminal-ttl: ${AI_AGENT_REQUEST_TERMINAL_TTL:PT10M}
     stream-timeout: ${AI_AGENT_STREAM_TIMEOUT:PT245S}

@@ -44,8 +44,29 @@ public final class DemoRefundCommandEntity {
     @TableField("STATUS")
     private String status;
 
+    @TableField("RETRY_ID")
+    private String retryId;
+
+    @TableField("ATTEMPT_COUNT")
+    private Integer attemptCount;
+
+    @TableField("NEXT_ATTEMPT_AT")
+    private Instant nextAttemptAt;
+
+    @TableField("LEASE_UNTIL")
+    private Instant leaseUntil;
+
+    @TableField("FAILURE_CODE")
+    private String failureCode;
+
+    @TableField("VERSION")
+    private Long version;
+
     @TableField("CREATED_AT")
     private Instant createdAt;
+
+    @TableField("UPDATED_AT")
+    private Instant updatedAt;
 
     public DemoRefundCommandEntity() {
     }
@@ -122,6 +143,19 @@ public final class DemoRefundCommandEntity {
         this.status = status;
     }
 
+    public String getRetryId() { return retryId; }
+    public void setRetryId(String retryId) { this.retryId = retryId; }
+    public Integer getAttemptCount() { return attemptCount; }
+    public void setAttemptCount(Integer attemptCount) { this.attemptCount = attemptCount; }
+    public Instant getNextAttemptAt() { return nextAttemptAt; }
+    public void setNextAttemptAt(Instant nextAttemptAt) { this.nextAttemptAt = nextAttemptAt; }
+    public Instant getLeaseUntil() { return leaseUntil; }
+    public void setLeaseUntil(Instant leaseUntil) { this.leaseUntil = leaseUntil; }
+    public String getFailureCode() { return failureCode; }
+    public void setFailureCode(String failureCode) { this.failureCode = failureCode; }
+    public Long getVersion() { return version; }
+    public void setVersion(Long version) { this.version = version; }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -129,4 +163,7 @@ public final class DemoRefundCommandEntity {
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
     }
+
+    public Instant getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
 }

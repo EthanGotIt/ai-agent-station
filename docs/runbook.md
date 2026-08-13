@@ -4,7 +4,7 @@
 
 - JDK 17、Maven 3.9+、MySQL 8.x。
 - 配置 `DASHSCOPE_API_KEY`；Router 与 ReAct 默认均为 `qwen3.7-plus`。仅在真实对照验收通过后，才可将 ReAct 显式设为 `qwen3.8-max`；不要用模型升级替代规则路由、工具输入或超时问题的修复。
-- 新库执行 `docs/dev-ops/mysql/sql/ai-agent-station.sql`；已有库必须先备份，再依次执行 `manual-upgrade-order-diagnosis.sql`、`manual-upgrade-after-sales-refund.sql`、`manual-upgrade-questioncard-memory.sql`、`manual-upgrade-session-memory-v2.sql`、[领域 V2 升级](dev-ops/mysql/sql/manual-upgrade-domain-v2.sql) 和 `manual-upgrade-memory-version.sql`。最后一个脚本为记忆乐观锁增加 `VERSION`；所有脚本都只应在备份后的非生产库执行一次。
+- 新库执行 `docs/dev-ops/mysql/sql/ai-agent-station.sql`；已有库必须先备份，再依次执行 `manual-upgrade-order-diagnosis.sql`、`manual-upgrade-after-sales-refund.sql`、`manual-upgrade-questioncard-memory.sql`、`manual-upgrade-session-memory-v2.sql`、[领域 V2 升级](dev-ops/mysql/sql/manual-upgrade-domain-v2.sql)、`manual-upgrade-memory-version.sql` 和 [退款生命周期 V2.1 升级](dev-ops/mysql/sql/manual-upgrade-refund-lifecycle-v21.sql)。所有脚本只应在备份后的非生产库执行一次。
 
 ```powershell
 mvn clean '-DskipTests=false' test
@@ -49,7 +49,17 @@ Invoke-RestMethod -Method Post `
 
 流式入口为 `/api/v1/agent/chat/stream` 和 `/workflow-runs/{runId}/answers/stream`。二者都先走 `userId + sessionId` FIFO；`SESSION_QUEUE_FULL` 会在 SSE 建连前返回 429。Workflow 只能通过包含版本与检查点的 answers 请求恢复。
 
-订单 Workflow 支持 `QUERY`、`TRACK`、`DIAGNOSE`。物流追踪返回时间线，履约诊断会在问题类型不明确时继续询问。退款 Workflow 依次收集订单、原因、必要说明和最终确认；`PAID` 且金额完整为自动退款，`SHIPPED` 或签收未超过七天为人工审核，人工审核不会创建退款命令。
+订单 Workflow 支持 `QUERY`、`TRACK`、`DIAGNOSE`。物流追踪返回时间线，履约诊断会在问题类型不明确时继续询问。退款 Workflow 依次收集订单、原因、必要说明和最终确认；`PAID` 且金额完整为自动退款，`SHIPPED` 或签收未超过七天为人工审核。自动退款与审核批准均进入持久化退款命令，由本地 Worker 异步处理。
+
+## 售后审核与退款任务
+
+审核端点为 `/api/v1/after-sales/cases`，每个请求必须携带可信网关注入的 `X-Operator-Id`。控制台会携带该 Header；生产部署必须在网关完成操作员身份验证，应用本身不把 Header 当作最终认证机制。
+
+退款申请依次经历 `PENDING_REVIEW → REFUND_PROCESSING → COMPLETED` 或 `PENDING_REVIEW → REJECTED`。渠道执行失败时，退款命令在有限次数内从 `RETRY_WAIT` 回到 `PROCESSING`；达到 `AI_AGENT_REFUND_WORKER_MAX_ATTEMPTS` 后申请转为 `REFUND_FAILED`，操作员可调用重试端点重新排队。所有审核和人工重试均携带幂等 ID 与 `expectedVersion`，冲突时应刷新详情后再次操作。
+
+Worker 默认每 5 秒轮询，单批 8 条，最多自动尝试 3 次；可通过 `AI_AGENT_REFUND_WORKER_POLL_INTERVAL`、`AI_AGENT_REFUND_WORKER_BATCH_SIZE`、`AI_AGENT_REFUND_WORKER_MAX_ATTEMPTS`、`AI_AGENT_REFUND_WORKER_RETRY_DELAY` 与 `AI_AGENT_REFUND_WORKER_LEASE_DURATION` 配置。租约到期的处理中命令可以被安全重新领取；远程退款调用不在数据库事务内执行。
+
+退款渠道默认使用 `AI_AGENT_REFUND_CHANNEL_MODE=local`，用于本地确定性完成。设置为 `http` 后，应用调用 `AI_AGENT_REFUND_CHANNEL_BASE_URL` 下的 `POST /refunds`；`AI_AGENT_REFUND_CHANNEL_TIMEOUT` 同时控制连接与读取超时，必须大于 0 且不超过 30 秒。请求以 `refundId` 作为 `Idempotency-Key`，只发送退款 ID、订单 ID、金额和币种。
 
 ## ReAct 工具确认
 
@@ -130,6 +140,16 @@ mvn clean '-DskipTests=false' test
 cd agent-console; npm test; npm run build
 ```
 
+退款可靠性验收不需要模型凭据，但会删除并重建 JDBC URL 指向的本机 `AI_AGENT_STATION`。脚本拒绝非本机地址、其他 Schema、缺少重置开关或错误确认值：
+
+```powershell
+python -m scripts.refund_acceptance `
+  --reset-database `
+  --confirm-drop DROP_LOCAL_REFUND_ACCEPTANCE_SCHEMA
+```
+
+脚本启动随机本机端口 HTTP 模拟渠道，以 `http` 模式启动应用，覆盖自动成功、人工审核幂等、有限重试、最终失败后的人工重试、租约与重启恢复、状态查询一致性。报告写入 `target/refund-acceptance/`，不包含请求正文、用户信息、审核说明或环境凭据。只读退款 Tool 的命令状态、尝试次数和失败码序列化由 Java Tool 测试覆盖，验收脚本不为调用 Tool 而触发模型。
+
 `scripts.live_acceptance` 覆盖订单多阶段 QuestionCard、自动退款、人工审核、状态查询、重启恢复、五个只读工具、真实 `save_session_preference` 的确认/拒绝/超时/取消和 FIFO 取消。百炼模型原生工具（含联网搜索）必须保持关闭；后续外部能力仅通过框架 MCP 组件接入并单独验收。它以 `acceptance` Profile 保留确认探针作为协议诊断，但主要 ASK 场景是生产偏好写入。运行前必须准备独立非生产 MySQL 与 DashScope 凭据；不要用真实凭据执行未经审查的数据库重置。
 
 Router Policy 与 ReAct AgentSkill 的五轮稳定性验收会调用真实模型并重置非生产数据，必须获得明确授权后运行：
@@ -141,6 +161,8 @@ python -m scripts.live_acceptance --skill-stability-runs 5
 该模式不重复数据库重置、Workflow 恢复或完整套件，只使用独立 Session 重复 Router/Skill 场景。每个场景必须为 5/5：路由为预期 `REACT`，且 SSE 中的 Tool 生命周期包含预期有序子序列。报告只显示脱敏聚合成功率；若任何一次未命中，命令失败。
 
 V2 已于 2026-08-12 按该方式完成验收；结果见 [V2 验收报告](acceptance/v2-20260812.md)。再次运行仍视为新的真实外部验收，不能因已有结论跳过环境隔离和授权检查。
+
+V2.1 退款可靠性已于 2026-08-12 通过独立本机验收；结果见 [V2.1 退款验收报告](acceptance/v21-refund-20260812.md)。该结论使用 HTTP 模拟渠道，不代表真实支付商或生产上线验收。
 
 ## 交付范围
 

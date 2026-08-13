@@ -42,9 +42,11 @@ class RefundStatusToolTest {
             @Override
             public Optional<RefundCommandResultModel> findByOrder(String orderId, String userId) {
                 queriedUserId.set(userId);
+                Instant timestamp = Instant.parse("2026-08-07T00:00:00Z");
                 return Optional.of(new RefundCommandResultModel(
-                        "refund-1", orderId, userId, "ACCEPTED", new BigDecimal("99.00"), "CNY",
-                        Instant.parse("2026-08-07T00:00:00Z")
+                        "refund-1", "case-1", "run-1", orderId, userId, "FAILED",
+                        new BigDecimal("99.00"), "CNY", "", 3, timestamp, null,
+                        "REFUND_CHANNEL_TEMPORARY_FAILURE", 4, timestamp, timestamp
                 ));
             }
         });
@@ -58,6 +60,9 @@ class RefundStatusToolTest {
         assertEquals("user-1", queriedUserId.get());
         assertEquals(ToolResultState.SUCCESS, result.getState());
         assertTrue(content.getText().contains("REFUND_FOUND"));
+        assertTrue(content.getText().contains("status=FAILED"));
+        assertTrue(content.getText().contains("attemptCount=3"));
+        assertTrue(content.getText().contains("failureCode=REFUND_CHANNEL_TEMPORARY_FAILURE"));
         assertFalse(content.getText().contains("user-1"));
     }
 

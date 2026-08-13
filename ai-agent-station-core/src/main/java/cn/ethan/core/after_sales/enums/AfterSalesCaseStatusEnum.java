@@ -10,5 +10,6 @@ public enum AfterSalesCaseStatusEnum {
     PENDING_REVIEW,
     REFUND_PROCESSING,
     COMPLETED,
+    REFUND_FAILED,
     REJECTED
 }

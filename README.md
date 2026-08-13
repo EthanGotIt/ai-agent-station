@@ -5,7 +5,7 @@
 ## 模块
 
 - `ai-agent-station-core`：统一队列、请求生命周期、路由协议、会话记忆、QuestionCard 编排、Workflow 与输出协议。
-- `ai-agent-station-infrastructure`：AgentScope、Qwen Router、Spring AI Session、MyBatis-Plus、Local/HTTP OrderGateway。
+- `ai-agent-station-infrastructure`：AgentScope、Qwen Router、Spring AI Session、MyBatis-Plus、Local/HTTP 订单与退款适配器。
 - `ai-agent-station-app`：Spring Boot 装配、类型化配置、HTTP/SSE Controller 与异常转换。
 - `agent-console`：Vite + React + TypeScript 演示控制台，展示 SSE、QuestionCard、ASK 和取消状态。
 
@@ -24,9 +24,15 @@ PUT    /api/v1/agent/memories/{entryId}
 GET    /api/v1/agent/memories/{entryId}/evidence?sessionId=...
 DELETE /api/v1/agent/memories/{entryId}?sessionId=...&expectedVersion=...
 DELETE /api/v1/agent/requests/{requestId}
+GET    /api/v1/after-sales/cases?status=...&page=0&size=20
+GET    /api/v1/after-sales/cases/{caseId}
+POST   /api/v1/after-sales/cases/{caseId}/review-decisions
+POST   /api/v1/after-sales/cases/{caseId}/refund-retries
 ```
 
 聊天请求使用 `requestId、sessionId、message`；QuestionCard 回答使用 `questionId、checkpointId、expectedVersion、answers`。身份由 `X-User-Id` 传入。同一 `userId + sessionId` 严格 FIFO，不同 Session 可以并行。
+
+售后审核 API 仅面向可信上游或控制台操作员，必须提供 `X-Operator-Id`。审核请求使用 `decisionId、expectedVersion、decision、note`，其中驳回必须填写说明；失败退款的人工重试使用 `retryId、expectedVersion`。二者均以幂等标识与乐观锁保护。
 
 ## 模型、提示词与数据
 
@@ -36,7 +42,7 @@ DELETE /api/v1/agent/requests/{requestId}
 - 不使用运行时 ToolGroup 隐藏业务 Tool：六个生产 Tool 始终由服务端注册，Skill 只提供指导；JSON 结构交给 Schema，工具范围交给服务端工具集与权限，Thinking 隔离交给事件边界。
 - Thinking 原文只参与模型内部推理，不进入同步响应、SSE 或日志；SSE 仅公开 `thinking_started`、`thinking_completed` 进度。
 - `order-inquiry` 支持 `QUERY`、`TRACK`、`DIAGNOSE`：缺少订单号时从近期订单生成选择卡；诊断缺少问题类型时继续生成卡；每次恢复都会实时复查订单归属。
-- `after-sales-refund` 支持 `APPLY`、`QUERY_STATUS`：退款原因/说明/最终确认均由持久化 QuestionCard 收集。未发货且金额完整时创建幂等退款命令，已发货或签收七天内进入可查询的人工审核申请；取消、已退款或超期订单被拒绝。
+- `after-sales-refund` 支持 `APPLY`、`QUERY_STATUS`：退款原因/说明/最终确认均由持久化 QuestionCard 收集。未发货且金额完整时创建幂等退款命令，已发货或签收七天内进入可查询的人工审核申请；取消、已退款或超期订单被拒绝。人工申请可由操作员审核；批准后由本地异步 Worker 执行退款，失败会在有限自动重试后转为人工可重试，最终状态可通过 Workflow、只读 Tool 和控制台查询。
 - ReAct 生产目录包含五个只读 `ALLOW` 工具：`list_recent_orders`、`get_order_snapshot`、`get_logistics_trace`、`get_after_sales_status`、`get_after_sales_policy`；`save_session_preference` 是唯一的低风险 `ASK` 写工具，只能保存当前会话的回答偏好。退款等关键写入仍只能通过 Workflow。
 - ReAct 使用 `InMemoryAgentStateStore`，确认通过 `intervention → ConfirmResult` 在同一 SSE 回合继续；结束、超时、取消和异常都会清理状态，不提供 ReAct 恢复。Workflow 的跨请求/重启恢复以 MySQL `WORKFLOW_RUN` 为事实来源。
 - 会话记忆默认不生成也不使用。每个请求可通过 `memory.generate`、`memory.use` 覆盖；偏好会实际影响 ReAct 的语言、格式和详略，任务上下文只以建议值方式出现在 Workflow QuestionCard，绝不自动写入业务参数。
@@ -51,6 +57,8 @@ python -m scripts.convention_check
 python -m unittest discover -s scripts/tests -p "test_*.py"
 python -m scripts.plan_audit --strict
 mvn clean '-DskipTests=false' test
+python -m scripts.refund_acceptance --reset-database `
+  --confirm-drop DROP_LOCAL_REFUND_ACCEPTANCE_SCHEMA
 
 cd agent-console
 npm test
@@ -67,6 +75,6 @@ npm run dev
 
 Vite 会将 `/api` 代理到本地 8090 端口；控制台不会在 `localStorage` 保存 Prompt、工具参数或记忆正文。
 
-V2 已在独立非生产 MySQL 与 DashScope 环境完成交付验收：完整真实验收 45/45 通过，五类 Router/Skill 稳定性场景均为 5/5，控制台人工串联通过。验收不包含上线、并发压测、故障注入或生产安全评审，也不依赖 Docker、Docker Compose、Nginx 或 TLS 证书。后续能力扩展按 V2.1 另行评审。
+V2 已在独立非生产 MySQL 与 DashScope 环境完成交付验收；V2.1 退款可靠性也已在本机独立 MySQL 与 HTTP 模拟渠道完成六场景验收。后者不使用模型凭据，覆盖渠道幂等、有限重试、人工重试和进程重启租约恢复。两轮验收均不代表上线、并发压测、生产安全评审或现场演示结论，也不依赖 Docker、Nginx 或 TLS。
 
 详细说明见 [文档索引](docs/README.md)、[架构文档](docs/architecture.md)、[运行手册](docs/runbook.md)、[执行验收矩阵](docs/execution-plan.md) 和 [任务交接](docs/task-handoff.md)。

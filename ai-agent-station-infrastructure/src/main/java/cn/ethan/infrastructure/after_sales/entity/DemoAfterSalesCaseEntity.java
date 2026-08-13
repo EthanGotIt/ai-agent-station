@@ -41,6 +41,16 @@ public final class DemoAfterSalesCaseEntity {
     private String currency;
     @TableField("REFUND_ID")
     private String refundId;
+    @TableField("OPERATOR_ID")
+    private String operatorId;
+    @TableField("DECISION_ID")
+    private String decisionId;
+    @TableField("DECISION_NOTE")
+    private String decisionNote;
+    @TableField("REVIEWED_AT")
+    private Instant reviewedAt;
+    @TableField("FAILURE_CODE")
+    private String failureCode;
     @TableField("VERSION")
     private Long version;
     @TableField("CREATED_AT")
@@ -72,6 +82,16 @@ public final class DemoAfterSalesCaseEntity {
     public void setCurrency(String currency) { this.currency = currency; }
     public String getRefundId() { return refundId; }
     public void setRefundId(String refundId) { this.refundId = refundId; }
+    public String getOperatorId() { return operatorId; }
+    public void setOperatorId(String operatorId) { this.operatorId = operatorId; }
+    public String getDecisionId() { return decisionId; }
+    public void setDecisionId(String decisionId) { this.decisionId = decisionId; }
+    public String getDecisionNote() { return decisionNote; }
+    public void setDecisionNote(String decisionNote) { this.decisionNote = decisionNote; }
+    public Instant getReviewedAt() { return reviewedAt; }
+    public void setReviewedAt(Instant reviewedAt) { this.reviewedAt = reviewedAt; }
+    public String getFailureCode() { return failureCode; }
+    public void setFailureCode(String failureCode) { this.failureCode = failureCode; }
     public Long getVersion() { return version; }
     public void setVersion(Long version) { this.version = version; }
     public Instant getCreatedAt() { return createdAt; }

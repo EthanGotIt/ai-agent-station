@@ -68,7 +68,10 @@ public final class AfterSalesStatusTool extends ToolBase {
             try {
                 Optional<AfterSalesCaseModel> caseModel = cases.findByOrder(orderId, userId);
                 if (caseModel.isPresent()) {
-                    return result(parameter, ToolResultBlock.text(format(caseModel.orElseThrow()))
+                    AfterSalesCaseModel current = caseModel.orElseThrow();
+                    return result(parameter, ToolResultBlock.text(format(
+                                    current, refunds.findByCaseId(current.caseId()).orElse(null)
+                            ))
                             .withState(ToolResultState.SUCCESS));
                 }
                 Optional<RefundCommandResultModel> refund = refunds.findByOrder(orderId, userId);
@@ -82,14 +85,18 @@ public final class AfterSalesStatusTool extends ToolBase {
         });
     }
 
-    private String format(AfterSalesCaseModel caseModel) {
+    private String format(AfterSalesCaseModel caseModel, RefundCommandResultModel command) {
         return "AFTER_SALES_FOUND caseId=" + safe(caseModel.caseId())
                 + " orderId=" + safe(caseModel.orderId())
                 + " status=" + caseModel.status().name()
                 + " handlingMode=" + caseModel.handlingMode().name()
                 + " refundId=" + safe(caseModel.refundId())
                 + " amount=" + (caseModel.amount() == null ? "UNKNOWN" : caseModel.amount())
-                + " currency=" + safe(caseModel.currency());
+                + " currency=" + safe(caseModel.currency())
+                + " failureCode=" + safe(caseModel.failureCode())
+                + (command == null ? "" : " commandStatus=" + command.status()
+                + " attemptCount=" + command.attemptCount()
+                + " commandFailureCode=" + safe(command.failureCode()));
     }
 
     private String formatLegacy(RefundCommandResultModel refund) {

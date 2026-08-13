@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { AfterSalesReviewPanel } from "./AfterSalesReviewPanel";
 import { InterventionCard } from "./InterventionCard";
 import { MemoryPanel } from "./MemoryPanel";
 import { QuestionCard } from "./QuestionCard";
@@ -8,6 +9,7 @@ import { useAgentStream } from "./useAgentStream";
 export function App() {
   const [userId, setUserId] = useState("demo-user-1");
   const [sessionId, setSessionId] = useState("demo-session-1");
+  const [operatorId, setOperatorId] = useState("demo-operator-1");
   const [message, setMessage] = useState("");
   const [memoryUse, setMemoryUse] = useState(true);
   const [memoryGenerate, setMemoryGenerate] = useState(false);
@@ -24,7 +26,6 @@ export function App() {
   return <main>
     <header>
       <div>
-        <p className="eyebrow">AI Agent Station</p>
         <h1>业务闭环控制台</h1>
       </div>
       <button className="secondary" disabled={!agent.busy} onClick={() => void agent.cancel()}>取消当前请求</button>
@@ -32,6 +33,7 @@ export function App() {
     <section className="settings card">
       <label>用户 ID<input value={userId} disabled={agent.busy} onChange={(event) => setUserId(event.target.value)} /></label>
       <label>会话 ID<input value={sessionId} disabled={agent.busy} onChange={(event) => setSessionId(event.target.value)} /></label>
+      <label>操作员 ID<input value={operatorId} onChange={(event) => setOperatorId(event.target.value)} /></label>
       <label><input type="checkbox" checked={memoryUse} onChange={(event) => setMemoryUse(event.target.checked)} /> 使用会话记忆</label>
       <label><input type="checkbox" checked={memoryGenerate} onChange={(event) => setMemoryGenerate(event.target.checked)} /> 后台生成记忆</label>
     </section>
@@ -44,6 +46,7 @@ export function App() {
         </article>)}
       </section>
       <aside>
+        <AfterSalesReviewPanel operatorId={operatorId.trim()} />
         {agent.question ? <QuestionCard value={agent.question} disabled={agent.busy} onSubmit={(answers) => {
           const { question, workflowRun } = agent.question!;
           void agent.answer({

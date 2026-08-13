@@ -25,6 +25,11 @@ public record AfterSalesCaseModel(
         BigDecimal amount,
         String currency,
         String refundId,
+        String operatorId,
+        String decisionId,
+        String decisionNote,
+        Instant reviewedAt,
+        String failureCode,
         long version,
         Instant createdAt,
         Instant updatedAt
@@ -39,16 +44,97 @@ public record AfterSalesCaseModel(
         description = description == null ? "" : description.strip();
         currency = currency == null ? "" : currency.strip().toUpperCase(java.util.Locale.ROOT);
         refundId = refundId == null ? "" : refundId.strip();
+        operatorId = operatorId == null ? "" : operatorId.strip();
+        decisionId = decisionId == null ? "" : decisionId.strip();
+        decisionNote = decisionNote == null ? "" : decisionNote.strip();
+        failureCode = failureCode == null ? "" : failureCode.strip();
         if (amount != null && amount.signum() < 0) {
             throw new IllegalArgumentException("after-sales case amount is invalid");
         }
+        if (!decisionId.isBlank() && (operatorId.isBlank() || reviewedAt == null)) {
+            throw new IllegalArgumentException("after-sales review metadata is incomplete");
+        }
+    }
+
+    public AfterSalesCaseModel(
+            String caseId,
+            String workflowRunId,
+            String userId,
+            String orderId,
+            RefundReasonEnum reason,
+            String description,
+            AfterSalesHandlingModeEnum handlingMode,
+            AfterSalesCaseStatusEnum status,
+            BigDecimal amount,
+            String currency,
+            String refundId,
+            long version,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        this(caseId, workflowRunId, userId, orderId, reason, description, handlingMode, status,
+                amount, currency, refundId, "", "", "", null, "", version, createdAt, updatedAt);
     }
 
     public AfterSalesCaseModel withRefund(String nextRefundId, Instant now) {
         return new AfterSalesCaseModel(
                 caseId, workflowRunId, userId, orderId, reason, description, handlingMode,
                 AfterSalesCaseStatusEnum.REFUND_PROCESSING, amount, currency, nextRefundId,
+                operatorId, decisionId, decisionNote, reviewedAt, "", version + 1, createdAt, now
+        );
+    }
+
+    public AfterSalesCaseModel reviewed(
+            AfterSalesCaseStatusEnum nextStatus,
+            String nextOperatorId,
+            String nextDecisionId,
+            String nextDecisionNote,
+            String nextRefundId,
+            Instant now
+    ) {
+        if (status != AfterSalesCaseStatusEnum.PENDING_REVIEW
+                || (nextStatus != AfterSalesCaseStatusEnum.REFUND_PROCESSING
+                && nextStatus != AfterSalesCaseStatusEnum.REJECTED)) {
+            throw new IllegalStateException("after-sales review transition is invalid");
+        }
+        return new AfterSalesCaseModel(
+                caseId, workflowRunId, userId, orderId, reason, description, handlingMode, nextStatus,
+                amount, currency, nextRefundId, nextOperatorId, nextDecisionId, nextDecisionNote,
+                now, "", version + 1, createdAt, now
+        );
+    }
+
+    public AfterSalesCaseModel withCompleted(Instant now) {
+        if (status != AfterSalesCaseStatusEnum.REFUND_PROCESSING) {
+            throw new IllegalStateException("after-sales completion transition is invalid");
+        }
+        return new AfterSalesCaseModel(
+                caseId, workflowRunId, userId, orderId, reason, description, handlingMode,
+                AfterSalesCaseStatusEnum.COMPLETED, amount, currency, refundId,
+                operatorId, decisionId, decisionNote, reviewedAt, "", version + 1, createdAt, now
+        );
+    }
+
+    public AfterSalesCaseModel withRefundFailure(String nextFailureCode, Instant now) {
+        if (status != AfterSalesCaseStatusEnum.REFUND_PROCESSING) {
+            throw new IllegalStateException("after-sales failure transition is invalid");
+        }
+        return new AfterSalesCaseModel(
+                caseId, workflowRunId, userId, orderId, reason, description, handlingMode,
+                AfterSalesCaseStatusEnum.REFUND_FAILED, amount, currency, refundId,
+                operatorId, decisionId, decisionNote, reviewedAt, nextFailureCode,
                 version + 1, createdAt, now
+        );
+    }
+
+    public AfterSalesCaseModel requeued(Instant now) {
+        if (status != AfterSalesCaseStatusEnum.REFUND_FAILED) {
+            throw new IllegalStateException("after-sales retry transition is invalid");
+        }
+        return new AfterSalesCaseModel(
+                caseId, workflowRunId, userId, orderId, reason, description, handlingMode,
+                AfterSalesCaseStatusEnum.REFUND_PROCESSING, amount, currency, refundId,
+                operatorId, decisionId, decisionNote, reviewedAt, "", version + 1, createdAt, now
         );
     }
 

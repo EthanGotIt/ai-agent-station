@@ -27,6 +27,14 @@ ReAct 只负责复杂只读兜底。AgentScope 工具按自身声明返回 `allo
 
 关键写入（支付、退款、发货、删除、账号变更）由确定性 Workflow 处理。生产 ReAct 登记近期订单、订单快照、物流、售后状态、售后规则五个只读工具，以及一个固定 `ASK` 的 `save_session_preference`：它只能写入当前会话中可编辑、可软删除的回答偏好。对明确要求持久化且可无歧义规范化的语言、格式、详略偏好，ReAct 执行器确定性编排同一个 Tool 与同一 intervention 协议，避免把是否写入交给模型概率选择；歧义表达仍由 ReAct 澄清，不会写入。测试可使用 `acceptance` Profile 的可逆探针验证确认协议；它不属于生产功能。
 
+## 退款生命周期
+
+退款 Workflow 只负责收集信息、资格判定和最终确认。自动退款在同一事务中创建申请单和 `PENDING` 退款命令；人工退款先创建 `PENDING_REVIEW` 申请单。可信操作员通过独立 HTTP 边界，使用 `X-Operator-Id`、幂等决策 ID 和申请单乐观锁审核：批准时在同一事务内创建命令并把申请单转为 `REFUND_PROCESSING`，驳回时转为 `REJECTED`。
+
+`RefundCommandWorker` 以租约领取到期的 `PENDING / RETRY_WAIT` 命令；渠道调用在事务外完成，再由独立本地事务收敛为 `COMPLETED`、下一次 `RETRY_WAIT` 或最终 `FAILED`。最终失败同步更新申请单为 `REFUND_FAILED`，仅由操作员带重试幂等键重新排队。`DEMO_REFUND_COMMAND.CASE_ID` 唯一约束、命令版本和申请单版本共同防止重复退款；进程重启后未完成任务依赖持久化状态与租约恢复，不依赖内存队列。
+
+退款渠道由配置选择：`local` 保持确定性本地完成，`http` 只向 `POST /refunds` 发送退款 ID、订单 ID、金额和币种，并用 `Idempotency-Key: <refundId>` 固定外部幂等语义。4xx、5xx/网络异常和非法响应分别归一为稳定失败码；连接与读取共用不超过 30 秒的超时。渠道调用不携带用户 ID、退款说明或审核上下文。
+
 ## 提示词与框架校验：Router Policy 与 AgentSkill
 
 Router 先运行 Core 的确定性规则；仅规则未覆盖的开放问题才使用 Spring AI 结构化输出与 `validateSchema`。classpath `prompt/agent-router-policy.md` 是 Router 的可信决策说明：只列固定 executor、domain、operation 白名单和冲突优先级，资源缺失或空白时应用启动失败。它不是 AgentScope Skill，也不包含 Tool 调用配方或退款资格、金额、时限等业务规则。
