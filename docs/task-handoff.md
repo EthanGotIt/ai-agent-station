@@ -8,42 +8,46 @@
 
 ## 当前基线
 
-- V2 稳定基线为提交 `8b02be3`（`feat: establish v2 agent station baseline`），依赖方向保持 `app → core`、`app → infrastructure`、`infrastructure → core`。
-- V2.1 退款生命周期闭环已作为独立稳定基线提交 `22d0bfe`（`feat: complete v2.1 refund lifecycle`）：审核/重试幂等、乐观锁、异步 Worker 租约、有限自动重试、人工重试与 HTTP 退款渠道边界均已完成。
-- V2.2 健壮性维护已完成，但按约定保留为未提交的独立 Diff：异步拒绝与关闭清理、注入 `Clock`、HTTP 基础 URL 与失败码校验、H2 事务回滚验证、精确依赖声明、React 请求取消/乱序与幂等操作收口均已覆盖。
-- 控制台不做视觉改版；仅补齐请求生命周期、错误反馈、长文本换行、焦点和高对比度边界。Impeccable detector 已执行一次且无问题，未创建 Hook、`PRODUCT.md` 或 `DESIGN.md`。
-- 项目定位为校招工程能力展示，不要求 Docker、TLS、公网部署、真实支付商、MQ、Redis、监控或现场演示。
+- V2 稳定基线为提交 8b02be3（feat: establish v2 agent station baseline）。
+- V2.1 退款生命周期闭环为提交 22d0bfe（feat: complete v2.1 refund lifecycle）。
+- V2.2 运行时和控制台健壮性已提交为 0edda56（refactor: harden v2.2 runtime and console）。
+- V2.3 Agent Workbench 控制台完整重构已提交为 b777022（feat: rebuild agent workbench console (v2.3)）：只修改 React 控制台、其测试、设计文档和 lucide-react 依赖；未修改后端 API、DTO、数据库或业务状态机。
+- 忽略规则已提交为 d9ebd64（chore: ignore playwright artifacts and screenshots），.playwright-cli/ 与 output/ 不再出现在工作区状态。
+- 用户已有 .idea 本地改动仍未处理、未暂存；生成物、.env 与本地凭据均不纳入变更。
+
+## V2.3 交付
+
+- 控制台使用 Hash 工作区：#/agent 为默认入口，#/after-sales 与 #/memory 为独立工作区；支持刷新、前进后退和直链。
+- Agent 工作区提供四个对应真实种子数据的快捷场景、聚合后的流式对话回合、QuestionCard / ASK 阻塞动作、固定 Composer 和独立执行检查器。
+- 售后改为审核队列—详情主从布局；记忆改为列表—详情与内联编辑，不再使用 window.prompt。
+- Dispatch Ledger 视觉系统支持自动亮暗主题、移动底部导航、可见焦点、200% 缩放、prefers-reduced-motion 与强制高对比度。
+- 已写入 PRODUCT.md、DESIGN.md、.impeccable/design.json、surface brief、三份高保真构图与验收截图；Impeccable finish reviewer 最终结论为 PASS。
+- Impeccable 概念种子为 1730b5b2。远程 challenger 服务不可用，故使用本地分配方向 Dispatch Ledger；三份构图已记录选择，主稿为 agent-workbench-dispatch-ledger-01.png。
 
 ## 最近验证
 
-- `D:\Application\miniconda3\python.exe -m scripts.convention_check`：通过。
-- `D:\Application\miniconda3\python.exe -m unittest discover -s scripts/tests -p "test_*.py"`：25 项通过。
-- `D:\Application\miniconda3\python.exe -m scripts.plan_audit --strict`：23/23 通过。
-- `mvn clean '-DskipTests=false' test`：143 项通过（core 69、infrastructure 43、app 31，含 `RefundTransactionIT`）。
-- `mvn dependency:analyze -DignoreNonCompile=true`：通过；仅有 Spring Starter/聚合依赖的既有诊断提示。
-- `agent-console` 的 `npm test -- --run`：21/21 通过；`npm run build` 通过。
-- `D:\Application\miniconda3\python.exe -m scripts.refund_acceptance --reset-database --confirm-drop DROP_LOCAL_REFUND_ACCEPTANCE_SCHEMA`：6/6 通过，报告位于 `target/refund-acceptance/`；仅重置本机 `AI_AGENT_STATION`，外部模型调用为 0。
-- `git diff --check`：通过。用户已有 `.idea` 变更和本地 `.env` 未纳入任何提交。
-
-## 当前交付范围
-
-- 退款 HTTP 适配器仍只向模拟/渠道发送退款 ID、订单 ID、金额和币种；远程调用仍在数据库事务外，并以同一 `refundId` 作为外部幂等键。
-- 维护不修改入站 API、HTTP DTO、数据库表、迁移脚本和退款状态机，不扩展生产级基础设施。
-- 系统 PATH 中的 `python` 为 Windows Store 占位符；执行 Python 脚本时使用 `D:\Application\miniconda3\python.exe`，不要将占位符的退出码误判为门禁结果。
+- D:\Application\miniconda3\python.exe -m scripts.convention_check：通过。
+- D:\Application\miniconda3\python.exe -m unittest discover -s scripts/tests -p "test_*.py"：25 项通过。
+- D:\Application\miniconda3\python.exe -m scripts.plan_audit --strict：23/23 通过。
+- mvn clean '-DskipTests=false' test：143 项通过（core 69、infrastructure 43、app 31）。
+- agent-console：npm test -- --run 26/26 通过；npm run build 通过。
+- git diff --check：通过。
+- 提交前复验：npm test -- --run 26/26 通过、npm run build 通过；沙箱下 esbuild 管道 spawn 触发 EPERM，经一次升级重试（danger-full-access）后通过，属环境边界而非代码问题。
+- 主实施阶段的 Impeccable detector 仅执行一次。检测器因缺少 HTML 解析依赖降级；唯一 Inter 警告已改为 Aptos/CJK 系统字体栈，未重跑主检测。后续 documenter 在修正设计 sidecar 时额外触发了一次文档侧扫描；该偏差已记录，未引入代码改动。
+- V2.3 未改变后端协议和退款逻辑，因此未重跑 DashScope live acceptance 或本机 MySQL 退款验收。
 
 ## 下一步唯一动作
 
-审核 V2.2 独立 Diff，排除用户 `.idea` 本地改动后，按用户需要决定是否创建维护提交；未获得明确要求前不暂存、不提交。
+无未决提交动作；V2.3 已入库。后续方向（如 V2.4 能力规划）待用户明确指示。
 
 ## 优先文件
 
-| 目的 | 文件 |
-|---|---|
-| 异步与关闭清理 | `SessionExecutionQueueManager.java`、`AgentMemoryExtractionCoordinator.java`、`AgentScopeReActExecutor.java` |
-| HTTP 与事务边界 | `HttpRefundExecutor.java`、`HttpOrderGateway.java`、`HttpLogisticsGateway.java`、`RefundTransactionIT.java` |
-| 控制台请求生命周期 | `agent-console/src/http.ts`、`AfterSalesReviewPanel.tsx`、`MemoryPanel.tsx`、`useAgentStream.ts` |
-| 本机退款验收 | `scripts/refund_acceptance/`、`target/refund-acceptance/` |
+- agent-console/src/App.tsx、agent-console/src/AgentWorkspace.tsx、agent-console/src/AfterSalesReviewPanel.tsx、agent-console/src/MemoryPanel.tsx：三个工作区与交互入口。
+- agent-console/src/useAgentStream.ts、agent-console/src/ExecutionInspector.tsx、agent-console/src/scenarios.ts：流式回合聚合、技术轨迹和真实快捷场景。
+- agent-console/src/styles.css、PRODUCT.md、DESIGN.md、.impeccable/design.json：Dispatch Ledger 视觉契约与设计证据。
 
 ## 恢复原则
 
-如开启新任务，先检查 `git status --short` 和相关 Diff；不回滚用户保留的 `.idea` 本地改动，不下载 Docker 镜像或引入上线、现场演示与支付商集成，除非用户明确授权。
+- 项目用于校招工程能力展示，不是生产运营后台；不引入上线、认证、MQ、Redis、监控或真实支付商能力。
+- 通过 D:\Application\miniconda3\python.exe 运行 Python 脚本；系统 PATH 中的 python 是 Windows Store 占位符。
+- 不回滚或清理用户既有 .idea 变更，不清理非目标数据库 Schema。
