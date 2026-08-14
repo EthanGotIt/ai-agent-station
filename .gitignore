@@ -57,3 +57,7 @@ build/
 /deployment/certs/*.pem
 /deployment/certs/*.key
 /deployment/backups/
+
+### Local tooling artifacts ###
+/output/
+/.playwright-cli/
