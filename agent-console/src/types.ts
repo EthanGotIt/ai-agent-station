@@ -1,5 +1,36 @@
 export type MemoryOptions = { generate?: boolean; use?: boolean };
 
+export type WorkspaceId = "agent" | "after-sales" | "memory";
+
+export type ScenarioDefinition = {
+  id: "order" | "logistics" | "refund" | "preference";
+  title: string;
+  description: string;
+  message: string;
+};
+
+export type RunTraceEvent = {
+  id: string;
+  type: "route" | "node" | "progress" | "tool" | "done" | "error";
+  data: string;
+  at: string;
+};
+
+export type ConversationTurnStatus = "running" | "waiting" | "completed" | "cancelled" | "failed";
+
+export type ConversationTurn = {
+  id: string;
+  requestId: string;
+  userMessage: string;
+  content: string;
+  result: unknown | null;
+  error: string | null;
+  route: string | null;
+  status: ConversationTurnStatus;
+  startedAt: string;
+  finishedAt: string | null;
+};
+
 export type MemoryEntry = {
   entryId: string;
   sourceId: string | null;

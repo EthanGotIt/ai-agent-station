@@ -1,3 +1,4 @@
+import { CircleAlert, ClipboardList, RefreshCw, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HttpRequestError, isRequestAbort, requestJson } from "./http";
 import type { AfterSalesCase, AfterSalesCasePage } from "./types";
@@ -203,56 +204,61 @@ export function AfterSalesReviewPanel({ operatorId }: Props) {
   const canReview = selected?.status === "PENDING_REVIEW";
   const canRetry = selected?.status === "REFUND_FAILED";
 
-  return <section className="review-panel" aria-labelledby="review-heading" aria-busy={loading || saving}>
-    <div className="review-heading">
-      <div><h2 id="review-heading">售后审核队列</h2><p>审核人工申请，追踪异步退款的最终状态。</p></div>
-      <button className="secondary" type="button" disabled={loading || saving || !operatorId.trim()} onClick={() => void load()}>刷新</button>
+  return <section className="after-sales-workspace" aria-labelledby="after-sales-heading" aria-busy={loading || saving}>
+    <div className="workspace-heading">
+      <div><h1 id="after-sales-heading">售后审核与退款处理</h1><p>从人工审核到异步退款结果，所有状态都保持可追溯。</p></div>
+      <button className="secondary icon-button" type="button" disabled={loading || saving || !operatorId.trim()} onClick={() => void load()}><RefreshCw aria-hidden="true" />刷新队列</button>
     </div>
-    <label className="review-filter">状态筛选
-      <select value={status} disabled={loading || saving} onChange={(event) => { setStatus(event.target.value); setPage(0); }}>
-        {STATUS_OPTIONS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-      </select>
-    </label>
-    {error ? <p className="review-error" role="alert">{error}</p> : null}
-    {loading ? <p className="muted review-loading">正在更新审核队列…</p> : null}
-    {!loading && items.length === 0 && operatorId.trim() ? <p className="review-empty">当前筛选下没有售后申请。新的人工审核申请会显示在这里。</p> : null}
-    <div className="review-list" aria-live="polite">
-      {items.map((item) => <button className={`review-row ${selected?.caseId === item.caseId ? "selected" : ""}`} type="button"
-        key={item.caseId} onClick={() => void select(item.caseId)} aria-pressed={selected?.caseId === item.caseId}>
-        <span><strong>{item.orderId}</strong><small>{money(item.amount, item.currency)}</small></span>
-        <span className={`status status-${item.status.toLowerCase()}`}>{statusLabel(item.status)}</span>
-      </button>)}
-    </div>
-    {data && (page > 0 || data.hasNext) ? <div className="review-pagination">
-      <button className="secondary" type="button" disabled={page === 0 || loading || saving} onClick={() => setPage((current) => current - 1)}>上一页</button>
-      <span>第 {page + 1} 页</span>
-      <button className="secondary" type="button" disabled={!data.hasNext || loading || saving} onClick={() => setPage((current) => current + 1)}>下一页</button>
-    </div> : null}
-    {selected ? <section className="review-detail" aria-labelledby="review-detail-heading">
-      <h3 id="review-detail-heading">申请详情</h3>
-      <dl className="field-list">
-        <div><dt>售后单</dt><dd>{selected.caseId}</dd></div>
-        <div><dt>处理状态</dt><dd>{statusLabel(selected.status)}</dd></div>
-        <div><dt>退款原因</dt><dd>{selected.reason}</dd></div>
-        <div><dt>退款金额</dt><dd>{money(selected.amount, selected.currency)}</dd></div>
-        <div><dt>退款任务</dt><dd>{selected.refundCommand?.status ?? "等待审核"}</dd></div>
-        <div><dt>尝试次数</dt><dd>{selected.refundCommand?.attemptCount ?? 0}</dd></div>
-      </dl>
-      <p className="review-description">{selected.description || "用户未补充退款说明。"}</p>
-      {selected.failureCode ? <p className="review-error">失败原因：{selected.failureCode}</p> : null}
-      {canReview ? <>
-        <label>审核说明（驳回时必填）
-          <textarea value={note} disabled={saving} onChange={(event) => setNote(event.target.value)} maxLength={500}
-            placeholder="例如：请在签收后提供商品问题凭证。" />
+    {error ? <p className="review-error" role="alert"><CircleAlert aria-hidden="true" />{error}</p> : null}
+    <div className="review-workspace">
+      <section className="review-queue" aria-labelledby="review-heading">
+        <div className="queue-heading"><ClipboardList aria-hidden="true" /><div><h2 id="review-heading">审核队列</h2><p>选择一条申请后在右侧完成审核或重试。</p></div></div>
+        <label className="review-filter">状态筛选
+          <select value={status} disabled={loading || saving} onChange={(event) => { setStatus(event.target.value); setPage(0); }}>
+            {STATUS_OPTIONS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+          </select>
         </label>
-        <div className="actions review-actions">
-          <button type="button" disabled={saving || !operatorId.trim()} onClick={() => void decide("APPROVE")}>批准并创建退款任务</button>
-          <button className="danger" type="button" disabled={saving || !operatorId.trim() || !note.trim()} onClick={() => void decide("REJECT")}>驳回申请</button>
+        {loading ? <div className="review-skeleton" aria-label="正在加载审核队列"><span /><span /><span /></div> : null}
+        {!loading && items.length === 0 && operatorId.trim() ? <p className="review-empty">当前筛选下没有售后申请。新的人工审核申请会显示在这里。</p> : null}
+        <div className="review-list" aria-live="polite">
+          {items.map((item) => <button className={`review-row ${selected?.caseId === item.caseId ? "selected" : ""}`} type="button"
+            key={item.caseId} onClick={() => void select(item.caseId)} aria-pressed={selected?.caseId === item.caseId}>
+            <span><strong>{item.orderId}</strong><small>{money(item.amount, item.currency)}</small></span>
+            <span className={`status status-${item.status.toLowerCase()}`}>{statusLabel(item.status)}</span>
+          </button>)}
         </div>
-      </> : null}
-      {canRetry ? <div className="actions review-actions">
-        <button type="button" disabled={saving || !operatorId.trim()} onClick={() => void retry()}>重新发起退款</button>
-      </div> : null}
-    </section> : null}
+        {data && (page > 0 || data.hasNext) ? <div className="review-pagination">
+          <button className="secondary" type="button" disabled={page === 0 || loading || saving} onClick={() => setPage((current) => current - 1)}>上一页</button>
+          <span>第 {page + 1} 页</span>
+          <button className="secondary" type="button" disabled={!data.hasNext || loading || saving} onClick={() => setPage((current) => current + 1)}>下一页</button>
+        </div> : null}
+      </section>
+      <section className="review-detail-pane" aria-labelledby="review-detail-heading">
+        {selected ? <>
+          <div className="detail-heading"><div><h2 id="review-detail-heading">{selected.orderId}</h2><p>售后单 {selected.caseId}</p></div><span className={`status status-${selected.status.toLowerCase()}`}>{statusLabel(selected.status)}</span></div>
+          <dl className="field-list">
+            <div><dt>退款原因</dt><dd>{selected.reason}</dd></div>
+            <div><dt>退款金额</dt><dd>{money(selected.amount, selected.currency)}</dd></div>
+            <div><dt>退款任务</dt><dd>{selected.refundCommand?.status ?? "等待审核"}</dd></div>
+            <div><dt>尝试次数</dt><dd>{selected.refundCommand?.attemptCount ?? 0}</dd></div>
+          </dl>
+          <div className="detail-notes"><strong>用户说明</strong><p className="review-description">{selected.description || "用户未补充退款说明。"}</p></div>
+          {selected.failureCode ? <p className="review-error"><CircleAlert aria-hidden="true" />失败原因：{selected.failureCode}</p> : null}
+          {canReview ? <div className="review-decision">
+            <label>审核说明（驳回时必填）
+              <textarea value={note} disabled={saving} onChange={(event) => setNote(event.target.value)} maxLength={500}
+                placeholder="例如：请在签收后提供商品问题凭证。" />
+            </label>
+            <div className="actions review-actions">
+              <button type="button" disabled={saving || !operatorId.trim()} onClick={() => void decide("APPROVE")}>批准并创建退款任务</button>
+              <button className="danger" type="button" disabled={saving || !operatorId.trim() || !note.trim()} onClick={() => void decide("REJECT")}>驳回申请</button>
+            </div>
+          </div> : null}
+          {canRetry ? <div className="review-decision"><p>退款任务已达到自动重试上限。确认后会按当前案件版本重新排队。</p><div className="actions review-actions">
+            <button type="button" disabled={saving || !operatorId.trim()} onClick={() => void retry()}><RotateCcw aria-hidden="true" />重新发起退款</button>
+          </div></div> : null}
+        </> : <div className="detail-empty"><ClipboardList aria-hidden="true" /><h2 id="review-detail-heading">选择一条售后申请</h2><p>审核说明、退款任务和尝试记录会在这里形成完整的处理上下文。</p></div>}
+      </section>
+    </div>
   </section>;
 }

@@ -3,6 +3,15 @@ import type { ReactNode } from "react";
 type CardData = Record<string, unknown>;
 type Props = { data: unknown };
 
+const CARD_TITLES: Record<string, string> = {
+  order_overview: "订单概览",
+  logistics_timeline: "物流轨迹",
+  order_diagnosis: "订单诊断",
+  after_sales_result: "售后处理结果",
+  after_sales_status: "售后处理状态",
+  after_sales_confirmation: "售后确认"
+};
+
 function value(data: CardData, name: string) {
   const aliases: Record<string, string[]> = {
     amount: ["paidAmount", "refundAmount"],
@@ -82,7 +91,7 @@ export function StructuredCard({ data }: Props) {
     default: content = <pre>{JSON.stringify(card, null, 2)}</pre>;
   }
   return <article className="structured-card">
-    <strong>{cardType}</strong>
+    <strong>{CARD_TITLES[cardType] ?? "结构化业务结果"}</strong>
     {content}
   </article>;
 }

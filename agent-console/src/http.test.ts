@@ -35,6 +35,14 @@ describe("readJsonResponse", () => {
     } satisfies Partial<HttpRequestError>);
   });
 
+  it("translates an empty gateway failure into a local recovery action", async () => {
+    await expect(readJsonResponse(new Response("", { status: 502 }))).rejects.toMatchObject({
+      kind: "http",
+      status: 502,
+      message: "本地服务暂时不可用（HTTP 502）。启动本地后端后刷新重试。"
+    } satisfies Partial<HttpRequestError>);
+  });
+
   it("distinguishes caller cancellation from request timeout", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn((_input: RequestInfo | URL, options?: RequestInit) => new Promise((_resolve, reject) => {

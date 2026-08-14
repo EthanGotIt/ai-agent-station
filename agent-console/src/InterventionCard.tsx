@@ -1,3 +1,4 @@
+import { ShieldAlert } from "lucide-react";
 import type { Intervention } from "./types";
 
 type Props = {
@@ -7,9 +8,8 @@ type Props = {
 };
 
 export function InterventionCard({ value, disabled, onDecide }: Props) {
-  return <section className="card intervention-card">
-    <p className="eyebrow">ReAct / confirmation required</p>
-    <h2>确认工具写入</h2>
+  return <section className="decision-card intervention-card" aria-labelledby={`intervention-${value.replyId}`}>
+    <div className="decision-heading"><ShieldAlert aria-hidden="true" /><div><h2 id={`intervention-${value.replyId}`}>确认工具写入</h2><p>ReAct 需要你明确决定后才能继续当前回合。</p></div></div>
     <p>{value.message}</p>
     {value.tools.map((tool) => <article className="tool" key={tool.toolCallId}>
       <strong>{tool.toolName}</strong>

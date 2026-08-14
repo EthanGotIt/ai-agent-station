@@ -1,3 +1,4 @@
+import { CircleHelp } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import type { WorkflowQuestionEvent } from "./types";
 
@@ -22,9 +23,8 @@ export function QuestionCard({ value, disabled, onSubmit }: Props) {
     onSubmit(answers);
   }
 
-  return <section className="card question-card">
-    <p className="eyebrow">Workflow / {workflowRun.status}</p>
-    <h2>{question.title}</h2>
+  return <section className="decision-card question-card" aria-labelledby={`question-${question.questionId}`}>
+    <div className="decision-heading"><CircleHelp aria-hidden="true" /><div><h2 id={`question-${question.questionId}`}>{question.title}</h2><p>Workflow 当前状态：{workflowRun.status}</p></div></div>
     <p>{question.prompt}</p>
     <form onSubmit={submit}>
       {question.fields.map((field) => <label key={field.name}>

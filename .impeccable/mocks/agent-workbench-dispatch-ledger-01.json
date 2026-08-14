@@ -1,0 +1,8 @@
+{
+  "approved": true,
+  "selection": "delegated-by-user",
+  "directionSeed": "1730b5b2",
+  "direction": "Dispatch Ledger",
+  "reason": "将真实场景启动、Agent 回合、Workflow/ASK 与执行轨迹组织在同一条任务路径上，最贴合当前控制台的真实能力。",
+  "prompt": "High-fidelity desktop Agent Workbench UI: dispatch-ledger world with a graphite rail, central scenario-to-conversation flow, and an execution trace inspector; mineral-sage, charcoal, jade and oxidized vermilion; no blue SaaS dashboard, neon or fabricated metrics."
+}

@@ -28,7 +28,7 @@ export async function readJsonResponse<T>(response: Response): Promise<T> {
     // 非 JSON 错误体仍使用稳定的 HTTP 状态降级信息。
   }
   throw new HttpRequestError(
-    error.message ?? error.code ?? `Request failed: ${response.status}`,
+    error.message ?? error.code ?? `本地服务暂时不可用（HTTP ${response.status}）。启动本地后端后刷新重试。`,
     "http",
     response.status,
     error.code
