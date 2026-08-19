@@ -16,14 +16,14 @@ spring:
       max-lifetime: 1800000
   ai:
     openai:
-      base-url: ${QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
-      api-key: ${DASHSCOPE_API_KEY:}
+      base-url: ${AI_AGENT_MODEL_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+      api-key: ${AI_AGENT_MODEL_API_KEY:}
       chat:
-        model: ${AI_AGENT_ROUTER_MODEL:qwen3.7-plus}
+        model: ${AI_AGENT_MODEL:qwen3.7-plus}
         temperature: 0
-        timeout: ${AI_AGENT_ROUTER_TIMEOUT:PT15S}
-        max-completion-tokens: ${AI_AGENT_ROUTER_MAX_OUTPUT_TOKENS:512}
-        max-retries: ${AI_AGENT_ROUTER_MAX_RETRIES:0}
+        timeout: ${AI_AGENT_MODEL_TIMEOUT:PT30S}
+        max-completion-tokens: ${AI_AGENT_MODEL_MAX_OUTPUT_TOKENS:1024}
+        max-retries: ${AI_AGENT_MODEL_MAX_RETRIES:0}
 
 mybatis-plus:
   configuration:
@@ -32,40 +32,10 @@ mybatis-plus:
     banner: false
 
 ai-agent:
-  router:
-    thinking-enabled: ${AI_AGENT_ROUTER_THINKING_ENABLED:true}
-    thinking-budget: ${AI_AGENT_ROUTER_THINKING_BUDGET:512}
-    history-turns: ${AI_AGENT_ROUTER_HISTORY_TURNS:6}
-    history-max-characters: ${AI_AGENT_ROUTER_HISTORY_MAX_CHARACTERS:12000}
-  memory:
-    generation-enabled: ${AI_AGENT_MEMORY_GENERATION_ENABLED:${AI_AGENT_MEMORY_RECORDING_ENABLED:false}}
-    usage-enabled: ${AI_AGENT_MEMORY_USAGE_ENABLED:false}
-    idle-delay: ${AI_AGENT_MEMORY_IDLE_DELAY:PT30S}
-    extraction-queue-capacity: ${AI_AGENT_MEMORY_EXTRACTION_QUEUE_CAPACITY:64}
-    minimum-auto-confidence: ${AI_AGENT_MEMORY_MINIMUM_AUTO_CONFIDENCE:0.75}
-  order:
-    base-url: ${AI_AGENT_ORDER_BASE_URL:http://127.0.0.1:18080}
-    http-timeout: ${AI_AGENT_ORDER_HTTP_TIMEOUT:PT5S}
-    diagnosis:
-      shipment-delay-threshold: ${AI_AGENT_ORDER_DIAGNOSIS_SHIPMENT_DELAY_THRESHOLD:PT48H}
-      logistics-stall-threshold: ${AI_AGENT_ORDER_DIAGNOSIS_LOGISTICS_STALL_THRESHOLD:PT48H}
-  after-sales:
-    refund-channel:
-      mode: ${AI_AGENT_REFUND_CHANNEL_MODE:local}
-      base-url: ${AI_AGENT_REFUND_CHANNEL_BASE_URL:http://127.0.0.1:18081}
-      timeout: ${AI_AGENT_REFUND_CHANNEL_TIMEOUT:PT3S}
-    refund-worker:
-      poll-interval: ${AI_AGENT_REFUND_WORKER_POLL_INTERVAL:PT5S}
-      initial-delay: ${AI_AGENT_REFUND_WORKER_INITIAL_DELAY:PT10S}
-      batch-size: ${AI_AGENT_REFUND_WORKER_BATCH_SIZE:8}
-      max-attempts: ${AI_AGENT_REFUND_WORKER_MAX_ATTEMPTS:3}
-      retry-delay: ${AI_AGENT_REFUND_WORKER_RETRY_DELAY:PT15S}
-      lease-duration: ${AI_AGENT_REFUND_WORKER_LEASE_DURATION:PT30S}
   runtime:
-    request-terminal-ttl: ${AI_AGENT_REQUEST_TERMINAL_TTL:PT10M}
     stream-timeout: ${AI_AGENT_STREAM_TIMEOUT:PT245S}
     queue:
-      max-pending-per-session: ${AI_AGENT_QUEUE_MAX_PENDING_PER_SESSION:4}
+      max-pending-per-thread: ${AI_AGENT_QUEUE_MAX_PENDING_PER_THREAD:4}
       max-pending-global: ${AI_AGENT_QUEUE_MAX_PENDING_GLOBAL:256}
       wait-timeout: ${AI_AGENT_QUEUE_WAIT_TIMEOUT:PT2M}
     executor:
@@ -73,23 +43,17 @@ ai-agent:
       max-pool-size: ${AI_AGENT_EXECUTOR_MAX_POOL_SIZE:16}
       queue-capacity: ${AI_AGENT_EXECUTOR_QUEUE_CAPACITY:256}
       await-termination: ${AI_AGENT_EXECUTOR_AWAIT_TERMINATION:PT10S}
-  model:
-    router: ${AI_AGENT_ROUTER_MODEL:qwen3.7-plus}
-    react: ${AI_AGENT_REACT_MODEL:qwen3.7-plus}
-    # ReAct 默认 Plus；只在对照验收通过后可显式设为 qwen3.8-max。
-  agentscope:
-    react:
-      api-key: ${DASHSCOPE_API_KEY:}
-      base-url: ${AI_AGENT_REACT_BASE_URL:}
-      timeout: ${AI_AGENT_REACT_TIMEOUT:PT120S}
-      max-iterations: ${AI_AGENT_REACT_MAX_ITERATIONS:8}
-      max-output-tokens: ${AI_AGENT_REACT_MAX_OUTPUT_TOKENS:2048}
-      max-retries: ${AI_AGENT_REACT_MAX_RETRIES:1}
-      thinking-enabled: ${AI_AGENT_REACT_THINKING_ENABLED:true}
-      thinking-budget: ${AI_AGENT_REACT_THINKING_BUDGET:4096}
-      acceptance-confirmation-probe-enabled: ${AI_AGENT_REACT_ACCEPTANCE_CONFIRMATION_PROBE_ENABLED:false}
+  thread:
+    context-max-estimated-tokens: ${AI_AGENT_THREAD_CONTEXT_MAX_ESTIMATED_TOKENS:12000}
+    snapshot-trigger-estimated-tokens: ${AI_AGENT_THREAD_SNAPSHOT_TRIGGER_ESTIMATED_TOKENS:9000}
+    tool-result-max-characters: ${AI_AGENT_THREAD_TOOL_RESULT_MAX_CHARACTERS:8000}
+    output-reserve-estimated-tokens: ${AI_AGENT_THREAD_OUTPUT_RESERVE_ESTIMATED_TOKENS:1500}
+    turn-timeout: ${AI_AGENT_THREAD_TURN_TIMEOUT:PT4M}
+  order:
+    gateway: ${AI_AGENT_ORDER_GATEWAY:local}
+    base-url: ${AI_AGENT_ORDER_BASE_URL:http://127.0.0.1:18080}
+    http-timeout: ${AI_AGENT_ORDER_HTTP_TIMEOUT:PT5S}
 
 logging:
   level:
     cn.ethan: INFO
-    io.agentscope: INFO

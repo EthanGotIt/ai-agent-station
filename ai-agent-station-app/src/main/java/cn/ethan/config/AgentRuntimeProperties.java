@@ -5,31 +5,22 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.time.Duration;
 
 /**
- * Agent 运行参数：集中约束请求生命周期、流式超时和执行线程池资源边界。
+ * Agent Runtime 参数：集中约束 Thread 队列、SSE 超时和执行线程池资源边界。
  *
  * @author ethan
- * @date 2026-08-05
+ * @date 2026-08-19
  */
 @ConfigurationProperties(prefix = "ai-agent.runtime")
 public record AgentRuntimeProperties(
-        Duration requestTerminalTtl,
         Duration streamTimeout,
         QueueProperties queue,
         ExecutorProperties executor
 ) {
 
-    private static final Duration DEFAULT_REQUEST_TERMINAL_TTL = Duration.ofMinutes(10);
     private static final Duration DEFAULT_STREAM_TIMEOUT = Duration.ofSeconds(245);
-    private static final Duration MAX_TTL = Duration.ofHours(24);
     private static final Duration MAX_STREAM_TIMEOUT = Duration.ofMinutes(5);
 
     public AgentRuntimeProperties {
-        requestTerminalTtl = validateDuration(
-                requestTerminalTtl,
-                DEFAULT_REQUEST_TERMINAL_TTL,
-                MAX_TTL,
-                "requestTerminalTtl"
-        );
         streamTimeout = validateDuration(
                 streamTimeout,
                 DEFAULT_STREAM_TIMEOUT,
@@ -50,10 +41,10 @@ public record AgentRuntimeProperties(
     }
 
     /**
-     * Session 队列参数：约束单 Session 与全局待执行请求规模。
+     * Thread 队列参数：约束单 Thread 与全局待执行请求规模。
      */
     public record QueueProperties(
-            Integer maxPendingPerSession,
+            Integer maxPendingPerThread,
             Integer maxPendingGlobal,
             Duration waitTimeout
     ) {
@@ -63,22 +54,22 @@ public record AgentRuntimeProperties(
         private static final Duration DEFAULT_WAIT_TIMEOUT = Duration.ofMinutes(2);
 
         public QueueProperties {
-            maxPendingPerSession = maxPendingPerSession == null
+            maxPendingPerThread = maxPendingPerThread == null
                     ? DEFAULT_MAX_PENDING_PER_SESSION
-                    : maxPendingPerSession;
+                    : maxPendingPerThread;
             maxPendingGlobal = maxPendingGlobal == null
                     ? DEFAULT_MAX_PENDING_GLOBAL
                     : maxPendingGlobal;
             waitTimeout = waitTimeout == null ? DEFAULT_WAIT_TIMEOUT : waitTimeout;
 
-            if (maxPendingPerSession < 1 || maxPendingPerSession > 100) {
+            if (maxPendingPerThread < 1 || maxPendingPerThread > 100) {
                 throw new IllegalArgumentException(
-                        "queue.maxPendingPerSession must be between 1 and 100"
+                        "queue.maxPendingPerThread must be between 1 and 100"
                 );
             }
-            if (maxPendingGlobal < maxPendingPerSession || maxPendingGlobal > 10_000) {
+            if (maxPendingGlobal < maxPendingPerThread || maxPendingGlobal > 10_000) {
                 throw new IllegalArgumentException(
-                        "queue.maxPendingGlobal must be between maxPendingPerSession and 10000"
+                        "queue.maxPendingGlobal must be between maxPendingPerThread and 10000"
                 );
             }
             if (waitTimeout.isZero()

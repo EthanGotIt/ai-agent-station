@@ -8,10 +8,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * Agent 运行参数测试：验证安全默认值和资源上限在启动前生效。
+ * Agent Runtime 参数测试：验证安全默认值和资源上限在启动前生效。
  *
  * @author ethan
- * @date 2026-08-05
+ * @date 2026-08-19
  */
 class AgentRuntimePropertiesTest {
 
@@ -20,13 +20,11 @@ class AgentRuntimePropertiesTest {
         AgentRuntimeProperties properties = new AgentRuntimeProperties(
                 null,
                 null,
-                null,
                 null
         );
 
-        assertEquals(Duration.ofMinutes(10), properties.requestTerminalTtl());
         assertEquals(Duration.ofSeconds(245), properties.streamTimeout());
-        assertEquals(4, properties.queue().maxPendingPerSession());
+        assertEquals(4, properties.queue().maxPendingPerThread());
         assertEquals(256, properties.queue().maxPendingGlobal());
         assertEquals(Duration.ofMinutes(2), properties.queue().waitTimeout());
         assertEquals(4, properties.executor().corePoolSize());
@@ -52,7 +50,6 @@ class AgentRuntimePropertiesTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new AgentRuntimeProperties(
-                        Duration.ofMinutes(10),
                         Duration.ofMinutes(6),
                         null,
                         null
@@ -65,7 +62,6 @@ class AgentRuntimePropertiesTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new AgentRuntimeProperties(
-                        null,
                         null,
                         new AgentRuntimeProperties.QueueProperties(4, 256, null),
                         new AgentRuntimeProperties.ExecutorProperties(4, 16, 128, null)

@@ -40,10 +40,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>17</maven.compiler.release>
         <spring-ai.version>2.0.0</spring-ai.version>
-        <spring-ai-session.version>0.5.0</spring-ai-session.version>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
-        <agentscope.version>2.0.0</agentscope.version>
-        <victools-jsonschema.version>5.0.0</victools-jsonschema.version>
     </properties>
 
     <dependencyManagement>
@@ -52,13 +49,6 @@
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-bom</artifactId>
                 <version>${spring-ai.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.springaicommunity</groupId>
-                <artifactId>spring-ai-session-bom</artifactId>
-                <version>${spring-ai-session.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -81,27 +71,6 @@
                 <groupId>com.baomidou</groupId>
                 <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
                 <version>${mybatis-plus.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-core</artifactId>
-                <version>${agentscope.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-model-dashscope</artifactId>
-                <version>${agentscope.version}</version>
-            </dependency>
-            <!-- Spring AI 2.0 依赖 5.x API，统一版本避免 AgentScope 的 4.x 传递依赖降级。 -->
-            <dependency>
-                <groupId>com.github.victools</groupId>
-                <artifactId>jsonschema-generator</artifactId>
-                <version>${victools-jsonschema.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.github.victools</groupId>
-                <artifactId>jsonschema-module-jackson</artifactId>
-                <version>${victools-jsonschema.version}</version>
             </dependency>
             <dependency>
                 <groupId>cn.ethan</groupId>
