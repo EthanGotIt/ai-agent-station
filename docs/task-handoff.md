@@ -1,5 +1,5 @@
 status: completed
-updated: 2026-08-19
+updated: 2026-08-20
 
 # v3 交接
 
@@ -8,12 +8,13 @@ updated: 2026-08-19
 - 已建立 v3 Thread、Turn、Item、ContextSnapshot、QuestionCard 和 ExternalActionCommand 核心模型及 MyBatis-Plus 存储。
 - 已切换 Spring AI 协调器、确定性 Workflow、FIFO/取消/超时、SSE 和 React + TypeScript Thread 工作区。
 - 已删除旧业务聚合、旧入口、旧框架依赖和增量 SQL；唯一基线为 `docs/dev-ops/mysql/sql/ai-agent-station.sql`。
+- 已移除前端旧 Memory、Review、场景启动器和 Intervention 样式，仅保留 Thread 工作区样式。
 - 已将 Git 提交守则写入 `AGENTS.md`，架构与文档只保留 v3 说明。
 
 ## 最近验证
 
 - `mvn -pl ai-agent-station-app -am -DskipTests compile`：通过。
-- `agent-console/npm run typecheck`、`npm test -- --run`、`npm run build`：通过。
+- `agent-console/npm run typecheck`、`npm test -- --run`、`npm run test:e2e`、`npm run build`：通过。
 
 ## 最终验证
 
