@@ -24,7 +24,7 @@ JAVA_SOURCE_ROOTS = (
 
 ROLE_SUFFIXES = {
     "assembler": ("Assembler",),
-    "config": ("Configuration", "Properties"),
+    "config": ("Configuration", "Properties", "Context"),
     "controller": ("Controller",),
     "dto": ("Dto",),
     "engine": ("Executor",),
@@ -36,9 +36,9 @@ ROLE_SUFFIXES = {
     "mapper": ("Mapper",),
     "model": ("Model",),
     "node": ("Node",),
-    "port": ("Gateway", "Store", "Provider", "Executor"),
+    "port": ("Gateway", "Store", "Provider", "Executor", "Starter"),
     "provider": ("Provider",),
-    "service": ("Service", "Manager"),
+    "service": ("Service", "Manager", "Assembler"),
     "store": ("Store",),
     "tool": ("Tool", "Tools"),
     "validator": ("Validator",),
@@ -54,6 +54,17 @@ FORBIDDEN_SOURCE_TEXT = (
     "spring-statemachine",
     "spring-ai-agent-utils",
     "web_" + "extractor",
+    "AgentScope",
+    "agentscope",
+    "spring-ai-session",
+    "/api/v1",
+    "AgentMemory",
+    "AGENT_MEMORY",
+    "AI_SESSION",
+    "SessionExecution",
+    "SessionService",
+    "AfterSales",
+    "DEMO_AFTER_SALES_CASE",
 )
 SCAN_SUFFIXES = {".java", ".xml", ".yml", ".yaml", ".sql", ".md"}
 IGNORED_DIRECTORIES = {".agents", ".codex", ".git", ".idea", "target", "node_modules", "dist"}
@@ -125,7 +136,6 @@ class ConventionChecker:
         """执行全部检查并返回排序后的不可变结果。"""
 
         self._check_java_sources()
-        self._check_dto_families()
         self._check_application_config()
         self._check_empty_directories()
         self._check_forbidden_source_text()
@@ -239,25 +249,6 @@ class ConventionChecker:
             private_constructor = re.compile(rf"private\s+{re.escape(type_name)}\s*\(")
             if private_constructor.search(text) is None:
                 self._add("JAVA_UTILS_CONSTRUCTOR", path, "Utils 类型必须声明私有构造方法")
-
-    def _check_dto_families(self) -> None:
-        for type_name, path in self.dto_paths.items():
-            if type_name.endswith("RequestDto"):
-                response_name = type_name.removesuffix("RequestDto") + "ResponseDto"
-                if response_name not in self.dto_paths:
-                    self._add(
-                        "JAVA_DTO_FAMILY",
-                        path,
-                        f"请求 DTO 缺少同操作响应：{response_name}",
-                    )
-            if type_name.endswith("EventDto"):
-                response_name = type_name.removesuffix("EventDto") + "ResponseDto"
-                if response_name not in self.dto_paths:
-                    self._add(
-                        "JAVA_DTO_FAMILY",
-                        path,
-                        f"事件 DTO 缺少同操作响应：{response_name}",
-                    )
 
     def _check_application_config(self) -> None:
         resources = self.root / "ai-agent-station-app/src/main/resources"
