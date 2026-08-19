@@ -145,7 +145,11 @@ public final class MybatisAgentThreadStore implements AgentThreadStore {
     }
 
     @Override
-    public void saveQuestion(AgentQuestionModel question) {
+    @Transactional
+    public synchronized void saveQuestion(AgentQuestionModel question) {
+        if (!questionMapper.selectOpenForUpdate(question.threadId()).isEmpty()) {
+            throw new IllegalStateException("同一 Thread 只能存在一个开放 QuestionCard");
+        }
         questionMapper.insert(toEntity(question));
     }
 
