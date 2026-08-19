@@ -1,4 +1,4 @@
-"""v3 Agent API 验收命令入口。"""
+"""Commerce Guardian Agent API 验收命令入口。"""
 
 from .runner import main
 

@@ -1,4 +1,4 @@
-"""使用标准库验证 v3 Thread、Turn、Item 和幂等契约。"""
+"""使用标准库验证 Thread、Turn、Item 和幂等契约。"""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def run(base_url: str, user_id: str) -> AcceptanceResult:
         raise RuntimeError(f"Thread 列表契约失败：HTTP {status}")
     checks.append("thread-list")
 
-    status, thread = _request(base_url, "POST", "/api/agent/threads", user_id, {"title": "v3 acceptance"})
+    status, thread = _request(base_url, "POST", "/api/agent/threads", user_id, {"title": "acceptance thread"})
     if status != 200 or not thread.get("threadId"):
         raise RuntimeError(f"Thread 创建契约失败：HTTP {status}")
     thread_id = thread["threadId"]
@@ -81,7 +81,7 @@ def run(base_url: str, user_id: str) -> AcceptanceResult:
 
 
 def main(arguments: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="运行 AI Agent Station v3 API 验收")
+    parser = argparse.ArgumentParser(description="运行 Commerce Guardian Agent API 验收")
     parser.add_argument("--base-url", default="http://127.0.0.1:8090")
     parser.add_argument("--user-id", default="demo-user-1")
     args = parser.parse_args(arguments)
@@ -90,5 +90,5 @@ def main(arguments: list[str] | None = None) -> int:
     except RuntimeError as failure:
         print(f"验收失败：{failure}", file=sys.stderr)
         return 1
-    print("v3 验收通过：" + ", ".join(result.checks))
+    print("Commerce Guardian Agent 验收通过：" + ", ".join(result.checks))
     return 0

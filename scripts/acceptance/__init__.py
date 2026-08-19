@@ -1,1 +1,1 @@
-"""v3 Agent API 验收脚本。"""
+"""Commerce Guardian Agent API 验收脚本。"""

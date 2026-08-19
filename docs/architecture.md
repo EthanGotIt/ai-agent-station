@@ -1,4 +1,4 @@
-# v3 架构
+# Commerce Guardian Agent 架构
 
 ## 边界
 
@@ -62,4 +62,4 @@ SSE 事件包含 `eventId、threadId、turnId、itemId（可选）、type、time
 
 ## 数据库
 
-`docs/dev-ops/mysql/sql/ai-agent-station.sql` 是唯一破坏性 v3 基线，包含演示订单/物流和 `AGENT_THREAD`、`AGENT_TURN`、`AGENT_ITEM`、`AGENT_CONTEXT_SNAPSHOT`、`AGENT_WORKFLOW_RUN`、`AGENT_WORKFLOW_QUESTION`、`EXTERNAL_ACTION_COMMAND`。没有运行时建表，也没有增量升级脚本。
+`docs/dev-ops/mysql/sql/commerce-guardian-agent.sql` 是唯一破坏性基线，包含演示订单/物流和 `AGENT_THREAD`、`AGENT_TURN`、`AGENT_ITEM`、`AGENT_CONTEXT_SNAPSHOT`、`AGENT_WORKFLOW_RUN`、`AGENT_WORKFLOW_QUESTION`、`EXTERNAL_ACTION_COMMAND`。没有运行时建表，也没有增量升级脚本。

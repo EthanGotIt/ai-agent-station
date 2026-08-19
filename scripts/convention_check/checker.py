@@ -46,6 +46,11 @@ ROLE_SUFFIXES = {
 
 INTERFACE_ROLES = {"mapper", "node", "port"}
 FORBIDDEN_SOURCE_TEXT = (
+    "AI Agent Station",
+    "ai-agent-station",
+    "/agent-console",
+    "\\agent-console",
+    "v3",
     "AliyunRespon" + "sesGateway",
     "cn.ethan.ai",
     "code_" + "interpreter",

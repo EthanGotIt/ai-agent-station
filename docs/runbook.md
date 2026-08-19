@@ -1,4 +1,4 @@
-# v3 运行手册
+# Commerce Guardian Agent 运行手册
 
 ## 配置
 
@@ -6,10 +6,10 @@
 
 ## 初始化与启动
 
-1. 使用可丢弃的本地 MySQL 执行 `docs/dev-ops/mysql/sql/ai-agent-station.sql`。脚本会删除旧表，禁止用于生产数据。
+1. 使用可丢弃的本地 MySQL 执行 `docs/dev-ops/mysql/sql/commerce-guardian-agent.sql`。脚本会删除旧表，禁止用于生产数据。
 2. 设置数据库和模型环境变量。
-3. 运行 `mvn spring-boot:run -pl ai-agent-station-app`。
-4. 运行前端 `cd agent-console; npm run dev`。
+3. 运行 `mvn spring-boot:run -pl commerce-guardian-agent-app`。
+4. 运行前端 `cd commerce-guardian-agent-console; npm run dev`。
 
 本地演示身份通过 `X-User-Id: demo-user-1` 传递；真实部署应在网关完成认证并由应用认证适配器提供用户 ID。
 
@@ -39,7 +39,7 @@ Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8090/api/agent/threads/$thr
 python -m scripts.convention_check
 python -m unittest discover -s scripts/tests -p "test_*.py"
 mvn clean '-DskipTests=false' test
-cd agent-console
+cd commerce-guardian-agent-console
 npm run typecheck
 npm test -- --run
 npm run build

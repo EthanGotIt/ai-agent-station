@@ -1,4 +1,4 @@
-# AI Agent Station 协作约定
+# Commerce Guardian Agent 协作约定
 
 这份文件只保留代码库无法可靠推断的长期约定。实现前先阅读邻近代码、测试和配置；新代码应延续已有风格，并以可读、简洁、可验证为目标。安全、架构边界、对外契约和 Git 提交边界属于硬约束，其余细节按任务实际判断。
 
@@ -16,7 +16,7 @@
 
 - 根包为 `cn.ethan`，项目使用 JDK 17。
 - Maven 依赖保持 `app → core`、`app → infrastructure`、`infrastructure → core`。`core` 只表达业务规则和端口，不依赖 Spring、数据库或模型供应商；`infrastructure` 适配外部系统；`app` 处理启动和 HTTP 装配。
-- v3 的 Agent 上下文根为 `Thread`，执行层次为 `Thread → Turn → Item`。登录上下文不持有 Agent 历史；不实现 Thread Fork、分支合并、跨上下文自动记忆或多 Agent 协作。
+- Commerce Guardian Agent 的上下文根为 `Thread`，执行层次为 `Thread → Turn → Item`。登录上下文不持有 Agent 历史；不实现 Thread Fork、分支合并、跨上下文自动记忆或多 Agent 协作。
 - 协调 Agent 统一使用 Spring AI Tool Calling。只读查询可以调用 Tool；退款、催发货、删除和其他外部写操作必须启动确定性 Workflow，不允许模型直接产生外部副作用。
 - Workflow 的 QuestionCard、Checkpoint、WorkflowRun 和 ExternalActionCommand 必须持久化；远程调用不得包在本地数据库事务内。
 - 模块内先按业务能力、再按职责组织。Core 使用 `model`、`enums`、`port`、`service`、`exception`、`support`；Workflow 使用 `workflow/model`、`node`、`engine`、`port`、`service`；Infrastructure 使用 `entity`、`mapper`、`gateway`、`provider`、`store`、`validator`、`tool`；App 保持 `config`、`controller`、`dto`、`handler`。
@@ -30,6 +30,14 @@
 - 枚举以 `Enum` 结尾；服务、管理器、映射器、校验器、配置、控制器、异常处理器和异常分别使用 `*Service`、`*Manager`、`*Mapper`、`*Validator`、`*Configuration`、`*Controller`、`*ExceptionHandler`、`*Exception`。测试使用 `*Test`，集成测试使用 `*IT`。
 - `*Utils` 只表示同一主题的多个无状态方法，类型必须是 `final` 并有私有构造器。避免 `Common`、`Helper` 等模糊名称。
 - 数据库库、表、列、索引和约束使用大写 `UPPER_SNAKE_CASE`；Java 字段和方法使用 `lowerCamelCase`。
+
+## 项目与文档命名（硬约束）
+
+- 对外产品名统一写作 `Commerce Guardian Agent`；正文、页面标题、日志提示和示例不得再使用旧项目名或版本号作为产品名。
+- Maven 根项目、模块目录、ArtifactId、前端目录和 npm package 使用小写 kebab-case：`commerce-guardian-agent`、`commerce-guardian-agent-core`、`commerce-guardian-agent-infrastructure`、`commerce-guardian-agent-app`、`commerce-guardian-agent-console`。
+- 文档文件名使用小写 kebab-case，表达稳定职责，不在文件名中编码版本号或日期；例如 `architecture.md`、`runbook.md`、`task-handoff.md`。SQL 基线命名为 `commerce-guardian-agent.sql`。
+- Java 类型仍使用 PascalCase，Python 模块使用 snake_case，前端组件使用 PascalCase；目录名遵循所属生态的标准命名。
+- 修改项目名时必须同步检查构建文件、运行配置、数据库名、前端元数据、脚本提示、文档链接和验收示例；不得留下旧项目名或版本标签的功能性引用。
 
 ## 编码、注释与安全（硬约束）
 

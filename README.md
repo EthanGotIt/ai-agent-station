@@ -1,6 +1,6 @@
-# AI Agent Station v3
+# Commerce Guardian Agent
 
-AI Agent Station v3 是一个 Agent-first 执行平台：业务订单、物流、退款和催发货只是验证夹具，核心价值在可恢复上下文、编排边界、持久化 HITL 与可靠运行时。
+Commerce Guardian Agent 是一个 Agent-first 执行平台：业务订单、物流、退款和催发货只是验证夹具，核心价值在可恢复上下文、编排边界、持久化 HITL 与可靠运行时。
 
 四个工程亮点：
 
@@ -11,16 +11,16 @@ AI Agent Station v3 是一个 Agent-first 执行平台：业务订单、物流�
 
 ## 模块和启动
 
-- `ai-agent-station-core`：纯 Java 领域模型、端口和 Thread Runtime，不依赖 Spring 或数据库。
-- `ai-agent-station-infrastructure`：MyBatis-Plus 持久化、Spring AI 协调器、订单夹具和外部动作 Worker。
-- `ai-agent-station-app`：Spring Boot 启动、配置和唯一 `/api/agent` HTTP/SSE 契约。
-- `agent-console`：React + TypeScript + Vite Thread 工作区。
+- `commerce-guardian-agent-core`：纯 Java 领域模型、端口和 Thread Runtime，不依赖 Spring 或数据库。
+- `commerce-guardian-agent-infrastructure`：MyBatis-Plus 持久化、Spring AI 协调器、订单夹具和外部动作 Worker。
+- `commerce-guardian-agent-app`：Spring Boot 启动、配置和唯一 `/api/agent` HTTP/SSE 契约。
+- `commerce-guardian-agent-console`：React + TypeScript + Vite Thread 工作区。
 
-准备 JDK 17、Maven、Node.js 和 MySQL 后，先执行 `docs/dev-ops/mysql/sql/ai-agent-station.sql`，再启动：
+准备 JDK 17、Maven、Node.js 和 MySQL 后，先执行 `docs/dev-ops/mysql/sql/commerce-guardian-agent.sql`，再启动：
 
 ```text
-mvn spring-boot:run -pl ai-agent-station-app
-cd agent-console
+mvn spring-boot:run -pl commerce-guardian-agent-app
+cd commerce-guardian-agent-console
 npm install
 npm run dev
 ```
@@ -33,7 +33,7 @@ npm run dev
 python -m scripts.convention_check
 python -m unittest discover -s scripts/tests -p "test_*.py"
 mvn clean '-DskipTests=false' test
-cd agent-console
+cd commerce-guardian-agent-console
 npm run typecheck
 npm test -- --run
 npm run build

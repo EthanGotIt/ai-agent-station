@@ -1,4 +1,4 @@
-"""AI Agent Station 工程规范检查包。"""
+"""Commerce Guardian Agent 工程规范检查包。"""
 
 from .checker import CheckIssue, check_repository
 
