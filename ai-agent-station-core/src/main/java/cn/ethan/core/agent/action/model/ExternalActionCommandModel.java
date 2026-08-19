@@ -64,4 +64,11 @@ public record ExternalActionCommandModel(
                 payloadJson, nextStatus, attemptCount, maxAttempts, next, null, null, code, message,
                 createdAt, now, null);
     }
+
+    /** 将最终失败命令重新放回队列，保留原命令和幂等键。 */
+    public ExternalActionCommandModel manualRetry(Instant now) {
+        return new ExternalActionCommandModel(commandId, runId, threadId, turnId, userId, type, idempotencyKey,
+                payloadJson, ExternalActionStatusEnum.PENDING, attemptCount, maxAttempts, now,
+                null, null, null, null, createdAt, now, null);
+    }
 }

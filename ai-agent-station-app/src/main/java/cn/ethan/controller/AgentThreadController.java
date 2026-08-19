@@ -3,6 +3,11 @@ package cn.ethan.controller;
 import cn.ethan.config.AgentRuntimeProperties;
 import cn.ethan.config.AgentUserContext;
 import cn.ethan.core.agent.thread.model.AgentItemModel;
+import cn.ethan.core.agent.action.model.ExternalActionCommandModel;
+import cn.ethan.core.agent.action.enums.ExternalActionStatusEnum;
+import cn.ethan.core.agent.action.port.ExternalActionCommandStore;
+import cn.ethan.core.agent.thread.exception.AgentThreadConflictException;
+import cn.ethan.core.agent.thread.exception.AgentThreadNotFoundException;
 import cn.ethan.core.agent.thread.service.AgentThreadRuntimeService;
 import cn.ethan.core.agent.thread.service.AgentThreadService;
 import cn.ethan.core.agent.thread.support.InMemoryAgentThreadEventGateway;
@@ -10,6 +15,7 @@ import cn.ethan.dto.AgentCancelResponseDto;
 import cn.ethan.dto.AgentItemDto;
 import cn.ethan.dto.AgentItemPageResponseDto;
 import cn.ethan.dto.AgentQuestionAnswerRequestDto;
+import cn.ethan.dto.AgentRetryResponseDto;
 import cn.ethan.dto.AgentThreadCreateRequestDto;
 import cn.ethan.dto.AgentThreadDto;
 import cn.ethan.dto.AgentThreadEventDto;
@@ -34,6 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.time.Clock;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -55,19 +62,25 @@ public final class AgentThreadController {
     private final InMemoryAgentThreadEventGateway events;
     private final AgentRuntimeProperties properties;
     private final AgentUserContext userContext;
+    private final ExternalActionCommandStore actions;
+    private final Clock clock;
 
     public AgentThreadController(
             AgentThreadService threads,
             AgentThreadRuntimeService runtime,
             InMemoryAgentThreadEventGateway events,
             AgentRuntimeProperties properties,
-            AgentUserContext userContext
+            AgentUserContext userContext,
+            ExternalActionCommandStore actions,
+            Clock clock
     ) {
         this.threads = threads;
         this.runtime = runtime;
         this.events = events;
         this.properties = properties;
         this.userContext = userContext;
+        this.actions = actions;
+        this.clock = clock;
     }
 
     @PostMapping("/threads")
@@ -164,6 +177,22 @@ public final class AgentThreadController {
                 userContext.currentUserId(request), body.clientRequestId(), runId, questionId,
                 body.checkpointId(), body.expectedVersion(), body.answers()
         )));
+    }
+
+    @PostMapping("/workflow-runs/{runId}/retry")
+    public AgentRetryResponseDto retry(
+            @PathVariable String runId,
+            HttpServletRequest request
+    ) {
+        String userId = userContext.currentUserId(request);
+        ExternalActionCommandModel command = actions.findByRunId(userId, runId)
+                .orElseThrow(() -> new AgentThreadNotFoundException(runId));
+        if (command.status() != ExternalActionStatusEnum.MANUAL_RETRY_REQUIRED) {
+            throw new AgentThreadConflictException("ACTION_NOT_RETRYABLE", "外部动作当前不需要人工重试");
+        }
+        ExternalActionCommandModel retried = command.manualRetry(clock.instant());
+        actions.update(retried);
+        return new AgentRetryResponseDto(runId, retried.commandId(), retried.status().name(), retried.idempotencyKey());
     }
 
     @GetMapping(value = "/threads/{threadId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

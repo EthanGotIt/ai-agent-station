@@ -56,6 +56,11 @@ public final class MybatisExternalActionCommandStore implements ExternalActionCo
     }
 
     @Override
+    public Optional<ExternalActionCommandModel> findByRunId(String userId, String runId) {
+        return Optional.ofNullable(mapper.selectByRunId(userId, runId)).map(this::toModel);
+    }
+
+    @Override
     public Optional<ExternalActionCommandModel> findByIdempotencyKey(String userId, String idempotencyKey) {
         return Optional.ofNullable(mapper.selectByIdempotencyKey(userId, idempotencyKey)).map(this::toModel);
     }
@@ -66,12 +71,12 @@ public final class MybatisExternalActionCommandStore implements ExternalActionCo
         return mapper.selectDue(now, Math.max(1, Math.min(limit, 100))).stream()
                 .map(entity -> {
                     ExternalActionCommandModel claimed = toModel(entity).claimed(workerId, leaseUntil, now);
-                    mapper.update(toEntity(claimed), new UpdateWrapper<ExternalActionCommandEntity>()
+                    int updated = mapper.update(toEntity(claimed), new UpdateWrapper<ExternalActionCommandEntity>()
                             .eq("COMMAND_ID", entity.getCommandId())
                             .eq("STATUS", entity.getStatus())
                             .and(wrapper -> wrapper.isNull("LEASE_UNTIL").or().lt("LEASE_UNTIL", now)));
-                    return claimed;
-                }).toList();
+                    return updated == 1 ? claimed : null;
+                }).filter(java.util.Objects::nonNull).toList();
     }
 
     @Override

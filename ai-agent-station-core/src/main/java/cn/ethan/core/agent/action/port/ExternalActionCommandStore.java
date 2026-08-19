@@ -18,6 +18,8 @@ public interface ExternalActionCommandStore {
 
     Optional<ExternalActionCommandModel> findById(String userId, String commandId);
 
+    Optional<ExternalActionCommandModel> findByRunId(String userId, String runId);
+
     Optional<ExternalActionCommandModel> findByIdempotencyKey(String userId, String idempotencyKey);
 
     List<ExternalActionCommandModel> claimDue(Instant now, Instant leaseUntil, String workerId, int limit);

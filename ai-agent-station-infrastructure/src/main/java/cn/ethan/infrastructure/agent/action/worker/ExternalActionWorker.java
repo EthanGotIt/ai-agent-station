@@ -10,6 +10,7 @@ import cn.ethan.core.agent.thread.port.AgentThreadStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -57,6 +58,15 @@ public final class ExternalActionWorker {
             execute(command);
         }
         return claimed.size();
+    }
+
+    /** 由应用调度器周期领取命令；远程调用始终发生在本地事务之外。 */
+    @Scheduled(
+            fixedDelayString = "${AI_AGENT_WORKER_POLL_MILLIS:5000}",
+            initialDelayString = "${AI_AGENT_WORKER_INITIAL_DELAY_MILLIS:10000}"
+    )
+    public void poll() {
+        runOnce(8, Duration.ofSeconds(30));
     }
 
     private void execute(ExternalActionCommandModel claimed) {
