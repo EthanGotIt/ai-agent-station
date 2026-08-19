@@ -6,8 +6,10 @@ import cn.ethan.core.agent.action.model.ExternalActionCommandModel;
 import cn.ethan.core.agent.thread.model.AgentQuestionModel;
 import cn.ethan.core.agent.thread.model.AgentThreadModel;
 import cn.ethan.core.agent.thread.model.AgentTurnModel;
+import cn.ethan.core.agent.thread.model.AgentWorkflowRunModel;
 import cn.ethan.core.agent.thread.port.AgentWorkflowStarter;
 import cn.ethan.core.agent.thread.port.AgentThreadStore;
+import cn.ethan.core.agent.thread.port.AgentWorkflowRunStore;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
@@ -31,17 +33,20 @@ public final class QuestionCardWorkflowStarter implements AgentWorkflowStarter {
     private final AgentThreadStore threads;
     private final cn.ethan.core.agent.action.port.ExternalActionCommandStore commands;
     private final ObjectMapper objectMapper;
+    private final AgentWorkflowRunStore workflowRuns;
 
     public QuestionCardWorkflowStarter(
             Clock clock,
             AgentThreadStore threads,
             cn.ethan.core.agent.action.port.ExternalActionCommandStore commands,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            AgentWorkflowRunStore workflowRuns
     ) {
         this.clock = clock;
         this.threads = threads;
         this.commands = commands;
         this.objectMapper = objectMapper;
+        this.workflowRuns = workflowRuns;
     }
 
     @Override
@@ -80,6 +85,9 @@ public final class QuestionCardWorkflowStarter implements AgentWorkflowStarter {
                 runId, thread.threadId(), turn.turnId(), thread.userId(), questionId,
                 checkpointId, 0L, title, prompt, fields, "OPEN", now, null
         );
+        workflowRuns.create(new AgentWorkflowRunModel(
+                runId, thread.threadId(), turn.turnId(), thread.userId(), normalized,
+                "WAITING_USER_INPUT", 0L, now, now));
         return new StartResult(runId, question);
     }
 
@@ -88,10 +96,13 @@ public final class QuestionCardWorkflowStarter implements AgentWorkflowStarter {
     public ResumeResult resume(AgentThreadModel thread, AgentTurnModel turn, Map<String, String> answers) {
         AgentQuestionModel question = threads.findOpenQuestionByRun(thread.userId(), turn.workflowRunId())
                 .orElseThrow(() -> new IllegalStateException("Workflow QuestionCard 不存在或已处理"));
+        AgentWorkflowRunModel workflowRun = workflowRuns.find(thread.userId(), turn.workflowRunId())
+                .orElseThrow(() -> new IllegalStateException("WorkflowRun 不存在或不属于当前用户"));
         String decision = answers == null ? "" : answers.getOrDefault("decision", "");
         AgentQuestionModel answered = question.answered(clock.instant());
         threads.answerQuestion(answered);
         if (!(decision.equalsIgnoreCase("APPROVE") || decision.equalsIgnoreCase("CONFIRM") || decision.equals("同意"))) {
+            workflowRuns.update(workflowRun.status("COMPLETED", clock.instant()));
             return new ResumeResult("已拒绝本次操作，Workflow 已安全结束。", "REJECTED", null);
         }
         try {
@@ -106,6 +117,7 @@ public final class QuestionCardWorkflowStarter implements AgentWorkflowStarter {
                     0, 3, clock.instant(), null, null, null, null, clock.instant(), clock.instant(), null
             );
             ExternalActionCommandModel existing = commands.createIfAbsent(command);
+            workflowRuns.update(workflowRun.status("WAITING_EXTERNAL_ACTION", clock.instant()));
             return new ResumeResult("已确认，外部动作已进入可靠执行队列。", "APPROVED", existing);
         } catch (Exception failure) {
             throw new IllegalStateException("无法创建外部动作命令", failure);

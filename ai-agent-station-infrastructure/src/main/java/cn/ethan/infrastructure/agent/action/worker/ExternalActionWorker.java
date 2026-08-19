@@ -7,6 +7,7 @@ import cn.ethan.core.agent.thread.enums.AgentItemTypeEnum;
 import cn.ethan.core.agent.thread.model.AgentItemModel;
 import cn.ethan.core.agent.thread.port.AgentThreadEventGateway;
 import cn.ethan.core.agent.thread.port.AgentThreadStore;
+import cn.ethan.core.agent.thread.port.AgentWorkflowRunStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -34,19 +35,22 @@ public final class ExternalActionWorker {
     private final AgentThreadStore threads;
     private final AgentThreadEventGateway events;
     private final Clock clock;
+    private final AgentWorkflowRunStore workflowRuns;
 
     public ExternalActionWorker(
             ExternalActionCommandStore commands,
             ExternalActionExecutor executor,
             AgentThreadStore threads,
             AgentThreadEventGateway events,
-            Clock clock
+            Clock clock,
+            AgentWorkflowRunStore workflowRuns
     ) {
         this.commands = commands;
         this.executor = executor;
         this.threads = threads;
         this.events = events;
         this.clock = clock;
+        this.workflowRuns = workflowRuns;
     }
 
     public int runOnce(int limit, Duration leaseDuration) {
@@ -77,12 +81,17 @@ public final class ExternalActionWorker {
                     ? claimed.succeeded(now)
                     : claimed.retryAt(now.plusSeconds(15), result.code(), result.message(), now);
             commands.update(updated);
+            workflowRuns.find(updated.userId(), updated.runId()).ifPresent(run ->
+                    workflowRuns.update(run.status(updated.status().name().equals("SUCCEEDED")
+                            ? "COMPLETED" : updated.status().name(), now)));
             appendStatus(updated, result.message());
         } catch (RuntimeException failure) {
             Instant now = clock.instant();
             ExternalActionCommandModel updated = claimed.retryAt(
                     now.plusSeconds(15), "WORKER_EXCEPTION", failure.getClass().getSimpleName(), now);
             commands.update(updated);
+            workflowRuns.find(updated.userId(), updated.runId()).ifPresent(run ->
+                    workflowRuns.update(run.status(updated.status().name(), now)));
             appendStatus(updated, "Worker 执行异常");
             LOGGER.warn("外部动作执行异常，commandId={}, errorType={}",
                     claimed.commandId(), failure.getClass().getSimpleName());

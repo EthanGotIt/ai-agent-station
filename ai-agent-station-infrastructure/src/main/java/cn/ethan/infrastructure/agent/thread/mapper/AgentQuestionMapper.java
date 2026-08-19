@@ -16,12 +16,12 @@ import java.util.List;
 @Mapper
 public interface AgentQuestionMapper extends BaseMapper<AgentQuestionEntity> {
 
-    @Select("SELECT * FROM AGENT_QUESTION WHERE USER_ID = #{userId} AND THREAD_ID = #{threadId} AND STATUS = 'OPEN' ORDER BY CREATED_AT DESC LIMIT 1")
+    @Select("SELECT * FROM AGENT_WORKFLOW_QUESTION WHERE USER_ID = #{userId} AND THREAD_ID = #{threadId} AND STATUS = 'OPEN' ORDER BY CREATED_AT DESC LIMIT 1")
     AgentQuestionEntity selectOpen(String userId, String threadId);
 
-    @Select("SELECT * FROM AGENT_QUESTION WHERE USER_ID = #{userId} AND RUN_ID = #{runId} AND STATUS = 'OPEN' LIMIT 1")
+    @Select("SELECT * FROM AGENT_WORKFLOW_QUESTION WHERE USER_ID = #{userId} AND RUN_ID = #{runId} AND STATUS = 'OPEN' LIMIT 1")
     AgentQuestionEntity selectOpenByRun(String userId, String runId);
 
-    @Select("SELECT * FROM AGENT_QUESTION WHERE THREAD_ID = #{threadId} AND STATUS = 'OPEN' FOR UPDATE")
+    @Select("SELECT * FROM AGENT_WORKFLOW_QUESTION WHERE THREAD_ID = #{threadId} AND STATUS = 'OPEN' FOR UPDATE")
     List<AgentQuestionEntity> selectOpenForUpdate(String threadId);
 }

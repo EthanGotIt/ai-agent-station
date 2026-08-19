@@ -13,7 +13,7 @@ import java.time.Instant;
  * @author ethan
  * @date 2026-08-19
  */
-@TableName("AGENT_QUESTION")
+@TableName("AGENT_WORKFLOW_QUESTION")
 public final class AgentQuestionEntity {
 
     @TableId(value = "QUESTION_ID", type = IdType.INPUT)
