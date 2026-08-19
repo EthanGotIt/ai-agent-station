@@ -16,7 +16,7 @@
 
 - 根包为 `cn.ethan`，项目使用 JDK 17。
 - Maven 依赖保持 `app → core`、`app → infrastructure`、`infrastructure → core`。`core` 只表达业务规则和端口，不依赖 Spring、数据库或模型供应商；`infrastructure` 适配外部系统；`app` 处理启动和 HTTP 装配。
-- v3 的 Agent 上下文根为 `Thread`，执行层次为 `Thread → Turn → Item`。不建立持久化顶层 Session，不实现 Thread Fork、分支合并、长期记忆或多 Agent 协作。
+- v3 的 Agent 上下文根为 `Thread`，执行层次为 `Thread → Turn → Item`。登录上下文不持有 Agent 历史；不实现 Thread Fork、分支合并、跨上下文自动记忆或多 Agent 协作。
 - 协调 Agent 统一使用 Spring AI Tool Calling。只读查询可以调用 Tool；退款、催发货、删除和其他外部写操作必须启动确定性 Workflow，不允许模型直接产生外部副作用。
 - Workflow 的 QuestionCard、Checkpoint、WorkflowRun 和 ExternalActionCommand 必须持久化；远程调用不得包在本地数据库事务内。
 - 模块内先按业务能力、再按职责组织。Core 使用 `model`、`enums`、`port`、`service`、`exception`、`support`；Workflow 使用 `workflow/model`、`node`、`engine`、`port`、`service`；Infrastructure 使用 `entity`、`mapper`、`gateway`、`provider`、`store`、`validator`、`tool`；App 保持 `config`、`controller`、`dto`、`handler`。
@@ -26,7 +26,7 @@
 
 - 接口按职责命名，如 `*Gateway`、`*Store`、`*Provider`、`*Executor`、`*Node`，不使用 `I` 前缀；实现通过技术或策略前缀区分。
 - Core 业务数据使用 `*Model`；数据库映射只在 Infrastructure 的 `entity` 包中使用 `*Entity`；HTTP 请求、响应和 SSE 事件使用 `*Dto`。三者必须在边界转换，不跨层复用。
-- Agent DTO 使用统一业务前缀和操作前缀，例如 `AgentThreadCreateRequestDto`、`AgentTurnSubmitResponseDto`、`AgentThreadEventDto`、`AgentErrorResponseDto`。`body` 只表达 `@RequestBody` 参数位置，不作类型后缀。
+- Agent DTO 使用统一业务前缀和操作前缀，例如 `AgentThreadCreateRequestDto`、`AgentTurnAcceptedResponseDto`、`AgentThreadEventDto`、`AgentErrorResponseDto`。`body` 只表达 `@RequestBody` 参数位置，不作类型后缀。
 - 枚举以 `Enum` 结尾；服务、管理器、映射器、校验器、配置、控制器、异常处理器和异常分别使用 `*Service`、`*Manager`、`*Mapper`、`*Validator`、`*Configuration`、`*Controller`、`*ExceptionHandler`、`*Exception`。测试使用 `*Test`，集成测试使用 `*IT`。
 - `*Utils` 只表示同一主题的多个无状态方法，类型必须是 `final` 并有私有构造器。避免 `Common`、`Helper` 等模糊名称。
 - 数据库库、表、列、索引和约束使用大写 `UPPER_SNAKE_CASE`；Java 字段和方法使用 `lowerCamelCase`。

@@ -1,171 +1,46 @@
-# AI Agent Station 运行手册
+# v3 运行手册
 
-## 前置条件与启动
+## 配置
 
-- JDK 17、Maven 3.9+、MySQL 8.x。
-- 配置 `DASHSCOPE_API_KEY`；Router 与 ReAct 默认均为 `qwen3.7-plus`。仅在真实对照验收通过后，才可将 ReAct 显式设为 `qwen3.8-max`；不要用模型升级替代规则路由、工具输入或超时问题的修复。
-- 新库执行 `docs/dev-ops/mysql/sql/ai-agent-station.sql`；已有库必须先备份，再依次执行 `manual-upgrade-order-diagnosis.sql`、`manual-upgrade-after-sales-refund.sql`、`manual-upgrade-questioncard-memory.sql`、`manual-upgrade-session-memory-v2.sql`、[领域 V2 升级](dev-ops/mysql/sql/manual-upgrade-domain-v2.sql)、`manual-upgrade-memory-version.sql` 和 [退款生命周期 V2.1 升级](dev-ops/mysql/sql/manual-upgrade-refund-lifecycle-v21.sql)。所有脚本只应在备份后的非生产库执行一次。
+敏感配置只通过环境变量注入：`MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`、`AI_AGENT_MODEL_BASE_URL` 和 `AI_AGENT_MODEL_API_KEY`。模型名称、Thread 上下文预算、队列容量、各层超时和 Worker 轮询参数均在 `application.yml` 中以环境变量覆盖。
+
+## 初始化与启动
+
+1. 使用可丢弃的本地 MySQL 执行 `docs/dev-ops/mysql/sql/ai-agent-station.sql`。脚本会删除旧表，禁止用于生产数据。
+2. 设置数据库和模型环境变量。
+3. 运行 `mvn spring-boot:run -pl ai-agent-station-app`。
+4. 运行前端 `cd agent-console; npm run dev`。
+
+本地演示身份通过 `X-User-Id: demo-user-1` 传递；真实部署应在网关完成认证并由应用认证适配器提供用户 ID。
+
+## 验收路径
 
 ```powershell
-mvn clean '-DskipTests=false' test
-mvn -pl ai-agent-station-app -am package
-java -jar ai-agent-station-app/target/ai-agent-station-app.jar
+$headers = @{ "X-User-Id" = "demo-user-1" }
+$thread = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8090/api/agent/threads -Headers $headers -ContentType application/json -Body '{"title":"演示 Thread"}'
+$threadId = $thread.threadId
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8090/api/agent/threads/$threadId/turns" -Headers $headers -ContentType application/json -Body '{"clientRequestId":"demo-1","message":"查询订单 ORDER-PAID-001 的状态"}'
+Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8090/api/agent/threads/$threadId/items?afterSequence=0&limit=200" -Headers $headers
 ```
 
-默认端口为 `8090`。敏感变量通过环境变量注入，应用不读取或打印 `.env` 中的密钥。
+退款或催发货请求只会生成 QuestionCard。批准后命令进入 Worker；可通过 Items 和 SSE 观察 `TOOL_*`、`WORKFLOW_*`、`EXTERNAL_ACTION_STATUS` 和 Turn 终态。
 
-## Chat 与 Workflow QuestionCard
+## 排错
 
-```powershell
-$body = @{
-  requestId = 'request-001'
-  sessionId = 'session-001'
-  message = '查询订单'
-} | ConvertTo-Json
+- `409 THREAD_AWAITING_ANSWER`：当前 Thread 有开放 QuestionCard，必须先回答、拒绝或取消。
+- `429 THREAD_QUEUE_FULL` / `AGENT_QUEUE_FULL`：等待现有 Turn 完成或取消排队请求。
+- SSE 断线：先请求 Items API，使用返回的 `nextAfterSequence` 重新订阅 events；最终状态以持久化 Item 为准。
+- `MANUAL_RETRY_REQUIRED`：确认外部系统没有成功写入后调用 `/api/agent/workflow-runs/{runId}/retry`，接口保持原幂等键。
+- `RUNTIME_RESTARTED`：重启时 ACTIVE Turn 会失败收敛，排队 Turn、QuestionCard 和外部命令继续恢复。
 
-Invoke-RestMethod -Method Post `
-  -Uri http://127.0.0.1:8090/api/v1/agent/chat `
-  -Headers @{ 'X-User-Id' = 'demo-user-1' } `
-  -ContentType 'application/json; charset=utf-8' -Body $body
-```
+## 验证命令
 
-缺少必要信息会返回 `status=WAITING_USER_INPUT`、`question` 和 `workflowRun`。回答必须调用，而不是把答案塞回下一次 `/chat`：
-
-```powershell
-$answer = @{
-  requestId = 'answer-001'
-  sessionId = 'session-001'
-  questionId = '{questionId}'
-  checkpointId = '{checkpointId}'
-  expectedVersion = 0
-  answers = @{ orderId = 'ORDER-PAID-001' }
-} | ConvertTo-Json -Depth 3
-
-Invoke-RestMethod -Method Post `
-  -Uri http://127.0.0.1:8090/api/v1/agent/workflow-runs/{runId}/answers `
-  -Headers @{ 'X-User-Id' = 'demo-user-1' } `
-  -ContentType 'application/json; charset=utf-8' -Body $answer
-```
-
-流式入口为 `/api/v1/agent/chat/stream` 和 `/workflow-runs/{runId}/answers/stream`。二者都先走 `userId + sessionId` FIFO；`SESSION_QUEUE_FULL` 会在 SSE 建连前返回 429。Workflow 只能通过包含版本与检查点的 answers 请求恢复。
-
-订单 Workflow 支持 `QUERY`、`TRACK`、`DIAGNOSE`。物流追踪返回时间线，履约诊断会在问题类型不明确时继续询问。退款 Workflow 依次收集订单、原因、必要说明和最终确认；`PAID` 且金额完整为自动退款，`SHIPPED` 或签收未超过七天为人工审核。自动退款与审核批准均进入持久化退款命令，由本地 Worker 异步处理。
-
-## 售后审核与退款任务
-
-审核端点为 `/api/v1/after-sales/cases`，每个请求必须携带可信网关注入的 `X-Operator-Id`。控制台会携带该 Header；生产部署必须在网关完成操作员身份验证，应用本身不把 Header 当作最终认证机制。
-
-退款申请依次经历 `PENDING_REVIEW → REFUND_PROCESSING → COMPLETED` 或 `PENDING_REVIEW → REJECTED`。渠道执行失败时，退款命令在有限次数内从 `RETRY_WAIT` 回到 `PROCESSING`；达到 `AI_AGENT_REFUND_WORKER_MAX_ATTEMPTS` 后申请转为 `REFUND_FAILED`，操作员可调用重试端点重新排队。所有审核和人工重试均携带幂等 ID 与 `expectedVersion`，冲突时应刷新详情后再次操作。
-
-Worker 默认每 5 秒轮询，单批 8 条，最多自动尝试 3 次；可通过 `AI_AGENT_REFUND_WORKER_POLL_INTERVAL`、`AI_AGENT_REFUND_WORKER_BATCH_SIZE`、`AI_AGENT_REFUND_WORKER_MAX_ATTEMPTS`、`AI_AGENT_REFUND_WORKER_RETRY_DELAY` 与 `AI_AGENT_REFUND_WORKER_LEASE_DURATION` 配置。租约到期的处理中命令可以被安全重新领取；远程退款调用不在数据库事务内执行。
-
-退款渠道默认使用 `AI_AGENT_REFUND_CHANNEL_MODE=local`，用于本地确定性完成。设置为 `http` 后，应用调用 `AI_AGENT_REFUND_CHANNEL_BASE_URL` 下的 `POST /refunds`；`AI_AGENT_REFUND_CHANNEL_TIMEOUT` 同时控制连接与读取超时，必须大于 0 且不超过 30 秒。请求以 `refundId` 作为 `Idempotency-Key`，只发送退款 ID、订单 ID、金额和币种。
-
-## ReAct 工具确认
-
-当 ReAct 工具要求确认时，原 SSE 收到 `event: intervention`，其中含 `replyId` 和 `toolCallIds`。保持该 SSE 连接，并从另一个 HTTP 调用提交决定：
-
-```powershell
-$decision = @{
-  sessionId = 'session-001'
-  toolCallIds = @('{toolCallId}')
-  decision = 'CONFIRM'
-} | ConvertTo-Json
-
-Invoke-RestMethod -Method Post `
-  -Uri http://127.0.0.1:8090/api/v1/agent/requests/{requestId}/interventions/{replyId} `
-  -Headers @{ 'X-User-Id' = 'demo-user-1' } `
-  -ContentType 'application/json; charset=utf-8' -Body $decision
-```
-
-该决定不进入 FIFO；服务端核对请求、用户、会话和全部工具调用 ID 后继续同一 ReAct 回合。同步 `/chat` 无法承载确认，会返回 `REACT_CONFIRM_REQUIRES_STREAM`。确认超时、取消或回合结束均不保留 ReAct 中断状态。
-
-生产 ReAct 工具包括五个只读查询工具和一个 `save_session_preference` 写工具。只有后者固定返回 `ASK`，且仅能保存 `response.language`、`response.format`、`response.detail` 的规范化值到当前会话；明确且无歧义的自然语言偏好由执行器确定性编排该 Tool，歧义表达不会写入。拒绝在执行器边界直接完成，超时或取消中断等待，三者均不会执行 Tool。`acceptance` Profile 的 `confirmation_probe` 仅用于验证协议，不是生产功能。
-
-## 会话记忆
-
-`AI_AGENT_MEMORY_GENERATION_ENABLED` 与 `AI_AGENT_MEMORY_USAGE_ENABLED` 默认均为 `false`；旧 `AI_AGENT_MEMORY_RECORDING_ENABLED` 仅作为一轮生成开关的兼容别名。请求可携带 `memory.generate`、`memory.use` 覆盖默认值。
-
-成功完成的 ReAct 与 Workflow 由独立 Qwen Flash 后台任务提取为结构化 `PREFERENCE` 或 `TASK_CONTEXT`。任务按会话 30 秒 debounce；队列满、提取失败或进程重启都会跳过本批，不影响用户响应。凭证、支付与认证信息会在提取前后过滤；自动条目最低置信度为 `0.75`，偏好不会过期，任务上下文默认 24 小时过期。
-
-ReAct 最多使用 8 条、4000 字符的受控记忆，并明确作为不可信历史上下文。Router 不读取记忆。Workflow 只将置信度至少 `0.90` 的任务上下文显示为 QuestionCard 建议值；建议值在用户提交 answers 前不会写入 Workflow 参数或绕过实时校验。
-
-管理接口：
-
-- `GET /api/v1/agent/memories?sessionId={sessionId}&limit=50`
-- `POST /api/v1/agent/memories`，body 为 `sessionId`、`category`、`memoryKey`、`value`、可选 `expiresAt`
-- `PUT /api/v1/agent/memories/{entryId}`，body 与创建字段相同，另需当前 `expectedVersion`
-- `DELETE /api/v1/agent/memories/{entryId}?sessionId={sessionId}&expectedVersion={version}`
-- `GET /api/v1/agent/memories/{entryId}/evidence?sessionId={sessionId}`
-
-列表默认不返回软删除条目；删除保留 tombstone，自动提取不得复活它。手动创建或编辑会标记为人工维护。编辑或删除时，条目存在但 `expectedVersion` 过期返回 `409 MEMORY_VERSION_CONFLICT`；跨用户或跨会话访问统一返回 404。
-
-## 演示控制台与评测
-
-在后端启动后，另开终端执行：
-
-```powershell
-cd agent-console
-npm install
-npm run dev
-```
-
-控制台通过 Vite 代理访问后端，提供订单/物流/售后业务卡片、SSE 时间线、QuestionCard 建议来源、ASK 旁路确认、取消和记忆 CRUD/evidence。SSE 解析支持分块、CRLF、多行 `data` 与尾部缓冲；回答失败不会丢失原 QuestionCard。浏览器只在内存中保留本次界面状态，不将 Prompt、工具参数或记忆正文写入 `localStorage`。
-
-确定性业务回归使用 Java stub 测试；需要连接本地服务时可运行：
-
-```powershell
-python -m scripts.evaluation --base-url http://127.0.0.1:8090 --output docs/evaluation/latest-report.md
-```
-
-该命令只调用规则可判定的订单场景，生成 Markdown 报告；真实 Qwen/AgentScope 验收仍使用 `scripts.live_acceptance`。
-
-## 取消与错误
-
-`DELETE /api/v1/agent/requests/{requestId}` 需要同一 `X-User-Id`。常见错误：
-
-- `429 SESSION_QUEUE_FULL` / `GLOBAL_QUEUE_FULL`：队列已满。
-- `409 REQUEST_ID_CONFLICT`：请求 ID 仍在终态保留期。
-- `404 WORKFLOW_RUN_NOT_FOUND`：运行不属于当前用户或会话。
-- `409 WORKFLOW_VERSION_CONFLICT`：QuestionCard 已被其他回答推进。
-- `409` intervention 响应：确认已过期、归属不匹配或工具列表不完整。
-
-## 验证
-
-```powershell
+```text
 python -m scripts.convention_check
 python -m unittest discover -s scripts/tests -p "test_*.py"
-python -m scripts.plan_audit --strict
 mvn clean '-DskipTests=false' test
-cd agent-console; npm test; npm run build
+cd agent-console
+npm run typecheck
+npm test -- --run
+npm run build
 ```
-
-退款可靠性验收不需要模型凭据，但会删除并重建 JDBC URL 指向的本机 `AI_AGENT_STATION`。脚本拒绝非本机地址、其他 Schema、缺少重置开关或错误确认值：
-
-```powershell
-python -m scripts.refund_acceptance `
-  --reset-database `
-  --confirm-drop DROP_LOCAL_REFUND_ACCEPTANCE_SCHEMA
-```
-
-脚本启动随机本机端口 HTTP 模拟渠道，以 `http` 模式启动应用，覆盖自动成功、人工审核幂等、有限重试、最终失败后的人工重试、租约与重启恢复、状态查询一致性。报告写入 `target/refund-acceptance/`，不包含请求正文、用户信息、审核说明或环境凭据。只读退款 Tool 的命令状态、尝试次数和失败码序列化由 Java Tool 测试覆盖，验收脚本不为调用 Tool 而触发模型。
-
-`scripts.live_acceptance` 覆盖订单多阶段 QuestionCard、自动退款、人工审核、状态查询、重启恢复、五个只读工具、真实 `save_session_preference` 的确认/拒绝/超时/取消和 FIFO 取消。百炼模型原生工具（含联网搜索）必须保持关闭；后续外部能力仅通过框架 MCP 组件接入并单独验收。它以 `acceptance` Profile 保留确认探针作为协议诊断，但主要 ASK 场景是生产偏好写入。运行前必须准备独立非生产 MySQL 与 DashScope 凭据；不要用真实凭据执行未经审查的数据库重置。
-
-Router Policy 与 ReAct AgentSkill 的五轮稳定性验收会调用真实模型并重置非生产数据，必须获得明确授权后运行：
-
-```powershell
-python -m scripts.live_acceptance --skill-stability-runs 5
-```
-
-该模式不重复数据库重置、Workflow 恢复或完整套件，只使用独立 Session 重复 Router/Skill 场景。每个场景必须为 5/5：路由为预期 `REACT`，且 SSE 中的 Tool 生命周期包含预期有序子序列。报告只显示脱敏聚合成功率；若任何一次未命中，命令失败。
-
-V2 已于 2026-08-12 按该方式完成验收；结果见 [V2 验收报告](acceptance/v2-20260812.md)。再次运行仍视为新的真实外部验收，不能因已有结论跳过环境隔离和授权检查。
-
-V2.1 退款可靠性已于 2026-08-12 通过独立本机验收；结果见 [V2.1 退款验收报告](acceptance/v21-refund-20260812.md)。该结论使用 HTTP 模拟渠道，不代表真实支付商或生产上线验收。
-
-## 交付范围
-
-当前交付只要求本地开发、自动测试和按需的本地服务验证；不要求上线或现场演示。因此 Docker、Docker Compose、Nginx、TLS 证书和公网访问都不是必备环境。
-
-根目录保留的 Docker 文件仅作将来扩展时的可选工程资产，不属于当前验收，也不应为本地开发下载镜像、创建容器或配置访问密钥。
