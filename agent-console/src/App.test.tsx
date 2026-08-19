@@ -1,36 +1,33 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
-  window.history.replaceState(null, "", "#/");
 });
 
-describe("Agent Workbench 导航与场景", () => {
-  it("uses hash navigation for a directly linked workspace", async () => {
-    window.history.replaceState(null, "", "#/memory");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json([])));
+describe("v3 Agent Thread 工作区", () => {
+  it("从唯一的 /api/agent 契约创建并恢复 Thread", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json({ items: [], page: 0, size: 100, total: 0 }))
+      .mockResolvedValueOnce(json({ threadId: "thread-1", title: "新的 Agent Thread", status: "ACTIVE", contextType: null, contextId: null, nextSequence: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }))
+      .mockResolvedValueOnce(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }))
+      .mockResolvedValueOnce(streamResponse([]));
+    vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "可审计会话记忆" })).not.toBeNull();
-    expect(screen.getAllByRole("button", { name: /会话记忆/ }).some((button) => button.getAttribute("aria-current") === "page")).toBe(true);
+    expect(await screen.findByRole("heading", { name: "从一次清晰的请求开始" })).not.toBeNull();
+    expect(fetchMock.mock.calls.every(([input]) => String(input).startsWith("/api/agent/"))).toBe(true);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1"))).toBe(false);
   });
 
-  it("runs a real demo scenario through the existing stream endpoint", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(streamResponse([
-      "event: route", "data: ORDER_QUERY", "",
-      "event: content", "data: 订单已支付。", "",
-      "event: done", "data: COMPLETED", "", ""
-    ])));
+  it("显示服务端不可用错误，不生成本地伪回复", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("服务不可用")));
     render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: /查询订单/ }));
-
-    expect(await screen.findByText("订单已支付。")).not.toBeNull();
-    await waitFor(() => expect(screen.getByText("已选择 ORDER_QUERY 路径")).not.toBeNull());
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("网络连接暂时不可用"));
+    expect(screen.queryByText(/已选择 .* 路径/)).toBeNull();
   });
 });
 
@@ -40,13 +37,10 @@ function json(value: unknown) {
 
 function streamResponse(lines: string[]) {
   const encoder = new TextEncoder();
-  return {
-    ok: true,
-    body: new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(encoder.encode(lines.join("\n")));
-        controller.close();
-      }
-    })
-  } as Response;
+  return new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (lines.length > 0) controller.enqueue(encoder.encode(lines.join("\n")));
+      controller.close();
+    }
+  }));
 }

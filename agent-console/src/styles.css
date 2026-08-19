@@ -349,3 +349,60 @@ textarea { min-height: 92px; resize: vertical; line-height: 1.55; }
   .status, .turn-status, .memory-state, .run-indicator { color: CanvasText; border: 1px solid CanvasText; background: Canvas; }
   .workspace-navigation button.active, .mobile-navigation button.active { color: HighlightText; background: Highlight; }
 }
+
+/* v3 Thread 工作区：把会话事实、运行轨迹和确认状态保持在同一张工作台上。 */
+.eyebrow { display: block; color: var(--jade-strong); font-size: .68rem; font-weight: 800; letter-spacing: .13em; }
+.thread-layout { display: grid; min-width: 0; grid-template-columns: 246px minmax(0, 1fr) minmax(290px, 330px); gap: 18px; align-items: start; }
+.thread-sidebar { position: sticky; top: 100px; min-width: 0; border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; background: var(--surface); box-shadow: var(--shadow-close); }
+.sidebar-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.sidebar-heading h2 { margin: 5px 0 0; font-size: 1rem; }
+.compact-icon { display: inline-grid; width: 32px; height: 32px; padding: 0; place-items: center; }
+.compact-icon svg { width: 16px; }
+.thread-list { display: grid; gap: 4px; max-height: min(54vh, 480px); margin-top: 12px; overflow: auto; }
+.thread-row { display: flex; width: 100%; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 8px; border: 1px solid transparent; border-radius: 9px; padding: 10px; color: var(--ink); background: transparent; text-align: left; box-shadow: none; }
+.thread-row:hover, .thread-row.selected { border-color: var(--line-strong); color: var(--ink); background: var(--surface-muted); box-shadow: none; transform: none; }
+.thread-row > span:first-child { display: grid; min-width: 0; gap: 4px; }
+.thread-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-row small { color: var(--muted); font-size: .72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-row .status { flex: 0 0 auto; font-size: .64rem; }
+.thread-sidebar-note { display: flex; align-items: flex-start; gap: 8px; margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px; color: var(--muted); }
+.thread-sidebar-note svg { width: 15px; flex: 0 0 auto; color: var(--jade); }
+.thread-sidebar-note p { margin: 0; font-size: .73rem; line-height: 1.5; }
+.thread-main { min-width: 0; }
+.thread-context-bar { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--line); padding: 1px 2px 14px; }
+.thread-context-bar strong { display: block; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-context-actions { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.rename-field input { width: 115px; min-height: 32px; padding: 6px 8px; font-size: .76rem; }
+.thread-records { min-height: 300px; }
+.v3-scenario-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 15px 0 2px; }
+.v3-scenario-strip .eyebrow { margin-right: 4px; }
+.v3-scenario-strip button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-strong); border-radius: 999px; padding: 7px 10px; color: var(--jade-strong); background: var(--surface); font-size: .75rem; box-shadow: none; }
+.v3-scenario-strip button:hover { color: var(--ink); background: var(--jade-soft); box-shadow: none; transform: none; }
+.v3-turn .turn-status { margin-left: 2px; }
+.v3-question-card { margin-bottom: 18px; }
+.v3-question-card label { display: grid; gap: 6px; margin-top: 16px; color: var(--muted); font-size: .78rem; font-weight: 700; }
+.v3-question-card select { width: min(290px, 100%); }
+.v3-inspector { position: sticky; top: 100px; }
+.v3-inspector > .inspector-heading > svg { width: 18px; color: var(--jade); }
+.v3-inspector .trace-list { max-height: calc(100dvh - 220px); }
+
+@media (max-width: 1280px) {
+  .thread-layout { grid-template-columns: 220px minmax(0, 1fr) 290px; gap: 14px; }
+}
+
+@media (max-width: 1080px) {
+  .thread-layout { grid-template-columns: 220px minmax(0, 1fr); }
+  .v3-inspector { grid-column: 1 / -1; position: static; }
+  .v3-inspector .trace-list { max-height: 300px; }
+}
+
+@media (max-width: 760px) {
+  .thread-layout { grid-template-columns: 1fr; }
+  .thread-sidebar { position: static; }
+  .thread-list { display: flex; max-height: none; overflow-x: auto; padding-bottom: 3px; }
+  .thread-row { min-width: 190px; }
+  .thread-context-bar { align-items: flex-start; flex-direction: column; }
+  .thread-context-actions { width: 100%; justify-content: space-between; }
+  .rename-field { flex: 1; }
+  .rename-field input { width: 100%; }
+}
