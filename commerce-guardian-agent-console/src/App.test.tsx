@@ -7,7 +7,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("v3 Agent Thread 工作区", () => {
+describe("Commerce Guardian Agent Thread 工作区", () => {
   it("从唯一的 /api/agent 契约创建并恢复 Thread", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(json({ items: [], page: 0, size: 100, total: 0 }))

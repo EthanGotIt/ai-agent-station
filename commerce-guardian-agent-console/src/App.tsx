@@ -3,7 +3,7 @@ import { useState } from "react";
 import { ThreadWorkspace } from "./ThreadWorkspace";
 import { useThreadWorkspace } from "./useThreadWorkspace";
 
-/** v3 Agent 工作区外壳：身份只用于演示认证上下文，业务操作全部落到 Thread。 */
+/** Commerce Guardian Agent 工作区外壳：身份只用于演示认证上下文，业务操作全部落到 Thread。 */
 export function App() {
   const [userId, setUserId] = useState("demo-user-1");
   const normalizedUserId = userId.trim() || "demo-user-1";
@@ -11,10 +11,10 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <aside className="app-rail" aria-label="Agent Station">
+      <aside className="app-rail" aria-label="Commerce Guardian Agent">
         <div className="brand-lockup">
           <span className="brand-mark"><Bot aria-hidden="true" /></span>
-          <div><strong>AI Agent Station</strong><small>可恢复 Agent Runtime · v3</small></div>
+          <div><strong>Commerce Guardian Agent</strong><small>可恢复 Agent Runtime</small></div>
         </div>
         <nav className="workspace-navigation" aria-label="工作区导航">
           <button className="active" type="button" aria-current="page">
