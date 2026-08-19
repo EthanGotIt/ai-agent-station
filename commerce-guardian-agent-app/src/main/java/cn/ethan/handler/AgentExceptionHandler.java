@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import java.util.Objects;
 
 /**
- * 类型职责：将 v3 API 的归属、并发、校验和未知错误转换为稳定响应。
+ * 类型职责：将 Agent API 的归属、并发、校验和未知错误转换为稳定响应。
  *
  * @author ethan
  * @date 2026-08-19

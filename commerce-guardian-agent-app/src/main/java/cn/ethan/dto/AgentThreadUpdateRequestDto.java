@@ -3,7 +3,7 @@ package cn.ethan.dto;
 import jakarta.validation.constraints.Size;
 
 /**
- * 类型职责：接收 v3 Thread 标题和归档状态更新。
+ * 类型职责：接收 Thread 标题和归档状态更新。
  *
  * @author ethan
  * @date 2026-08-19

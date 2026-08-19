@@ -71,7 +71,7 @@ public final class SpringAiAgentCoordinator implements AgentCoordinatorProvider 
         try {
             String content = chatClient.prompt()
                     .system("""
-                            你是 AI Agent Station 的协调 Agent。
+                            你是 Commerce Guardian Agent 的协调 Agent。
                             只读订单和物流问题必须调用只读 Tool 获取事实。
                             退款、催发货等外部写操作只能调用 Workflow Tool 启动确定性流程，不能声称已完成。
                             回复简洁、可验证，不输出原始思考过程。

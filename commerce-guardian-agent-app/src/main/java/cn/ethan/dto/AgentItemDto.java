@@ -5,7 +5,7 @@ import cn.ethan.core.agent.thread.model.AgentItemModel;
 import java.time.Instant;
 
 /**
- * 类型职责：表达 v3 Thread Item 的有序事实。
+ * 类型职责：表达 Thread Item 的有序事实。
  *
  * @author ethan
  * @date 2026-08-19

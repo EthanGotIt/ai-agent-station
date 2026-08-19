@@ -5,7 +5,7 @@ import cn.ethan.core.agent.thread.port.AgentThreadEventGateway;
 import java.time.Instant;
 
 /**
- * 类型职责：表达 v3 Thread 实时 SSE 事件。
+ * 类型职责：表达 Thread 实时 SSE 事件。
  *
  * @author ethan
  * @date 2026-08-19

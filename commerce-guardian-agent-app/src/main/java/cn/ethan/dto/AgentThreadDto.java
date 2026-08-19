@@ -5,7 +5,7 @@ import cn.ethan.core.agent.thread.model.AgentThreadModel;
 import java.time.Instant;
 
 /**
- * 类型职责：表达 v3 Thread 的 HTTP 响应数据。
+ * 类型职责：表达 Thread 的 HTTP 响应数据。
  *
  * @author ethan
  * @date 2026-08-19

@@ -5,7 +5,7 @@ import cn.ethan.core.agent.thread.model.AgentTurnModel;
 import java.time.Instant;
 
 /**
- * 类型职责：表达 v3 Turn 入队后的稳定响应。
+ * 类型职责：表达 Turn 入队后的稳定响应。
  *
  * @author ethan
  * @date 2026-08-19

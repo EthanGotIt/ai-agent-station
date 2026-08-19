@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.time.Duration;
 
 /**
- * v3 Thread 运行参数：约束上下文预算、工具结果上限和单 Turn 超时。
+ * Thread 运行参数：约束上下文预算、工具结果上限和单 Turn 超时。
  *
  * @author ethan
  * @date 2026-08-19

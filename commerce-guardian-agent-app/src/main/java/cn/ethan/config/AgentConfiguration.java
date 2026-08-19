@@ -22,7 +22,7 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 类型职责：装配 v3 Thread Runtime 的边界端口和可配置执行资源。
+ * 类型职责：装配 Thread Runtime 的边界端口和可配置执行资源。
  *
  * @author ethan
  * @date 2026-08-19

@@ -3,7 +3,7 @@ package cn.ethan.dto;
 import jakarta.validation.constraints.Size;
 
 /**
- * 类型职责：接收 v3 Thread 创建所需的标题和可选业务上下文。
+ * 类型职责：接收 Thread 创建所需的标题和可选业务上下文。
  *
  * @author ethan
  * @date 2026-08-19
