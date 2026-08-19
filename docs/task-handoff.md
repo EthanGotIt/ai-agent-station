@@ -1,4 +1,4 @@
-status: active
+status: completed
 updated: 2026-08-19
 
 # v3 交接
@@ -15,15 +15,13 @@ updated: 2026-08-19
 - `mvn -pl ai-agent-station-app -am -DskipTests compile`：通过。
 - `agent-console/npm run typecheck`、`npm test -- --run`、`npm run build`：通过。
 
-## 下一步唯一动作
-
-运行完整验证并修复根因：
+## 最终验证
 
 ```text
 python -m scripts.convention_check
 python -m unittest discover -s scripts/tests -p "test_*.py"
 mvn clean '-DskipTests=false' test
-cd agent-console; npm run typecheck; npm test -- --run; npm run build
+cd agent-console; npm run typecheck; npm test -- --run; npm run test:e2e; npm run build
 ```
 
-随后运行 `python -m scripts.acceptance` 验证已启动服务的端到端流程，并将本文件状态改为 `completed`。
+规范检查、脚本单测、Maven 全量测试、前端类型检查、组件测试、轻量端到端测试和生产构建均已通过。`python -m scripts.acceptance` 需要在已启动并连接 MySQL/模型的环境中运行。
