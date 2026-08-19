@@ -13,6 +13,13 @@ import cn.ethan.core.agent.service.AgentMemoryService;
 import cn.ethan.core.agent.service.OutputManager;
 import cn.ethan.core.agent.service.RequestLifecycleManager;
 import cn.ethan.core.agent.service.SessionExecutionQueueManager;
+import cn.ethan.core.agent.thread.port.AgentCoordinatorProvider;
+import cn.ethan.core.agent.thread.port.AgentThreadEventGateway;
+import cn.ethan.core.agent.thread.port.AgentThreadStore;
+import cn.ethan.core.agent.thread.service.AgentContextAssembler;
+import cn.ethan.core.agent.thread.service.AgentThreadService;
+import cn.ethan.core.agent.thread.service.AgentThreadRuntimeService;
+import cn.ethan.core.agent.thread.support.InMemoryAgentThreadEventGateway;
 import cn.ethan.core.after_sales.port.RefundCommandGateway;
 import cn.ethan.core.after_sales.port.AfterSalesCaseGateway;
 import cn.ethan.core.after_sales.port.AfterSalesRefundSubmissionGateway;
@@ -66,10 +73,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 @MapperScan({
         "cn.ethan.infrastructure.order.mapper",
         "cn.ethan.infrastructure.after_sales.mapper",
-        "cn.ethan.infrastructure.memory.mapper"
+        "cn.ethan.infrastructure.memory.mapper",
+        "cn.ethan.infrastructure.agent.thread.mapper"
 })
 @EnableConfigurationProperties({
         AgentRuntimeProperties.class,
+        AgentThreadProperties.class,
         AgentRouterProperties.class,
         OrderDiagnosisProperties.class,
         AgentMemoryProperties.class,
@@ -409,5 +418,62 @@ public class AgentConfiguration {
                 agentMemoryService,
                 agentMemoryExtractionCoordinator
         );
+    }
+
+    @Bean
+    public AgentThreadService agentThreadService(AgentThreadStore store, Clock clock) {
+        return new AgentThreadService(store, clock);
+    }
+
+    @Bean
+    public AgentContextAssembler agentContextAssembler(
+            AgentThreadStore store,
+            Clock clock,
+            AgentThreadProperties properties
+    ) {
+        return new AgentContextAssembler(
+                store, clock,
+                properties.contextMaxEstimatedTokens(),
+                properties.snapshotTriggerEstimatedTokens(),
+                properties.toolResultMaxCharacters(),
+                properties.outputReserveEstimatedTokens()
+        );
+    }
+
+    @Bean
+    public InMemoryAgentThreadEventGateway agentThreadEventPublisher() {
+        return new InMemoryAgentThreadEventGateway();
+    }
+
+    @Bean
+    public AgentThreadRuntimeService agentThreadRuntimeService(
+            AgentThreadStore store,
+            AgentThreadService threads,
+            AgentContextAssembler contextAssembler,
+            AgentCoordinatorProvider coordinator,
+            AgentThreadEventGateway events,
+            @Qualifier("agentTaskExecutor") ThreadPoolTaskExecutor executor,
+            @Qualifier("agentQueueTimeoutScheduler") ScheduledExecutorService scheduler,
+            Clock clock,
+            AgentRuntimeProperties properties,
+            AgentThreadProperties threadProperties
+    ) {
+        AgentThreadRuntimeService runtime = new AgentThreadRuntimeService(
+                store,
+                threads,
+                contextAssembler,
+                coordinator,
+                events,
+                executor,
+                scheduler,
+                clock,
+                properties.queue().maxPendingPerSession(),
+                properties.queue().maxPendingGlobal(),
+                properties.queue().waitTimeout(),
+                threadProperties.turnTimeout(),
+                threadProperties.toolResultMaxCharacters()
+        );
+        runtime.recoverPersistedTurns();
+        return runtime;
     }
 }
