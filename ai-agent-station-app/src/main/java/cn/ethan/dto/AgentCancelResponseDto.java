@@ -1,10 +1,10 @@
 package cn.ethan.dto;
 
 /**
- * Agent 取消响应 DTO：返回目标请求标识和取消结果。
+ * 类型职责：表达 Turn 取消请求的实际收敛结果。
  *
  * @author ethan
- * @date 2026-08-05
+ * @date 2026-08-19
  */
-public record AgentCancelResponseDto(String requestId, boolean cancelled) {
+public record AgentCancelResponseDto(String turnId, boolean cancelled) {
 }
