@@ -50,7 +50,7 @@ build/
 
 ### Mac OS ###
 .DS_Store
-/ai-agent-station-app/.env
+/commerce-guardian-agent-app/.env
 
 ### Deployment secrets and TLS material ###
 /deployment/.env

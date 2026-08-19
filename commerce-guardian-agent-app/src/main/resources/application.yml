@@ -1,0 +1,59 @@
+server:
+  port: ${SERVER_PORT:8090}
+
+spring:
+  application:
+    name: commerce-guardian-agent
+  datasource:
+    url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3306/COMMERCE_GUARDIAN_AGENT?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      minimum-idle: 2
+      maximum-pool-size: 10
+      connection-timeout: 30000
+      max-lifetime: 1800000
+  ai:
+    openai:
+      base-url: ${AI_AGENT_MODEL_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+      api-key: ${AI_AGENT_MODEL_API_KEY:}
+      chat:
+        model: ${AI_AGENT_MODEL:qwen3.7-plus}
+        temperature: 0
+        timeout: ${AI_AGENT_MODEL_TIMEOUT:PT30S}
+        max-completion-tokens: ${AI_AGENT_MODEL_MAX_OUTPUT_TOKENS:1024}
+        max-retries: ${AI_AGENT_MODEL_MAX_RETRIES:0}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+
+ai-agent:
+  runtime:
+    stream-timeout: ${AI_AGENT_STREAM_TIMEOUT:PT245S}
+    queue:
+      max-pending-per-thread: ${AI_AGENT_QUEUE_MAX_PENDING_PER_THREAD:4}
+      max-pending-global: ${AI_AGENT_QUEUE_MAX_PENDING_GLOBAL:256}
+      wait-timeout: ${AI_AGENT_QUEUE_WAIT_TIMEOUT:PT2M}
+    executor:
+      core-pool-size: ${AI_AGENT_EXECUTOR_CORE_POOL_SIZE:4}
+      max-pool-size: ${AI_AGENT_EXECUTOR_MAX_POOL_SIZE:16}
+      queue-capacity: ${AI_AGENT_EXECUTOR_QUEUE_CAPACITY:256}
+      await-termination: ${AI_AGENT_EXECUTOR_AWAIT_TERMINATION:PT10S}
+  thread:
+    context-max-estimated-tokens: ${AI_AGENT_THREAD_CONTEXT_MAX_ESTIMATED_TOKENS:12000}
+    snapshot-trigger-estimated-tokens: ${AI_AGENT_THREAD_SNAPSHOT_TRIGGER_ESTIMATED_TOKENS:9000}
+    tool-result-max-characters: ${AI_AGENT_THREAD_TOOL_RESULT_MAX_CHARACTERS:8000}
+    output-reserve-estimated-tokens: ${AI_AGENT_THREAD_OUTPUT_RESERVE_ESTIMATED_TOKENS:1500}
+    turn-timeout: ${AI_AGENT_THREAD_TURN_TIMEOUT:PT4M}
+  order:
+    gateway: ${AI_AGENT_ORDER_GATEWAY:local}
+    base-url: ${AI_AGENT_ORDER_BASE_URL:http://127.0.0.1:18080}
+    http-timeout: ${AI_AGENT_ORDER_HTTP_TIMEOUT:PT5S}
+
+logging:
+  level:
+    cn.ethan: INFO

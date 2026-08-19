@@ -14,12 +14,12 @@ from typing import Iterable, Sequence
 
 
 JAVA_SOURCE_ROOTS = (
-    "ai-agent-station-core/src/main/java",
-    "ai-agent-station-core/src/test/java",
-    "ai-agent-station-infrastructure/src/main/java",
-    "ai-agent-station-infrastructure/src/test/java",
-    "ai-agent-station-app/src/main/java",
-    "ai-agent-station-app/src/test/java",
+    "commerce-guardian-agent-core/src/main/java",
+    "commerce-guardian-agent-core/src/test/java",
+    "commerce-guardian-agent-infrastructure/src/main/java",
+    "commerce-guardian-agent-infrastructure/src/test/java",
+    "commerce-guardian-agent-app/src/main/java",
+    "commerce-guardian-agent-app/src/test/java",
 )
 
 ROLE_SUFFIXES = {
@@ -89,17 +89,17 @@ ANNOTATION_IDENTIFIER_PATTERN = re.compile(
 SILENT_CATCH_PATTERN = re.compile(r"catch\s*\([^)]*\bignored\b[^)]*\)")
 SOURCE_SECRET_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")
 DIRECT_DEPENDENCIES = {
-    "ai-agent-station-infrastructure": {
+    "commerce-guardian-agent-infrastructure": {
         ("com.fasterxml.jackson.core", "jackson-databind"),
         ("com.fasterxml.jackson.core", "jackson-core"),
         ("com.baomidou", "mybatis-plus-core"),
         ("com.baomidou", "mybatis-plus-annotation"),
         ("io.projectreactor", "reactor-core"),
     },
-    "ai-agent-station-app": {("com.fasterxml.jackson.core", "jackson-databind")},
+    "commerce-guardian-agent-app": {("com.fasterxml.jackson.core", "jackson-databind")},
 }
 FORBIDDEN_DIRECT_DEPENDENCIES = {
-    "ai-agent-station-infrastructure": {
+    "commerce-guardian-agent-infrastructure": {
         ("tools.jackson.core", "jackson-databind"),
         ("com.baomidou", "mybatis-plus"),
     },
@@ -251,7 +251,7 @@ class ConventionChecker:
                 self._add("JAVA_UTILS_CONSTRUCTOR", path, "Utils 类型必须声明私有构造方法")
 
     def _check_application_config(self) -> None:
-        resources = self.root / "ai-agent-station-app/src/main/resources"
+        resources = self.root / "commerce-guardian-agent-app/src/main/resources"
         if not resources.exists():
             self._add("APPLICATION_CONFIG", resources, "缺少应用资源目录")
             return
@@ -330,11 +330,11 @@ class ConventionChecker:
 
     def _check_module_dependencies(self) -> None:
         allowed_dependencies = {
-            "ai-agent-station-core": set(),
-            "ai-agent-station-infrastructure": {"ai-agent-station-core"},
-            "ai-agent-station-app": {
-                "ai-agent-station-core",
-                "ai-agent-station-infrastructure",
+            "commerce-guardian-agent-core": set(),
+            "commerce-guardian-agent-infrastructure": {"commerce-guardian-agent-core"},
+            "commerce-guardian-agent-app": {
+                "commerce-guardian-agent-core",
+                "commerce-guardian-agent-infrastructure",
             },
         }
         namespace = {"m": "http://maven.apache.org/POM/4.0.0"}
@@ -363,7 +363,7 @@ class ConventionChecker:
                     )
 
     def _check_build_safety(self) -> None:
-        pom = self.root / "ai-agent-station-app/pom.xml"
+        pom = self.root / "commerce-guardian-agent-app/pom.xml"
         if not pom.exists():
             return
         text = pom.read_text(encoding="utf-8")
@@ -438,8 +438,8 @@ class ConventionChecker:
         """确保具体 Agent 框架不会泄漏到 Core 或 App 的业务协议。"""
 
         forbidden_roots = (
-            self.root / "ai-agent-station-core",
-            self.root / "ai-agent-station-app",
+            self.root / "commerce-guardian-agent-core",
+            self.root / "commerce-guardian-agent-app",
         )
         for source_root in forbidden_roots:
             if not source_root.exists():
@@ -454,7 +454,7 @@ class ConventionChecker:
                         self._line_of(text, "io.agentscope"),
                     )
 
-        for module in ("ai-agent-station-core", "ai-agent-station-app"):
+        for module in ("commerce-guardian-agent-core", "commerce-guardian-agent-app"):
             pom = self.root / module / "pom.xml"
             if not pom.exists():
                 continue
@@ -542,7 +542,7 @@ def _repository_root(candidate: Path) -> Path:
 def main(arguments: Sequence[str] | None = None) -> int:
     """执行命令行检查。"""
 
-    parser = argparse.ArgumentParser(description="检查 AI Agent Station 工程规范")
+    parser = argparse.ArgumentParser(description="检查 Commerce Guardian Agent 工程规范")
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="仓库根目录")
     parser.add_argument("--install-hook", action="store_true", help="启用版本化 pre-commit Hook")
     options = parser.parse_args(arguments)

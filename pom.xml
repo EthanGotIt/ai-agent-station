@@ -11,14 +11,14 @@
     </parent>
 
     <groupId>cn.ethan</groupId>
-    <artifactId>ai-agent-station</artifactId>
+    <artifactId>commerce-guardian-agent</artifactId>
     <version>1.0</version>
     <packaging>pom</packaging>
 
     <modules>
-        <module>ai-agent-station-core</module>
-        <module>ai-agent-station-infrastructure</module>
-        <module>ai-agent-station-app</module>
+        <module>commerce-guardian-agent-core</module>
+        <module>commerce-guardian-agent-infrastructure</module>
+        <module>commerce-guardian-agent-app</module>
     </modules>
 
     <repositories>
@@ -74,12 +74,12 @@
             </dependency>
             <dependency>
                 <groupId>cn.ethan</groupId>
-                <artifactId>ai-agent-station-core</artifactId>
+                <artifactId>commerce-guardian-agent-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>cn.ethan</groupId>
-                <artifactId>ai-agent-station-infrastructure</artifactId>
+                <artifactId>commerce-guardian-agent-infrastructure</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>
@@ -126,7 +126,7 @@
                             <rules>
                                 <requireJavaVersion>
                                     <version>[17,)</version>
-                                    <message>AI Agent Station requires JDK 17 or newer.</message>
+                                    <message>Commerce Guardian Agent requires JDK 17 or newer.</message>
                                 </requireJavaVersion>
                             </rules>
                         </configuration>
