@@ -74,7 +74,8 @@ import java.util.concurrent.atomic.AtomicInteger;
         "cn.ethan.infrastructure.order.mapper",
         "cn.ethan.infrastructure.after_sales.mapper",
         "cn.ethan.infrastructure.memory.mapper",
-        "cn.ethan.infrastructure.agent.thread.mapper"
+        "cn.ethan.infrastructure.agent.thread.mapper",
+        "cn.ethan.infrastructure.agent.action.mapper"
 })
 @EnableConfigurationProperties({
         AgentRuntimeProperties.class,

@@ -51,17 +51,18 @@ public final class SpringAiAgentCoordinator implements AgentCoordinatorProvider 
             AgentThreadModel thread,
             AgentTurnModel turn,
             List<AgentItemModel> context,
-            Map<String, String> answer
+        Map<String, String> answer
     ) {
         if (answer != null && !answer.isEmpty()) {
-            String decision = answer.values().stream().findFirst().orElse("");
-            boolean accepted = decision.equalsIgnoreCase("CONFIRM")
-                    || decision.equalsIgnoreCase("APPROVE")
-                    || decision.equalsIgnoreCase("同意");
+            AgentWorkflowStarter.ResumeResult resumed = workflowStarter.resume(thread, turn, answer);
+            String actionPayload = resumed.command() == null
+                    ? resumed.resultStatus()
+                    : resumed.command().commandId();
             return new AgentCoordinatorResult(
-                    accepted ? "已确认，Workflow 将提交外部动作并由 Worker 可靠执行。"
-                            : "已拒绝本次操作，Workflow 已安全结束。",
-                    List.of(new AgentItemDraft("WORKFLOW_RESULT", accepted ? "APPROVED" : "REJECTED")),
+                    resumed.message(),
+                    List.of(new AgentItemDraft(
+                            resumed.command() == null ? "WORKFLOW_RESULT" : "EXTERNAL_ACTION_STATUS",
+                            actionPayload)),
                     null, turn.workflowRunId(), false
             );
         }

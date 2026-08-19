@@ -214,7 +214,6 @@ public final class AgentThreadRuntimeService {
             if (slot.queue.size() >= maxPendingPerThread || pendingGlobal.get() >= maxPendingGlobal) {
                 throw new AgentThreadConflictException("AGENT_QUEUE_FULL", "回答请求无法入队");
             }
-            store.answerQuestion(question.answered(clock.instant()));
             AgentTurnModel turn = new AgentTurnModel(
                     UUID.randomUUID().toString(), threadId, userId, requestId,
                     "QuestionCard 回答：" + answers, AgentTurnStatusEnum.QUEUED,
