@@ -7,6 +7,7 @@ updated: 2026-08-20
 
 - 已建立 Thread、Turn、Item、ContextSnapshot、QuestionCard 和 ExternalActionCommand 核心模型及 MyBatis-Plus 存储。
 - 已切换 Spring AI 协调器、确定性 Workflow、FIFO/取消/超时、SSE 和 React + TypeScript Thread 工作区。
+- 已将 Maven 模块、前端工作区、运行时应用名、数据库名和 SQL 基线统一为 Commerce Guardian Agent。
 - 已删除旧业务聚合、旧入口、旧框架依赖和增量 SQL；唯一基线为 `docs/dev-ops/mysql/sql/commerce-guardian-agent.sql`。
 - 已移除前端旧 Memory、Review、场景启动器和 Intervention 样式，仅保留 Thread 工作区样式。
 - 已将 Git 提交守则与项目、文档命名规范写入 `AGENTS.md`，架构与文档统一使用 Commerce Guardian Agent 名称。
