@@ -28,7 +28,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.time.Clock;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -88,13 +87,9 @@ public final class AgentThreadController {
             @RequestParam(defaultValue = "20") int size,
             HttpServletRequest request
     ) {
-        int safePage = Math.max(0, page);
-        int safeSize = Math.max(1, Math.min(size, 100));
-        List<AgentThreadDto> all = threads.list(userContext.currentUserId(request)).stream()
-                .map(AgentThreadDto::from).toList();
-        int from = Math.min(safePage * safeSize, all.size());
-        int to = Math.min(from + safeSize, all.size());
-        return new AgentThreadPageResponseDto(all.subList(from, to), safePage, safeSize, all.size());
+        var result = threads.listPage(userContext.currentUserId(request), page, size);
+        return new AgentThreadPageResponseDto(result.items().stream().map(AgentThreadDto::from).toList(),
+                result.page(), result.size(), result.total());
     }
 
     @GetMapping("/threads/{threadId}")
@@ -120,11 +115,11 @@ public final class AgentThreadController {
             HttpServletRequest request
     ) {
         int safeLimit = Math.max(1, Math.min(limit, 500));
-        List<AgentItemModel> items = runtime.listItems(userContext.currentUserId(request), threadId, afterSequence);
-        List<AgentItemModel> page = items.stream().limit(safeLimit).toList();
+        var items = threads.listItems(userContext.currentUserId(request), threadId, afterSequence, safeLimit + 1);
+        var page = items.stream().limit(safeLimit).toList();
         long next = page.isEmpty() ? Math.max(0, afterSequence) : page.get(page.size() - 1).sequence();
         return new AgentItemPageResponseDto(page.stream().map(AgentItemDto::from).toList(),
-                Math.max(0, afterSequence), next, page.size() == safeLimit);
+                Math.max(0, afterSequence), next, items.size() > safeLimit);
     }
 
     @PostMapping("/threads/{threadId}/turns")
@@ -203,7 +198,7 @@ public final class AgentThreadController {
             emitter.onCompletion(() -> close(open, subscription));
             emitter.onTimeout(() -> close(open, subscription));
             emitter.onError(failure -> close(open, subscription));
-            for (AgentItemModel item : runtime.listItems(userId, threadId, cursor.get())) {
+            for (AgentItemModel item : threads.listItems(userId, threadId, cursor.get(), 500)) {
                 send(emitter, new AgentThreadEventDto(item.itemId(), threadId, item.turnId(),
                         "item." + item.type().name().toLowerCase(), item.payload(), item.sequence(), item.createdAt()), open);
                 cursor.set(item.sequence());

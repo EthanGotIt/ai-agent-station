@@ -132,6 +132,12 @@ class AgentTurnRuntimeServiceTest {
         }
 
         @Override
+        public Optional<AgentTurnModel> findTurn(String userId, String turnId) {
+            return Optional.ofNullable(turns.get(turnId))
+                    .filter(turn -> turn.userId().equals(userId));
+        }
+
+        @Override
         public Optional<AgentTurnModel> findTurnByRequest(String userId, String clientRequestId) {
             return turns.values().stream()
                     .filter(turn -> turn.userId().equals(userId) && turn.clientRequestId().equals(clientRequestId))
@@ -146,14 +152,6 @@ class AgentTurnRuntimeServiceTest {
         @Override
         public void updateTurn(AgentTurnModel turn) {
             turns.put(turn.turnId(), turn);
-        }
-
-        @Override
-        public List<AgentTurnModel> listTurns(String userId, String threadId) {
-            return turns.values().stream()
-                    .filter(turn -> turn.userId().equals(userId) && turn.threadId().equals(threadId))
-                    .sorted(Comparator.comparing(AgentTurnModel::createdAt))
-                    .toList();
         }
 
         @Override

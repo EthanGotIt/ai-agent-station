@@ -97,20 +97,6 @@ public final class AgentTurnRuntimeService {
         this.toolResultMaxCharacters = Math.max(256, toolResultMaxCharacters);
     }
 
-    public AgentThreadModel createThread(String userId, String title, String contextType, String contextId) {
-        AgentThreadModel thread = threads.create(userId, title, contextType, contextId);
-        slots.putIfAbsent(thread.threadId(), new ThreadSlot());
-        return thread;
-    }
-
-    public List<AgentThreadModel> listThreads(String userId) {
-        return threads.list(userId);
-    }
-
-    public AgentThreadModel getThread(String userId, String threadId) {
-        return threads.get(userId, threadId);
-    }
-
     public void recoverPersistedTurns() {
         for (AgentTurnModel persisted : turns.listRecoverableTurns()) {
             AgentThreadModel thread = threadStore.findThread(persisted.userId(), persisted.threadId()).orElse(null);
@@ -149,15 +135,6 @@ public final class AgentTurnRuntimeService {
                 schedule(slot, thread);
             }
         }
-    }
-
-    public List<AgentTurnModel> listTurns(String userId, String threadId) {
-        ownedThread(userId, threadId);
-        return turns.listTurns(userId, threadId);
-    }
-
-    public AgentThreadModel updateThread(String userId, String threadId, String title, boolean archive) {
-        return threads.update(userId, threadId, title, archive);
     }
 
     public AgentTurnModel submitTurn(String userId, String threadId, String requestId, String message) {
@@ -261,9 +238,7 @@ public final class AgentTurnRuntimeService {
     }
 
     public boolean cancel(String userId, String turnId) {
-        Optional<AgentTurnModel> found = threadStore.listThreads(userId).stream()
-                .flatMap(thread -> turns.listTurns(userId, thread.threadId()).stream())
-                .filter(turn -> turn.turnId().equals(turnId)).findFirst();
+        Optional<AgentTurnModel> found = turns.findTurn(userId, turnId);
         if (found.isEmpty()) return false;
         AgentTurnModel turn = found.get();
         ThreadSlot slot = slots.computeIfAbsent(turn.threadId(), ignored -> new ThreadSlot());
@@ -286,11 +261,6 @@ public final class AgentTurnRuntimeService {
             }
         }
         return turn.status() == AgentTurnStatusEnum.CANCELLED;
-    }
-
-    public List<AgentItemModel> listItems(String userId, String threadId, long afterSequence) {
-        ownedThread(userId, threadId);
-        return items.listItems(userId, threadId, afterSequence, 500);
     }
 
     private void schedule(ThreadSlot slot, AgentThreadModel thread) {

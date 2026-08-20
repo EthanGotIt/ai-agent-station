@@ -39,6 +39,19 @@ public final class AgentThreadService {
         return threads.listThreads(userId);
     }
 
+    public AgentThreadPageModel listPage(String userId, int page, int size) {
+        requireText(userId, "userId");
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, Math.min(size, 100));
+        int offset = Math.multiplyExact(safePage, safeSize);
+        return new AgentThreadPageModel(
+                threads.listThreads(userId, offset, safeSize),
+                safePage,
+                safeSize,
+                threads.countThreads(userId)
+        );
+    }
+
     public AgentThreadModel get(String userId, String threadId) {
         requireText(userId, "userId");
         requireText(threadId, "threadId");

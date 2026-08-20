@@ -11,13 +11,13 @@ import java.util.Optional;
  */
 public interface AgentTurnStore {
 
+    Optional<AgentTurnModel> findTurn(String userId, String turnId);
+
     Optional<AgentTurnModel> findTurnByRequest(String userId, String clientRequestId);
 
     void createTurn(AgentTurnModel turn);
 
     void updateTurn(AgentTurnModel turn);
-
-    List<AgentTurnModel> listTurns(String userId, String threadId);
 
     List<AgentTurnModel> listRecoverableTurns();
 }
