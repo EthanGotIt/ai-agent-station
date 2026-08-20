@@ -1,13 +1,13 @@
 package cn.ethan.infrastructure.agent.action.worker;
 
-import cn.ethan.core.agent.action.model.ExternalActionCommandModel;
-import cn.ethan.core.agent.action.port.ExternalActionCommandStore;
-import cn.ethan.core.agent.action.port.ExternalActionExecutor;
-import cn.ethan.core.agent.thread.enums.AgentItemTypeEnum;
-import cn.ethan.core.agent.thread.model.AgentItemModel;
-import cn.ethan.core.agent.thread.port.AgentThreadEventGateway;
-import cn.ethan.core.agent.thread.port.AgentThreadStore;
-import cn.ethan.core.agent.thread.port.AgentWorkflowRunStore;
+import cn.ethan.core.agent.action.ExternalActionCommandModel;
+import cn.ethan.core.agent.action.ExternalActionCommandStore;
+import cn.ethan.core.agent.action.ExternalActionExecutor;
+import cn.ethan.core.agent.thread.AgentItemTypeEnum;
+import cn.ethan.core.agent.thread.AgentItemModel;
+import cn.ethan.core.agent.event.AgentThreadEventGateway;
+import cn.ethan.core.agent.thread.AgentThreadStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
