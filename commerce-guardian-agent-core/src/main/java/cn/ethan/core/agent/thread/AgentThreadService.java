@@ -38,7 +38,11 @@ public final class AgentThreadService {
         String normalizedUserId = requireIdentity(userId, "userId", AgentThreadModel.MAX_USER_ID_LENGTH);
         int safePage = Math.max(0, page);
         int safeSize = Math.max(1, Math.min(size, 100));
-        int offset = Math.multiplyExact(safePage, safeSize);
+        long offsetValue = (long) safePage * safeSize;
+        if (offsetValue > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("page 超出可读取范围");
+        }
+        int offset = (int) offsetValue;
         return new AgentThreadPageModel(
                 threads.listThreads(normalizedUserId, offset, safeSize),
                 safePage,

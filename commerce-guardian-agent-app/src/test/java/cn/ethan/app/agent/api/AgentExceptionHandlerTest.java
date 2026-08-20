@@ -3,7 +3,9 @@ package cn.ethan.app.agent.api;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.context.request.async.AsyncRequestTimeoutException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 /**
@@ -21,5 +23,15 @@ class AgentExceptionHandlerTest {
         assertDoesNotThrow(() -> handler.asyncRequestClosed(
                 new AsyncRequestNotUsableException("client closed")));
         assertDoesNotThrow(() -> handler.asyncRequestClosed(new AsyncRequestTimeoutException()));
+    }
+
+    @Test
+    void mapsQueryParameterConversionFailureToBadRequest() {
+        AgentExceptionHandler handler = new AgentExceptionHandler();
+        MethodArgumentTypeMismatchException failure = new MethodArgumentTypeMismatchException(
+                "not-a-number", Integer.class, "page", null, new NumberFormatException());
+
+        assertEquals(400, handler.invalidParameter(failure).getStatusCode().value());
+        assertEquals("INVALID_REQUEST", handler.invalidParameter(failure).getBody().code());
     }
 }
