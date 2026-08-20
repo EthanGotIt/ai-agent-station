@@ -39,10 +39,12 @@ updated: 2026-08-21
 - `ExternalActionWorkerTest` 当前覆盖 Lease CAS 拒绝、成功收敛和本地投影失败回滚，共 3 项通过。该结果仍未替代真实 MySQL 锁、事务和重启验证。
 - 提交 `c927ca0 fix: serialize SSE backlog and live events`：新增 `AgentThreadEventStream`，将每条连接的 backlog、回放期间实时缓冲、ready 和 live 事件串行化，并按 `eventId + sequence` 去重；解决订阅晚绑定和 SSE 发送异常清理边界。
 - `AgentThreadEventStreamTest` 当前覆盖回放/实时顺序、并发发布、重复事件和晚绑定订阅清理，共 3 项通过；Servlet 端到端和浏览器重连尚未验证。
+- 提交 `21b12e5 fix: guard console thread switching`：前端历史请求和 SSE 连接使用 generation/AbortController；旧 Thread 事件、迟到历史和旧 Turn/Answer 请求不会覆盖当前工作区；QuestionCard 提交值对齐 `APPROVE/REJECT`。
+- 前端 typecheck、Vitest 14 项和生产 build 均通过；仍未替代真实浏览器重连和服务端端到端证据。实现过程中按 `vercel-react-best-practices` 检查了异步取消、函数式状态更新和稳定事件边界。
 - 保留工作树中此前已存在的 `.idea`、部署、Docker、Hook 以及未纳入本提交的其他改动；本轮未 reset、checkout 或覆盖这些文件。
 
 ## 下一步唯一动作
 
-修复 `agent-console` 的 QuestionCard 与线程切换竞态：将决定值对齐后端 `APPROVE/REJECT`，为历史加载和 SSE 连接增加 generation/AbortController 保护，过滤旧 Thread 事件，并补充前端切换、重复事件、QuestionCard 提交和重试测试；只修改前端运行时及其直接测试，完成后运行 typecheck、Vitest 和 build 并提交。
+审计并修复 `AgentTurnModel` 到 MyBatis `AGENT_TURN` 的状态更新 CAS：为旧 Worker/恢复流程不能覆盖新状态建立持久版本边界，补充并发更新、终态保护、重启恢复和事务失败测试，并同步 SQL/映射文档；只修改 Turn 持久化边界及直接测试，完成后运行对应 Maven 验证并提交。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。
