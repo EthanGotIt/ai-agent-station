@@ -731,11 +731,20 @@ public final class AgentTurnRuntimeService {
             Instant finishedAt
     ) {
         try {
-            if (!failureReconciler.reconcile(turn, status, code, finishedAt)) {
+            AgentWorkflowAnswerFailureReconciler.ReconciliationResult result =
+                    failureReconciler.reconcileWithProjection(turn, status, code, finishedAt);
+            if (!result.reconciled()) {
                 scheduleFailureReconciliation(turn, status, code, finishedAt);
                 return false;
             }
             pendingFailureReconciliations.remove(turn.turnId());
+            if (result.retryQuestionItem() != null) {
+                try {
+                    events.itemCreated(result.retryQuestionItem());
+                } catch (RuntimeException eventFailure) {
+                    metrics.observeFailure("WORKFLOW_ANSWER_RETRY_QUESTION_EVENT_FAILED");
+                }
+            }
             publishFailureTerminal(turn, status, code, finishedAt);
             return true;
         } catch (RuntimeException reconciliationFailure) {

@@ -2,6 +2,7 @@ package cn.ethan.core.agent.execution;
 
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
+import cn.ethan.core.agent.thread.AgentItemModel;
 
 import java.time.Instant;
 
@@ -24,4 +25,21 @@ public interface AgentWorkflowAnswerFailureReconciler {
             String errorCode,
             Instant finishedAt
     );
+
+    /**
+     * 在同一持久化边界内释放回答并返回可重试 Question Item，供实时事件发布复用。
+     * 未提供投影的旧适配器仍可通过默认实现参与对账。
+     */
+    default ReconciliationResult reconcileWithProjection(
+            AgentTurnModel turn,
+            AgentTurnStatusEnum terminalStatus,
+            String errorCode,
+            Instant finishedAt
+    ) {
+        return new ReconciliationResult(reconcile(turn, terminalStatus, errorCode, finishedAt), null);
+    }
+
+    /** 对账提交后可安全发布的重试 Question Item。 */
+    record ReconciliationResult(boolean reconciled, AgentItemModel retryQuestionItem) {
+    }
 }

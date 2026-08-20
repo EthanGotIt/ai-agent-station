@@ -32,6 +32,7 @@ import java.util.Optional;
 import java.util.OptionalLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 类型职责：验证 Workflow Engine 只消费持久化回答，并以 ENQUEUED 真实版本关闭 QuestionCard。
@@ -72,6 +73,7 @@ class TransactionalAgentWorkflowEngineAnswerTest {
         assertEquals("answer-turn-1", questions.closedAnswerTurnId);
         assertEquals(AgentWorkflowStatusEnum.REJECTED, runs.updated.status());
         assertEquals(1, items.values.size());
+        assertTrue(items.values.get(0).itemId().length() <= 64);
     }
 
     private static Object defaultValue(Class<?> type) {

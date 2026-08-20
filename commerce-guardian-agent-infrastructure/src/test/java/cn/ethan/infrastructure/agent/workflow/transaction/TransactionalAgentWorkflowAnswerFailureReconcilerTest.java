@@ -1,6 +1,9 @@
 package cn.ethan.infrastructure.agent.workflow.transaction;
 
+import cn.ethan.core.agent.execution.AgentWorkflowAnswerFailureReconciler;
 import cn.ethan.core.agent.thread.AgentItemModel;
+import cn.ethan.core.agent.thread.AgentItemStore;
+import cn.ethan.core.agent.thread.AgentItemTypeEnum;
 import cn.ethan.core.agent.thread.AgentThreadConflictException;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
@@ -22,6 +25,7 @@ import java.util.Optional;
 import java.util.OptionalLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -52,6 +56,27 @@ class TransactionalAgentWorkflowAnswerFailureReconcilerTest {
     }
 
     @Test
+    void commitsCurrentQuestionVersionAsRetryItem() {
+        java.util.ArrayList<String> calls = new java.util.ArrayList<>();
+        QuestionStore questions = new QuestionStore(calls);
+        TurnStore turns = new TurnStore(calls);
+        ItemStore items = new ItemStore();
+        SnapshotTransactionManager transactions = new SnapshotTransactionManager(questions, turns, items);
+        TransactionalAgentWorkflowAnswerFailureReconciler reconciler =
+                new TransactionalAgentWorkflowAnswerFailureReconciler(questions, turns, items, transactions);
+
+        AgentWorkflowAnswerFailureReconciler.ReconciliationResult result = reconciler.reconcileWithProjection(
+                turns.turn, AgentTurnStatusEnum.FAILED, "ENGINE_DB_FAILED", NOW);
+
+        assertTrue(result.reconciled());
+        assertNotNull(result.retryQuestionItem());
+        assertEquals(AgentItemTypeEnum.WORKFLOW_QUESTION, result.retryQuestionItem().type());
+        assertTrue(result.retryQuestionItem().payload().contains("\"version\":3"));
+        assertEquals(1, items.values.size());
+        assertEquals(1L, result.retryQuestionItem().sequence());
+    }
+
+    @Test
     void rollsBackQuestionReleaseWhenTurnTerminalWriteFails() {
         Fixture fixture = new Fixture();
         fixture.turns.failUpdate = true;
@@ -63,6 +88,7 @@ class TransactionalAgentWorkflowAnswerFailureReconcilerTest {
         assertEquals(AgentWorkflowQuestionStatusEnum.AnswerEnqueueStatusEnum.ENQUEUED,
                 fixture.questions.question.answerEnqueueStatus());
         assertEquals("answer-turn-1", fixture.questions.question.answerTurnId());
+        assertTrue(fixture.items.values.isEmpty());
         assertEquals(AgentTurnStatusEnum.ACTIVE, fixture.turns.turn.status());
         assertEquals(0, fixture.transactions.commits);
         assertEquals(1, fixture.transactions.rollbacks);
@@ -79,6 +105,7 @@ class TransactionalAgentWorkflowAnswerFailureReconcilerTest {
         assertEquals(2L, fixture.questions.question.version());
         assertEquals(AgentWorkflowQuestionStatusEnum.AnswerEnqueueStatusEnum.ENQUEUED,
                 fixture.questions.question.answerEnqueueStatus());
+        assertTrue(fixture.items.values.isEmpty());
         assertEquals(AgentTurnStatusEnum.ACTIVE, fixture.turns.turn.status());
         assertEquals(0, fixture.transactions.commits);
         assertEquals(1, fixture.transactions.rollbacks);
@@ -121,10 +148,11 @@ class TransactionalAgentWorkflowAnswerFailureReconcilerTest {
         private final java.util.ArrayList<String> calls = new java.util.ArrayList<>();
         private final QuestionStore questions = new QuestionStore(calls);
         private final TurnStore turns = new TurnStore(calls);
+        private final ItemStore items = new ItemStore();
         private final SnapshotTransactionManager transactions =
-                new SnapshotTransactionManager(questions, turns);
+                new SnapshotTransactionManager(questions, turns, items);
         private final TransactionalAgentWorkflowAnswerFailureReconciler reconciler =
-                new TransactionalAgentWorkflowAnswerFailureReconciler(questions, turns, transactions);
+                new TransactionalAgentWorkflowAnswerFailureReconciler(questions, turns, items, transactions);
     }
 
     private static final class QuestionStore implements AgentWorkflowQuestionStore {
@@ -239,24 +267,43 @@ class TransactionalAgentWorkflowAnswerFailureReconcilerTest {
         }
     }
 
+    private static final class ItemStore implements AgentItemStore {
+        private final java.util.ArrayList<AgentItemModel> values = new java.util.ArrayList<>();
+
+        @Override
+        public long appendItem(AgentItemModel item) {
+            values.add(item);
+            return values.size();
+        }
+
+        @Override
+        public List<AgentItemModel> listItems(String userId, String threadId, long afterSequence, int limit) {
+            return List.copyOf(values);
+        }
+    }
+
     private static final class SnapshotTransactionManager
             implements org.springframework.transaction.PlatformTransactionManager {
         private final QuestionStore questions;
         private final TurnStore turns;
+        private final ItemStore items;
         private AgentWorkflowQuestionModel questionSnapshot;
         private AgentTurnModel turnSnapshot;
+        private List<AgentItemModel> itemSnapshot;
         private int commits;
         private int rollbacks;
 
-        private SnapshotTransactionManager(QuestionStore questions, TurnStore turns) {
+        private SnapshotTransactionManager(QuestionStore questions, TurnStore turns, ItemStore items) {
             this.questions = questions;
             this.turns = turns;
+            this.items = items;
         }
 
         @Override
         public @NonNull TransactionStatus getTransaction(TransactionDefinition definition) {
             questionSnapshot = questions.question;
             turnSnapshot = turns.turn;
+            itemSnapshot = List.copyOf(items.values);
             return new SimpleTransactionStatus();
         }
 
@@ -270,6 +317,8 @@ class TransactionalAgentWorkflowAnswerFailureReconcilerTest {
             rollbacks++;
             questions.question = questionSnapshot;
             turns.turn = turnSnapshot;
+            items.values.clear();
+            items.values.addAll(itemSnapshot);
         }
     }
 }

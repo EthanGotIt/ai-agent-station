@@ -273,7 +273,7 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
             Instant createdAt
     ) {
         items.appendItem(new AgentItemModel(
-                "workflow-" + turn.turnId() + "-" + type.name().toLowerCase() + "-" + UUID.randomUUID(),
+                UUID.randomUUID().toString(),
                 thread.threadId(), turn.turnId(), 0, type, payload, createdAt));
     }
 
