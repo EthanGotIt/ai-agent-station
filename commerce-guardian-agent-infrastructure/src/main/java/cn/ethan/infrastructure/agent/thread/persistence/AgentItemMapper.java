@@ -17,4 +17,7 @@ public interface AgentItemMapper extends BaseMapper<AgentItemEntity> {
 
     @Select("SELECT * FROM AGENT_ITEM WHERE THREAD_ID = #{threadId} AND SEQUENCE_NO > #{afterSequence} ORDER BY SEQUENCE_NO LIMIT #{limit}")
     List<AgentItemEntity> selectAfter(String threadId, long afterSequence, int limit);
+
+    @Select("SELECT * FROM AGENT_ITEM WHERE THREAD_ID = #{threadId} AND SEQUENCE_NO > #{afterSequence} ORDER BY SEQUENCE_NO DESC LIMIT #{limit}")
+    List<AgentItemEntity> selectLatest(String threadId, long afterSequence, int limit);
 }

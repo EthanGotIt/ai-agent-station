@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -60,6 +61,20 @@ public class MybatisAgentItemStore implements AgentItemStore {
         }
         return itemMapper.selectAfter(threadId, Math.max(0L, afterSequence), Math.max(1, Math.min(limit, 501)))
                 .stream().map(MybatisAgentItemStore::toModel).toList();
+    }
+
+    @Override
+    public List<AgentItemModel> listLatestItems(String userId, String threadId, long afterSequence, int limit) {
+        AgentThreadEntity owned = threadMapper.selectOne(new QueryWrapper<AgentThreadEntity>()
+                .eq("THREAD_ID", threadId).eq("USER_ID", userId));
+        if (owned == null) {
+            return List.of();
+        }
+        return itemMapper.selectLatest(threadId, Math.max(0L, afterSequence), Math.max(1, Math.min(limit, 501)))
+                .stream()
+                .map(MybatisAgentItemStore::toModel)
+                .sorted(Comparator.comparingLong(AgentItemModel::sequence))
+                .toList();
     }
 
     private static AgentItemModel toModel(AgentItemEntity entity) {

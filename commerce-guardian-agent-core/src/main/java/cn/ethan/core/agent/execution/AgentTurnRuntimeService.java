@@ -484,7 +484,7 @@ public final class AgentTurnRuntimeService {
             return;
         }
         try {
-            var assembly = contextAssembler.assembleWithReport(thread, active.turnId());
+            var assembly = contextAssembler.assembleWithReport(thread, active.turnId(), active.input());
             executionContext.checkActive();
             metrics.observeContext(assembly.report().estimatedTokens(), assembly.report().compressed(),
                     assembly.report().degraded());
