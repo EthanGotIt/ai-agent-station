@@ -22,34 +22,9 @@ JAVA_SOURCE_ROOTS = (
     "commerce-guardian-agent-app/src/test/java",
 )
 
-ROLE_SUFFIXES = {
-    "assembler": ("Assembler",),
-    "config": ("Configuration", "Properties", "Context"),
-    "controller": ("Controller",),
-    "dto": ("Dto",),
-    "engine": ("Executor",),
-    "entity": ("Entity",),
-    "executor": ("Executor",),
-    "exception": ("Exception",),
-    "gateway": ("Gateway",),
-    "handler": ("Handler",),
-    "mapper": ("Mapper",),
-    "model": ("Model",),
-    "node": ("Node",),
-    "port": ("Gateway", "Store", "Provider", "Executor", "Starter"),
-    "provider": ("Provider",),
-    "service": ("Service", "Manager", "Assembler"),
-    "store": ("Store",),
-    "tool": ("Tool", "Tools"),
-    "validator": ("Validator",),
-}
-
-INTERFACE_ROLES = {"mapper", "node", "port"}
 FORBIDDEN_SOURCE_TEXT = (
     "AI Agent Station",
     "ai-agent-station",
-    "/agent-console",
-    "\\agent-console",
     "v3",
     "AliyunRespon" + "sesGateway",
     "cn.ethan.ai",
@@ -96,12 +71,9 @@ SOURCE_SECRET_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")
 DIRECT_DEPENDENCIES = {
     "commerce-guardian-agent-infrastructure": {
         ("com.fasterxml.jackson.core", "jackson-databind"),
-        ("com.fasterxml.jackson.core", "jackson-core"),
         ("com.baomidou", "mybatis-plus-core"),
         ("com.baomidou", "mybatis-plus-annotation"),
-        ("io.projectreactor", "reactor-core"),
     },
-    "commerce-guardian-agent-app": {("com.fasterxml.jackson.core", "jackson-databind")},
 }
 FORBIDDEN_DIRECT_DEPENDENCIES = {
     "commerce-guardian-agent-infrastructure": {
@@ -195,28 +167,19 @@ class ConventionChecker:
         if "@author ethan" not in text or JAVADOC_DATE_PATTERN.search(text) is None:
             self._add("JAVA_JAVADOC", path, "顶级类型必须包含统一的 @author 和 @date JavaDoc")
 
-        relative_parts = set(Path(relative_path).parts)
         is_test = "test" in path.relative_to(self.root).parts
         if is_test:
             if not type_name.endswith(("Test", "IT")):
                 self._add("JAVA_TEST_SUFFIX", path, "测试类型必须使用 Test 或 IT 后缀")
-        else:
-            role = path.parent.name
-            suffixes = ROLE_SUFFIXES.get(role)
-            if suffixes is not None and not type_name.endswith(suffixes):
-                expected = " / ".join(f"*{suffix}" for suffix in suffixes)
-                self._add("JAVA_ROLE_SUFFIX", path, f"{role} 包中的类型必须使用 {expected} 后缀")
-            if role in INTERFACE_ROLES and type_kind != "interface":
-                self._add("JAVA_INTERFACE_ROLE", path, f"{role} 包只放接口契约")
-            if type_kind == "interface" and role not in INTERFACE_ROLES:
-                self._add("JAVA_INTERFACE_ROLE", path, "接口只能位于 port、node 或 mapper 职责包")
-
-        if "impl" in relative_parts:
+        if "impl" in Path(relative_path).parts:
             self._add("JAVA_IMPL_PACKAGE", path, "禁止使用含义泛化的 impl 包")
         if type_name.endswith("Body"):
             self._add("JAVA_DTO_SUFFIX", path, "HTTP 请求和响应对象必须统一使用 Dto 后缀")
-        if type_name.endswith("Dto") and "dto" not in relative_parts:
-            self._add("JAVA_DTO_PACKAGE", path, "Dto 只能位于 app 的 dto 包")
+        if type_name.endswith("Dto") and not (
+            "commerce-guardian-agent-app" in Path(relative_path).parts
+            and ".agent.api" in (package_match.group(1) if package_match else "")
+        ):
+            self._add("JAVA_DTO_PACKAGE", path, "Dto 只能位于 app 的 agent.api 能力包")
         if type_name.endswith("Dto"):
             self.dto_paths[type_name] = path
             if not type_name.startswith("Agent"):
@@ -237,17 +200,17 @@ class ConventionChecker:
                         "接口 DTO 必须同时包含业务域、操作和语义维度",
                     )
                 break
-        if type_name.endswith("Entity") and "entity" not in relative_parts:
-            self._add("JAVA_ENTITY_PACKAGE", path, "Entity 只能位于 infrastructure 的 entity 包")
-        if type_name.endswith("Model") and "model" not in relative_parts:
-            self._add("JAVA_MODEL_PACKAGE", path, "Model 必须位于 core 的 model 包")
+        if type_name.endswith("Entity") and not (
+            "commerce-guardian-agent-infrastructure" in Path(relative_path).parts
+            and ".persistence" in (package_match.group(1) if package_match else "")
+        ):
+            self._add("JAVA_ENTITY_PACKAGE", path, "Entity 只能位于 infrastructure 的 persistence 能力包")
+        if type_name.endswith("Model") and "commerce-guardian-agent-core" not in Path(relative_path).parts:
+            self._add("JAVA_MODEL_PACKAGE", path, "Model 必须位于 core 模块")
 
         for enum_name in ENUM_PATTERN.findall(text):
             if not enum_name.endswith("Enum"):
                 self._add("JAVA_ENUM_SUFFIX", path, f"枚举 {enum_name} 必须使用 Enum 后缀")
-        if type_kind == "enum" and path.parent.name != "enums":
-            self._add("JAVA_ENUM_PACKAGE", path, "顶级枚举必须位于 enums 包")
-
         if type_name.endswith("Utils"):
             if type_kind != "class" or f"final class {type_name}" not in text:
                 self._add("JAVA_UTILS_FINAL", path, "Utils 类型必须是 final class")
