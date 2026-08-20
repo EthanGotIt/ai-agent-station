@@ -7,6 +7,7 @@ import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.thread.AgentItemTypeEnum;
+import cn.ethan.core.agent.thread.AgentThreadConflictException;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnStore;
@@ -140,15 +141,21 @@ public final class ExternalActionOutcomeManager {
             return null;
         }
         Optional<AgentTurnModel> current = turns.findTurn(command.userId(), command.turnId());
-        if (current.isEmpty() || isTerminal(current.get().status())) {
+        if (current.isEmpty()) {
+            return null;
+        }
+        AgentTurnModel currentTurn = current.get();
+        if (isTerminal(currentTurn.status())) {
             return null;
         }
         AgentTurnStatusEnum target = turnStatus(command.status());
         AgentTurnModel nextTurn = target == AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION
-                ? current.get().workflow(command.runId(), target)
-                : current.get().terminal(target,
+                ? currentTurn.workflow(command.runId(), target)
+                : currentTurn.terminal(target,
                 target == AgentTurnStatusEnum.FAILED ? "EXTERNAL_ACTION_FAILED" : null, now);
-        turns.updateTurn(nextTurn);
+        if (!turns.updateTurn(currentTurn, nextTurn)) {
+            throw new AgentThreadConflictException("TURN_VERSION_CONFLICT", "外部动作投影时 Turn 版本竞争：" + nextTurn.turnId());
+        }
         return nextTurn;
     }
 

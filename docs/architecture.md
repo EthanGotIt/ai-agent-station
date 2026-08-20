@@ -67,7 +67,7 @@ Item 是唯一事实来源。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersio
 
 ## Runtime 可靠性
 
-队列键是 Thread：同一 Thread 严格 FIFO、任意时刻一个 ACTIVE Turn；不同 Thread 可并行。排队 Turn 可直接取消，ACTIVE Turn 通过运行上下文协作取消；已提交的外部副作用不会回滚。队列等待、Turn、工具、外部动作和 SSE 各有独立超时。
+队列键是 Thread：同一 Thread 严格 FIFO、任意时刻一个 ACTIVE Turn；不同 Thread 可并行。Turn 持久状态通过 `VERSION_NO` 条件更新执行 CAS，版本竞争或终态重写会丢弃后续事实写入。排队 Turn 可直接取消，ACTIVE Turn 通过运行上下文协作取消；已提交的外部副作用不会回滚。队列等待、Turn、工具、外部动作和 SSE 流/心跳均可独立配置。
 
 外部命令以 `(userId, idempotencyKey)` 唯一。Worker 先在本地事务中原子 Claim Lease，再在事务外调用远程系统；PENDING、RETRY_WAIT 和过期 PROCESSING 都可被领取。仅瞬时错误按指数退避，永久错误直接进入人工重试；动作超时也会形成可分类结果。演示执行器将成功结果写入 `EXTERNAL_ACTION_RESULT` 幂等表，证明远程成功后本地提交前崩溃时重跑不会产生第二次业务写入。人工重试沿用原命令和幂等键，重复回答、重复 Claim 和重启恢复不会产生第二次业务写入。
 
@@ -84,12 +84,15 @@ GET    /threads/{threadId}/items?afterSequence=0&limit=200
 POST   /threads/{threadId}/turns
 POST   /turns/{turnId}/cancel
 GET    /threads/{threadId}/events
+GET    /turns/{turnId}/execution
 POST   /workflow-runs/{runId}/questions/{questionId}/answers
 POST   /workflow-runs/{runId}/retry
 ```
 
 SSE 事件包含完整 envelope：`eventId、threadId、turnId、itemId（可选）、type、sequence、timestamp、payload`；`data` 不再只发送 payload。客户端按真实 `eventId/itemId/sequence` 去重。身份只从认证上下文读取，不信任请求体中的用户字段。
 
+执行回放接口从同一组 Item 事实投影当前 Turn 的队列、上下文、Tool、Workflow、审批和外部动作时间线；回放过程不调用模型、不启动 Workflow，也不重放外部副作用。运行指标只保留低基数维度：队列等待、Turn/Tool 耗时、上下文预算、Workflow 等待、Worker 重试、Lease 接管和失败分类。`scripts.runtime_eval` 使用 Fake 协调器和 Fake 执行器做确定性门禁，Live Model 评测单独产出质量报告。
+
 ## 数据库
 
-`docs/dev-ops/mysql/commerce-guardian-agent.sql` 是唯一破坏性基线，包含演示订单/物流和 `AGENT_THREAD`、`AGENT_TURN`、`AGENT_ITEM`、`AGENT_CONTEXT_SNAPSHOT`、`AGENT_WORKFLOW_RUN`、`AGENT_WORKFLOW_QUESTION`、`EXTERNAL_ACTION_COMMAND`。没有运行时建表，也没有增量升级脚本。
+`docs/dev-ops/mysql/commerce-guardian-agent.sql` 是唯一破坏性基线，包含演示订单/物流和 `AGENT_THREAD`、`AGENT_TURN`、`AGENT_ITEM`、`AGENT_CONTEXT_SNAPSHOT`、`AGENT_WORKFLOW_RUN`、`AGENT_WORKFLOW_QUESTION`、`EXTERNAL_ACTION_COMMAND`、`EXTERNAL_ACTION_RESULT`。没有运行时建表，也没有增量升级脚本。

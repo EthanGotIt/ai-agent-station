@@ -32,6 +32,14 @@ public final class AgentTurnEntity {
     private Integer queuePosition;
     @TableField("WORKFLOW_RUN_ID")
     private String workflowRunId;
+    @TableField("WORKFLOW_QUESTION_ID")
+    private String workflowQuestionId;
+    @TableField("WORKFLOW_CHECKPOINT_ID")
+    private String workflowCheckpointId;
+    @TableField("WORKFLOW_QUESTION_VERSION")
+    private Long workflowQuestionVersion;
+    @TableField("WORKFLOW_ANSWERS_JSON")
+    private String workflowAnswersJson;
     @TableField("ERROR_CODE")
     private String errorCode;
     @TableField("CREATED_AT")
@@ -40,6 +48,8 @@ public final class AgentTurnEntity {
     private Instant startedAt;
     @TableField("FINISHED_AT")
     private Instant finishedAt;
+    @TableField("VERSION_NO")
+    private Long versionNo;
 
     public AgentTurnEntity() {
     }
@@ -60,6 +70,14 @@ public final class AgentTurnEntity {
     public void setQueuePosition(Integer queuePosition) { this.queuePosition = queuePosition; }
     public String getWorkflowRunId() { return workflowRunId; }
     public void setWorkflowRunId(String workflowRunId) { this.workflowRunId = workflowRunId; }
+    public String getWorkflowQuestionId() { return workflowQuestionId; }
+    public void setWorkflowQuestionId(String workflowQuestionId) { this.workflowQuestionId = workflowQuestionId; }
+    public String getWorkflowCheckpointId() { return workflowCheckpointId; }
+    public void setWorkflowCheckpointId(String workflowCheckpointId) { this.workflowCheckpointId = workflowCheckpointId; }
+    public Long getWorkflowQuestionVersion() { return workflowQuestionVersion; }
+    public void setWorkflowQuestionVersion(Long workflowQuestionVersion) { this.workflowQuestionVersion = workflowQuestionVersion; }
+    public String getWorkflowAnswersJson() { return workflowAnswersJson; }
+    public void setWorkflowAnswersJson(String workflowAnswersJson) { this.workflowAnswersJson = workflowAnswersJson; }
     public String getErrorCode() { return errorCode; }
     public void setErrorCode(String errorCode) { this.errorCode = errorCode; }
     public Instant getCreatedAt() { return createdAt; }
@@ -68,4 +86,6 @@ public final class AgentTurnEntity {
     public void setStartedAt(Instant startedAt) { this.startedAt = startedAt; }
     public Instant getFinishedAt() { return finishedAt; }
     public void setFinishedAt(Instant finishedAt) { this.finishedAt = finishedAt; }
+    public Long getVersionNo() { return versionNo; }
+    public void setVersionNo(Long versionNo) { this.versionNo = versionNo; }
 }

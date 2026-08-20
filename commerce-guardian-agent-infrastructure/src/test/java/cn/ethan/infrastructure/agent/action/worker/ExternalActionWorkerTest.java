@@ -301,9 +301,10 @@ class ExternalActionWorkerTest {
         }
 
         @Override
-        public void updateTurn(AgentTurnModel turn) {
+        public boolean updateTurn(AgentTurnModel expected, AgentTurnModel turn) {
             updateCount.incrementAndGet();
             updated = turn;
+            return true;
         }
 
         @Override

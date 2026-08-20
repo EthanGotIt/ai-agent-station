@@ -7,16 +7,15 @@ import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemStore;
-import cn.ethan.core.agent.thread.AgentItemTypeEnum;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentThreadService;
-import cn.ethan.core.agent.thread.AgentThreadStatusEnum;
 import cn.ethan.core.agent.thread.AgentThreadStore;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -28,6 +27,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -55,7 +55,10 @@ class AgentTurnRuntimeServiceTest {
         ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
         RecordingEvents events = new RecordingEvents();
         AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
-                persistence, persistence, persistence, persistence, threads, context,
+                persistence, persistence, persistence, persistence,
+                command -> { throw new UnsupportedOperationException("test does not answer a workflow"); },
+                (turn, status, code, finishedAt) -> false,
+                threads, context,
                 (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
                         "完成：" + turn.input(), List.of(), null, null, false),
                 events, executor, scheduler, clock,
@@ -63,8 +66,10 @@ class AgentTurnRuntimeServiceTest {
         );
 
         AgentTurnModel first = runtime.submitTurn("user-1", thread.threadId(), "request-1", "第一条");
+        AgentTurnModel duplicate = runtime.submitTurn("user-1", thread.threadId(), "request-1", "第一条");
         AgentTurnModel second = runtime.submitTurn("user-1", thread.threadId(), "request-2", "第二条");
 
+        assertEquals(first.turnId(), duplicate.turnId());
         assertEquals(AgentTurnStatusEnum.QUEUED, persistence.findTurnByRequest("user-1", first.clientRequestId())
                 .orElseThrow().status());
         assertEquals(AgentTurnStatusEnum.QUEUED, second.status());
@@ -85,7 +90,7 @@ class AgentTurnRuntimeServiceTest {
         private final List<Runnable> tasks = new ArrayList<>();
 
         @Override
-        public void execute(Runnable command) {
+        public void execute(@NonNull Runnable command) {
             tasks.add(command);
         }
 
@@ -151,8 +156,14 @@ class AgentTurnRuntimeServiceTest {
         }
 
         @Override
-        public void updateTurn(AgentTurnModel turn) {
-            turns.put(turn.turnId(), turn);
+        public boolean updateTurn(AgentTurnModel expected, AgentTurnModel next) {
+            AgentTurnModel current = turns.get(expected.turnId());
+            if (current == null || current.version() != expected.version()
+                    || next.version() != expected.version() + 1) {
+                return false;
+            }
+            turns.put(next.turnId(), next);
+            return true;
         }
 
         @Override
@@ -194,9 +205,20 @@ class AgentTurnRuntimeServiceTest {
         }
 
         @Override
-        public void answerQuestion(AgentWorkflowQuestionModel question) {
-            throw new UnsupportedOperationException("test does not answer a workflow");
-        }
+        public OptionalLong reserveAnswerTurn(String userId, String questionId, long expectedVersion,
+                                              String answerTurnId) { return OptionalLong.empty(); }
+
+        @Override
+        public OptionalLong markAnswerTurnEnqueued(String userId, String questionId, long expectedVersion,
+                                                   String answerTurnId) { return OptionalLong.empty(); }
+
+        @Override
+        public boolean releaseAnswerTurn(String userId, String questionId, long expectedVersion,
+                                         String answerTurnId) { return false; }
+
+        @Override
+        public boolean closeAnswerTurn(String userId, String questionId, long expectedVersion,
+                                       String answerTurnId, Instant answeredAt) { return false; }
 
         @Override
         public Optional<AgentContextSnapshotModel> findLatestSnapshot(String userId, String threadId) {
