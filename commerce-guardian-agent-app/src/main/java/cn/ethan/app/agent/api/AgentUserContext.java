@@ -1,5 +1,6 @@
 package cn.ethan.app.agent.api;
 
+import cn.ethan.core.agent.thread.AgentThreadModel;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Component;
 
@@ -14,9 +15,11 @@ public final class AgentUserContext {
 
     public String currentUserId(HttpServletRequest request) {
         String userId = request.getHeader("X-User-Id");
-        if (userId == null || userId.isBlank() || userId.length() > 256) {
+        String normalized = userId == null ? null : userId.trim();
+        if (normalized == null || normalized.isBlank()
+                || normalized.length() > AgentThreadModel.MAX_USER_ID_LENGTH) {
             throw new IllegalArgumentException("缺少有效的用户身份上下文");
         }
-        return userId.trim();
+        return normalized;
     }
 }

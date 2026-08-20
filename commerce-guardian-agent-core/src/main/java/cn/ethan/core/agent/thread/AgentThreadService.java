@@ -24,10 +24,10 @@ public final class AgentThreadService {
     }
 
     public AgentThreadModel create(String userId, String title, String contextType, String contextId) {
-        requireText(userId, "userId");
+        String normalizedUserId = requireIdentity(userId, "userId", AgentThreadModel.MAX_USER_ID_LENGTH);
         Instant now = clock.instant();
         AgentThreadModel thread = new AgentThreadModel(
-                UUID.randomUUID().toString(), userId, title, AgentThreadStatusEnum.ACTIVE,
+                UUID.randomUUID().toString(), normalizedUserId, title, AgentThreadStatusEnum.ACTIVE,
                 normalize(contextType), normalize(contextId), 0L, now, now
         );
         threads.createThread(thread);
@@ -35,23 +35,23 @@ public final class AgentThreadService {
     }
 
     public AgentThreadPageModel listPage(String userId, int page, int size) {
-        requireText(userId, "userId");
+        String normalizedUserId = requireIdentity(userId, "userId", AgentThreadModel.MAX_USER_ID_LENGTH);
         int safePage = Math.max(0, page);
         int safeSize = Math.max(1, Math.min(size, 100));
         int offset = Math.multiplyExact(safePage, safeSize);
         return new AgentThreadPageModel(
-                threads.listThreads(userId, offset, safeSize),
+                threads.listThreads(normalizedUserId, offset, safeSize),
                 safePage,
                 safeSize,
-                threads.countThreads(userId)
+                threads.countThreads(normalizedUserId)
         );
     }
 
     public AgentThreadModel get(String userId, String threadId) {
-        requireText(userId, "userId");
-        requireText(threadId, "threadId");
-        return threads.findThread(userId, threadId)
-                .orElseThrow(() -> new AgentThreadNotFoundException(threadId));
+        String normalizedUserId = requireIdentity(userId, "userId", AgentThreadModel.MAX_USER_ID_LENGTH);
+        String normalizedThreadId = requireIdentity(threadId, "threadId", AgentThreadModel.MAX_THREAD_ID_LENGTH);
+        return threads.findThread(normalizedUserId, normalizedThreadId)
+                .orElseThrow(() -> new AgentThreadNotFoundException(normalizedThreadId));
     }
 
     public AgentThreadModel update(String userId, String threadId, String title, boolean archive) {
@@ -67,14 +67,17 @@ public final class AgentThreadService {
     }
 
     public List<AgentItemModel> listItems(String userId, String threadId, long afterSequence, int limit) {
-        get(userId, threadId);
-        return items.listItems(userId, threadId, Math.max(0L, afterSequence), Math.max(1, Math.min(limit, 501)));
+        AgentThreadModel thread = get(userId, threadId);
+        return items.listItems(thread.userId(), thread.threadId(), Math.max(0L, afterSequence),
+                Math.max(1, Math.min(limit, 501)));
     }
 
-    private void requireText(String value, String name) {
-        if (value == null || value.isBlank() || value.trim().length() > 256) {
-            throw new IllegalArgumentException(name + " 不能为空且长度不能超过 256");
+    private String requireIdentity(String value, String name, int maxLength) {
+        String normalized = value == null ? null : value.trim();
+        if (normalized == null || normalized.isBlank() || normalized.length() > maxLength) {
+            throw new IllegalArgumentException(name + " 不能为空且长度不能超过 " + maxLength);
         }
+        return normalized;
     }
 
     private String normalize(String value) {

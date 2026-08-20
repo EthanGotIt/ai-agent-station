@@ -1,5 +1,6 @@
 package cn.ethan.app.agent.api;
 
+import cn.ethan.core.agent.thread.AgentThreadModel;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -9,8 +10,8 @@ import jakarta.validation.constraints.Size;
  * @date 2026-08-19
  */
 public record AgentThreadCreateRequestDto(
-        @Size(max = 255) String title,
-        @Size(max = 64) String contextType,
-        @Size(max = 128) String contextId
+        @Size(max = AgentThreadModel.MAX_TITLE_LENGTH) String title,
+        @Size(max = AgentThreadModel.MAX_CONTEXT_TYPE_LENGTH) String contextType,
+        @Size(max = AgentThreadModel.MAX_CONTEXT_ID_LENGTH) String contextId
 ) {
 }

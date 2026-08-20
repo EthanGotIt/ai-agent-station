@@ -1,5 +1,8 @@
 package cn.ethan.core.agent.execution;
 
+import cn.ethan.core.agent.thread.AgentThreadModel;
+import cn.ethan.core.agent.thread.AgentTurnModel;
+
 import java.util.Map;
 
 /**
@@ -21,9 +24,11 @@ public record AgentWorkflowAnswerAdmissionCommand(
 ) {
 
     public AgentWorkflowAnswerAdmissionCommand {
-        if (userId == null || userId.isBlank() || threadId == null || threadId.isBlank()
-                || clientRequestId == null || clientRequestId.isBlank() || clientRequestId.length() > 128
-                || runId == null || runId.isBlank() || questionId == null || questionId.isBlank()
+        userId = normalizeIdentity(userId, "userId", AgentThreadModel.MAX_USER_ID_LENGTH);
+        threadId = normalizeIdentity(threadId, "threadId", AgentThreadModel.MAX_THREAD_ID_LENGTH);
+        clientRequestId = normalizeIdentity(clientRequestId, "clientRequestId",
+                AgentTurnModel.MAX_CLIENT_REQUEST_ID_LENGTH);
+        if (runId == null || runId.isBlank() || questionId == null || questionId.isBlank()
                 || checkpointId == null || checkpointId.isBlank()) {
             throw new IllegalArgumentException("Workflow 回答 admission 标识不能为空");
         }
@@ -31,5 +36,13 @@ public record AgentWorkflowAnswerAdmissionCommand(
             throw new IllegalArgumentException("Workflow 回答 admission 参数无效");
         }
         answers = Map.copyOf(answers);
+    }
+
+    private static String normalizeIdentity(String value, String name, int maxLength) {
+        String normalized = value == null ? null : value.trim();
+        if (normalized == null || normalized.isBlank() || normalized.length() > maxLength) {
+            throw new IllegalArgumentException(name + " 不能为空且长度不能超过 " + maxLength);
+        }
+        return normalized;
     }
 }

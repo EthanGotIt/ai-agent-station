@@ -25,6 +25,9 @@ public record AgentTurnModel(
         AgentWorkflowAnswerInput workflowAnswerInput,
         long version
 ) {
+    public static final int MAX_CLIENT_REQUEST_ID_LENGTH = 128;
+    public static final int MAX_USER_MESSAGE_LENGTH = 256;
+
     public AgentTurnModel(
             String turnId,
             String threadId,
@@ -63,12 +66,10 @@ public record AgentTurnModel(
     }
 
     public AgentTurnModel {
-        if (turnId == null || turnId.isBlank() || threadId == null || threadId.isBlank()) {
-            throw new IllegalArgumentException("turnId and threadId must not be blank");
-        }
-        if (clientRequestId == null || clientRequestId.isBlank() || clientRequestId.length() > 128) {
-            throw new IllegalArgumentException("clientRequestId 长度必须为 1 到 128");
-        }
+        turnId = normalizeIdentity(turnId, "turnId", AgentThreadModel.MAX_THREAD_ID_LENGTH);
+        threadId = normalizeIdentity(threadId, "threadId", AgentThreadModel.MAX_THREAD_ID_LENGTH);
+        userId = normalizeIdentity(userId, "userId", AgentThreadModel.MAX_USER_ID_LENGTH);
+        clientRequestId = normalizeIdentity(clientRequestId, "clientRequestId", MAX_CLIENT_REQUEST_ID_LENGTH);
         input = input == null ? "" : input.trim();
         status = status == null ? AgentTurnStatusEnum.QUEUED : status;
         if (version < 0) {
@@ -77,6 +78,14 @@ public record AgentTurnModel(
         if (workflowAnswerInput != null && !workflowAnswerInput.runId().equals(workflowRunId)) {
             throw new IllegalArgumentException("回答 Turn 的 workflowRunId 与结构化输入不一致");
         }
+    }
+
+    private static String normalizeIdentity(String value, String name, int maxLength) {
+        String normalized = value == null ? null : value.trim();
+        if (normalized == null || normalized.isBlank() || normalized.length() > maxLength) {
+            throw new IllegalArgumentException(name + " 不能为空且长度不能超过 " + maxLength);
+        }
+        return normalized;
     }
 
     public AgentTurnModel queued(int position) {

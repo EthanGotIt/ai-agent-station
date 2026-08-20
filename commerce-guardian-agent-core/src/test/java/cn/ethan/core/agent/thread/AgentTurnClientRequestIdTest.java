@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
@@ -26,6 +27,12 @@ class AgentTurnClientRequestIdTest {
         assertThrows(IllegalArgumentException.class, () -> turn(rejected));
         assertDoesNotThrow(() -> answerCommand(accepted));
         assertThrows(IllegalArgumentException.class, () -> answerCommand(rejected));
+    }
+
+    @Test
+    void normalizesRequestIdBeforePersistenceAndAdmissionLookup() {
+        assertEquals("request-1", turn("  request-1  ").clientRequestId());
+        assertEquals("request-1", answerCommand("  request-1  ").clientRequestId());
     }
 
     private AgentTurnModel turn(String clientRequestId) {

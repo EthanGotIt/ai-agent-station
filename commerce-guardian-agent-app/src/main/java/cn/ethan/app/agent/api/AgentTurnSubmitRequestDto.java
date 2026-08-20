@@ -1,5 +1,6 @@
 package cn.ethan.app.agent.api;
 
+import cn.ethan.core.agent.thread.AgentTurnModel;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -10,7 +11,7 @@ import jakarta.validation.constraints.Size;
  * @date 2026-08-19
  */
 public record AgentTurnSubmitRequestDto(
-        @NotBlank @Size(max = 128) String clientRequestId,
-        @NotBlank @Size(max = 20_000) String message
+        @NotBlank @Size(max = AgentTurnModel.MAX_CLIENT_REQUEST_ID_LENGTH) String clientRequestId,
+        @NotBlank @Size(max = AgentTurnModel.MAX_USER_MESSAGE_LENGTH) String message
 ) {
 }

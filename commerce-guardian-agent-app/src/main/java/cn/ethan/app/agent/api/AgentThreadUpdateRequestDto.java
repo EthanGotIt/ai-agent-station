@@ -1,5 +1,6 @@
 package cn.ethan.app.agent.api;
 
+import cn.ethan.core.agent.thread.AgentThreadModel;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -9,7 +10,7 @@ import jakarta.validation.constraints.Size;
  * @date 2026-08-19
  */
 public record AgentThreadUpdateRequestDto(
-        @Size(max = 255) String title,
+        @Size(max = AgentThreadModel.MAX_TITLE_LENGTH) String title,
         boolean archive
 ) {
 }

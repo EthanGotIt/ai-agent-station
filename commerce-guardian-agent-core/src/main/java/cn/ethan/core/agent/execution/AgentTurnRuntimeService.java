@@ -197,20 +197,22 @@ public final class AgentTurnRuntimeService {
 
     public AgentTurnModel submitTurn(String userId, String threadId, String requestId, String message) {
         AgentThreadModel thread = ownedThread(userId, threadId);
+        String ownerId = thread.userId();
+        String ownerThreadId = thread.threadId();
         if (thread.status() == AgentThreadStatusEnum.ARCHIVED) {
             throw new AgentThreadConflictException("THREAD_ARCHIVED", "归档 Thread 不接受新消息");
         }
-        requireClientRequestId(requestId);
-        requireText(message, "message");
-        Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(userId, requestId);
+        String normalizedRequestId = requireClientRequestId(requestId);
+        String normalizedMessage = requireText(message, "message");
+        Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(ownerId, normalizedRequestId);
         if (duplicate.isPresent()) return duplicate.get();
-        if (questions.findOpenQuestion(userId, threadId).isPresent()) {
+        if (questions.findOpenQuestion(ownerId, ownerThreadId).isPresent()) {
             throw new AgentThreadConflictException("THREAD_AWAITING_ANSWER", "当前 Thread 正在等待 QuestionCard 回答");
         }
-        ThreadSlot slot = slots.computeIfAbsent(threadId, ignored -> new ThreadSlot());
+        ThreadSlot slot = slots.computeIfAbsent(ownerThreadId, ignored -> new ThreadSlot());
         QueuedTurn queued;
         synchronized (slot) {
-            Optional<AgentTurnModel> duplicateAfterLock = turns.findTurnByRequest(userId, requestId);
+            Optional<AgentTurnModel> duplicateAfterLock = turns.findTurnByRequest(ownerId, normalizedRequestId);
             if (duplicateAfterLock.isPresent()) {
                 return duplicateAfterLock.get();
             }
@@ -221,7 +223,7 @@ public final class AgentTurnRuntimeService {
                 throw new AgentThreadConflictException("AGENT_QUEUE_FULL", "Agent 全局排队请求已满");
             }
             AgentTurnModel turn = new AgentTurnModel(
-                    UUID.randomUUID().toString(), threadId, userId, requestId, message,
+                    UUID.randomUUID().toString(), ownerThreadId, ownerId, normalizedRequestId, normalizedMessage,
                     AgentTurnStatusEnum.QUEUED, slot.queue.size() + 1, null, null,
                     clock.instant(), null, null
             );
@@ -247,7 +249,7 @@ public final class AgentTurnRuntimeService {
             slot.queue.addLast(queued);
             pendingGlobal.incrementAndGet();
             publishTurn(turn);
-            scheduleQueueTimeout(thread.threadId(), queued);
+            scheduleQueueTimeout(ownerThreadId, queued);
             schedule(slot, thread);
         }
         return queued.turn;
@@ -264,17 +266,19 @@ public final class AgentTurnRuntimeService {
             Map<String, String> answers
     ) {
         AgentThreadModel thread = ownedThread(userId, threadId);
-        requireClientRequestId(requestId);
+        String ownerId = thread.userId();
+        String ownerThreadId = thread.threadId();
+        String normalizedRequestId = requireClientRequestId(requestId);
         if (answers == null || answers.isEmpty()) {
             throw new IllegalArgumentException("answers 不能为空");
         }
         Map<String, String> persistedAnswers = normalizeSubmittedAnswers(answers);
-        Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(userId, requestId);
+        Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(ownerId, normalizedRequestId);
         if (duplicate.isPresent()) {
-            return requireMatchingAnswerDuplicate(duplicate.get(), userId, threadId, runId,
+            return requireMatchingAnswerDuplicate(duplicate.get(), ownerId, ownerThreadId, runId,
                     questionId, checkpointId, expectedVersion, persistedAnswers);
         }
-        AgentWorkflowQuestionModel question = questions.findOpenQuestion(userId, threadId)
+        AgentWorkflowQuestionModel question = questions.findOpenQuestion(ownerId, ownerThreadId)
                 .orElseThrow(() -> new AgentThreadConflictException("QUESTION_NOT_OPEN", "QuestionCard 已关闭"));
         if (!question.runId().equals(runId) || !question.questionId().equals(questionId)
                 || !question.checkpointId().equals(checkpointId) || question.version() != expectedVersion
@@ -282,11 +286,11 @@ public final class AgentTurnRuntimeService {
                 != AgentWorkflowQuestionStatusEnum.AnswerEnqueueStatusEnum.AVAILABLE) {
             throw new AgentThreadConflictException("WORKFLOW_VERSION_CONFLICT", "QuestionCard 检查点或版本已变化");
         }
-        ThreadSlot slot = slots.computeIfAbsent(threadId, ignored -> new ThreadSlot());
+        ThreadSlot slot = slots.computeIfAbsent(ownerThreadId, ignored -> new ThreadSlot());
         synchronized (slot) {
-            Optional<AgentTurnModel> duplicateAfterLock = turns.findTurnByRequest(userId, requestId);
+            Optional<AgentTurnModel> duplicateAfterLock = turns.findTurnByRequest(ownerId, normalizedRequestId);
             if (duplicateAfterLock.isPresent()) {
-                return requireMatchingAnswerDuplicate(duplicateAfterLock.get(), userId, threadId, runId,
+                return requireMatchingAnswerDuplicate(duplicateAfterLock.get(), ownerId, ownerThreadId, runId,
                         questionId, checkpointId, expectedVersion, persistedAnswers);
             }
             if (slot.queue.size() >= maxPendingPerThread || pendingGlobal.get() >= maxPendingGlobal) {
@@ -294,7 +298,7 @@ public final class AgentTurnRuntimeService {
             }
             AgentWorkflowAnswerAdmissionResult admission = answerAdmission.admit(
                     new AgentWorkflowAnswerAdmissionCommand(
-                            userId, threadId, requestId, slot.queue.size() + 1,
+                            ownerId, ownerThreadId, normalizedRequestId, slot.queue.size() + 1,
                             runId, questionId, checkpointId, expectedVersion, persistedAnswers));
             if (!admission.newlyAdmitted()) {
                 return admission.turn();
@@ -310,7 +314,7 @@ public final class AgentTurnRuntimeService {
                 added = true;
                 pendingGlobal.incrementAndGet();
                 publishTurn(turn);
-                scheduleQueueTimeout(thread.threadId(), queued);
+                scheduleQueueTimeout(ownerThreadId, queued);
                 schedule(slot, thread);
                 return turn;
             } catch (RuntimeException submissionFailure) {
@@ -335,18 +339,19 @@ public final class AgentTurnRuntimeService {
             long expectedVersion,
             Map<String, String> answers
     ) {
-        requireClientRequestId(requestId);
+        String normalizedUserId = normalizeUserId(userId);
+        String normalizedRequestId = requireClientRequestId(requestId);
         if (answers == null || answers.isEmpty()) {
             throw new IllegalArgumentException("answers 不能为空");
         }
-        Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(userId, requestId);
+        Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(normalizedUserId, normalizedRequestId);
         if (duplicate.isPresent()) {
-            return requireMatchingAnswerDuplicate(duplicate.get(), userId, duplicate.get().threadId(), runId,
+            return requireMatchingAnswerDuplicate(duplicate.get(), normalizedUserId, duplicate.get().threadId(), runId,
                     questionId, checkpointId, expectedVersion, normalizeSubmittedAnswers(answers));
         }
-        AgentWorkflowQuestionModel question = questions.findOpenQuestionByRun(userId, runId)
+        AgentWorkflowQuestionModel question = questions.findOpenQuestionByRun(normalizedUserId, runId)
                 .orElseThrow(() -> new AgentThreadConflictException("QUESTION_NOT_OPEN", "QuestionCard 已关闭"));
-        return answerQuestion(userId, question.threadId(), requestId, runId, questionId,
+        return answerQuestion(normalizedUserId, question.threadId(), normalizedRequestId, runId, questionId,
                 checkpointId, expectedVersion, answers);
     }
 
@@ -827,16 +832,34 @@ public final class AgentTurnRuntimeService {
         }
     }
 
-    private void requireText(String value, String name) {
-        if (value == null || value.isBlank() || value.trim().length() > 256) {
-            throw new IllegalArgumentException(name + " 不能为空且长度不能超过 256");
+    private String requireText(String value, String name) {
+        String normalized = value == null ? null : value.trim();
+        if (normalized == null || normalized.isBlank()
+                || normalized.length() > AgentTurnModel.MAX_USER_MESSAGE_LENGTH) {
+            throw new IllegalArgumentException(name + " 不能为空且长度不能超过 "
+                    + AgentTurnModel.MAX_USER_MESSAGE_LENGTH);
         }
+        return normalized;
     }
 
-    private void requireClientRequestId(String clientRequestId) {
-        if (clientRequestId == null || clientRequestId.isBlank() || clientRequestId.length() > 128) {
-            throw new IllegalArgumentException("clientRequestId 不能为空且长度不能超过 128");
+    private String requireClientRequestId(String clientRequestId) {
+        String normalized = clientRequestId == null ? null : clientRequestId.trim();
+        if (normalized == null || normalized.isBlank()
+                || normalized.length() > AgentTurnModel.MAX_CLIENT_REQUEST_ID_LENGTH) {
+            throw new IllegalArgumentException("clientRequestId 不能为空且长度不能超过 "
+                    + AgentTurnModel.MAX_CLIENT_REQUEST_ID_LENGTH);
         }
+        return normalized;
+    }
+
+    private String normalizeUserId(String userId) {
+        String normalized = userId == null ? null : userId.trim();
+        if (normalized == null || normalized.isBlank()
+                || normalized.length() > AgentThreadModel.MAX_USER_ID_LENGTH) {
+            throw new IllegalArgumentException("userId 不能为空且长度不能超过 "
+                    + AgentThreadModel.MAX_USER_ID_LENGTH);
+        }
+        return normalized;
     }
 
     private Map<String, String> normalizeSubmittedAnswers(Map<String, String> answers) {
