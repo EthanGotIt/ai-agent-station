@@ -10,6 +10,7 @@ import type {
   AgentThreadEvent,
   AgentThreadPage,
   AgentTurnStatus,
+  ExternalActionStatus,
   QuestionCardState,
   ThreadViewTurn
 } from "./threadTypes";
@@ -71,6 +72,31 @@ function payloadText(payload: AgentItemPayload): string {
   return typeof payload.data === "string" ? payload.data : JSON.stringify(payload.data);
 }
 
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function isExternalActionStatus(value: unknown): value is ExternalActionStatus {
+  return typeof value === "string" && ["PENDING", "PROCESSING", "RETRY_WAIT", "MANUAL_RETRY_REQUIRED", "SUCCEEDED"].includes(value);
+}
+
+function parseExternalAction(payload: AgentItemPayload): { runId: string | null; status: ExternalActionStatus } | null {
+  if (payload.kind !== "EXTERNAL_ACTION_STATUS") return null;
+  const data = recordValue(payload.data);
+  if (!isExternalActionStatus(data?.status)) return null;
+  return {
+    runId: typeof data?.runId === "string" ? data.runId : null,
+    status: data.status
+  };
+}
+
+function turnStatusForExternalAction(status: ExternalActionStatus): AgentTurnStatus | null {
+  if (status === "RETRY_WAIT") return "WAITING_EXTERNAL_ACTION";
+  if (status === "MANUAL_RETRY_REQUIRED") return "FAILED";
+  if (status === "SUCCEEDED") return "COMPLETED";
+  return null;
+}
+
 function itemTrace(item: AgentItem, threadId: string): AgentThreadEvent {
   return {
     eventId: item.itemId,
@@ -95,7 +121,9 @@ function rebuildTurns(items: AgentItem[]): ThreadViewTurn[] {
       status: "ACTIVE" as AgentTurnStatus,
       error: null,
       startedAt: item.createdAt,
-      finishedAt: null
+      finishedAt: null,
+      workflowRunId: null,
+      externalActionStatus: null
     };
     if (item.type === "USER_MESSAGE") current.userMessage = payloadText(item.payload);
     if (item.type === "ASSISTANT_MESSAGE") current.content = `${current.content}${current.content ? "\n" : ""}${payloadText(item.payload)}`;
@@ -112,9 +140,21 @@ function rebuildTurns(items: AgentItem[]): ThreadViewTurn[] {
         if (terminal(status)) current.finishedAt = item.createdAt;
       }
     }
-    if (item.type === "WORKFLOW_QUESTION") current.status = "WAITING_USER_INPUT";
-    if (item.type === "EXTERNAL_ACTION_STATUS") current.status = "WAITING_EXTERNAL_ACTION";
-    if (item.type === "WORKFLOW_RESULT") current.status = "COMPLETED";
+    if (item.type === "WORKFLOW_QUESTION") {
+      const question = parseQuestion(item.payload);
+      if (question) current.workflowRunId = question.runId;
+      if (!terminal(current.status)) current.status = "WAITING_USER_INPUT";
+    }
+    if (item.type === "EXTERNAL_ACTION_STATUS") {
+      const action = parseExternalAction(item.payload);
+      if (action) {
+        current.workflowRunId = action.runId ?? current.workflowRunId;
+        current.externalActionStatus = action.status;
+        const nextStatus = turnStatusForExternalAction(action.status);
+        if (nextStatus && !terminal(current.status)) current.status = nextStatus;
+      }
+    }
+    if (item.type === "WORKFLOW_RESULT" && !terminal(current.status)) current.status = "COMPLETED";
     grouped.set(item.turnId, current);
   }
   return [...grouped.values()];
@@ -143,6 +183,8 @@ export function useThreadWorkspace(userId: string) {
   const reconnectTimerRef = useRef<number | null>(null);
   const threadIdRef = useRef<string | null>(null);
   const generationRef = useRef(0);
+  const retryingRunRef = useRef<string | null>(null);
+  const [retryingRunId, setRetryingRunId] = useState<string | null>(null);
 
   const applyItems = useCallback((incoming: Array<AgentItem | AgentItemWire>, sourceThreadId = threadIdRef.current ?? "") => {
     const byId = new Map(itemsRef.current.map((item) => [item.itemId, item]));
@@ -165,6 +207,12 @@ export function useThreadWorkspace(userId: string) {
     });
     for (const item of incoming) {
       const normalized = normalizeItem(item);
+      const action = parseExternalAction(normalized.payload);
+      if (action && action.runId === retryingRunRef.current && action.status !== "MANUAL_RETRY_REQUIRED") {
+        retryingRunRef.current = null;
+        setRetryingRunId(null);
+        setBusy(false);
+      }
       if (normalized.type === "WORKFLOW_QUESTION") setQuestion(parseQuestion(normalized.payload));
       if (normalized.type === "WORKFLOW_ANSWER") setQuestion(null);
     }
@@ -315,6 +363,8 @@ export function useThreadWorkspace(userId: string) {
     if (reconnectTimerRef.current !== null) window.clearTimeout(reconnectTimerRef.current);
     threadIdRef.current = nextThreadId;
     activeTurnRef.current = null;
+    retryingRunRef.current = null;
+    setRetryingRunId(null);
     setThreadId(null);
     setBusy(false);
     void loadThread(nextThreadId, generation);
@@ -442,6 +492,29 @@ export function useThreadWorkspace(userId: string) {
     }
   }, [userId]);
 
+  const retry = useCallback(async (runId: string) => {
+    if (!runId || busy || retryingRunRef.current === runId) return;
+    const generation = generationRef.current;
+    retryingRunRef.current = runId;
+    setRetryingRunId(runId);
+    setBusy(true);
+    setError(null);
+    try {
+      await requestJson(`${API}/workflow-runs/${encodeURIComponent(runId)}/retry`, {
+        method: "POST",
+        headers: { "X-User-Id": userId }
+      });
+      if (generationRef.current === generation) setBusy(false);
+    } catch (failure) {
+      if (generationRef.current === generation) {
+        retryingRunRef.current = null;
+        setRetryingRunId(null);
+        setBusy(false);
+        setError(failure instanceof Error ? failure.message : "人工重试提交失败");
+      }
+    }
+  }, [busy, userId]);
+
   const rename = useCallback(async (title: string) => {
     if (!threadId || !title.trim()) return;
     try {
@@ -466,6 +539,8 @@ export function useThreadWorkspace(userId: string) {
     loading,
     question,
     rename,
+    retry,
+    retryingRunId,
     selectThread,
     send,
     threadId,

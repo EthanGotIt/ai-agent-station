@@ -85,6 +85,71 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(JSON.parse(String(answerCall?.[1]?.body)).answers).toEqual({ decision: "APPROVE" });
   });
 
+  it("为耗尽的外部动作显示人工重试并调用稳定 API", async () => {
+    const thread = threadRecord("thread-1", "人工重试 Thread");
+    const retryEvents = [
+      itemEvent("item-user-1", "thread-1", "turn-1", "USER_MESSAGE", 1,
+        { schemaVersion: 1, kind: "USER_MESSAGE", data: "发起退款" }),
+      itemEvent("item-state-1", "thread-1", "turn-1", "TURN_STATE", 2,
+        { schemaVersion: 1, kind: "TURN_STATE", data: { status: "WAITING_EXTERNAL_ACTION" } }),
+      itemEvent("item-action-1", "thread-1", "turn-1", "EXTERNAL_ACTION_STATUS", 3,
+        { schemaVersion: 1, kind: "EXTERNAL_ACTION_STATUS", data: { runId: "run-retry", status: "MANUAL_RETRY_REQUIRED" } }),
+      itemEvent("item-state-2", "thread-1", "turn-1", "TURN_STATE", 4,
+        { schemaVersion: 1, kind: "TURN_STATE", data: { status: "FAILED", errorCode: "EXTERNAL_ACTION_FAILED" } })
+    ];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") {
+        return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      }
+      if (url.includes("/threads/thread-1/items")) {
+        return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      }
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse(retryEvents));
+      if (url.includes("/workflow-runs/run-retry/retry")) {
+        return Promise.resolve(json({ runId: "run-retry", commandId: "command-retry", status: "PENDING", idempotencyKey: "idem-retry" }));
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "人工重试" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) =>
+      String(input).includes("/workflow-runs/run-retry/retry"))).toBe(true));
+    expect((await screen.findByRole("button", { name: "重试已排队" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("外部动作成功后不覆盖已经失败的不可变 Turn", async () => {
+    const thread = threadRecord("thread-1", "恢复结果 Thread");
+    const events = [
+      itemEvent("item-user-1", "thread-1", "turn-1", "USER_MESSAGE", 1,
+        { schemaVersion: 1, kind: "USER_MESSAGE", data: "发起退款" }),
+      itemEvent("item-state-1", "thread-1", "turn-1", "TURN_STATE", 2,
+        { schemaVersion: 1, kind: "TURN_STATE", data: { status: "FAILED", errorCode: "EXTERNAL_ACTION_FAILED" } }),
+      itemEvent("item-action-1", "thread-1", "turn-1", "EXTERNAL_ACTION_STATUS", 3,
+        { schemaVersion: 1, kind: "EXTERNAL_ACTION_STATUS", data: { runId: "run-retry", status: "SUCCEEDED" } })
+    ];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") {
+        return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      }
+      if (url.includes("/threads/thread-1/items")) {
+        return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      }
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse(events));
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("失败")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "人工重试" })).toBeNull();
+  });
+
   it("线程切换后忽略迟到的旧 Thread 历史", async () => {
     const threadOne = threadRecord("thread-1", "Thread 1");
     const threadTwo = threadRecord("thread-2", "Thread 2");
@@ -134,6 +199,26 @@ function streamResponse(lines: string[]) {
       controller.close();
     }
   }));
+}
+
+function itemEvent(
+  eventId: string,
+  threadId: string,
+  turnId: string,
+  type: string,
+  sequence: number,
+  payload: unknown
+) {
+  return `event: item.${type.toLowerCase()}\ndata: ${JSON.stringify({
+    eventId,
+    threadId,
+    turnId,
+    itemId: eventId,
+    type: `item.${type.toLowerCase()}`,
+    payload: JSON.stringify(payload),
+    sequence,
+    timestamp: new Date().toISOString()
+  })}\n\n`;
 }
 
 function threadRecord(threadId: string, title: string) {

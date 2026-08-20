@@ -5,49 +5,48 @@ describe("appendSseChunk", () => {
   it("keeps partial frames and joins multiline data", () => {
     const events: Array<[string, unknown]> = [];
     const remainder = appendSseChunk(
-      "event: result\r\ndata: {\"cardType\":\r\ndata: \"order_overview\"}\r\n\r\nevent: done\ndata: {\"status\":\"COM",
+      "event: item.assistant_message\r\ndata: {\"schemaVersion\":\r\ndata: 1,\"kind\":\"ASSISTANT_MESSAGE\",\"data\":\"order_overview\"}\r\n\r\nevent: turn.completed\ndata: {\"status\":\"COM",
       (type, data) => events.push([type, data])
     );
 
-    expect(events).toEqual([["result", { cardType: "order_overview" }]]);
-    expect(remainder).toBe("event: done\ndata: {\"status\":\"COM");
+    expect(events).toEqual([["item.assistant_message", { schemaVersion: 1, kind: "ASSISTANT_MESSAGE", data: "order_overview" }]]);
+    expect(remainder).toBe("event: turn.completed\ndata: {\"status\":\"COM");
   });
 
   it("flushes a final unterminated frame when the stream closes", () => {
     const events: Array<[string, unknown]> = [];
     const remainder = appendSseChunk(
-      "event: done\r\ndata: COMPLETED",
+      "event: turn.completed\r\ndata: COMPLETED",
       (type, data) => events.push([type, data])
     );
 
     appendSseChunk(`${remainder}\n\n`, (type, data) => events.push([type, data]));
 
-    expect(events).toEqual([["done", "COMPLETED"]]);
+    expect(events).toEqual([["turn.completed", "COMPLETED"]]);
   });
 
-  it("preserves textual lifecycle events without treating them as JSON", () => {
+  it("parses ready and heartbeat control events", () => {
     const events: Array<[string, unknown]> = [];
 
     appendSseChunk(
-      "event: route\ndata: WORKFLOW\n\nevent: progress\ndata: request_started\n\nevent: tool\ndata: query_order:SUCCESS\n\n",
+      "event: ready\ndata: {\"afterSequence\":0}\n\nevent: heartbeat\ndata: {\"afterSequence\":1}\n\n",
       (type, data) => events.push([type, data])
     );
 
     expect(events).toEqual([
-      ["route", "WORKFLOW"],
-      ["progress", "request_started"],
-      ["tool", "query_order:SUCCESS"]
+      ["ready", { afterSequence: 0 }],
+      ["heartbeat", { afterSequence: 1 }]
     ]);
   });
 
-  it("reports malformed structured events", () => {
+  it("keeps malformed payloads attached to their wire event", () => {
     const events: Array<[string, unknown]> = [];
 
     appendSseChunk(
-      "event: intervention\ndata: not-json\n\n",
+      "event: item.workflow_question\ndata: not-json\n\n",
       (type, data) => events.push([type, data])
     );
 
-    expect(events).toEqual([["error", "SSE payload could not be parsed"]]);
+    expect(events).toEqual([["item.workflow_question", "not-json"]]);
   });
 });

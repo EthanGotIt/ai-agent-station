@@ -21,6 +21,13 @@ export type AgentTurnStatus =
   | "TIMED_OUT"
   | "FAILED";
 
+export type ExternalActionStatus =
+  | "PENDING"
+  | "PROCESSING"
+  | "RETRY_WAIT"
+  | "MANUAL_RETRY_REQUIRED"
+  | "SUCCEEDED";
+
 export type AgentItemType =
   | "USER_MESSAGE"
   | "TURN_STATE"
@@ -100,6 +107,8 @@ export type ThreadViewTurn = {
   error: string | null;
   startedAt: string;
   finishedAt: string | null;
+  workflowRunId: string | null;
+  externalActionStatus: ExternalActionStatus | null;
 };
 
 export type AgentThreadPage = {
