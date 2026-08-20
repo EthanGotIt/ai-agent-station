@@ -1,17 +1,13 @@
 package cn.ethan.infrastructure.commerce.order.http;
 
-import cn.ethan.core.commerce.order.OrderItemModel;
 import cn.ethan.core.commerce.order.OrderLookupResultModel;
-import cn.ethan.core.commerce.order.OrderLookupStatusEnum;
 import cn.ethan.core.commerce.order.OrderSnapshotModel;
 import cn.ethan.core.commerce.order.OrderStatusEnum;
 import cn.ethan.core.commerce.order.OrderGateway;
-import cn.ethan.core.commerce.order.RecentOrderModel;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
-import org.springframework.core.ParameterizedTypeReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -23,8 +19,6 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Duration;
 import java.time.Instant;
-import java.math.BigDecimal;
-import java.util.List;
 
 /**
  * HTTP 订单网关：用于订单数据由外部服务管理的部署场景。
@@ -110,58 +104,6 @@ public final class HttpOrderGateway implements OrderGateway {
         }
     }
 
-    @Override
-    public List<RecentOrderModel> listRecentOrders(String userId, int limit) {
-        if (userId == null || userId.isBlank()) {
-            return List.of();
-        }
-        int effectiveLimit = Math.min(Math.max(limit, 1), 10);
-        try {
-            List<HttpRecentOrderDto> response = client.get()
-                    .uri(uri -> uri.path("/orders").queryParam("limit", effectiveLimit).build())
-                    .header("X-User-Id", userId)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .retrieve()
-                    .body(new ParameterizedTypeReference<>() { });
-            return response == null ? List.of() : response.stream()
-                    .filter(order -> order.orderId() != null && order.status() != null)
-                    .map(order -> new RecentOrderModel(
-                            order.orderId(), OrderStatusEnum.fromValue(order.status()), order.createdAt()
-                    ))
-                    .toList();
-        } catch (RuntimeException temporaryFailure) {
-            LOGGER.warn("HTTP 近期订单查询降级为空列表，exception={}",
-                    temporaryFailure.getClass().getSimpleName());
-            return List.of();
-        }
-    }
-
-    @Override
-    public List<OrderItemModel> findItems(String orderId, String userId) {
-        if (findOrder(orderId, userId).status() != OrderLookupStatusEnum.FOUND) {
-            return List.of();
-        }
-        try {
-            List<HttpOrderItemDto> response = client.get()
-                    .uri(uri -> uri.path("/orders/{id}/items").build(orderId))
-                    .header("X-User-Id", userId)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .retrieve()
-                    .body(new ParameterizedTypeReference<>() { });
-            return response == null ? List.of() : response.stream()
-                    .filter(item -> item.itemId() != null && item.productName() != null
-                            && item.quantity() != null && item.unitPrice() != null)
-                    .map(item -> new OrderItemModel(
-                            item.itemId(), orderId, item.productName(), item.quantity(), item.unitPrice()
-                    ))
-                    .toList();
-        } catch (RuntimeException temporaryFailure) {
-            LOGGER.warn("HTTP 订单商品查询降级为空列表，exception={}",
-                    temporaryFailure.getClass().getSimpleName());
-            return List.of();
-        }
-    }
-
     private static Duration normalizeTimeout(Duration timeout) {
         if (timeout == null) {
             return DEFAULT_TIMEOUT;
@@ -205,9 +147,4 @@ public final class HttpOrderGateway implements OrderGateway {
     ) {
     }
 
-    private record HttpRecentOrderDto(String orderId, String status, Instant createdAt) {
-    }
-
-    private record HttpOrderItemDto(String itemId, String productName, Integer quantity, BigDecimal unitPrice) {
-    }
 }

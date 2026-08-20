@@ -46,13 +46,8 @@ public class AgentConfiguration {
         return Clock.systemUTC();
     }
 
-    @Bean
-    public com.fasterxml.jackson.databind.ObjectMapper objectMapper() {
-        return new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules();
-    }
-
-    @Bean(name = "routerChatClient")
-    public ChatClient routerChatClient(ChatModel chatModel) {
+    @Bean(name = "agentChatClient")
+    public ChatClient agentChatClient(ChatModel chatModel) {
         return ChatClient.builder(chatModel).build();
     }
 

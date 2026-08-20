@@ -35,7 +35,7 @@ public final class SpringAiAgentCoordinator implements AgentCoordinatorProvider 
     private final AgentWorkflowStarter workflowStarter;
 
     public SpringAiAgentCoordinator(
-            @Qualifier("routerChatClient") ChatClient chatClient,
+            @Qualifier("agentChatClient") ChatClient chatClient,
             OrderGateway orders,
             LogisticsGateway logistics,
             AgentWorkflowStarter workflowStarter
