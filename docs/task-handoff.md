@@ -18,15 +18,18 @@ updated: 2026-08-21
 - 启用 Java `-Xlint:all,-processing` + `-Werror`、TypeScript 未使用/分支完整性检查和低基数 Runtime 指标。
 - SSE 心跳已纳入 `ai-agent.runtime.heartbeat-interval` 配置；订单校验在事务外执行，持久化收口使用事务模板。
 - Convention Check 已移除重复的 AgentScope 死检查，并继续扫描前端 TS/TSX/CSS 的遗留命名。
+- 提交 `c5ca160 fix: close runtime and provider calibration`：切换到 Spring AI DeepSeek starter，固定 `deepseek-chat`、输出预算、单次重试和 HTTP 超时；协调器改用流式 ChatClient，逐段发布受控 SSE delta，并区分模型故障、取消和 Turn 超时。
+- 同一提交修复 Spring Boot 4 实际启动缺口：MyBatis `@Repository` 适配器恢复可代理性，生产边界迁移到 Jackson 3，配置属性记录增加构造绑定；全量 Core/Infrastructure/App 测试共 97 项通过。
 
 ## 最近验证
 
 - `python -m scripts.convention_check`：通过。
 - `python -m unittest discover -s scripts/tests -p "test_*.py"`：3 个测试通过。
-- `mvn -pl commerce-guardian-agent-core -DskipTests=false test`：Core 6 个测试通过。
-- `mvn -DskipTests=true compile`：全模块通过，Java 警告失败门禁通过。
-- `mvn dependency:analyze -DskipTests`：各模块无依赖问题，白名单仅覆盖框架自动装配和测试引擎静态误报。
-- `mvn clean '-DskipTests=false' test`：Core 6 个测试通过；Infrastructure HTTP 测试因当前沙箱禁止 loopback socket 失败，并非业务断言失败。
+- `mvn clean '-DskipTests=false' test`：Core 42、Infrastructure 43、App 12，共 97 项测试通过；含流式 delta、模型调用失败、流式超时/取消、Turn 超时收敛、CAS、Workflow 和 Worker 测试。
+- `mvn -pl commerce-guardian-agent-app -am -DskipTests package`：应用可打包；启动探针实际加载 DeepSeek starter、Tomcat、Hikari 和 MyBatis。
+- `mvn dependency:analyze -DskipTests`：待本轮脚本/前端阶段完成后再按完整矩阵复核；当前 Java 编译警告失败门禁已通过。
+- 专用 MySQL 实证：已确认 `127.0.0.1:3306`，创建并导入基线到 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821`；原 `COMMERCE_GUARDIAN_AGENT` 未重建。应用启动、Thread 创建、ACTIVE Turn 重启收敛为 `FAILED/RUNTIME_RESTARTED` 并生成 `TURN_STATE` 已验证；两路回答并发请求只有一路 202、另一路 409，数据库只产生一个回答 Turn，QuestionCard 版本单调推进并可失败对账释放。
+- 当前未发现可用的 DeepSeek 凭据；探针使用假值且将模型端点指向本机不可达地址，仅验证启动和错误收敛，未发送真实用户数据，也不能替代真实 DeepSeek Tool Calling/流式/取消验证。
 - `agent-console/npm run typecheck`、`npm test -- --run`、`npm run test:e2e`、`npm run build`：通过。
 - `python -m scripts.runtime_eval`：通过 5 项确定性 Runtime 检查。
 - Workflow 订单/物流校验已移到本地事务外；Question、WorkflowRun、ExternalActionCommand 和 Workflow Item 的写入由事务模板统一收口。
@@ -46,9 +49,10 @@ updated: 2026-08-21
 - 保留工作树中此前已存在的 `.idea`、部署、Docker、Hook 以及未纳入本提交的其他改动；本轮未 reset、checkout 或覆盖这些文件。
 - 提交 `04a4c1c fix: harden workflow state transitions`：WorkflowRun 只允许显式状态转换，`COMPLETED/REJECTED/FAILED` 不可重写，人工重试可从 `MANUAL_RETRY_REQUIRED` 重新进入外部动作；QuestionCard reserve 会锁定并核对 Thread 开放指针，回答 CAS 竞争后使用数据库当前读返回并发重复请求的赢家；SQL 增加同一用户/来源 Turn/Workflow 类型唯一约束。
 - 状态机里程碑直接证据：Core `AgentWorkflowRunStateTest` 4 项通过；Infrastructure `MybatisAgentWorkflowQuestionStoreTest` 10 项、`TransactionalAgentWorkflowAnswerAdmissionTest` 6 项、`TransactionalAgentWorkflowEngineAnswerTest` 1 项、`MybatisAgentWorkflowRunStoreVersionTest` 2 项、`ExternalActionWorkerTest` 4 项和回答 Turn 持久化测试 1 项通过；覆盖 reserve/enqueue/close/release、重复回答、事务回滚、Thread 指针、人工重试、终态保护和版本条件。真实 MySQL 锁/CAS/事务/重启尚未验证。
+- `c5ca160` 的只读审查发现并修复流式超时分类竞态：`Flux.timeout` 现在进入 `AgentExecutionTimeoutException`，Runtime 以 `TIMED_OUT/TURN_TIMEOUT` 收敛，不再误记为模型失败；对应测试已通过。
 
 ## 下一步唯一动作
 
-只读确认专用 MySQL、真实浏览器和 DeepSeek 凭据/服务是否可用（仅检查可用性，不输出敏感值）；若专用 MySQL 可用，先执行锁、CAS、事务回滚和重启恢复验证，否则记录外部条件阻塞并转入 DeepSeek 请求契约审计。
+读取并遵守 Playwright 浏览器技能说明，启动指向专用校准库的后端和前端，完成真实浏览器 Thread 创建、切换、Item 恢复、QuestionCard/错误重试和 SSE 断线重连验证；同时保持 DeepSeek 真实凭据缺失为明确未验证边界，不把本地替身结果记作真实模型证据。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。
