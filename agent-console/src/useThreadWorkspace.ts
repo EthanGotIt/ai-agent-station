@@ -16,6 +16,7 @@ import type {
 } from "./threadTypes";
 
 const API = "/api/agent";
+const SSE_READ_IDLE_TIMEOUT_MS = 45_000;
 
 function id(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
@@ -268,13 +269,40 @@ export function useThreadWorkspace(userId: string) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    const cancelReader = () => {
+      void reader.cancel().catch(() => undefined);
+    };
+    const readChunk = () => new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+      let settled = false;
+      let timeoutId: number | null = null;
+      const finish = (complete: () => void) => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId !== null) window.clearTimeout(timeoutId);
+        signal.removeEventListener("abort", abort);
+        complete();
+      };
+      const abort = () => {
+        cancelReader();
+        finish(() => reject(new HttpRequestError("实时事件连接已取消。", "aborted")));
+      };
+      timeoutId = window.setTimeout(() => {
+        cancelReader();
+        finish(() => reject(new HttpRequestError("实时事件连接无响应。", "network")));
+      }, SSE_READ_IDLE_TIMEOUT_MS);
+      signal.addEventListener("abort", abort, { once: true });
+      reader.read().then(
+        chunk => finish(() => resolve(chunk)),
+        failure => finish(() => reject(failure))
+      );
+    });
     const append = (type: string, data: unknown) => {
       if (type === "ready") return;
       if (!data || typeof data !== "object") return;
       onEvent(data as AgentThreadEvent);
     };
     while (!signal.aborted) {
-      const chunk = await reader.read();
+      const chunk = await readChunk();
       if (chunk.done) break;
       buffer = appendSseChunk(buffer + decoder.decode(chunk.value, { stream: true }), append);
     }
@@ -296,6 +324,7 @@ export function useThreadWorkspace(userId: string) {
         await readJsonResponse(response);
         return;
       }
+      if (isCurrent()) setError(null);
       await consumeSse(response, applyEvent, controller.signal);
       if (!controller.signal.aborted && isCurrent()) {
         reconnectTimerRef.current = window.setTimeout(
@@ -309,6 +338,35 @@ export function useThreadWorkspace(userId: string) {
       }
     }
   }, [applyEvent, consumeSse, userId]);
+
+  useEffect(() => {
+    const clearReconnectTimer = () => {
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+    };
+    const handleOffline = () => {
+      clearReconnectTimer();
+      eventControllerRef.current?.abort();
+    };
+    const handleOnline = () => {
+      const nextThreadId = threadIdRef.current;
+      if (!nextThreadId) return;
+      clearReconnectTimer();
+      const generation = generationRef.current;
+      reconnectTimerRef.current = window.setTimeout(() => {
+        reconnectTimerRef.current = null;
+        void connect(nextThreadId, cursorRef.current, generation);
+      }, 0);
+    };
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+    return () => {
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [connect]);
 
   const loadThread = useCallback(async (nextThreadId: string, generation: number) => {
     if (generationRef.current !== generation || threadIdRef.current !== nextThreadId) return;

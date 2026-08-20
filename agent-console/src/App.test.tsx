@@ -150,6 +150,40 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(screen.queryByRole("button", { name: "人工重试" })).toBeNull();
   });
 
+  it("网络恢复后从当前游标重新连接 SSE", async () => {
+    const thread = threadRecord("thread-1", "SSE 重连 Thread");
+    const recoveredEvent = itemEvent("item-reconnected-1", "thread-1", "turn-1", "USER_MESSAGE", 1,
+      { schemaVersion: 1, kind: "USER_MESSAGE", data: "断线后恢复" });
+    let eventConnections = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") {
+        return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      }
+      if (url.includes("/threads/thread-1/items")) {
+        return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      }
+      if (url.includes("/threads/thread-1/events")) {
+        eventConnections += 1;
+        return eventConnections === 1
+          ? Promise.resolve(pendingStreamResponse())
+          : Promise.resolve(streamResponse([recoveredEvent]));
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await waitFor(() => expect(eventConnections).toBe(1));
+    window.dispatchEvent(new Event("offline"));
+    window.dispatchEvent(new Event("online"));
+
+    await waitFor(() => expect(eventConnections).toBe(2));
+    expect((await screen.findAllByText("断线后恢复")).length).toBeGreaterThan(0);
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/events?afterSequence=0")).length)
+      .toBe(2);
+  });
+
   it("线程切换后忽略迟到的旧 Thread 历史", async () => {
     const threadOne = threadRecord("thread-1", "Thread 1");
     const threadTwo = threadRecord("thread-2", "Thread 2");
@@ -199,6 +233,10 @@ function streamResponse(lines: string[]) {
       controller.close();
     }
   }));
+}
+
+function pendingStreamResponse() {
+  return new Response(new ReadableStream<Uint8Array>());
 }
 
 function itemEvent(
