@@ -5,8 +5,8 @@ import cn.ethan.core.agent.action.ExternalActionCommandStore;
 import cn.ethan.core.agent.action.ExternalActionExecutor;
 import cn.ethan.core.agent.thread.AgentItemTypeEnum;
 import cn.ethan.core.agent.thread.AgentItemModel;
+import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
-import cn.ethan.core.agent.thread.AgentThreadStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,7 +32,7 @@ public final class ExternalActionWorker {
 
     private final ExternalActionCommandStore commands;
     private final ExternalActionExecutor executor;
-    private final AgentThreadStore threads;
+    private final AgentItemStore items;
     private final AgentThreadEventGateway events;
     private final Clock clock;
     private final AgentWorkflowRunStore workflowRuns;
@@ -40,14 +40,14 @@ public final class ExternalActionWorker {
     public ExternalActionWorker(
             ExternalActionCommandStore commands,
             ExternalActionExecutor executor,
-            AgentThreadStore threads,
+            AgentItemStore items,
             AgentThreadEventGateway events,
             Clock clock,
             AgentWorkflowRunStore workflowRuns
     ) {
         this.commands = commands;
         this.executor = executor;
-        this.threads = threads;
+        this.items = items;
         this.events = events;
         this.clock = clock;
         this.workflowRuns = workflowRuns;
@@ -105,7 +105,7 @@ public final class ExternalActionWorker {
                 command.commandId() + "|" + command.status().name() + "|" + message,
                 clock.instant()
         );
-        long sequence = threads.appendItem(item);
+        long sequence = items.appendItem(item);
         events.itemCreated(new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), sequence,
                 item.type(), item.payload(), item.createdAt()));
     }

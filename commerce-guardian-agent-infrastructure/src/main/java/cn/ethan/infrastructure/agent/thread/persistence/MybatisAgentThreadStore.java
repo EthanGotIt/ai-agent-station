@@ -4,11 +4,15 @@ import cn.ethan.core.agent.thread.AgentItemTypeEnum;
 import cn.ethan.core.agent.thread.AgentThreadStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.context.AgentContextSnapshotModel;
+import cn.ethan.core.agent.context.AgentContextSnapshotStore;
 import cn.ethan.core.agent.thread.AgentItemModel;
+import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.workflow.AgentQuestionModel;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
+import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.thread.AgentThreadStore;
+import cn.ethan.core.agent.workflow.AgentQuestionStore;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentContextSnapshotEntity;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentItemEntity;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentQuestionEntity;
@@ -35,7 +39,8 @@ import java.util.Optional;
  * @date 2026-08-19
  */
 @Repository
-public final class MybatisAgentThreadStore implements AgentThreadStore {
+public final class MybatisAgentThreadStore implements AgentThreadStore, AgentTurnStore, AgentItemStore,
+        AgentQuestionStore, AgentContextSnapshotStore {
 
     private final AgentThreadMapper threadMapper;
     private final AgentTurnMapper turnMapper;

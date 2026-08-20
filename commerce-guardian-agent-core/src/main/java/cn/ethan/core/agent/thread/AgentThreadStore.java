@@ -1,11 +1,5 @@
 package cn.ethan.core.agent.thread;
 
-import cn.ethan.core.agent.context.AgentContextSnapshotModel;
-import cn.ethan.core.agent.thread.AgentItemModel;
-import cn.ethan.core.agent.workflow.AgentQuestionModel;
-import cn.ethan.core.agent.thread.AgentThreadModel;
-import cn.ethan.core.agent.thread.AgentTurnModel;
-
 import java.util.List;
 import java.util.Optional;
 
@@ -25,29 +19,4 @@ public interface AgentThreadStore {
 
     void updateThread(AgentThreadModel thread);
 
-    Optional<AgentTurnModel> findTurnByRequest(String userId, String clientRequestId);
-
-    void createTurn(AgentTurnModel turn);
-
-    void updateTurn(AgentTurnModel turn);
-
-    List<AgentTurnModel> listTurns(String userId, String threadId);
-
-    List<AgentTurnModel> listRecoverableTurns();
-
-    long appendItem(AgentItemModel item);
-
-    List<AgentItemModel> listItems(String userId, String threadId, long afterSequence, int limit);
-
-    Optional<AgentQuestionModel> findOpenQuestion(String userId, String threadId);
-
-    Optional<AgentQuestionModel> findOpenQuestionByRun(String userId, String runId);
-
-    void saveQuestion(AgentQuestionModel question);
-
-    void answerQuestion(AgentQuestionModel question);
-
-    Optional<AgentContextSnapshotModel> findLatestSnapshot(String userId, String threadId);
-
-    void saveSnapshot(AgentContextSnapshotModel snapshot);
 }

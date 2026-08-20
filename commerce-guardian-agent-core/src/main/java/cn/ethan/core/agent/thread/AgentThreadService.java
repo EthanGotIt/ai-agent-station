@@ -1,11 +1,5 @@
 package cn.ethan.core.agent.thread;
 
-import cn.ethan.core.agent.thread.AgentThreadStatusEnum;
-import cn.ethan.core.agent.thread.AgentThreadNotFoundException;
-import cn.ethan.core.agent.thread.AgentItemModel;
-import cn.ethan.core.agent.thread.AgentThreadModel;
-import cn.ethan.core.agent.thread.AgentThreadStore;
-
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -19,11 +13,13 @@ import java.util.UUID;
  */
 public final class AgentThreadService {
 
-    private final AgentThreadStore store;
+    private final AgentThreadStore threads;
+    private final AgentItemStore items;
     private final Clock clock;
 
-    public AgentThreadService(AgentThreadStore store, Clock clock) {
-        this.store = store;
+    public AgentThreadService(AgentThreadStore threads, AgentItemStore items, Clock clock) {
+        this.threads = threads;
+        this.items = items;
         this.clock = clock;
     }
 
@@ -34,19 +30,19 @@ public final class AgentThreadService {
                 UUID.randomUUID().toString(), userId, title, AgentThreadStatusEnum.ACTIVE,
                 normalize(contextType), normalize(contextId), 0L, now, now
         );
-        store.createThread(thread);
+        threads.createThread(thread);
         return thread;
     }
 
     public List<AgentThreadModel> list(String userId) {
         requireText(userId, "userId");
-        return store.listThreads(userId);
+        return threads.listThreads(userId);
     }
 
     public AgentThreadModel get(String userId, String threadId) {
         requireText(userId, "userId");
         requireText(threadId, "threadId");
-        return store.findThread(userId, threadId)
+        return threads.findThread(userId, threadId)
                 .orElseThrow(() -> new AgentThreadNotFoundException(threadId));
     }
 
@@ -57,13 +53,13 @@ public final class AgentThreadService {
                 archive ? AgentThreadStatusEnum.ARCHIVED : AgentThreadStatusEnum.ACTIVE,
                 current.contextType(), current.contextId(), current.nextSequence(), current.createdAt(), clock.instant()
         );
-        store.updateThread(updated);
+        threads.updateThread(updated);
         return updated;
     }
 
     public List<AgentItemModel> listItems(String userId, String threadId, long afterSequence, int limit) {
         get(userId, threadId);
-        return store.listItems(userId, threadId, Math.max(0L, afterSequence), Math.max(1, Math.min(limit, 500)));
+        return items.listItems(userId, threadId, Math.max(0L, afterSequence), Math.max(1, Math.min(limit, 500)));
     }
 
     private void requireText(String value, String name) {

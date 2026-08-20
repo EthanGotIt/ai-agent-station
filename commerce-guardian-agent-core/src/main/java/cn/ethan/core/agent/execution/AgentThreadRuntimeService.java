@@ -5,6 +5,7 @@ import cn.ethan.core.agent.thread.AgentThreadStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentThreadConflictException;
 import cn.ethan.core.agent.thread.AgentItemModel;
+import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.workflow.AgentQuestionModel;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
@@ -13,6 +14,8 @@ import cn.ethan.core.agent.context.AgentContextAssembler;
 import cn.ethan.core.agent.coordination.AgentCoordinatorProvider;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.thread.AgentThreadStore;
+import cn.ethan.core.agent.thread.AgentTurnStore;
+import cn.ethan.core.agent.workflow.AgentQuestionStore;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -39,7 +42,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class AgentThreadRuntimeService {
 
-    private final AgentThreadStore store;
+    private final AgentThreadStore threadStore;
+    private final AgentTurnStore turns;
+    private final AgentItemStore items;
+    private final AgentQuestionStore questions;
     private final AgentThreadService threads;
     private final AgentContextAssembler contextAssembler;
     private final AgentCoordinatorProvider coordinator;
@@ -56,7 +62,10 @@ public final class AgentThreadRuntimeService {
     private final Map<String, ThreadSlot> slots = new ConcurrentHashMap<>();
 
     public AgentThreadRuntimeService(
-            AgentThreadStore store,
+            AgentThreadStore threadStore,
+            AgentTurnStore turns,
+            AgentItemStore items,
+            AgentQuestionStore questions,
             AgentThreadService threads,
             AgentContextAssembler contextAssembler,
             AgentCoordinatorProvider coordinator,
@@ -70,7 +79,10 @@ public final class AgentThreadRuntimeService {
             Duration turnTimeout,
             int toolResultMaxCharacters
     ) {
-        this.store = store;
+        this.threadStore = threadStore;
+        this.turns = turns;
+        this.items = items;
+        this.questions = questions;
         this.threads = threads;
         this.contextAssembler = contextAssembler;
         this.coordinator = coordinator;
@@ -100,8 +112,8 @@ public final class AgentThreadRuntimeService {
     }
 
     public void recoverPersistedTurns() {
-        for (AgentTurnModel persisted : store.listRecoverableTurns()) {
-            AgentThreadModel thread = store.findThread(persisted.userId(), persisted.threadId()).orElse(null);
+        for (AgentTurnModel persisted : turns.listRecoverableTurns()) {
+            AgentThreadModel thread = threadStore.findThread(persisted.userId(), persisted.threadId()).orElse(null);
             if (thread == null) {
                 continue;
             }
@@ -110,7 +122,7 @@ public final class AgentThreadRuntimeService {
                 if (persisted.status() == AgentTurnStatusEnum.ACTIVE) {
                     AgentTurnModel failed = persisted.terminal(AgentTurnStatusEnum.FAILED,
                             "RUNTIME_RESTARTED", clock.instant());
-                    store.updateTurn(failed);
+                    turns.updateTurn(failed);
                     appendItem(failed, AgentItemTypeEnum.ERROR, "运行时重启，未恢复执行中的 Turn");
                     publishTurn(failed);
                     continue;
@@ -123,7 +135,7 @@ public final class AgentThreadRuntimeService {
                 if (slot.queue.size() >= maxPendingPerThread || pendingGlobal.get() >= maxPendingGlobal) {
                     AgentTurnModel failed = persisted.terminal(AgentTurnStatusEnum.FAILED,
                             "RUNTIME_QUEUE_OVERFLOW", clock.instant());
-                    store.updateTurn(failed);
+                    turns.updateTurn(failed);
                     appendItem(failed, AgentItemTypeEnum.ERROR, "运行时重启后排队容量不足");
                     publishTurn(failed);
                     continue;
@@ -141,7 +153,7 @@ public final class AgentThreadRuntimeService {
 
     public List<AgentTurnModel> listTurns(String userId, String threadId) {
         ownedThread(userId, threadId);
-        return store.listTurns(userId, threadId);
+        return turns.listTurns(userId, threadId);
     }
 
     public AgentThreadModel updateThread(String userId, String threadId, String title, boolean archive) {
@@ -155,9 +167,9 @@ public final class AgentThreadRuntimeService {
         }
         requireText(requestId, "clientRequestId");
         requireText(message, "message");
-        Optional<AgentTurnModel> duplicate = store.findTurnByRequest(userId, requestId);
+        Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(userId, requestId);
         if (duplicate.isPresent()) return duplicate.get();
-        if (store.findOpenQuestion(userId, threadId).isPresent()) {
+        if (questions.findOpenQuestion(userId, threadId).isPresent()) {
             throw new AgentThreadConflictException("THREAD_AWAITING_ANSWER", "当前 Thread 正在等待 QuestionCard 回答");
         }
         ThreadSlot slot = slots.computeIfAbsent(threadId, ignored -> new ThreadSlot());
@@ -174,7 +186,7 @@ public final class AgentThreadRuntimeService {
                     AgentTurnStatusEnum.QUEUED, slot.queue.size() + 1, null, null,
                     clock.instant(), null, null
             );
-            store.createTurn(turn);
+            turns.createTurn(turn);
             appendItem(turn, AgentItemTypeEnum.USER_MESSAGE, message);
             queued = new QueuedTurn(turn, Map.of(), new AtomicBoolean(false), new AtomicBoolean(false));
             slot.queue.addLast(queued);
@@ -197,10 +209,10 @@ public final class AgentThreadRuntimeService {
             Map<String, String> answers
     ) {
         AgentThreadModel thread = ownedThread(userId, threadId);
-        AgentQuestionModel question = store.findOpenQuestion(userId, threadId)
+        AgentQuestionModel question = questions.findOpenQuestion(userId, threadId)
                 .orElseThrow(() -> new AgentThreadConflictException("QUESTION_NOT_OPEN", "QuestionCard 已关闭"));
         requireText(requestId, "clientRequestId");
-        Optional<AgentTurnModel> duplicate = store.findTurnByRequest(userId, requestId);
+        Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(userId, requestId);
         if (duplicate.isPresent()) {
             return duplicate.get();
         }
@@ -221,7 +233,7 @@ public final class AgentThreadRuntimeService {
                     "QuestionCard 回答：" + answers, AgentTurnStatusEnum.QUEUED,
                     slot.queue.size() + 1, runId, null, clock.instant(), null, null
             );
-            store.createTurn(turn);
+            turns.createTurn(turn);
             appendItem(turn, AgentItemTypeEnum.WORKFLOW_ANSWER, answers.toString());
             QueuedTurn queued = new QueuedTurn(turn, Map.copyOf(answers), new AtomicBoolean(false), new AtomicBoolean(false));
             slot.queue.addLast(queued);
@@ -242,15 +254,15 @@ public final class AgentThreadRuntimeService {
             long expectedVersion,
             Map<String, String> answers
     ) {
-        AgentQuestionModel question = store.findOpenQuestionByRun(userId, runId)
+        AgentQuestionModel question = questions.findOpenQuestionByRun(userId, runId)
                 .orElseThrow(() -> new AgentThreadConflictException("QUESTION_NOT_OPEN", "QuestionCard 已关闭"));
         return answerQuestion(userId, question.threadId(), requestId, runId, questionId,
                 checkpointId, expectedVersion, answers);
     }
 
     public boolean cancel(String userId, String turnId) {
-        Optional<AgentTurnModel> found = store.listThreads(userId).stream()
-                .flatMap(thread -> store.listTurns(userId, thread.threadId()).stream())
+        Optional<AgentTurnModel> found = threadStore.listThreads(userId).stream()
+                .flatMap(thread -> turns.listTurns(userId, thread.threadId()).stream())
                 .filter(turn -> turn.turnId().equals(turnId)).findFirst();
         if (found.isEmpty()) return false;
         AgentTurnModel turn = found.get();
@@ -262,7 +274,7 @@ public final class AgentThreadRuntimeService {
                     slot.queue.remove(queued);
                     pendingGlobal.decrementAndGet();
                     AgentTurnModel cancelled = queued.turn.terminal(AgentTurnStatusEnum.CANCELLED, "CLIENT_CANCELLED", clock.instant());
-                    store.updateTurn(cancelled);
+                    turns.updateTurn(cancelled);
                     appendItem(cancelled, AgentItemTypeEnum.EXECUTION_EVENT, "排队 Turn 已取消");
                     publishTurn(cancelled);
                     return true;
@@ -277,7 +289,8 @@ public final class AgentThreadRuntimeService {
     }
 
     public List<AgentItemModel> listItems(String userId, String threadId, long afterSequence) {
-        return threads.listItems(userId, threadId, afterSequence, 500);
+        ownedThread(userId, threadId);
+        return items.listItems(userId, threadId, afterSequence, 500);
     }
 
     private void schedule(ThreadSlot slot, AgentThreadModel thread) {
@@ -320,7 +333,7 @@ public final class AgentThreadRuntimeService {
         }
         Instant started = clock.instant();
         AgentTurnModel active = turn.active(started);
-        store.updateTurn(active);
+        turns.updateTurn(active);
         publishTurn(active);
         ScheduledFuture<?> timeout = scheduler.schedule(
                 () -> {
@@ -343,9 +356,9 @@ public final class AgentThreadRuntimeService {
                 appendItem(active, AgentItemTypeEnum.WORKFLOW_STARTED,
                         result.workflowRunId() == null ? "workflow started" : result.workflowRunId());
                 appendItem(active, AgentItemTypeEnum.WORKFLOW_QUESTION, questionPayload(result.question()));
-                store.saveQuestion(result.question());
+                questions.saveQuestion(result.question());
                 AgentTurnModel waiting = active.workflow(result.workflowRunId(), AgentTurnStatusEnum.WAITING_USER_INPUT);
-                store.updateTurn(waiting);
+                turns.updateTurn(waiting);
                 publishTurn(waiting);
                 return;
             }
@@ -365,7 +378,7 @@ public final class AgentThreadRuntimeService {
 
     private void finish(AgentTurnModel active, AgentTurnStatusEnum status, String code) {
         AgentTurnModel terminal = active.terminal(status, code, clock.instant());
-        store.updateTurn(terminal);
+        turns.updateTurn(terminal);
         publishTurn(terminal);
     }
 
@@ -377,7 +390,7 @@ public final class AgentThreadRuntimeService {
         AgentItemModel item = new AgentItemModel(
                 UUID.randomUUID().toString(), turn.threadId(), turn.turnId(), 0, type, boundedPayload, clock.instant()
         );
-        long sequence = store.appendItem(item);
+        long sequence = items.appendItem(item);
         events.itemCreated(new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), sequence,
                 item.type(), item.payload(), item.createdAt()));
     }
@@ -396,7 +409,7 @@ public final class AgentThreadRuntimeService {
             pendingGlobal.decrementAndGet();
             AgentTurnModel timedOut = target.turn.terminal(AgentTurnStatusEnum.TIMED_OUT,
                     "QUEUE_WAIT_TIMEOUT", clock.instant());
-            store.updateTurn(timedOut);
+            turns.updateTurn(timedOut);
             appendItem(timedOut, AgentItemTypeEnum.EXECUTION_EVENT, "排队等待超时");
             publishTurn(timedOut);
         }

@@ -8,7 +8,7 @@ import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowStarter;
-import cn.ethan.core.agent.thread.AgentThreadStore;
+import cn.ethan.core.agent.workflow.AgentQuestionStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -30,20 +30,20 @@ import java.util.UUID;
 public final class QuestionCardWorkflowStarter implements AgentWorkflowStarter {
 
     private final Clock clock;
-    private final AgentThreadStore threads;
+    private final AgentQuestionStore questions;
     private final cn.ethan.core.agent.action.ExternalActionCommandStore commands;
     private final ObjectMapper objectMapper;
     private final AgentWorkflowRunStore workflowRuns;
 
     public QuestionCardWorkflowStarter(
             Clock clock,
-            AgentThreadStore threads,
+            AgentQuestionStore questions,
             cn.ethan.core.agent.action.ExternalActionCommandStore commands,
             ObjectMapper objectMapper,
             AgentWorkflowRunStore workflowRuns
     ) {
         this.clock = clock;
-        this.threads = threads;
+        this.questions = questions;
         this.commands = commands;
         this.objectMapper = objectMapper;
         this.workflowRuns = workflowRuns;
@@ -94,13 +94,13 @@ public final class QuestionCardWorkflowStarter implements AgentWorkflowStarter {
     @Override
     @org.springframework.transaction.annotation.Transactional
     public ResumeResult resume(AgentThreadModel thread, AgentTurnModel turn, Map<String, String> answers) {
-        AgentQuestionModel question = threads.findOpenQuestionByRun(thread.userId(), turn.workflowRunId())
+        AgentQuestionModel question = questions.findOpenQuestionByRun(thread.userId(), turn.workflowRunId())
                 .orElseThrow(() -> new IllegalStateException("Workflow QuestionCard 不存在或已处理"));
         AgentWorkflowRunModel workflowRun = workflowRuns.find(thread.userId(), turn.workflowRunId())
                 .orElseThrow(() -> new IllegalStateException("WorkflowRun 不存在或不属于当前用户"));
         String decision = answers == null ? "" : answers.getOrDefault("decision", "");
         AgentQuestionModel answered = question.answered(clock.instant());
-        threads.answerQuestion(answered);
+        questions.answerQuestion(answered);
         if (!(decision.equalsIgnoreCase("APPROVE") || decision.equalsIgnoreCase("CONFIRM") || decision.equals("同意"))) {
             workflowRuns.update(workflowRun.status("COMPLETED", clock.instant()));
             return new ResumeResult("已拒绝本次操作，Workflow 已安全结束。", "REJECTED", null);

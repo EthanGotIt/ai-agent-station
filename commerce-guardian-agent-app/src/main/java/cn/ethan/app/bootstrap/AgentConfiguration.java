@@ -3,10 +3,14 @@ package cn.ethan.app.bootstrap;
 import cn.ethan.app.agent.stream.InMemoryAgentEventBus;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.thread.AgentThreadStore;
+import cn.ethan.core.agent.thread.AgentItemStore;
+import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.context.AgentContextAssembler;
+import cn.ethan.core.agent.context.AgentContextSnapshotStore;
 import cn.ethan.core.agent.execution.AgentThreadRuntimeService;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import cn.ethan.core.agent.coordination.AgentCoordinatorProvider;
+import cn.ethan.core.agent.workflow.AgentQuestionStore;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
@@ -85,24 +89,32 @@ public class AgentConfiguration {
     }
 
     @Bean
-    public AgentThreadService agentThreadService(AgentThreadStore store, Clock clock) {
-        return new AgentThreadService(store, clock);
+    public AgentThreadService agentThreadService(
+            AgentThreadStore threads,
+            AgentItemStore items,
+            Clock clock
+    ) {
+        return new AgentThreadService(threads, items, clock);
     }
 
     @Bean
     public AgentContextAssembler agentContextAssembler(
-            AgentThreadStore store,
+            AgentItemStore items,
+            AgentContextSnapshotStore snapshots,
             Clock clock,
             AgentThreadProperties properties
     ) {
-        return new AgentContextAssembler(store, clock,
+        return new AgentContextAssembler(items, snapshots, clock,
                 properties.contextMaxEstimatedTokens(), properties.snapshotTriggerEstimatedTokens(),
                 properties.toolResultMaxCharacters(), properties.outputReserveEstimatedTokens());
     }
 
     @Bean
     public AgentThreadRuntimeService agentThreadRuntimeService(
-            AgentThreadStore store,
+            AgentThreadStore threadStore,
+            AgentTurnStore turns,
+            AgentItemStore items,
+            AgentQuestionStore questions,
             AgentThreadService threads,
             AgentContextAssembler contextAssembler,
             AgentCoordinatorProvider coordinator,
@@ -114,7 +126,7 @@ public class AgentConfiguration {
             AgentThreadProperties threadProperties
     ) {
         AgentThreadRuntimeService runtime = new AgentThreadRuntimeService(
-                store, threads, contextAssembler, coordinator, events, agentTaskExecutor,
+                threadStore, turns, items, questions, threads, contextAssembler, coordinator, events, agentTaskExecutor,
                 agentQueueTimeoutScheduler, clock,
                 runtimeProperties.queue().maxPendingPerThread(),
                 runtimeProperties.queue().maxPendingGlobal(),
