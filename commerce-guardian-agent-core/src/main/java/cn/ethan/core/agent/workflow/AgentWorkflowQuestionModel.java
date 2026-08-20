@@ -8,7 +8,7 @@ import java.time.Instant;
  * @author ethan
  * @date 2026-08-19
  */
-public record AgentQuestionModel(
+public record AgentWorkflowQuestionModel(
         String runId,
         String threadId,
         String turnId,
@@ -23,7 +23,7 @@ public record AgentQuestionModel(
         Instant createdAt,
         Instant answeredAt
 ) {
-    public AgentQuestionModel {
+    public AgentWorkflowQuestionModel {
         if (runId == null || runId.isBlank() || threadId == null || threadId.isBlank()
                 || questionId == null || questionId.isBlank()) {
             throw new IllegalArgumentException("question identity must not be blank");
@@ -34,8 +34,8 @@ public record AgentQuestionModel(
         status = status == null ? "OPEN" : status;
     }
 
-    public AgentQuestionModel answered(Instant at) {
-        return new AgentQuestionModel(runId, threadId, turnId, userId, questionId,
+    public AgentWorkflowQuestionModel answered(Instant at) {
+        return new AgentWorkflowQuestionModel(runId, threadId, turnId, userId, questionId,
                 checkpointId, version + 1, title, prompt, fieldsJson, "ANSWERED", createdAt, at);
     }
 }

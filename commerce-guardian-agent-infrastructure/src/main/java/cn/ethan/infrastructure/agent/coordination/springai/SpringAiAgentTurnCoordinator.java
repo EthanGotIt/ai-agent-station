@@ -3,8 +3,9 @@ package cn.ethan.infrastructure.agent.coordination.springai;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
-import cn.ethan.core.agent.coordination.AgentCoordinatorProvider;
-import cn.ethan.core.agent.workflow.AgentWorkflowStarter;
+import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
+import cn.ethan.core.agent.workflow.AgentWorkflowEngine;
+import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
 import cn.ethan.core.commerce.order.LogisticsGateway;
 import cn.ethan.core.commerce.order.OrderGateway;
 import org.slf4j.Logger;
@@ -25,25 +26,25 @@ import java.util.Map;
  * @date 2026-08-19
  */
 @Component
-public final class SpringAiAgentCoordinator implements AgentCoordinatorProvider {
+public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(SpringAiAgentCoordinator.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(SpringAiAgentTurnCoordinator.class);
 
     private final ChatClient chatClient;
     private final OrderGateway orders;
     private final LogisticsGateway logistics;
-    private final AgentWorkflowStarter workflowStarter;
+    private final AgentWorkflowEngine workflowEngine;
 
-    public SpringAiAgentCoordinator(
+    public SpringAiAgentTurnCoordinator(
             @Qualifier("agentChatClient") ChatClient chatClient,
             OrderGateway orders,
             LogisticsGateway logistics,
-            AgentWorkflowStarter workflowStarter
+            AgentWorkflowEngine workflowEngine
     ) {
         this.chatClient = chatClient;
         this.orders = orders;
         this.logistics = logistics;
-        this.workflowStarter = workflowStarter;
+        this.workflowEngine = workflowEngine;
     }
 
     @Override
@@ -54,7 +55,7 @@ public final class SpringAiAgentCoordinator implements AgentCoordinatorProvider 
         Map<String, String> answer
     ) {
         if (answer != null && !answer.isEmpty()) {
-            AgentWorkflowStarter.ResumeResult resumed = workflowStarter.resume(thread, turn, answer);
+            AgentWorkflowEngine.ResumeResult resumed = workflowEngine.resume(thread, turn, answer);
             String actionPayload = resumed.command() == null
                     ? resumed.resultStatus()
                     : resumed.command().commandId();
@@ -79,12 +80,12 @@ public final class SpringAiAgentCoordinator implements AgentCoordinatorProvider 
                     .user(renderContext(context, turn.input()))
                     .tools(
                             new ReadOnlyTools(thread.userId(), orders, logistics),
-                            new WorkflowTools(thread, turn, workflowStarter, invocation)
+                            new WorkflowTools(thread, turn, workflowEngine, invocation)
                     )
                     .call()
                     .content();
             if (invocation.result != null) {
-                AgentWorkflowStarter.StartResult result = invocation.result;
+                AgentWorkflowEngine.StartResult result = invocation.result;
                 return new AgentCoordinatorResult(
                         "我已创建需要明确授权的 Workflow，请在 QuestionCard 中确认。",
                         List.of(new AgentItemDraft("WORKFLOW_STARTED", result.runId())),
@@ -146,22 +147,22 @@ public final class SpringAiAgentCoordinator implements AgentCoordinatorProvider 
     public static final class WorkflowTools {
         private final AgentThreadModel thread;
         private final AgentTurnModel turn;
-        private final AgentWorkflowStarter starter;
+        private final AgentWorkflowEngine engine;
         private final WorkflowInvocation invocation;
 
         public WorkflowTools(
                 AgentThreadModel thread,
                 AgentTurnModel turn,
-                AgentWorkflowStarter starter,
+                AgentWorkflowEngine engine,
                 WorkflowInvocation invocation
         ) {
             this.thread = thread;
             this.turn = turn;
-            this.starter = starter;
+            this.engine = engine;
             this.invocation = invocation;
         }
 
-        @Tool(name = "start_refund_workflow", description = "启动退款确认 Workflow，不执行退款")
+        @Tool(name = "start_refund_workflow", description = "为指定订单启动退款申请确认 Workflow；仅创建待用户明确授权的确认任务，不会直接执行退款或调用任何外部写操作")
         public String startRefund(
                 @ToolParam(description = "订单号") String orderId,
                 @ToolParam(description = "退款原因") String reason
@@ -175,12 +176,12 @@ public final class SpringAiAgentCoordinator implements AgentCoordinatorProvider 
         }
 
         private String start(String operation, Map<String, String> arguments) {
-            invocation.result = starter.start(thread, turn, operation, arguments);
+            invocation.result = engine.start(thread, turn, operation, arguments);
             return "Workflow 已启动，等待用户在 QuestionCard 中明确授权。";
         }
     }
 
     private static final class WorkflowInvocation {
-        private AgentWorkflowStarter.StartResult result;
+        private AgentWorkflowEngine.StartResult result;
     }
 }

@@ -6,16 +6,16 @@ import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentThreadConflictException;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemStore;
-import cn.ethan.core.agent.workflow.AgentQuestionModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import cn.ethan.core.agent.context.AgentContextAssembler;
-import cn.ethan.core.agent.coordination.AgentCoordinatorProvider;
+import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.thread.AgentThreadStore;
 import cn.ethan.core.agent.thread.AgentTurnStore;
-import cn.ethan.core.agent.workflow.AgentQuestionStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -40,15 +40,15 @@ import java.util.concurrent.atomic.AtomicInteger;
  * @author ethan
  * @date 2026-08-19
  */
-public final class AgentThreadRuntimeService {
+public final class AgentTurnRuntimeService {
 
     private final AgentThreadStore threadStore;
     private final AgentTurnStore turns;
     private final AgentItemStore items;
-    private final AgentQuestionStore questions;
+    private final AgentWorkflowQuestionStore questions;
     private final AgentThreadService threads;
     private final AgentContextAssembler contextAssembler;
-    private final AgentCoordinatorProvider coordinator;
+    private final AgentTurnCoordinator coordinator;
     private final AgentThreadEventGateway events;
     private final Executor executor;
     private final ScheduledExecutorService scheduler;
@@ -61,14 +61,14 @@ public final class AgentThreadRuntimeService {
     private final AtomicInteger pendingGlobal = new AtomicInteger();
     private final Map<String, ThreadSlot> slots = new ConcurrentHashMap<>();
 
-    public AgentThreadRuntimeService(
+    public AgentTurnRuntimeService(
             AgentThreadStore threadStore,
             AgentTurnStore turns,
             AgentItemStore items,
-            AgentQuestionStore questions,
+            AgentWorkflowQuestionStore questions,
             AgentThreadService threads,
             AgentContextAssembler contextAssembler,
-            AgentCoordinatorProvider coordinator,
+            AgentTurnCoordinator coordinator,
             AgentThreadEventGateway events,
             Executor executor,
             ScheduledExecutorService scheduler,
@@ -209,7 +209,7 @@ public final class AgentThreadRuntimeService {
             Map<String, String> answers
     ) {
         AgentThreadModel thread = ownedThread(userId, threadId);
-        AgentQuestionModel question = questions.findOpenQuestion(userId, threadId)
+        AgentWorkflowQuestionModel question = questions.findOpenQuestion(userId, threadId)
                 .orElseThrow(() -> new AgentThreadConflictException("QUESTION_NOT_OPEN", "QuestionCard 已关闭"));
         requireText(requestId, "clientRequestId");
         Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(userId, requestId);
@@ -254,7 +254,7 @@ public final class AgentThreadRuntimeService {
             long expectedVersion,
             Map<String, String> answers
     ) {
-        AgentQuestionModel question = questions.findOpenQuestionByRun(userId, runId)
+        AgentWorkflowQuestionModel question = questions.findOpenQuestionByRun(userId, runId)
                 .orElseThrow(() -> new AgentThreadConflictException("QUESTION_NOT_OPEN", "QuestionCard 已关闭"));
         return answerQuestion(userId, question.threadId(), requestId, runId, questionId,
                 checkpointId, expectedVersion, answers);
@@ -343,13 +343,13 @@ public final class AgentThreadRuntimeService {
         );
         try {
             List<AgentItemModel> context = contextAssembler.assemble(thread);
-            AgentCoordinatorProvider.AgentCoordinatorResult result = coordinator.run(thread, active, context, execution.answer);
+            AgentTurnCoordinator.AgentCoordinatorResult result = coordinator.run(thread, active, context, execution.answer);
             if (execution.cancelled.get()) {
                 finish(active, execution.timedOut.get() ? AgentTurnStatusEnum.TIMED_OUT : AgentTurnStatusEnum.CANCELLED,
                         execution.timedOut.get() ? "TURN_TIMEOUT" : "CLIENT_CANCELLED");
                 return;
             }
-            for (AgentCoordinatorProvider.AgentItemDraft draft : result.items()) {
+            for (AgentTurnCoordinator.AgentItemDraft draft : result.items()) {
                 appendItem(active, parseType(draft.type()), draft.payload());
             }
             if (result.question() != null) {
@@ -419,7 +419,7 @@ public final class AgentThreadRuntimeService {
         events.turnUpdated(turn);
     }
 
-    private String questionPayload(AgentQuestionModel question) {
+    private String questionPayload(AgentWorkflowQuestionModel question) {
         return "{\"runId\":\"" + escape(question.runId()) + "\",\"questionId\":\""
                 + escape(question.questionId()) + "\",\"checkpointId\":\"" + escape(question.checkpointId())
                 + "\",\"version\":" + question.version() + ",\"title\":\"" + escape(question.title())

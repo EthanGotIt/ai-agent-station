@@ -6,7 +6,7 @@ package cn.ethan.app.agent.api;
  * @author ethan
  * @date 2026-08-19
  */
-public record AgentRetryResponseDto(
+public record AgentWorkflowRetryResponseDto(
         String runId,
         String commandId,
         String status,

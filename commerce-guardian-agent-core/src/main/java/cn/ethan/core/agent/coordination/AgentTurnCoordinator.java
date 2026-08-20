@@ -1,7 +1,7 @@
 package cn.ethan.core.agent.coordination;
 
 import cn.ethan.core.agent.thread.AgentItemModel;
-import cn.ethan.core.agent.workflow.AgentQuestionModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 
@@ -14,7 +14,7 @@ import java.util.Map;
  * @author ethan
  * @date 2026-08-19
  */
-public interface AgentCoordinatorProvider {
+public interface AgentTurnCoordinator {
 
     AgentCoordinatorResult run(
             AgentThreadModel thread,
@@ -26,7 +26,7 @@ public interface AgentCoordinatorProvider {
     record AgentCoordinatorResult(
             String assistantMessage,
             List<AgentItemDraft> items,
-            AgentQuestionModel question,
+            AgentWorkflowQuestionModel question,
             String workflowRunId,
             boolean waitingUserInput
     ) {

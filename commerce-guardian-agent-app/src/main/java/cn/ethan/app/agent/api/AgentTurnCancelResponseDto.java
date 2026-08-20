@@ -6,5 +6,5 @@ package cn.ethan.app.agent.api;
  * @author ethan
  * @date 2026-08-19
  */
-public record AgentCancelResponseDto(String turnId, boolean cancelled) {
+public record AgentTurnCancelResponseDto(String turnId, boolean cancelled) {
 }

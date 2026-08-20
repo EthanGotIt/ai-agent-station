@@ -3,12 +3,12 @@ package cn.ethan.infrastructure.agent.workflow.transaction;
 import cn.ethan.core.agent.action.ExternalActionStatusEnum;
 import cn.ethan.core.agent.action.ExternalActionTypeEnum;
 import cn.ethan.core.agent.action.ExternalActionCommandModel;
-import cn.ethan.core.agent.workflow.AgentQuestionModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
-import cn.ethan.core.agent.workflow.AgentWorkflowStarter;
-import cn.ethan.core.agent.workflow.AgentQuestionStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowEngine;
+import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,17 +27,17 @@ import java.util.UUID;
  * @date 2026-08-19
  */
 @Component
-public final class QuestionCardWorkflowStarter implements AgentWorkflowStarter {
+public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngine {
 
     private final Clock clock;
-    private final AgentQuestionStore questions;
+    private final AgentWorkflowQuestionStore questions;
     private final cn.ethan.core.agent.action.ExternalActionCommandStore commands;
     private final ObjectMapper objectMapper;
     private final AgentWorkflowRunStore workflowRuns;
 
-    public QuestionCardWorkflowStarter(
+    public TransactionalAgentWorkflowEngine(
             Clock clock,
-            AgentQuestionStore questions,
+            AgentWorkflowQuestionStore questions,
             cn.ethan.core.agent.action.ExternalActionCommandStore commands,
             ObjectMapper objectMapper,
             AgentWorkflowRunStore workflowRuns
@@ -81,7 +81,7 @@ public final class QuestionCardWorkflowStarter implements AgentWorkflowStarter {
         } catch (Exception failure) {
             throw new IllegalStateException("无法生成 QuestionCard 字段", failure);
         }
-        AgentQuestionModel question = new AgentQuestionModel(
+        AgentWorkflowQuestionModel question = new AgentWorkflowQuestionModel(
                 runId, thread.threadId(), turn.turnId(), thread.userId(), questionId,
                 checkpointId, 0L, title, prompt, fields, "OPEN", now, null
         );
@@ -94,12 +94,12 @@ public final class QuestionCardWorkflowStarter implements AgentWorkflowStarter {
     @Override
     @org.springframework.transaction.annotation.Transactional
     public ResumeResult resume(AgentThreadModel thread, AgentTurnModel turn, Map<String, String> answers) {
-        AgentQuestionModel question = questions.findOpenQuestionByRun(thread.userId(), turn.workflowRunId())
+        AgentWorkflowQuestionModel question = questions.findOpenQuestionByRun(thread.userId(), turn.workflowRunId())
                 .orElseThrow(() -> new IllegalStateException("Workflow QuestionCard 不存在或已处理"));
         AgentWorkflowRunModel workflowRun = workflowRuns.find(thread.userId(), turn.workflowRunId())
                 .orElseThrow(() -> new IllegalStateException("WorkflowRun 不存在或不属于当前用户"));
         String decision = answers == null ? "" : answers.getOrDefault("decision", "");
-        AgentQuestionModel answered = question.answered(clock.instant());
+        AgentWorkflowQuestionModel answered = question.answered(clock.instant());
         questions.answerQuestion(answered);
         if (!(decision.equalsIgnoreCase("APPROVE") || decision.equalsIgnoreCase("CONFIRM") || decision.equals("同意"))) {
             workflowRuns.update(workflowRun.status("COMPLETED", clock.instant()));

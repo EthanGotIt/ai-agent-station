@@ -7,10 +7,10 @@ import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.context.AgentContextAssembler;
 import cn.ethan.core.agent.context.AgentContextSnapshotStore;
-import cn.ethan.core.agent.execution.AgentThreadRuntimeService;
+import cn.ethan.core.agent.execution.AgentTurnRuntimeService;
 import cn.ethan.core.agent.thread.AgentThreadService;
-import cn.ethan.core.agent.coordination.AgentCoordinatorProvider;
-import cn.ethan.core.agent.workflow.AgentQuestionStore;
+import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
+import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
@@ -105,14 +105,14 @@ public class AgentConfiguration {
     }
 
     @Bean
-    public AgentThreadRuntimeService agentThreadRuntimeService(
+    public AgentTurnRuntimeService agentTurnRuntimeService(
             AgentThreadStore threadStore,
             AgentTurnStore turns,
             AgentItemStore items,
-            AgentQuestionStore questions,
+            AgentWorkflowQuestionStore questions,
             AgentThreadService threads,
             AgentContextAssembler contextAssembler,
-            AgentCoordinatorProvider coordinator,
+            AgentTurnCoordinator coordinator,
             AgentThreadEventGateway events,
             ThreadPoolTaskExecutor agentTaskExecutor,
             ScheduledExecutorService agentQueueTimeoutScheduler,
@@ -120,7 +120,7 @@ public class AgentConfiguration {
             AgentRuntimeProperties runtimeProperties,
             AgentThreadProperties threadProperties
     ) {
-        AgentThreadRuntimeService runtime = new AgentThreadRuntimeService(
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
                 threadStore, turns, items, questions, threads, contextAssembler, coordinator, events, agentTaskExecutor,
                 agentQueueTimeoutScheduler, clock,
                 runtimeProperties.queue().maxPendingPerThread(),

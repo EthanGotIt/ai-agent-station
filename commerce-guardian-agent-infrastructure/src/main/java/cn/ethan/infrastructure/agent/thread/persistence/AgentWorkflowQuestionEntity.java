@@ -14,7 +14,7 @@ import java.time.Instant;
  * @date 2026-08-19
  */
 @TableName("AGENT_WORKFLOW_QUESTION")
-public final class AgentQuestionEntity {
+public final class AgentWorkflowQuestionEntity {
 
     @TableId(value = "QUESTION_ID", type = IdType.INPUT)
     private String questionId;
@@ -43,7 +43,7 @@ public final class AgentQuestionEntity {
     @TableField("ANSWERED_AT")
     private Instant answeredAt;
 
-    public AgentQuestionEntity() {
+    public AgentWorkflowQuestionEntity() {
     }
 
     public String getQuestionId() { return questionId; }

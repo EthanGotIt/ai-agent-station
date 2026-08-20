@@ -3,7 +3,7 @@ package cn.ethan.core.agent.execution;
 import cn.ethan.core.agent.context.AgentContextAssembler;
 import cn.ethan.core.agent.context.AgentContextSnapshotModel;
 import cn.ethan.core.agent.context.AgentContextSnapshotStore;
-import cn.ethan.core.agent.coordination.AgentCoordinatorProvider;
+import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemStore;
@@ -15,8 +15,8 @@ import cn.ethan.core.agent.thread.AgentThreadStore;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnStore;
-import cn.ethan.core.agent.workflow.AgentQuestionModel;
-import cn.ethan.core.agent.workflow.AgentQuestionStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -39,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * @author ethan
  * @date 2026-08-20
  */
-class AgentThreadRuntimeServiceTest {
+class AgentTurnRuntimeServiceTest {
 
     private static final Instant NOW = Instant.parse("2026-08-20T00:00:00Z");
 
@@ -54,9 +54,9 @@ class AgentThreadRuntimeServiceTest {
         ManualExecutor executor = new ManualExecutor();
         ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
         RecordingEvents events = new RecordingEvents();
-        AgentThreadRuntimeService runtime = new AgentThreadRuntimeService(
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
                 persistence, persistence, persistence, persistence, threads, context,
-                (current, turn, history, answer) -> new AgentCoordinatorProvider.AgentCoordinatorResult(
+                (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
                         "完成：" + turn.input(), List.of(), null, null, false),
                 events, executor, scheduler, clock,
                 4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256
@@ -105,7 +105,7 @@ class AgentThreadRuntimeServiceTest {
     }
 
     private static final class InMemoryPersistence implements AgentThreadStore, AgentTurnStore,
-            AgentItemStore, AgentQuestionStore, AgentContextSnapshotStore {
+            AgentItemStore, AgentWorkflowQuestionStore, AgentContextSnapshotStore {
         private final Map<String, AgentThreadModel> threads = new HashMap<>();
         private final Map<String, AgentTurnModel> turns = new HashMap<>();
         private final List<AgentItemModel> items = new ArrayList<>();
@@ -180,22 +180,22 @@ class AgentThreadRuntimeServiceTest {
         }
 
         @Override
-        public Optional<AgentQuestionModel> findOpenQuestion(String userId, String threadId) {
+        public Optional<AgentWorkflowQuestionModel> findOpenQuestion(String userId, String threadId) {
             return Optional.empty();
         }
 
         @Override
-        public Optional<AgentQuestionModel> findOpenQuestionByRun(String userId, String runId) {
+        public Optional<AgentWorkflowQuestionModel> findOpenQuestionByRun(String userId, String runId) {
             return Optional.empty();
         }
 
         @Override
-        public void saveQuestion(AgentQuestionModel question) {
+        public void saveQuestion(AgentWorkflowQuestionModel question) {
             throw new UnsupportedOperationException("test does not start a workflow");
         }
 
         @Override
-        public void answerQuestion(AgentQuestionModel question) {
+        public void answerQuestion(AgentWorkflowQuestionModel question) {
             throw new UnsupportedOperationException("test does not answer a workflow");
         }
 

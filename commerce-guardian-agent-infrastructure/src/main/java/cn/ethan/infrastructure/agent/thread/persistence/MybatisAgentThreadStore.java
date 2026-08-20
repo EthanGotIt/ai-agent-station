@@ -7,12 +7,12 @@ import cn.ethan.core.agent.context.AgentContextSnapshotModel;
 import cn.ethan.core.agent.context.AgentContextSnapshotStore;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemStore;
-import cn.ethan.core.agent.workflow.AgentQuestionModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.thread.AgentThreadStore;
-import cn.ethan.core.agent.workflow.AgentQuestionStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.stereotype.Repository;
@@ -30,19 +30,19 @@ import java.util.Optional;
  */
 @Repository
 public final class MybatisAgentThreadStore implements AgentThreadStore, AgentTurnStore, AgentItemStore,
-        AgentQuestionStore, AgentContextSnapshotStore {
+        AgentWorkflowQuestionStore, AgentContextSnapshotStore {
 
     private final AgentThreadMapper threadMapper;
     private final AgentTurnMapper turnMapper;
     private final AgentItemMapper itemMapper;
-    private final AgentQuestionMapper questionMapper;
+    private final AgentWorkflowQuestionMapper questionMapper;
     private final AgentContextSnapshotMapper snapshotMapper;
 
     public MybatisAgentThreadStore(
             AgentThreadMapper threadMapper,
             AgentTurnMapper turnMapper,
             AgentItemMapper itemMapper,
-            AgentQuestionMapper questionMapper,
+            AgentWorkflowQuestionMapper questionMapper,
             AgentContextSnapshotMapper snapshotMapper
     ) {
         this.threadMapper = threadMapper;
@@ -133,18 +133,18 @@ public final class MybatisAgentThreadStore implements AgentThreadStore, AgentTur
     }
 
     @Override
-    public Optional<AgentQuestionModel> findOpenQuestion(String userId, String threadId) {
+    public Optional<AgentWorkflowQuestionModel> findOpenQuestion(String userId, String threadId) {
         return Optional.ofNullable(questionMapper.selectOpen(userId, threadId)).map(this::toModel);
     }
 
     @Override
-    public Optional<AgentQuestionModel> findOpenQuestionByRun(String userId, String runId) {
+    public Optional<AgentWorkflowQuestionModel> findOpenQuestionByRun(String userId, String runId) {
         return Optional.ofNullable(questionMapper.selectOpenByRun(userId, runId)).map(this::toModel);
     }
 
     @Override
     @Transactional
-    public synchronized void saveQuestion(AgentQuestionModel question) {
+    public synchronized void saveQuestion(AgentWorkflowQuestionModel question) {
         if (!questionMapper.selectOpenForUpdate(question.threadId()).isEmpty()) {
             throw new IllegalStateException("同一 Thread 只能存在一个开放 QuestionCard");
         }
@@ -153,9 +153,9 @@ public final class MybatisAgentThreadStore implements AgentThreadStore, AgentTur
 
     @Override
     @Transactional
-    public void answerQuestion(AgentQuestionModel question) {
+    public void answerQuestion(AgentWorkflowQuestionModel question) {
         long previousVersion = Math.max(0L, question.version() - 1);
-        int updated = questionMapper.update(null, new UpdateWrapper<AgentQuestionEntity>()
+        int updated = questionMapper.update(null, new UpdateWrapper<AgentWorkflowQuestionEntity>()
                 .eq("QUESTION_ID", question.questionId())
                 .eq("STATUS", "OPEN")
                 .eq("VERSION_NO", previousVersion)
@@ -223,8 +223,8 @@ public final class MybatisAgentThreadStore implements AgentThreadStore, AgentTur
         return entity;
     }
 
-    private AgentQuestionEntity toEntity(AgentQuestionModel model) {
-        AgentQuestionEntity entity = new AgentQuestionEntity();
+    private AgentWorkflowQuestionEntity toEntity(AgentWorkflowQuestionModel model) {
+        AgentWorkflowQuestionEntity entity = new AgentWorkflowQuestionEntity();
         entity.setQuestionId(model.questionId());
         entity.setRunId(model.runId());
         entity.setThreadId(model.threadId());
@@ -271,8 +271,8 @@ public final class MybatisAgentThreadStore implements AgentThreadStore, AgentTur
                 value(entity.getSequenceNo()), AgentItemTypeEnum.valueOf(entity.getItemType()), entity.getPayload(), entity.getCreatedAt());
     }
 
-    private AgentQuestionModel toModel(AgentQuestionEntity entity) {
-        return new AgentQuestionModel(entity.getRunId(), entity.getThreadId(), entity.getTurnId(), entity.getUserId(),
+    private AgentWorkflowQuestionModel toModel(AgentWorkflowQuestionEntity entity) {
+        return new AgentWorkflowQuestionModel(entity.getRunId(), entity.getThreadId(), entity.getTurnId(), entity.getUserId(),
                 entity.getQuestionId(), entity.getCheckpointId(), value(entity.getVersionNo()), entity.getTitle(),
                 entity.getPrompt(), entity.getFieldsJson(), entity.getStatus(), entity.getCreatedAt(), entity.getAnsweredAt());
     }

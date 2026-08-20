@@ -11,7 +11,7 @@ import java.util.Map;
  * @author ethan
  * @date 2026-08-19
  */
-public record AgentQuestionAnswerRequestDto(
+public record AgentWorkflowQuestionAnswerRequestDto(
         @NotBlank String clientRequestId,
         @NotBlank String runId,
         @NotBlank String questionId,

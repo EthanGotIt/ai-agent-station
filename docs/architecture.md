@@ -55,7 +55,7 @@ Item 是唯一事实来源。文本增量只通过 SSE 发送，完成消息、�
 
 ## 编排和审批
 
-`SpringAiAgentCoordinator` 是唯一协调 Agent。只读 Tool 查询订单和物流；能力 Tool 只能启动退款或催发货 Workflow，不能直接产生外部副作用。Workflow 显式执行：
+`SpringAiAgentTurnCoordinator` 是唯一协调 Agent。只读 Tool 查询订单和物流；能力 Tool 只能启动退款或催发货 Workflow，不能直接产生外部副作用。Workflow 显式执行：
 
 ```text
 校验 → 持久化 QuestionCard → WAITING_USER_INPUT

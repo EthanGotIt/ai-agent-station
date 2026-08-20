@@ -49,13 +49,13 @@ public record AgentRuntimeProperties(
             Duration waitTimeout
     ) {
 
-        private static final int DEFAULT_MAX_PENDING_PER_SESSION = 4;
+        private static final int DEFAULT_MAX_PENDING_PER_THREAD = 4;
         private static final int DEFAULT_MAX_PENDING_GLOBAL = 256;
         private static final Duration DEFAULT_WAIT_TIMEOUT = Duration.ofMinutes(2);
 
         public QueueProperties {
             maxPendingPerThread = maxPendingPerThread == null
-                    ? DEFAULT_MAX_PENDING_PER_SESSION
+                    ? DEFAULT_MAX_PENDING_PER_THREAD
                     : maxPendingPerThread;
             maxPendingGlobal = maxPendingGlobal == null
                     ? DEFAULT_MAX_PENDING_GLOBAL

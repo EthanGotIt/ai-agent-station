@@ -8,7 +8,7 @@ import cn.ethan.core.agent.action.ExternalActionStatusEnum;
 import cn.ethan.core.agent.action.ExternalActionCommandStore;
 import cn.ethan.core.agent.thread.AgentThreadConflictException;
 import cn.ethan.core.agent.thread.AgentThreadNotFoundException;
-import cn.ethan.core.agent.execution.AgentThreadRuntimeService;
+import cn.ethan.core.agent.execution.AgentTurnRuntimeService;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -45,7 +45,7 @@ public final class AgentThreadController {
     private static final Logger LOGGER = LoggerFactory.getLogger(AgentThreadController.class);
 
     private final AgentThreadService threads;
-    private final AgentThreadRuntimeService runtime;
+    private final AgentTurnRuntimeService runtime;
     private final AgentThreadEventSubscription events;
     private final AgentRuntimeProperties properties;
     private final AgentUserContext userContext;
@@ -54,7 +54,7 @@ public final class AgentThreadController {
 
     public AgentThreadController(
             AgentThreadService threads,
-            AgentThreadRuntimeService runtime,
+            AgentTurnRuntimeService runtime,
             AgentThreadEventSubscription events,
             AgentRuntimeProperties properties,
             AgentUserContext userContext,
@@ -139,14 +139,14 @@ public final class AgentThreadController {
     }
 
     @PostMapping("/turns/{turnId}/cancel")
-    public ResponseEntity<AgentCancelResponseDto> cancel(
+    public ResponseEntity<AgentTurnCancelResponseDto> cancel(
             @PathVariable String turnId,
             HttpServletRequest request
     ) {
         String userId = userContext.currentUserId(request);
         boolean cancelled = runtime.cancel(userId, turnId);
         return cancelled
-                ? ResponseEntity.ok(new AgentCancelResponseDto(turnId, true))
+                ? ResponseEntity.ok(new AgentTurnCancelResponseDto(turnId, true))
                 : ResponseEntity.notFound().build();
     }
 
@@ -154,7 +154,7 @@ public final class AgentThreadController {
     public ResponseEntity<AgentTurnAcceptedResponseDto> answer(
             @PathVariable String runId,
             @PathVariable String questionId,
-            @Valid @RequestBody AgentQuestionAnswerRequestDto body,
+            @Valid @RequestBody AgentWorkflowQuestionAnswerRequestDto body,
             HttpServletRequest request
     ) {
         if (!runId.equals(body.runId()) || !questionId.equals(body.questionId())) {
@@ -167,7 +167,7 @@ public final class AgentThreadController {
     }
 
     @PostMapping("/workflow-runs/{runId}/retry")
-    public AgentRetryResponseDto retry(
+    public AgentWorkflowRetryResponseDto retry(
             @PathVariable String runId,
             HttpServletRequest request
     ) {
@@ -179,7 +179,7 @@ public final class AgentThreadController {
         }
         ExternalActionCommandModel retried = command.manualRetry(clock.instant());
         actions.update(retried);
-        return new AgentRetryResponseDto(runId, retried.commandId(), retried.status().name(), retried.idempotencyKey());
+        return new AgentWorkflowRetryResponseDto(runId, retried.commandId(), retried.status().name(), retried.idempotencyKey());
     }
 
     @GetMapping(value = "/threads/{threadId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

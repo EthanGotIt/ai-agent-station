@@ -12,7 +12,7 @@ import java.util.Map;
  * @author ethan
  * @date 2026-08-19
  */
-public interface AgentWorkflowStarter {
+public interface AgentWorkflowEngine {
 
     StartResult start(
             AgentThreadModel thread,
@@ -23,7 +23,7 @@ public interface AgentWorkflowStarter {
 
     ResumeResult resume(AgentThreadModel thread, AgentTurnModel turn, Map<String, String> answers);
 
-    record StartResult(String runId, AgentQuestionModel question) {
+    record StartResult(String runId, AgentWorkflowQuestionModel question) {
     }
 
     record ResumeResult(
