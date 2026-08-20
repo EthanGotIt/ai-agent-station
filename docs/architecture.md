@@ -4,6 +4,36 @@
 
 Core 只表达 `Thread`、`Turn`、`Item`、QuestionCard、ContextSnapshot 和 ExternalActionCommand 的规则与端口；infrastructure 适配 MyBatis-Plus、Spring AI、订单夹具和外部动作；app 只处理配置、HTTP 协议和认证上下文。依赖方向固定为 `app → core`、`app → infrastructure`、`infrastructure → core`。
 
+## Agent-first 分包
+
+Maven 模块负责依赖隔离，Java package 负责能力内聚。能力是第一维度，具体技术只出现在叶子适配器包，不使用按 `model/service/mapper/controller` 横向切开的全局技术层。
+
+```text
+core
+├── agent.thread          # Thread、Turn、Item 事实和存储契约
+├── agent.execution       # FIFO、取消、超时、恢复和 Turn 执行
+├── agent.context         # 上下文预算、快照和摘要
+├── agent.coordination    # 协调 Agent 输入输出契约
+├── agent.workflow        # WorkflowRun、QuestionCard、Checkpoint
+├── agent.action          # 外部命令、幂等、Lease 和重试
+├── agent.event           # 瞬时运行事件契约
+└── commerce.order        # 订单和物流验证夹具
+
+infrastructure
+├── agent.*.persistence   # Entity、Mapper 和 Store 适配器
+├── agent.coordination.springai
+├── agent.action.worker
+├── agent.workflow.transaction
+└── commerce.order.http / commerce.order.persistence
+
+app
+├── bootstrap             # Spring 装配和配置属性
+├── agent.api             # HTTP Controller、DTO 和错误协议
+└── agent.stream          # SSE 和进程内事件投影
+```
+
+新能力先选择所属业务边界，再决定是否需要技术叶子包；禁止空包、泛化 `impl`、`common`、`support` 和职责混杂的横向大包。此规则与 `AGENTS.md` 同步维护，Convention Check 负责阻止旧包结构回流。
+
 ## 会话与上下文
 
 登录身份不构成 Agent 实体。一个用户拥有多个 Thread，每个 Thread 保存标题、可选业务上下文和最新 Item 序号：

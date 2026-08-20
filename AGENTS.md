@@ -19,7 +19,8 @@
 - Commerce Guardian Agent 的上下文根为 `Thread`，执行层次为 `Thread → Turn → Item`。登录上下文不持有 Agent 历史；不实现 Thread Fork、分支合并、跨上下文自动记忆或多 Agent 协作。
 - 协调 Agent 统一使用 Spring AI Tool Calling。只读查询可以调用 Tool；退款、催发货、删除和其他外部写操作必须启动确定性 Workflow，不允许模型直接产生外部副作用。
 - Workflow 的 QuestionCard、Checkpoint、WorkflowRun 和 ExternalActionCommand 必须持久化；远程调用不得包在本地数据库事务内。
-- 模块内先按业务能力、再按职责组织。Core 使用 `model`、`enums`、`port`、`service`、`exception`、`support`；Workflow 使用 `workflow/model`、`node`、`engine`、`port`、`service`；Infrastructure 使用 `entity`、`mapper`、`gateway`、`provider`、`store`、`validator`、`tool`；App 保持 `config`、`controller`、`dto`、`handler`。
+- 模块内先按 Agent 能力、再按具体技术边界组织。Core 使用 `agent.thread`、`agent.execution`、`agent.context`、`agent.coordination`、`agent.workflow`、`agent.action`、`agent.event` 和 `commerce.order`；Infrastructure 使用对应能力下的 `persistence`、`springai`、`worker`、`fixture`、`http` 等适配器包；App 使用 `bootstrap`、`agent.api` 和 `agent.stream`。不再创建顶层 `model`、`service`、`port`、`entity`、`mapper`、`gateway`、`controller`、`dto` 或 `handler` 技术大包。
+- 能力是第一分包维度，技术实现只位于能力包的叶子位置。小型能力的模型、端口和服务可以同包；只有存在清晰生命周期或技术边界时才建立 `persistence`、`springai`、`http`、`worker`、`stream` 子包。Core 能力之间必须通过显式端口交互，禁止反向依赖 Infrastructure 或 App。
 - 不创建空包、泛化 `impl` 包或独立 Workflow JAR。新增职责无法放入现有矩阵时，先说明原因并同步调整本文件。
 
 ## 命名与数据边界（硬约束）
