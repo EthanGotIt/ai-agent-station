@@ -117,6 +117,71 @@ class AgentTurnRuntimeServiceTest {
         scheduler.shutdownNow();
     }
 
+    @Test
+    void persistsNormalizedMessageInInitialUserItem() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "规范化 Thread", null, null);
+        AgentContextAssembler context = new AgentContextAssembler(
+                persistence, persistence, clock, 2_000, 1_000, 256, 128);
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, persistence,
+                command -> { throw new UnsupportedOperationException("test does not answer a workflow"); },
+                (turn, status, code, finishedAt) -> false,
+                threads, context,
+                (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
+                        "完成", List.of(), null, null, false),
+                new RecordingEvents(), executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256
+        );
+
+        AgentTurnModel turn = runtime.submitTurn(
+                " user-1 ", thread.threadId(), " request-1 ", "  规范化消息  ");
+
+        AgentItemModel userItem = persistence.items.stream()
+                .filter(item -> turn.turnId().equals(item.turnId()))
+                .findFirst()
+                .orElseThrow();
+        assertTrue(userItem.payloadJson().contains("规范化消息"));
+        assertTrue(!userItem.payloadJson().contains("  规范化消息  "));
+        scheduler.shutdownNow();
+    }
+
+    @Test
+    void resolvesCreationRaceWithNormalizedOwnerAndRequestId() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "竞态 Thread", null, null);
+        AgentContextAssembler context = new AgentContextAssembler(
+                persistence, persistence, clock, 2_000, 1_000, 256, 128);
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        AgentTurnModel raced = new AgentTurnModel(
+                "raced-turn", thread.threadId(), "user-1", "request-1", "已存在",
+                AgentTurnStatusEnum.QUEUED, 1, null, null, NOW, null, null);
+        persistence.raceOnCreation = raced;
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, persistence,
+                command -> { throw new UnsupportedOperationException("test does not answer a workflow"); },
+                (turn, status, code, finishedAt) -> false,
+                threads, context,
+                (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
+                        "完成", List.of(), null, null, false),
+                new RecordingEvents(), executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256
+        );
+
+        AgentTurnModel result = runtime.submitTurn(
+                " user-1 ", thread.threadId(), " request-1 ", "新请求");
+
+        assertEquals(raced.turnId(), result.turnId());
+        scheduler.shutdownNow();
+    }
+
     private static final class ManualExecutor implements java.util.concurrent.Executor {
         private final List<Runnable> tasks = new ArrayList<>();
 
@@ -146,6 +211,7 @@ class AgentTurnRuntimeServiceTest {
         private final Map<String, AgentThreadModel> threads = new HashMap<>();
         private final Map<String, AgentTurnModel> turns = new HashMap<>();
         private final List<AgentItemModel> items = new ArrayList<>();
+        private AgentTurnModel raceOnCreation;
 
         @Override
         public void createThread(AgentThreadModel thread) {
@@ -184,6 +250,17 @@ class AgentTurnRuntimeServiceTest {
         @Override
         public void createTurn(AgentTurnModel turn) {
             turns.put(turn.turnId(), turn);
+        }
+
+        @Override
+        public long createTurnWithInitialItem(AgentTurnModel turn, AgentItemModel initialItem) {
+            if (raceOnCreation != null) {
+                turns.put(raceOnCreation.turnId(), raceOnCreation);
+                raceOnCreation = null;
+                throw new IllegalStateException("simulated duplicate request");
+            }
+            createTurn(turn);
+            return 0L;
         }
 
         @Override

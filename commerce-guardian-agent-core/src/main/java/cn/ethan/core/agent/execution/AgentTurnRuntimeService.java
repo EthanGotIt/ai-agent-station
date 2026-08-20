@@ -229,12 +229,12 @@ public final class AgentTurnRuntimeService {
             );
             AgentItemModel initialItem = new AgentItemModel(
                     UUID.randomUUID().toString(), turn.threadId(), turn.turnId(), 0,
-                    AgentItemTypeEnum.USER_MESSAGE, message, turn.createdAt());
+                    AgentItemTypeEnum.USER_MESSAGE, normalizedMessage, turn.createdAt());
             long initialSequence;
             try {
                 initialSequence = turns.createTurnWithInitialItem(turn, initialItem);
             } catch (RuntimeException creationFailure) {
-                Optional<AgentTurnModel> raced = turns.findTurnByRequest(userId, requestId);
+                Optional<AgentTurnModel> raced = turns.findTurnByRequest(ownerId, normalizedRequestId);
                 if (raced.isPresent()) return raced.get();
                 throw creationFailure;
             }
