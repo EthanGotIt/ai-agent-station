@@ -53,6 +53,10 @@ ai-agent:
     gateway: ${AI_AGENT_ORDER_GATEWAY:local}
     base-url: ${AI_AGENT_ORDER_BASE_URL:http://127.0.0.1:18080}
     http-timeout: ${AI_AGENT_ORDER_HTTP_TIMEOUT:PT5S}
+  worker:
+    lease-duration: ${AI_AGENT_WORKER_LEASE_DURATION:PT30S}
+    retry-base-delay: ${AI_AGENT_WORKER_RETRY_BASE_DELAY:PT5S}
+    action-timeout: ${AI_AGENT_WORKER_ACTION_TIMEOUT:PT30S}
 
 logging:
   level:

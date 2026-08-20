@@ -69,7 +69,7 @@ Item 是唯一事实来源。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersio
 
 队列键是 Thread：同一 Thread 严格 FIFO、任意时刻一个 ACTIVE Turn；不同 Thread 可并行。排队 Turn 可直接取消，ACTIVE Turn 通过运行上下文协作取消；已提交的外部副作用不会回滚。队列等待、Turn、工具、外部动作和 SSE 各有独立超时。
 
-外部命令以 `(userId, idempotencyKey)` 唯一。Worker 先在本地事务中原子 Claim Lease，再在事务外调用远程系统；仅瞬时错误有限退避，最终失败转人工重试。人工重试沿用原命令和幂等键，重复回答、重复 Claim 和重启恢复不会产生第二次业务写入。
+外部命令以 `(userId, idempotencyKey)` 唯一。Worker 先在本地事务中原子 Claim Lease，再在事务外调用远程系统；PENDING、RETRY_WAIT 和过期 PROCESSING 都可被领取。仅瞬时错误按指数退避，永久错误直接进入人工重试；动作超时也会形成可分类结果。演示执行器将成功结果写入 `EXTERNAL_ACTION_RESULT` 幂等表，证明远程成功后本地提交前崩溃时重跑不会产生第二次业务写入。人工重试沿用原命令和幂等键，重复回答、重复 Claim 和重启恢复不会产生第二次业务写入。
 
 ## HTTP 和事件
 

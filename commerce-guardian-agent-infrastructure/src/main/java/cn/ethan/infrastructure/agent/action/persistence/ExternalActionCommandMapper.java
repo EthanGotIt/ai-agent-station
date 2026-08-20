@@ -22,6 +22,6 @@ public interface ExternalActionCommandMapper extends BaseMapper<ExternalActionCo
     @Select("SELECT * FROM EXTERNAL_ACTION_COMMAND WHERE USER_ID = #{userId} AND RUN_ID = #{runId} ORDER BY CREATED_AT DESC LIMIT 1")
     ExternalActionCommandEntity selectByRunId(String userId, String runId);
 
-    @Select("SELECT * FROM EXTERNAL_ACTION_COMMAND WHERE STATUS IN ('PENDING', 'RETRY_WAIT') AND NEXT_ATTEMPT_AT <= #{now} AND (LEASE_UNTIL IS NULL OR LEASE_UNTIL < #{now}) ORDER BY CREATED_AT LIMIT #{limit}")
+    @Select("SELECT * FROM EXTERNAL_ACTION_COMMAND WHERE ((STATUS IN ('PENDING', 'RETRY_WAIT') AND NEXT_ATTEMPT_AT <= #{now}) OR (STATUS = 'PROCESSING' AND LEASE_UNTIL < #{now})) AND (LEASE_UNTIL IS NULL OR LEASE_UNTIL < #{now}) ORDER BY CREATED_AT LIMIT #{limit}")
     List<ExternalActionCommandEntity> selectDue(Instant now, int limit);
 }
