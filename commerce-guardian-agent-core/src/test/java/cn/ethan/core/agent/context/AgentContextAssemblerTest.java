@@ -1,0 +1,105 @@
+package cn.ethan.core.agent.context;
+
+import cn.ethan.core.agent.thread.AgentItemModel;
+import cn.ethan.core.agent.thread.AgentItemStore;
+import cn.ethan.core.agent.thread.AgentItemTypeEnum;
+import cn.ethan.core.agent.thread.AgentThreadModel;
+import cn.ethan.core.agent.thread.AgentThreadStatusEnum;
+import org.junit.jupiter.api.Test;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * 上下文组装测试：验证长历史触发快照并保留受预算约束的最近窗口。
+ *
+ * @author ethan
+ * @date 2026-08-20
+ */
+class AgentContextAssemblerTest {
+
+    private static final Instant NOW = Instant.parse("2026-08-20T00:00:00Z");
+
+    @Test
+    void createsSnapshotAndKeepsRecentItemsWithinBudget() {
+        List<AgentItemModel> history = new ArrayList<>();
+        for (int index = 0; index < 6; index++) {
+            history.add(new AgentItemModel(
+                    "item-" + index,
+                    "thread-1",
+                    "turn-" + index,
+                    index,
+                    AgentItemTypeEnum.USER_MESSAGE,
+                    "x".repeat(220),
+                    NOW
+            ));
+        }
+        RecordingItems items = new RecordingItems(history);
+        RecordingSnapshots snapshots = new RecordingSnapshots();
+        AgentContextAssembler assembler = new AgentContextAssembler(
+                items,
+                snapshots,
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                1_000,
+                500,
+                80,
+                128
+        );
+
+        List<AgentItemModel> result = assembler.assemble(thread());
+
+        assertFalse(result.isEmpty());
+        assertEquals(AgentItemTypeEnum.EXECUTION_EVENT, result.get(0).type());
+        assertTrue(result.get(0).payload().contains("历史摘要"));
+        assertEquals(1, snapshots.saved.size());
+        assertEquals(1L, snapshots.saved.get(0).version());
+        assertTrue(result.stream().mapToInt(item -> item.payload().length() / 2 + 1).sum() <= 872);
+    }
+
+    private AgentThreadModel thread() {
+        return new AgentThreadModel(
+                "thread-1", "user-1", "测试 Thread", AgentThreadStatusEnum.ACTIVE,
+                null, null, 6, NOW, NOW
+        );
+    }
+
+    private static final class RecordingItems implements AgentItemStore {
+        private final List<AgentItemModel> history;
+
+        private RecordingItems(List<AgentItemModel> history) {
+            this.history = history;
+        }
+
+        @Override
+        public long appendItem(AgentItemModel item) {
+            throw new UnsupportedOperationException("test does not append items");
+        }
+
+        @Override
+        public List<AgentItemModel> listItems(String userId, String threadId, long afterSequence, int limit) {
+            return history.stream().filter(item -> item.sequence() > afterSequence).limit(limit).toList();
+        }
+    }
+
+    private static final class RecordingSnapshots implements AgentContextSnapshotStore {
+        private final List<AgentContextSnapshotModel> saved = new ArrayList<>();
+
+        @Override
+        public Optional<AgentContextSnapshotModel> findLatestSnapshot(String userId, String threadId) {
+            return saved.isEmpty() ? Optional.empty() : Optional.of(saved.get(saved.size() - 1));
+        }
+
+        @Override
+        public void saveSnapshot(AgentContextSnapshotModel snapshot) {
+            saved.add(snapshot);
+        }
+    }
+}
