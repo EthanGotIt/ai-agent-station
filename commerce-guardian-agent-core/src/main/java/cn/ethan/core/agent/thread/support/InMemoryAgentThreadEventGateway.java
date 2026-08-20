@@ -1,6 +1,6 @@
 package cn.ethan.core.agent.thread.support;
 
-import cn.ethan.core.agent.thread.port.AgentThreadEventGateway;
+import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -1,0 +1,41 @@
+package cn.ethan.core.agent.workflow;
+
+import java.time.Instant;
+
+/**
+ * 持久化 QuestionCard 检查点。
+ *
+ * @author ethan
+ * @date 2026-08-19
+ */
+public record AgentQuestionModel(
+        String runId,
+        String threadId,
+        String turnId,
+        String userId,
+        String questionId,
+        String checkpointId,
+        long version,
+        String title,
+        String prompt,
+        String fieldsJson,
+        String status,
+        Instant createdAt,
+        Instant answeredAt
+) {
+    public AgentQuestionModel {
+        if (runId == null || runId.isBlank() || threadId == null || threadId.isBlank()
+                || questionId == null || questionId.isBlank()) {
+            throw new IllegalArgumentException("question identity must not be blank");
+        }
+        title = title == null ? "需要确认" : title;
+        prompt = prompt == null ? "" : prompt;
+        fieldsJson = fieldsJson == null ? "[]" : fieldsJson;
+        status = status == null ? "OPEN" : status;
+    }
+
+    public AgentQuestionModel answered(Instant at) {
+        return new AgentQuestionModel(runId, threadId, turnId, userId, questionId,
+                checkpointId, version + 1, title, prompt, fieldsJson, "ANSWERED", createdAt, at);
+    }
+}
