@@ -539,7 +539,10 @@ public final class AgentTurnRuntimeService {
             }
             finish(active, AgentTurnStatusEnum.COMPLETED, null);
         } catch (RuntimeException failure) {
-            boolean cancelled = failure instanceof AgentExecutionCancelledException || execution.cancelled.get();
+            boolean timedOut = failure instanceof AgentExecutionTimeoutException || execution.timedOut.get();
+            boolean cancelled = timedOut
+                    || failure instanceof AgentExecutionCancelledException
+                    || execution.cancelled.get();
             if (!cancelled) {
                 try {
                     appendItem(active, AgentItemTypeEnum.ERROR,
@@ -549,9 +552,9 @@ public final class AgentTurnRuntimeService {
                 }
             }
             if (!cancelled) metrics.observeFailure("AGENT_EXECUTION_FAILED");
-            finish(active, execution.timedOut.get() ? AgentTurnStatusEnum.TIMED_OUT
+            finish(active, timedOut ? AgentTurnStatusEnum.TIMED_OUT
                             : cancelled ? AgentTurnStatusEnum.CANCELLED : AgentTurnStatusEnum.FAILED,
-                    execution.timedOut.get() ? "TURN_TIMEOUT"
+                    timedOut ? "TURN_TIMEOUT"
                             : cancelled ? "CLIENT_CANCELLED" : "AGENT_EXECUTION_FAILED");
         } finally {
             timeout.cancel(false);

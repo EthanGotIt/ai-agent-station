@@ -24,6 +24,7 @@ class AgentRuntimePropertiesTest {
         );
 
         assertEquals(Duration.ofSeconds(245), properties.streamTimeout());
+        assertEquals(Duration.ofSeconds(15), properties.heartbeatInterval());
         assertEquals(4, properties.queue().maxPendingPerThread());
         assertEquals(256, properties.queue().maxPendingGlobal());
         assertEquals(Duration.ofMinutes(2), properties.queue().waitTimeout());

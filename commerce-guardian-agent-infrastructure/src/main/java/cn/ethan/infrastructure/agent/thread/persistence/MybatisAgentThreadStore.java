@@ -12,12 +12,13 @@ import java.util.Optional;
 
 /**
  * 类型职责：只持久化 Thread 元数据，不承载 Turn、Item 或 Workflow 状态。
+ * 该适配器需要保留可代理性，以承接 Spring 的异常翻译和事务边界。
  *
  * @author ethan
  * @date 2026-08-20
  */
 @Repository
-public final class MybatisAgentThreadStore implements AgentThreadStore {
+public class MybatisAgentThreadStore implements AgentThreadStore {
 
     private final AgentThreadMapper mapper;
 
@@ -57,9 +58,17 @@ public final class MybatisAgentThreadStore implements AgentThreadStore {
 
     @Override
     public void updateThread(AgentThreadModel thread) {
-        mapper.update(toEntity(thread), new UpdateWrapper<AgentThreadEntity>()
+        // 元数据更新不得覆盖 Item Store 在行锁内维护的 NEXT_SEQUENCE
+        mapper.update(null, new UpdateWrapper<AgentThreadEntity>()
                 .eq("THREAD_ID", thread.threadId())
-                .eq("USER_ID", thread.userId()));
+                .eq("USER_ID", thread.userId())
+                .set("TITLE", thread.title())
+                .set("STATUS", thread.status().name())
+                .set("CONTEXT_TYPE", thread.contextType())
+                .set("CONTEXT_ID", thread.contextId())
+                // MyBatis-Plus 默认忽略 null 字段；显式 set 才能关闭已回答 Question 指针
+                .set("OPEN_QUESTION_ID", thread.openQuestionId())
+                .set("UPDATED_AT", thread.updatedAt()));
     }
 
     private static AgentThreadEntity toEntity(AgentThreadModel model) {
@@ -70,6 +79,7 @@ public final class MybatisAgentThreadStore implements AgentThreadStore {
         entity.setStatus(model.status().name());
         entity.setContextType(model.contextType());
         entity.setContextId(model.contextId());
+        entity.setOpenQuestionId(model.openQuestionId());
         entity.setNextSequence(model.nextSequence());
         entity.setCreatedAt(model.createdAt());
         entity.setUpdatedAt(model.updatedAt());
@@ -79,7 +89,7 @@ public final class MybatisAgentThreadStore implements AgentThreadStore {
     private static AgentThreadModel toModel(AgentThreadEntity entity) {
         return new AgentThreadModel(entity.getThreadId(), entity.getUserId(), entity.getTitle(),
                 AgentThreadStatusEnum.valueOf(entity.getStatus()), entity.getContextType(), entity.getContextId(),
-                value(entity.getNextSequence()), entity.getCreatedAt(), entity.getUpdatedAt());
+                value(entity.getNextSequence()), entity.getCreatedAt(), entity.getUpdatedAt(), entity.getOpenQuestionId());
     }
 
     private static long value(Long value) {

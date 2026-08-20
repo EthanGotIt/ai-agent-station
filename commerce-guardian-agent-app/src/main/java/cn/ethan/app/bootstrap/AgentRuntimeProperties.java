@@ -1,6 +1,7 @@
 package cn.ethan.app.bootstrap;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 import java.time.Duration;
 
@@ -14,12 +15,24 @@ import java.time.Duration;
 public record AgentRuntimeProperties(
         Duration streamTimeout,
         QueueProperties queue,
-        ExecutorProperties executor
+        ExecutorProperties executor,
+        Duration heartbeatInterval
 ) {
 
     private static final Duration DEFAULT_STREAM_TIMEOUT = Duration.ofSeconds(245);
     private static final Duration MAX_STREAM_TIMEOUT = Duration.ofMinutes(5);
+    private static final Duration DEFAULT_HEARTBEAT_INTERVAL = Duration.ofSeconds(15);
+    private static final Duration MAX_HEARTBEAT_INTERVAL = Duration.ofMinutes(1);
 
+    public AgentRuntimeProperties(
+            Duration streamTimeout,
+            QueueProperties queue,
+            ExecutorProperties executor
+    ) {
+        this(streamTimeout, queue, executor, null);
+    }
+
+    @ConstructorBinding
     public AgentRuntimeProperties {
         streamTimeout = validateDuration(
                 streamTimeout,
@@ -33,6 +46,15 @@ public record AgentRuntimeProperties(
         executor = executor == null
                 ? new ExecutorProperties(null, null, null, null)
                 : executor;
+        heartbeatInterval = validateDuration(
+                heartbeatInterval,
+                DEFAULT_HEARTBEAT_INTERVAL,
+                MAX_HEARTBEAT_INTERVAL,
+                "heartbeatInterval"
+        );
+        if (heartbeatInterval.compareTo(Duration.ofSeconds(1)) < 0) {
+            throw new IllegalArgumentException("heartbeatInterval must be at least PT1S");
+        }
         if (executor.queueCapacity() < queue.maxPendingGlobal()) {
             throw new IllegalArgumentException(
                     "executor.queueCapacity must not be less than queue.maxPendingGlobal"

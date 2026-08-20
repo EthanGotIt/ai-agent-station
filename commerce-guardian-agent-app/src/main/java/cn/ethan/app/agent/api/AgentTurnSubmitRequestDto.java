@@ -10,7 +10,7 @@ import jakarta.validation.constraints.Size;
  * @date 2026-08-19
  */
 public record AgentTurnSubmitRequestDto(
-        @NotBlank @Size(max = 255) String clientRequestId,
+        @NotBlank @Size(max = 128) String clientRequestId,
         @NotBlank @Size(max = 20_000) String message
 ) {
 }

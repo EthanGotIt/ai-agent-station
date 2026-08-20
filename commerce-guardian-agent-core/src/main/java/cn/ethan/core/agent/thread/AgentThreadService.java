@@ -34,11 +34,6 @@ public final class AgentThreadService {
         return thread;
     }
 
-    public List<AgentThreadModel> list(String userId) {
-        requireText(userId, "userId");
-        return threads.listThreads(userId);
-    }
-
     public AgentThreadPageModel listPage(String userId, int page, int size) {
         requireText(userId, "userId");
         int safePage = Math.max(0, page);
@@ -64,7 +59,8 @@ public final class AgentThreadService {
         AgentThreadModel updated = new AgentThreadModel(
                 current.threadId(), current.userId(), title == null ? current.title() : title,
                 archive ? AgentThreadStatusEnum.ARCHIVED : AgentThreadStatusEnum.ACTIVE,
-                current.contextType(), current.contextId(), current.nextSequence(), current.createdAt(), clock.instant()
+                current.contextType(), current.contextId(), current.nextSequence(), current.createdAt(), clock.instant(),
+                current.openQuestionId()
         );
         threads.updateThread(updated);
         return updated;
@@ -72,7 +68,7 @@ public final class AgentThreadService {
 
     public List<AgentItemModel> listItems(String userId, String threadId, long afterSequence, int limit) {
         get(userId, threadId);
-        return items.listItems(userId, threadId, Math.max(0L, afterSequence), Math.max(1, Math.min(limit, 500)));
+        return items.listItems(userId, threadId, Math.max(0L, afterSequence), Math.max(1, Math.min(limit, 501)));
     }
 
     private void requireText(String value, String name) {

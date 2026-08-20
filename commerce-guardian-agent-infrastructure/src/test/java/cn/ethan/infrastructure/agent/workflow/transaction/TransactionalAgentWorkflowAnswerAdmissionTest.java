@@ -11,8 +11,8 @@ import cn.ethan.core.agent.workflow.AgentWorkflowQuestionFieldModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 import cn.ethan.infrastructure.agent.thread.persistence.JacksonAgentWorkflowAnswerCodec;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.TransactionDefinition;
@@ -58,12 +58,12 @@ class TransactionalAgentWorkflowAnswerAdmissionTest {
 
         JsonNode item = fixture.objectMapper.readTree(result.initialItem().payload());
         assertEquals(1, item.path("schemaVersion").asInt());
-        assertEquals("WORKFLOW_ANSWER", item.path("kind").asText());
-        assertEquals("run-1", item.path("data").path("runId").asText());
-        assertEquals("question-1", item.path("data").path("questionId").asText());
-        assertEquals("checkpoint-1", item.path("data").path("checkpointId").asText());
+        assertEquals("WORKFLOW_ANSWER", item.path("kind").asString());
+        assertEquals("run-1", item.path("data").path("runId").asString());
+        assertEquals("question-1", item.path("data").path("questionId").asString());
+        assertEquals("checkpoint-1", item.path("data").path("checkpointId").asString());
         assertEquals(2L, item.path("data").path("enqueuedQuestionVersion").asLong());
-        assertEquals("同意退款", item.path("data").path("answers").path("note").asText());
+        assertEquals("同意退款", item.path("data").path("answers").path("note").asString());
     }
 
     @Test

@@ -36,10 +36,14 @@ public final class ExternalActionCommandEntity {
     private String payloadJson;
     @TableField("STATUS")
     private ExternalActionStatusEnum status;
+    @TableField("VERSION_NO")
+    private Long versionNo;
     @TableField("ATTEMPT_COUNT")
     private Integer attemptCount;
     @TableField("MAX_ATTEMPTS")
     private Integer maxAttempts;
+    @TableField("RETRY_CYCLE_ATTEMPT_COUNT")
+    private Integer retryCycleAttemptCount;
     @TableField("NEXT_ATTEMPT_AT")
     private Instant nextAttemptAt;
     @TableField("LEASE_OWNER")
@@ -78,10 +82,14 @@ public final class ExternalActionCommandEntity {
     public void setPayloadJson(String payloadJson) { this.payloadJson = payloadJson; }
     public ExternalActionStatusEnum getStatus() { return status; }
     public void setStatus(ExternalActionStatusEnum status) { this.status = status; }
+    public Long getVersionNo() { return versionNo; }
+    public void setVersionNo(Long versionNo) { this.versionNo = versionNo; }
     public Integer getAttemptCount() { return attemptCount; }
     public void setAttemptCount(Integer attemptCount) { this.attemptCount = attemptCount; }
     public Integer getMaxAttempts() { return maxAttempts; }
     public void setMaxAttempts(Integer maxAttempts) { this.maxAttempts = maxAttempts; }
+    public Integer getRetryCycleAttemptCount() { return retryCycleAttemptCount; }
+    public void setRetryCycleAttemptCount(Integer retryCycleAttemptCount) { this.retryCycleAttemptCount = retryCycleAttemptCount; }
     public Instant getNextAttemptAt() { return nextAttemptAt; }
     public void setNextAttemptAt(Instant nextAttemptAt) { this.nextAttemptAt = nextAttemptAt; }
     public String getLeaseOwner() { return leaseOwner; }

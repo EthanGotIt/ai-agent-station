@@ -18,7 +18,7 @@ import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
 import cn.ethan.core.commerce.order.OrderLookupResultModel;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;

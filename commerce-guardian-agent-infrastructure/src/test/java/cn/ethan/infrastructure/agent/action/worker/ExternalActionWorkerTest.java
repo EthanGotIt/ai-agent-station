@@ -15,7 +15,7 @@ import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;

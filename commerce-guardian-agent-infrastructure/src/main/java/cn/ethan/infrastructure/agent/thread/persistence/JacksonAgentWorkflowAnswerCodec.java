@@ -1,9 +1,9 @@
 package cn.ethan.infrastructure.agent.thread.persistence;
 
 import cn.ethan.core.agent.thread.AgentWorkflowAnswerInput;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;

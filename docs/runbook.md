@@ -2,7 +2,7 @@
 
 ## 配置
 
-敏感配置只通过环境变量注入：`MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`、`AI_AGENT_MODEL_BASE_URL` 和 `AI_AGENT_MODEL_API_KEY`。模型名称、Thread 上下文预算、队列容量、各层超时和 Worker 轮询参数均在 `application.yml` 中以环境变量覆盖。
+敏感配置只通过环境变量注入：`MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` 和 `DEEPSEEK_API_KEY`。DeepSeek 请求固定使用不启用 thinking 的 `deepseek-chat`；`DEEPSEEK_BASE_URL`、输出上限、重试次数、模型 HTTP 超时、Thread 上下文预算、队列容量、各层超时、SSE 心跳（`AI_AGENT_SSE_HEARTBEAT_INTERVAL`）和 Worker 轮询参数均在 `application.yml` 中以环境变量覆盖。
 
 ## 初始化与启动
 
@@ -21,6 +21,7 @@ $thread = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8090/api/agent/th
 $threadId = $thread.threadId
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8090/api/agent/threads/$threadId/turns" -Headers $headers -ContentType application/json -Body '{"clientRequestId":"demo-1","message":"查询订单 ORDER-PAID-001 的状态"}'
 Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8090/api/agent/threads/$threadId/items?afterSequence=0&limit=200" -Headers $headers
+# 已返回的 turnId 可用于只读轨迹回放：GET /api/agent/turns/{turnId}/execution
 ```
 
 退款或催发货请求只会生成 QuestionCard。批准后命令进入 Worker；可通过 Items 和 SSE 观察 `TOOL_*`、`WORKFLOW_*`、`EXTERNAL_ACTION_STATUS` 和 Turn 终态。
@@ -38,9 +39,12 @@ Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8090/api/agent/threads/$thr
 ```text
 python -m scripts.convention_check
 python -m unittest discover -s scripts/tests -p "test_*.py"
+python -m scripts.runtime_eval
+mvn dependency:analyze -DskipTests
 mvn clean '-DskipTests=false' test
 cd agent-console
 npm run typecheck
 npm test -- --run
+npm run test:e2e
 npm run build
 ```

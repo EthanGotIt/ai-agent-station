@@ -1,6 +1,7 @@
 package cn.ethan.app.bootstrap;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 import java.time.Duration;
 
@@ -19,6 +20,7 @@ public record AgentThreadProperties(
         Duration turnTimeout
 ) {
 
+    @ConstructorBinding
     public AgentThreadProperties {
         contextMaxEstimatedTokens = valueOrDefault(contextMaxEstimatedTokens, 12_000);
         snapshotTriggerEstimatedTokens = valueOrDefault(snapshotTriggerEstimatedTokens, 9_000);

@@ -11,12 +11,13 @@ import java.util.Optional;
 
 /**
  * 类型职责：用数据库唯一约束保存外部动作结果，承接 Worker 崩溃后的幂等恢复。
+ * 该适配器需要保留可代理性，以承接 Spring 的异常翻译和事务边界。
  *
  * @author ethan
  * @date 2026-08-20
  */
 @Repository
-public final class MybatisExternalActionResultStore implements ExternalActionResultStore {
+public class MybatisExternalActionResultStore implements ExternalActionResultStore {
 
     private final ExternalActionResultMapper mapper;
 

@@ -29,7 +29,7 @@ public record AgentItemPayloadModel(
             throw new IllegalArgumentException("Item kind must not be null");
         }
         String value = payload == null ? "" : payload;
-        if (isCurrentEnvelope(value)) {
+        if (isCurrentEnvelope(type, value)) {
             return value;
         }
         String data = looksLikeJson(value) ? value : quote(value);
@@ -37,9 +37,10 @@ public record AgentItemPayloadModel(
                 + "\",\"data\":" + data + "}";
     }
 
-    private static boolean isCurrentEnvelope(String value) {
+    private static boolean isCurrentEnvelope(AgentItemTypeEnum type, String value) {
         String compact = value.stripLeading();
-        return compact.startsWith("{\"schemaVersion\":1") && compact.contains("\"kind\"");
+        return compact.startsWith("{\"schemaVersion\":1")
+                && compact.contains("\"kind\":\"" + type.name() + "\"");
     }
 
     private static boolean looksLikeJson(String value) {

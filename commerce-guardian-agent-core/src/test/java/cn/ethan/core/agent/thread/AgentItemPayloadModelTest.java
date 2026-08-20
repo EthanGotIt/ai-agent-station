@@ -2,6 +2,7 @@ package cn.ethan.core.agent.thread;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -22,6 +23,6 @@ class AgentItemPayloadModelTest {
         String envelope = "{\"schemaVersion\":1,\"kind\":\"ERROR\",\"data\":\"失败\"}";
         AgentItemModel preserved = new AgentItemModel("item-2", "thread-1", "turn-1", 2,
                 AgentItemTypeEnum.ERROR, envelope, java.time.Instant.EPOCH);
-        assertTrue(preserved.payloadJson().equals(envelope));
+        assertEquals(envelope, preserved.payloadJson());
     }
 }

@@ -15,12 +15,13 @@ import java.util.Optional;
 
 /**
  * 类型职责：只持久化 Turn 生命周期、请求幂等和重启恢复状态。
+ * 该适配器需要保留可代理性，以承接 Spring 的异常翻译和事务边界。
  *
  * @author ethan
  * @date 2026-08-20
  */
 @Repository
-public final class MybatisAgentTurnStore implements AgentTurnStore {
+public class MybatisAgentTurnStore implements AgentTurnStore {
 
     private final AgentTurnMapper mapper;
     private final AgentItemMapper itemMapper;

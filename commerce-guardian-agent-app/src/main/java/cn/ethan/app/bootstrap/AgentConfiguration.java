@@ -8,17 +8,30 @@ import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.context.AgentContextAssembler;
 import cn.ethan.core.agent.context.AgentContextSnapshotStore;
 import cn.ethan.core.agent.execution.AgentTurnRuntimeService;
+import cn.ethan.core.agent.execution.AgentWorkflowAnswerAdmission;
+import cn.ethan.core.agent.execution.AgentWorkflowAnswerFailureReconciler;
+import cn.ethan.core.agent.execution.AgentExecutionTimelineService;
+import cn.ethan.core.agent.execution.AgentRuntimeMetrics;
+import cn.ethan.core.agent.action.ExternalActionCommandStore;
+import cn.ethan.core.agent.action.ExternalActionService;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import reactor.netty.http.client.HttpClient;
+import io.netty.channel.ChannelOption;
 
 import java.time.Clock;
 import java.util.concurrent.ScheduledExecutorService;
@@ -38,7 +51,11 @@ import java.util.concurrent.atomic.AtomicInteger;
         "cn.ethan.infrastructure.agent.thread.persistence",
         "cn.ethan.infrastructure.agent.action.persistence"
 })
-@EnableConfigurationProperties({AgentRuntimeProperties.class, AgentThreadProperties.class})
+@EnableConfigurationProperties({
+        AgentRuntimeProperties.class,
+        AgentThreadProperties.class,
+        AgentModelProperties.class
+})
 public class AgentConfiguration {
 
     @Bean
@@ -49,6 +66,25 @@ public class AgentConfiguration {
     @Bean(name = "agentChatClient")
     public ChatClient agentChatClient(ChatModel chatModel) {
         return ChatClient.builder(chatModel).build();
+    }
+
+    @Bean
+    public RestClient.Builder deepSeekRestClientBuilder(AgentModelProperties properties) {
+        java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                .connectTimeout(properties.httpTimeout())
+                .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(client);
+        requestFactory.setReadTimeout(properties.httpTimeout());
+        return RestClient.builder().requestFactory(requestFactory);
+    }
+
+    @Bean
+    public WebClient.Builder deepSeekWebClientBuilder(AgentModelProperties properties) {
+        int timeoutMillis = Math.toIntExact(properties.httpTimeout().toMillis());
+        HttpClient client = HttpClient.create()
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeoutMillis)
+                .responseTimeout(properties.httpTimeout());
+        return WebClient.builder().clientConnector(new ReactorClientHttpConnector(client));
     }
 
     @Bean(destroyMethod = "shutdown")
@@ -93,6 +129,24 @@ public class AgentConfiguration {
     }
 
     @Bean
+    public AgentRuntimeMetrics agentRuntimeMetrics(MeterRegistry registry) {
+        return new MicrometerAgentRuntimeMetrics(registry);
+    }
+
+    @Bean
+    public AgentExecutionTimelineService agentExecutionTimelineService(
+            AgentTurnStore turns,
+            AgentThreadService threads
+    ) {
+        return new AgentExecutionTimelineService(turns, threads);
+    }
+
+    @Bean
+    public ExternalActionService externalActionService(ExternalActionCommandStore commands, Clock clock) {
+        return new ExternalActionService(commands, clock);
+    }
+
+    @Bean
     public AgentContextAssembler agentContextAssembler(
             AgentItemStore items,
             AgentContextSnapshotStore snapshots,
@@ -110,6 +164,8 @@ public class AgentConfiguration {
             AgentTurnStore turns,
             AgentItemStore items,
             AgentWorkflowQuestionStore questions,
+            AgentWorkflowAnswerAdmission answerAdmission,
+            AgentWorkflowAnswerFailureReconciler failureReconciler,
             AgentThreadService threads,
             AgentContextAssembler contextAssembler,
             AgentTurnCoordinator coordinator,
@@ -118,16 +174,18 @@ public class AgentConfiguration {
             ScheduledExecutorService agentQueueTimeoutScheduler,
             Clock clock,
             AgentRuntimeProperties runtimeProperties,
-            AgentThreadProperties threadProperties
+            AgentThreadProperties threadProperties,
+            AgentRuntimeMetrics metrics
     ) {
         AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
-                threadStore, turns, items, questions, threads, contextAssembler, coordinator, events, agentTaskExecutor,
-                agentQueueTimeoutScheduler, clock,
+                threadStore, turns, items, questions, answerAdmission, failureReconciler,
+                threads, contextAssembler, coordinator,
+                events, agentTaskExecutor, agentQueueTimeoutScheduler, clock,
                 runtimeProperties.queue().maxPendingPerThread(),
                 runtimeProperties.queue().maxPendingGlobal(),
                 runtimeProperties.queue().waitTimeout(),
                 threadProperties.turnTimeout(),
-                threadProperties.toolResultMaxCharacters());
+                threadProperties.toolResultMaxCharacters(), metrics);
         runtime.recoverPersistedTurns();
         return runtime;
     }

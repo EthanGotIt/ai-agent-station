@@ -5,7 +5,7 @@ import cn.ethan.core.agent.thread.AgentItemTypeEnum;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentWorkflowAnswerInput;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
@@ -77,9 +77,9 @@ class MybatisAgentTurnStoreWorkflowAnswerTest {
         assertEquals(2L, persistedTurn.get().getWorkflowQuestionVersion());
         assertEquals(0L, persistedTurn.get().getVersionNo());
         assertEquals("APPROVE", objectMapper.readTree(persistedTurn.get().getWorkflowAnswersJson())
-                .path("decision").asText());
+                .path("decision").asString());
         assertEquals("可恢复", objectMapper.readTree(persistedTurn.get().getWorkflowAnswersJson())
-                .path("reason").asText());
+                .path("reason").asString());
         assertNotNull(persistedItem.get());
         assertEquals(7L, persistedItem.get().getSequenceNo());
         assertEquals(answerInput, restored.workflowAnswerInput());

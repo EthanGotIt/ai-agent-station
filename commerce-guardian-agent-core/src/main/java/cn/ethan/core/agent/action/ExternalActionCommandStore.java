@@ -23,5 +23,10 @@ public interface ExternalActionCommandStore {
 
     List<ExternalActionCommandModel> claimDue(Instant now, Instant leaseUntil, String workerId, int limit);
 
-    void update(ExternalActionCommandModel command);
+    /**
+     * 以更新前完整状态执行 CAS；PROCESSING 收敛必须校验领取版本、Owner 和尝试次数。
+     *
+     * @return false 表示命令已被其他 Lease 或恢复流程推进
+     */
+    boolean update(ExternalActionCommandModel expected, ExternalActionCommandModel next);
 }

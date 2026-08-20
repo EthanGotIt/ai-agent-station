@@ -11,12 +11,13 @@ import java.util.List;
 
 /**
  * 类型职责：追加和游标读取 Thread Item，并通过 Thread 行锁分配单调序号。
+ * 该适配器需要保留可代理性，以承接 Spring 的异常翻译和事务边界。
  *
  * @author ethan
  * @date 2026-08-20
  */
 @Repository
-public final class MybatisAgentItemStore implements AgentItemStore {
+public class MybatisAgentItemStore implements AgentItemStore {
 
     private final AgentItemMapper itemMapper;
     private final AgentThreadMapper threadMapper;
@@ -57,7 +58,7 @@ public final class MybatisAgentItemStore implements AgentItemStore {
         if (owned == null) {
             return List.of();
         }
-        return itemMapper.selectAfter(threadId, Math.max(0L, afterSequence), Math.max(1, Math.min(limit, 500)))
+        return itemMapper.selectAfter(threadId, Math.max(0L, afterSequence), Math.max(1, Math.min(limit, 501)))
                 .stream().map(MybatisAgentItemStore::toModel).toList();
     }
 

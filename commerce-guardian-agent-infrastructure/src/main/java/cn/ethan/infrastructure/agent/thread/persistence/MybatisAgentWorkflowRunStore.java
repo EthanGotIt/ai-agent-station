@@ -12,12 +12,13 @@ import java.util.Optional;
 
 /**
  * 类型职责：将 WorkflowRun 模型转换为 MyBatis-Plus 持久化记录。
+ * 该适配器需要保留可代理性，以承接 Spring 的异常翻译和事务边界。
  *
  * @author ethan
  * @date 2026-08-19
  */
 @Repository
-public final class MybatisAgentWorkflowRunStore implements AgentWorkflowRunStore {
+public class MybatisAgentWorkflowRunStore implements AgentWorkflowRunStore {
 
     private final AgentWorkflowRunMapper mapper;
 

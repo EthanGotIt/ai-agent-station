@@ -76,7 +76,8 @@ class AgentContextAssemblerTest {
         );
         RecordingItems items = new RecordingItems(history);
         RecordingSnapshots snapshots = new RecordingSnapshots();
-        snapshots.saved.add(new AgentContextSnapshotModel("snapshot-1", "thread-1", 10, 1, 4, "summary", NOW));
+        snapshots.saved.add(new AgentContextSnapshotModel(
+                "snapshot-1", "thread-1", 10, 1, 4, "MODEL_SAFE_V1\nsummary", NOW));
         AgentContextAssembler assembler = new AgentContextAssembler(
                 items, snapshots, Clock.fixed(NOW, ZoneOffset.UTC), 2_000, 1_500, 256, 128);
 
@@ -85,6 +86,47 @@ class AgentContextAssemblerTest {
         assertEquals(10L, items.lastAfterSequence);
         assertTrue(result.stream().noneMatch(item -> "turn-current".equals(item.turnId())));
         assertTrue(result.stream().anyMatch(item -> item.payload().contains("summary")));
+    }
+
+    @Test
+    void truncatesLargeToolResultBeforeModelContext() {
+        RecordingItems items = new RecordingItems(List.of(
+                new AgentItemModel("tool", "thread-1", "turn-tool", 1,
+                        AgentItemTypeEnum.TOOL_RESULT, "r".repeat(400), NOW)
+        ));
+        AgentContextAssembler assembler = new AgentContextAssembler(
+                items, new RecordingSnapshots(), Clock.fixed(NOW, ZoneOffset.UTC), 2_000, 1_500, 80, 128);
+
+        List<AgentItemModel> result = assembler.assemble(thread());
+
+        assertTrue(result.stream().anyMatch(item -> item.type() == AgentItemTypeEnum.TOOL_RESULT
+                && item.payload().contains("\"truncated\":true")));
+    }
+
+    @Test
+    void excludesWorkflowAnswersAndInternalControlItemsFromModelContext() {
+        String secret = "apiKey=secret-like-answer";
+        RecordingItems items = new RecordingItems(List.of(
+                new AgentItemModel("answer", "thread-1", "turn-answer", 1,
+                        AgentItemTypeEnum.WORKFLOW_ANSWER, secret, NOW),
+                new AgentItemModel("state", "thread-1", "turn-answer", 2,
+                        AgentItemTypeEnum.TURN_STATE, secret, NOW),
+                new AgentItemModel("recovery", "thread-1", "turn-answer", 3,
+                        AgentItemTypeEnum.EXECUTION_EVENT, secret, NOW),
+                new AgentItemModel("workflow-result", "thread-1", "turn-answer", 4,
+                        AgentItemTypeEnum.WORKFLOW_RESULT, "已拒绝退款", NOW)
+        ));
+        RecordingSnapshots snapshots = new RecordingSnapshots();
+        snapshots.saved.add(new AgentContextSnapshotModel(
+                "legacy-unsafe", "thread-1", 3, 1, 20, "apiKey=secret-like-answer", NOW));
+        AgentContextAssembler assembler = new AgentContextAssembler(
+                items, snapshots, Clock.fixed(NOW, ZoneOffset.UTC), 2_000, 1_500, 256, 128);
+
+        List<AgentItemModel> result = assembler.assemble(thread());
+
+        assertTrue(result.stream().noneMatch(item -> item.payload().contains(secret)));
+        assertEquals(List.of(AgentItemTypeEnum.WORKFLOW_RESULT),
+                result.stream().map(AgentItemModel::type).toList());
     }
 
     private AgentThreadModel thread() {

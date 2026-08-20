@@ -5,8 +5,8 @@ import cn.ethan.core.agent.workflow.AgentWorkflowQuestionFieldModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStatusEnum;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,12 +17,13 @@ import java.util.OptionalLong;
 
 /**
  * 类型职责：持久化 Workflow QuestionCard，并以乐观版本关闭开放问题。
+ * 该适配器需要保留可代理性，以承接 Spring 的异常翻译和事务边界。
  *
  * @author ethan
  * @date 2026-08-20
  */
 @Repository
-public final class MybatisAgentWorkflowQuestionStore implements AgentWorkflowQuestionStore {
+public class MybatisAgentWorkflowQuestionStore implements AgentWorkflowQuestionStore {
 
     private final AgentWorkflowQuestionMapper mapper;
     private final AgentThreadMapper threadMapper;
@@ -225,10 +226,10 @@ public final class MybatisAgentWorkflowQuestionStore implements AgentWorkflowQue
             for (JsonNode field : fields) {
                 java.util.ArrayList<String> options = new java.util.ArrayList<>();
                 if (field.path("options").isArray()) {
-                    field.path("options").forEach(option -> options.add(option.asText()));
+                    field.path("options").forEach(option -> options.add(option.asString("")));
                 }
                 result.add(new AgentWorkflowQuestionFieldModel(
-                        field.path("name").asText(),
+                        field.path("name").asString(""),
                         field.path("required").asBoolean(false),
                         field.path("maxLength").asInt(256),
                         options));

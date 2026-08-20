@@ -86,6 +86,37 @@ class AgentTurnRuntimeServiceTest {
         scheduler.shutdownNow();
     }
 
+    @Test
+    void persistsTimeoutWhenCoordinatorReportsDeadline() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "超时 Thread", null, null);
+        AgentContextAssembler context = new AgentContextAssembler(
+                persistence, persistence, clock, 2_000, 1_000, 256, 128);
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, persistence,
+                command -> { throw new UnsupportedOperationException("test does not answer a workflow"); },
+                (turn, status, code, finishedAt) -> false,
+                threads, context,
+                (current, turn, history, answer) -> {
+                    throw new AgentExecutionTimeoutException("模型流式调用超时");
+                },
+                new RecordingEvents(), executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256
+        );
+
+        AgentTurnModel turn = runtime.submitTurn("user-1", thread.threadId(), "timeout-request", "超时请求");
+        executor.runAll();
+
+        AgentTurnModel persisted = persistence.findTurnByRequest("user-1", turn.clientRequestId()).orElseThrow();
+        assertEquals(AgentTurnStatusEnum.TIMED_OUT, persisted.status());
+        assertEquals("TURN_TIMEOUT", persisted.errorCode());
+        scheduler.shutdownNow();
+    }
+
     private static final class ManualExecutor implements java.util.concurrent.Executor {
         private final List<Runnable> tasks = new ArrayList<>();
 

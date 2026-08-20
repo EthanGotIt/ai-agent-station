@@ -9,12 +9,13 @@ import java.util.Optional;
 
 /**
  * 类型职责：持久化 Thread 的版本化上下文摘要快照。
+ * 该适配器需要保留可代理性，以承接 Spring 的异常翻译和事务边界。
  *
  * @author ethan
  * @date 2026-08-20
  */
 @Repository
-public final class MybatisAgentContextSnapshotStore implements AgentContextSnapshotStore {
+public class MybatisAgentContextSnapshotStore implements AgentContextSnapshotStore {
 
     private final AgentContextSnapshotMapper mapper;
     private final AgentThreadMapper threadMapper;
