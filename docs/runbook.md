@@ -45,6 +45,6 @@ mvn clean '-DskipTests=false' test
 cd agent-console
 npm run typecheck
 npm test -- --run
-npm run test:e2e
+npm run test:component
 npm run build
 ```
