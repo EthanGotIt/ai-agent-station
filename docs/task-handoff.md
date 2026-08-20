@@ -30,7 +30,7 @@ updated: 2026-08-21
 
 - `python -m scripts.convention_check`：通过；`e83b9c9` 校准了当前 DeepSeek 供应商契约和 Spring Boot 4/Jackson 3 直接依赖规则，仍保留旧项目/旧版本标记等禁用文本检查。
 - `python -m unittest discover -s scripts/tests -p "test_*.py"`：4 个测试通过，新增规则回归测试覆盖当前供应商和 JSON 依赖边界。
-- `mvn clean '-DskipTests=false' test`：Core 42、Infrastructure 45、App 13，共 100 项测试通过；含流式 delta、模型调用失败、流式超时/取消、Turn 超时收敛、CAS、Workflow 和 Worker 测试。
+- `mvn clean '-DskipTests=false' test`：Core 42、Infrastructure 48、App 13，共 103 项测试通过；含流式 delta、模型调用失败、流式超时/取消、Turn 超时收敛、CAS、Workflow、Worker 和 Tool 边界测试。
 - `mvn -pl commerce-guardian-agent-app -am -DskipTests package`：应用可打包；启动探针实际加载 DeepSeek starter、Tomcat、Hikari 和 MyBatis。
 - `mvn dependency:analyze -DskipTests`：BUILD SUCCESS；Core、Infrastructure 和 App 均报告 `No dependency problems found`。
 - 专用 MySQL 实证：已确认 `127.0.0.1:3306`，创建并导入基线到 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821`；原 `COMMERCE_GUARDIAN_AGENT` 未重建。应用启动、Thread 创建、ACTIVE Turn 重启收敛为 `FAILED/RUNTIME_RESTARTED` 并生成 `TURN_STATE` 已验证；两路回答并发请求只有一路 202、另一路 409，数据库只产生一个回答 Turn，QuestionCard 版本单调推进并可失败对账释放。
@@ -74,9 +74,10 @@ updated: 2026-08-21
 - 本轮依赖契约追踪文档提交：`80f0870 docs: record dependency contract calibration`。
 - `d09ca23 fix: declare runtime direct dependencies`：按实际源码调用路径补齐 Core/Infrastructure/App 的 JSpecify、Jackson 3 core、Reactor、WebFlux、Reactor Netty 和 Netty transport 直接依赖；Maven dependency analyze warning 已清零，未增加新的模块方向。
 - 本轮直接依赖追踪文档提交：`9fa3ac7 docs: record direct dependency calibration`。
+- `131924a fix: correlate and validate tool calls`：Tool Call/Result Item 生成每次调用唯一 `invocationId` 并按 ID 记录耗时和失败结果；订单号、退款原因等 Tool 参数在网关/Workflow 之前做非空校验，补充同名调用、异常关联和 Workflow 边界测试。
 
 ## 下一步唯一动作
 
-审计 Context/Tool/DeepSeek 与 API/SQL 契约，逐项证明旧实现和兼容层是否可删除，并运行完整检查矩阵；DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
+审计 Context 的严格预算、摘要失败降级、最新历史读取和敏感信息隔离，再继续 DeepSeek 与 API/SQL 契约；逐项证明旧实现和兼容层是否可删除，并运行完整检查矩阵。DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。
