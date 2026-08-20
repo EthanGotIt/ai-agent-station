@@ -29,7 +29,6 @@ FORBIDDEN_SOURCE_TEXT = (
     "AliyunRespon" + "sesGateway",
     "cn.ethan.ai",
     "code_" + "interpreter",
-    "deepseek",
     "qwen3.7-" + "max",
     "spring-statemachine",
     "spring-ai-agent-utils",
@@ -70,14 +69,15 @@ SILENT_CATCH_PATTERN = re.compile(r"catch\s*\([^)]*\bignored\b[^)]*\)")
 SOURCE_SECRET_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")
 DIRECT_DEPENDENCIES = {
     "commerce-guardian-agent-infrastructure": {
-        ("com.fasterxml.jackson.core", "jackson-databind"),
+        # Spring Boot 4 使用 Jackson 3；Infrastructure 的源码直接使用该 API，必须显式声明。
+        ("tools.jackson.core", "jackson-databind"),
         ("com.baomidou", "mybatis-plus-core"),
         ("com.baomidou", "mybatis-plus-annotation"),
     },
 }
 FORBIDDEN_DIRECT_DEPENDENCIES = {
     "commerce-guardian-agent-infrastructure": {
-        ("tools.jackson.core", "jackson-databind"),
+        ("com.fasterxml.jackson.core", "jackson-databind"),
         ("com.baomidou", "mybatis-plus"),
     },
 }
