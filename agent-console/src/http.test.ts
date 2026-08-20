@@ -22,16 +22,16 @@ describe("readJsonResponse", () => {
   });
 
   it("uses the structured error message", async () => {
-    const response = new Response('{"code":"MEMORY_CONFLICT","message":"版本冲突"}', { status: 409 });
+    const response = new Response('{"code":"WORKFLOW_VERSION_CONFLICT","message":"版本冲突"}', { status: 409 });
 
     await expect(readJsonResponse(response)).rejects.toThrow("版本冲突");
   });
 
   it("preserves status and business code for conflict recovery", async () => {
-    const response = new Response('{"code":"AFTER_SALES_CASE_CONFLICT","message":"状态已变化"}', { status: 409 });
+    const response = new Response('{"code":"THREAD_AWAITING_ANSWER","message":"状态已变化"}', { status: 409 });
 
     await expect(readJsonResponse(response)).rejects.toMatchObject({
-      name: "HttpRequestError", kind: "http", status: 409, code: "AFTER_SALES_CASE_CONFLICT"
+      name: "HttpRequestError", kind: "http", status: 409, code: "THREAD_AWAITING_ANSWER"
     } satisfies Partial<HttpRequestError>);
   });
 

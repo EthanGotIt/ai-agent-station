@@ -26,7 +26,7 @@ export function App() {
       <main className="app-page">
         <header className="app-topbar">
           <div><span className="topbar-section">AGENT-FIRST WORKSPACE</span><strong>可恢复、可观测、可控的执行上下文</strong></div>
-          <details className="session-context">
+          <details className="thread-context">
             <summary><CircleUserRound aria-hidden="true" /><span>认证上下文</span><small>{normalizedUserId}</small></summary>
             <div className="context-fields">
               <label htmlFor="demo-user-id">用户标识

@@ -1,5 +1,5 @@
 {
-  "name": "commerce-guardian-agent-console",
+  "name": "agent-console",
   "private": true,
   "version": "0.1.0",
   "type": "module",

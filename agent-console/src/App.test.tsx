@@ -20,7 +20,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
 
     expect(await screen.findByRole("heading", { name: "从一次清晰的请求开始" })).not.toBeNull();
     expect(fetchMock.mock.calls.every(([input]) => String(input).startsWith("/api/agent/"))).toBe(true);
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1"))).toBe(false);
+    expect(fetchMock.mock.calls.every(([input]) => !String(input).includes("legacy"))).toBe(true);
   });
 
   it("显示服务端不可用错误，不生成本地伪回复", async () => {

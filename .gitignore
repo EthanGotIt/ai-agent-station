@@ -8,8 +8,8 @@ __pycache__/
 .kotlin
 
 ### React console ###
-/commerce-guardian-agent-console/node_modules/
-/commerce-guardian-agent-console/dist/
+/agent-console/node_modules/
+/agent-console/dist/
 *.tsbuildinfo
 
 ### IntelliJ IDEA ###
