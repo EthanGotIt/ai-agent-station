@@ -5,6 +5,8 @@ import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowEngine;
 import cn.ethan.core.commerce.order.OrderLookupResultModel;
+import cn.ethan.core.commerce.order.OrderSnapshotModel;
+import cn.ethan.core.commerce.order.OrderStatusEnum;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -12,6 +14,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -114,6 +117,28 @@ class SpringAiAgentToolBoundaryTest {
 
         assertFalse(engineCalled.get());
         assertEquals(2, invocation.traces().size());
+    }
+
+    @Test
+    void orderToolProjectsOnlyModelSafeFields() throws Exception {
+        SpringAiAgentTurnCoordinator.WorkflowInvocation invocation = invocation();
+        SpringAiAgentTurnCoordinator.ReadOnlyTools tools = new SpringAiAgentTurnCoordinator.ReadOnlyTools(
+                "user-1",
+                (orderId, userId) -> OrderLookupResultModel.found(new OrderSnapshotModel(
+                        orderId, "internal-user-1", OrderStatusEnum.PAID, 2, NOW, NOW.plusSeconds(60),
+                        NOW.plusSeconds(30), "IN_TRANSIT", new BigDecimal("19.90"), "CNY")),
+                (orderId, userId) -> List.of(),
+                invocation
+        );
+
+        String result = tools.lookupOrder("ORDER-1");
+
+        JsonNode safe = new ObjectMapper().readTree(result);
+        assertEquals("FOUND", safe.path("status").asString());
+        assertEquals("ORDER-1", safe.path("orderId").asString());
+        assertEquals("PAID", safe.path("orderStatus").asString());
+        assertFalse(result.contains("internal-user-1"));
+        assertFalse(invocation.traces().get(1).payload().contains("internal-user-1"));
     }
 
     private SpringAiAgentTurnCoordinator.WorkflowInvocation invocation() {

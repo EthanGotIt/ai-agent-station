@@ -12,7 +12,10 @@ import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemTypeEnum;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.commerce.order.LogisticsGateway;
+import cn.ethan.core.commerce.order.LogisticsEventModel;
 import cn.ethan.core.commerce.order.OrderGateway;
+import cn.ethan.core.commerce.order.OrderLookupResultModel;
+import cn.ethan.core.commerce.order.OrderSnapshotModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -210,6 +213,83 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         return value.trim();
     }
 
+    private static String renderOrderLookup(OrderLookupResultModel lookup) {
+        if (lookup == null) {
+            return "{\"status\":\"TEMPORARY_FAILURE\"}";
+        }
+        StringBuilder value = new StringBuilder("{\"status\":\"")
+                .append(escapeJson(lookup.status().name())).append('"');
+        if ("FOUND".equals(lookup.status().name()) && lookup.order() != null) {
+            OrderSnapshotModel order = lookup.order();
+            appendJsonString(value, "orderId", order.orderId());
+            appendJsonString(value, "orderStatus", order.status().name());
+            appendJsonNumber(value, "daysSinceDelivery", order.daysSinceDelivery());
+            appendJsonString(value, "createdAt", instant(order.createdAt()));
+            appendJsonString(value, "expectedDeliveryAt", instant(order.expectedDeliveryAt()));
+            appendJsonString(value, "lastLogisticsAt", instant(order.lastLogisticsAt()));
+            appendJsonString(value, "logisticsStatus", order.logisticsStatus());
+            appendJsonNumber(value, "paidAmount", order.paidAmount());
+            appendJsonString(value, "currency", order.currency());
+        }
+        return value.append('}').toString();
+    }
+
+    private static String renderLogistics(List<LogisticsEventModel> trace) {
+        StringBuilder value = new StringBuilder("{\"events\":[");
+        boolean first = true;
+        if (trace != null) {
+            for (LogisticsEventModel event : trace) {
+                if (event == null) {
+                    continue;
+                }
+                if (!first) {
+                    value.append(',');
+                }
+                value.append('{');
+                appendJsonString(value, "eventId", event.eventId());
+                appendJsonString(value, "orderId", event.orderId());
+                appendJsonString(value, "status", event.status());
+                appendJsonString(value, "location", event.location());
+                appendJsonString(value, "description", event.description());
+                appendJsonString(value, "occurredAt", instant(event.occurredAt()));
+                value.append('}');
+                first = false;
+            }
+        }
+        return value.append("]}").toString();
+    }
+
+    private static String instant(Instant value) {
+        return value == null ? null : value.toString();
+    }
+
+    private static void appendJsonString(StringBuilder target, String name, String value) {
+        if (value == null) {
+            return;
+        }
+        target.append(",\"").append(escapeJson(name)).append("\":\"")
+                .append(escapeJson(value)).append('"');
+    }
+
+    private static void appendJsonNumber(StringBuilder target, String name, Number value) {
+        if (value == null) {
+            return;
+        }
+        target.append(",\"").append(escapeJson(name)).append("\":").append(value);
+    }
+
+    private static String boundToolValue(String value) {
+        if (value == null || value.length() <= 2_000) {
+            return value == null ? "" : value;
+        }
+        return value.substring(0, 1_980) + "…[TOOL_RESULT_TRUNCATED]";
+    }
+
+    private static String escapeJson(String value) {
+        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\r", "\\r").replace("\n", "\\n");
+    }
+
     /**
      * 类型职责：向模型公开用户归属受控的只读查询工具。
      *
@@ -233,13 +313,13 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         @Tool(name = "lookup_order", description = "按订单号查询当前用户的订单快照，只读")
         public String lookupOrder(@ToolParam(description = "订单号") String orderId) {
             return invoke("lookup_order", Map.of("orderId", value(orderId)),
-                    () -> orders.findOrder(requiredArgument("orderId", orderId), userId).toString());
+                    () -> renderOrderLookup(orders.findOrder(requiredArgument("orderId", orderId), userId)));
         }
 
         @Tool(name = "logistics_trace", description = "查询当前用户订单的物流时间线，只读")
         public String logisticsTrace(@ToolParam(description = "订单号") String orderId) {
             return invoke("logistics_trace", Map.of("orderId", value(orderId)),
-                    () -> logistics.findTrace(requiredArgument("orderId", orderId), userId).toString());
+                    () -> renderLogistics(logistics.findTrace(requiredArgument("orderId", orderId), userId)));
         }
 
         private String invoke(String name, Map<String, String> arguments, ToolCall call) {
@@ -249,7 +329,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 String result = call.run();
                 invocation.checkActive();
                 invocation.recordResult(invocationId, name, "SUCCESS", result);
-                return result;
+                return boundToolValue(result);
             } catch (RuntimeException failure) {
                 invocation.recordResult(invocationId, name, "FAILED", failure.getClass().getSimpleName());
                 throw failure;
@@ -421,8 +501,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         }
 
         private static String escape(String value) {
-            return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"")
-                    .replace("\r", "\\r").replace("\n", "\\n");
+            return escapeJson(value);
         }
     }
 }
