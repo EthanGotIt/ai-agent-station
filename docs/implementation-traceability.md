@@ -27,7 +27,7 @@
 | Context、摘要和敏感信息隔离 | 部分实现 | 已有快照/窗口/截断测试和运行时组装器；完整历史倒序、摘要失败降级和敏感字段隔离缺少真实恢复证据 | P1 | 审计上下文窗口、摘要端口和真实历史读取 |
 | Spring AI / DeepSeek 请求契约 | 偏离目标 | POM 使用 OpenAI starter；`application.yml` 使用 DashScope/Qwen；Coordinator 使用非流式 `call()`，无明确 `max_tokens`、thinking 禁用和错误分类 | P1 | 切换专用 DeepSeek 配置与真实请求/取消/流式验证 |
 | Tool Calling 与 Workflow 边界 | 部分实现 | Coordinator 将只读工具与 Workflow 工具分离，写操作进入确定性 Workflow；调用关联仍以工具名为主，缺少稳定 invocationId 和真实模型证据 | P1 | 补调用关联、参数校验、错误分类和 live eval |
-| SSE 断线恢复、去重、有序合并 | 实现错误 | Controller 先订阅再回放，但 backlog 与 live 回调并行发送且没有每连接串行缓冲；存在重复/乱序竞态 | P0 | 设计 buffer → backlog → ordered flush → live 的单连接管线并补测试 |
+| SSE 断线恢复、去重、有序合并 | 部分实现 | `AgentThreadEventStream` 已实现单连接 buffer → backlog → ordered flush → live、`eventId + sequence` 去重和晚绑定清理，并有并发单元测试；Servlet 端到端断线和浏览器证据仍缺失 | P0 | 在真实浏览器流程中验证断线重连、游标恢复和前端合并 |
 | 前端线程切换与 QuestionCard | 实现错误 | `useThreadWorkspace` 没有请求 generation/AbortController 保护；旧事件未严格按当前 Thread 过滤；QuestionCard 默认提交 `CONFIRM`，后端只接受 `APPROVE/REJECT` | P0 | 先修复参数契约和切换竞态，再做真实浏览器流程 |
 | API、SQL、配置、文档一致性 | 部分实现 | API 路径和 Item envelope 基本对齐；DeepSeek 配置、SQL 来源 Turn 唯一约束、前端事件契约和 `.env.example` 仍不一致 | P1 | 随对应实现同步更新并运行规则检查 |
 | Runtime eval / acceptance / live eval | 缺少验证 | 当前 runtime eval 是确定性本地替身；前端 `test:e2e` 实际运行 Vitest；真实 acceptance/live 流程尚未取得运行证据 | P1 | 改为真实 Java runtime、真实浏览器、专用 MySQL 和凭据可用时的 DeepSeek 验证 |
@@ -35,7 +35,7 @@
 
 ## 当前里程碑边界
 
-本轮第一个里程碑只修改外部动作本地投影及其直接测试/文档：远程调用仍在事务外；命令 CAS 成功后，命令状态、WorkflowRun、Turn 和状态 Item 在同一个本地事务中更新；旧 Lease 或版本竞争失败时不产生任何投影；状态 Item 使用结构化 envelope。完成后运行对应 Maven 测试、只读审查、显式路径暂存并提交，再更新 handoff 的下一步唯一动作。
+本轮已完成两个独立里程碑：外部动作本地投影事务收口，以及 SSE 单连接回放/实时合并收口。两者均已运行直接测试、只读审查、显式路径暂存并提交；后续仍须通过真实 MySQL、Servlet/浏览器和端到端恢复验证补足证据。
 
 ## 外部验证边界
 
