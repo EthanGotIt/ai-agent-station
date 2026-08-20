@@ -10,7 +10,7 @@
 
 - `scripts.convention_check`：通过；`e83b9c9` 校准了当前 DeepSeek 供应商契约和 Spring Boot 4/Jackson 3 直接依赖规则，仍保留旧项目/旧版本标记等禁用文本检查。
 - `scripts/tests`：4 个测试通过，新增规则回归测试覆盖当前供应商和 JSON 依赖边界。
-- Maven clean test：103 个测试通过（core 42、infrastructure 48、app 13）。
+- Maven clean test：107 个测试通过（core 45、infrastructure 49、app 13）。
 - 前端 typecheck：通过；Vitest：17 个测试通过；生产构建：通过。
 - 以上本地测试已补充专用 MySQL 启动、重启恢复、并发回答 HTTP 和 ExternalAction Worker 状态矩阵实证；真实浏览器已补充 Thread/QuestionCard/重载恢复和 SSE 游标续传证据，真实 DeepSeek 仍尚未验证，不能据此宣称目标完成。
 - 当前工作树包含此前任务产生的功能代码和用户既有的 `.idea`、部署、Docker、Hook 等改动；本轮不得覆盖或混入后者。
@@ -25,9 +25,9 @@
 | 外部动作成功/失败/人工重试 | 已验证完成 | `ExternalActionOutcomeManager` 统一写入 `EXTERNAL_ACTION_STATUS`、`TURN_STATE`，命令/Workflow/Turn/Item 在本地事务内收敛；专用 MySQL 已验证成功、失败重试耗尽、投影冲突回滚、Lease 接管、结果表单行幂等、双 Worker CAS，以及人工重试不产生第二条结果 | P0 | 保留专用库证据，纳入最终完整矩阵 |
 | 外部动作人工重试状态收口 | 已验证完成 | `04a4c1c` 已验证 `MANUAL_RETRY_REQUIRED → WAITING_EXTERNAL_ACTION/COMPLETED`，真实 API 返回原 command/idempotencyKey；专用 MySQL 已验证耗尽后 API 重试、成功收敛、失败 Turn 不被重写、重复重试返回 409，结果表和幂等键各 1 行；`9dba42b` 修复结果类型映射 | P0 | 保留专用库证据，纳入最终完整矩阵 |
 | 类型化 Item 与统一序列日志 | 部分实现 | `AgentItemModel` 只有 envelope + 字符串 `data`；部分适配器使用 Jackson，部分代码手写 JSON/字符串；SSE/前端仍保留宽松 fallback | P1 | 在稳定动作事务后统一 codec、Item journal 和边界解码 |
-| Context、摘要和敏感信息隔离 | 部分实现 | 已有快照/窗口/截断测试和运行时组装器；完整历史倒序、摘要失败降级和敏感字段隔离缺少真实恢复证据 | P1 | 审计上下文窗口、摘要端口和真实历史读取 |
+| Context、摘要和敏感信息隔离 | 部分实现 | `401e856` 让 Context 通过最新窗口查询、当前请求预算和原始终态 Item 识别摘要边界；Core 7 项测试覆盖严格预算、最新窗口、摘要失败降级、快照安全前缀和内部 Item 隔离。`0ed8688` 让订单/物流 Tool 结果只投影模型安全业务字段并在返回前截断，Infrastructure Tool 边界 4 项通过；仍缺少真实 MySQL 长历史快照恢复、真实供应商上下文窗口和敏感数据运行时观测证据 | P1 | 用专用 MySQL 验证长历史倒序窗口、快照重启恢复和真实模型输入边界 |
 | Spring AI / DeepSeek 请求契约 | 部分实现 | 提交 `c5ca160` 已切换 `spring-ai-starter-model-deepseek`，配置固定 `deepseek-chat`、`max-tokens`、单次重试、连接/读取超时；Coordinator 使用 `stream().content()`，明确区分模型错误、取消和超时，并有 5 项流式协调测试；真实 DeepSeek 凭据/请求/Tool Calling 尚未验证 | P1 | 凭据可用时执行真实 DeepSeek Tool Calling、流式、取消、超时和敏感信息检查 |
-| Tool Calling 与 Workflow 边界 | 部分实现 | Coordinator 将只读工具与 Workflow 工具分离，写操作进入确定性 Workflow；`131924a` 为每次 Tool Call/Result 写入稳定的 `invocationId`，按调用 ID 记录耗时和失败结果，并在 Tool wrapper 边界拒绝空订单号/退款原因；3 项 Tool 边界测试和全量 Maven 103 项通过，但真实模型 Tool Calling、供应商错误分类和 live eval 尚未验证 | P1 | 凭据可用时验证真实 Tool Calling、参数契约、错误分类和 live eval |
+| Tool Calling 与 Workflow 边界 | 部分实现 | Coordinator 将只读工具与 Workflow 工具分离，写操作进入确定性 Workflow；`131924a` 为每次 Tool Call/Result 写入稳定的 `invocationId`，按调用 ID 记录耗时和失败结果，并在 Tool wrapper 边界拒绝空订单号/退款原因；`0ed8688` 删除订单 Record 的隐式 `toString()` 输出，采用字段白名单和返回前 2000 字符边界；4 项 Tool 边界测试和全量 Maven 107 项通过，但真实模型 Tool Calling、供应商错误分类和 live eval 尚未验证 | P1 | 凭据可用时验证真实 Tool Calling、参数契约、错误分类和 live eval |
 | SSE 断线恢复、去重、有序合并 | 已验证完成 | `AgentThreadEventStream` 已实现单连接 buffer → backlog → ordered flush → live、`eventId + sequence` 去重和晚绑定清理，并有并发单元测试；`cef1052` 让前端在 offline 时取消 reader、online 时从当前游标重连，并以无数据超时兜底；真实浏览器在 `afterSequence=13` 连接上切换 offline/online 后，实际恢复断线期间的 14–19 号 Item，网络记录出现两次 `events?afterSequence=13`，页面无重复且控制台无错误 | P0 | 保留专用 MySQL 与真实浏览器证据，纳入最终完整矩阵 |
 | 前端线程切换与 QuestionCard | 已验证完成 | `useThreadWorkspace` 已有 generation、历史 AbortController、旧事件 Thread 过滤和切换期间禁用；QuestionCard 已提交 `APPROVE/REJECT`，组件测试覆盖迟到历史和答案体；`91f2afb` 按结构化外部动作状态恢复 Turn 展示并接入人工重试；真实浏览器已验证创建、重命名、切换、QuestionCard 拒绝、失败 Turn、人工重试和重载恢复，重试后最终成功 Action Item 不会覆盖失败 Turn 事实终态 | P0 | 保留真实浏览器与 17 项前端测试证据，纳入最终完整矩阵 |
 | API、SQL、配置、文档一致性 | 部分实现 | API 路径、Item envelope、DeepSeek 配置和 `.env.example` 已在后端提交中对齐；真实浏览器已核对 items/events 请求、`afterSequence` 游标和 SSE `item.*` 事件；`e83b9c9` 使规则检查与 Jackson 3 依赖边界一致，`d09ca23` 按源码调用路径补齐直接依赖且 Maven dependency analyze 三模块无 warning；旧数据库因未执行基线会缺少新列，运行手册已明确只能在可丢弃库执行基线 | P1 | 核对 SQL 基线、配置文档、API DTO/SSE 契约并完成全契约矩阵 |
@@ -36,7 +36,7 @@
 
 ## 当前里程碑边界
 
-本轮已完成十个代码里程碑：外部动作本地投影事务收口（`3e5e4a0`）、SSE 单连接回放/实时合并收口（`c927ca0`）、Turn 版本 CAS 与终态保护（`0c836c1`）、QuestionCard/WorkflowRun 状态机收口（`04a4c1c`）、Runtime/DeepSeek/Boot 兼容与超时分类收口（`c5ca160`）、Workflow 回答失败重试投影与 Item ID 边界收口（`dd7a5c3`）、SSE 异步连接结束边界收口（`821733c`）、外部动作结果实体映射收口（`9dba42b`）、前端外部动作状态与人工重试契约收口（`91f2afb`）、前端 SSE 断线续传收口（`cef1052`）。另完成规则检查器与运行时依赖契约校准（`e83b9c9`）、直接依赖收口（`d09ca23`）和 Tool 调用关联/参数边界收口（`131924a`），并通过脚本规则检查、脚本测试、Maven dependency analyze 和 Maven 103 项测试；当前已完成专用 MySQL 启动、重启恢复、Thread→Turn→Item 并发/回滚、QuestionCard 并发/CAS/回滚、ExternalAction Lease/CAS/回滚/幂等/双 Worker/重试耗尽/人工重试实证，以及真实浏览器 QuestionCard/人工重试/重载恢复/人为断线续传实证；仍须完成 Context、真实 DeepSeek 以及剩余 P1 矩阵。
+本轮已完成外部动作本地投影事务收口（`3e5e4a0`）、SSE 单连接回放/实时合并收口（`c927ca0`）、Turn 版本 CAS 与终态保护（`0c836c1`）、QuestionCard/WorkflowRun 状态机收口（`04a4c1c`）、Runtime/DeepSeek/Boot 兼容与超时分类收口（`c5ca160`）、Workflow 回答失败重试投影与 Item ID 边界收口（`dd7a5c3`）、SSE 异步连接结束边界收口（`821733c`）、外部动作结果实体映射收口（`9dba42b`）、前端外部动作状态与人工重试契约收口（`91f2afb`）、前端 SSE 断线续传收口（`cef1052`）、规则检查器与运行时依赖契约校准（`e83b9c9`）、直接依赖收口（`d09ca23`）、Tool 调用关联/参数边界收口（`131924a`）、Context 最新历史/严格预算收口（`401e856`）和 Tool 结果字段隔离收口（`0ed8688`）。当前本地全量 Maven 为 107 项通过；已完成专用 MySQL 启动、重启恢复、Thread→Turn→Item 并发/回滚、QuestionCard 并发/CAS/回滚、ExternalAction Lease/CAS/回滚/幂等/双 Worker/重试耗尽/人工重试实证，以及真实浏览器 QuestionCard/人工重试/重载恢复/断线续传实证；仍须完成 Context 的真实长历史恢复、真实 DeepSeek 以及剩余 P1 矩阵。
 
 ## 外部验证边界
 

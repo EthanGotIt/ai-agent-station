@@ -14,7 +14,7 @@ updated: 2026-08-21
 - Turn 创建和首个 Item 在 MyBatis 适配器内以 Thread 行锁和同一事务写入；重复 `clientRequestId` 在入队锁内再次检查。
 - Item 统一为 `schemaVersion=1 + kind + data`，TURN_STATE、Tool 轨迹、Workflow 状态和外部动作状态均可游标恢复；新增 Turn 执行回放接口。
 - Workflow 启动/回答在本地事务写入 QuestionCard、开放问题指针、Workflow 状态和 Workflow Item；协调器在模型失败时也会落 Tool Call/Result 轨迹。
-- 上下文摘要继续最新快照的 `throughSequence`，当前 Turn 不重复注入，Tool Result 按配置截断并生成预算报告；增加确定性 `scripts.runtime_eval` 门禁。
+- 上下文摘要继续最新快照的 `throughSequence`，当前 Turn 不重复注入，Tool Result 按配置截断并生成预算报告；上下文读取已改为优先取最新窗口，预算计入当前请求，摘要只跨越已终态 Turn。
 - 启用 Java `-Xlint:all,-processing` + `-Werror`、TypeScript 未使用/分支完整性检查和低基数 Runtime 指标。
 - SSE 心跳已纳入 `ai-agent.runtime.heartbeat-interval` 配置；订单校验在事务外执行，持久化收口使用事务模板。
 - Convention Check 已移除重复的 AgentScope 死检查，并继续扫描前端 TS/TSX/CSS 的遗留命名。
@@ -30,7 +30,7 @@ updated: 2026-08-21
 
 - `python -m scripts.convention_check`：通过；`e83b9c9` 校准了当前 DeepSeek 供应商契约和 Spring Boot 4/Jackson 3 直接依赖规则，仍保留旧项目/旧版本标记等禁用文本检查。
 - `python -m unittest discover -s scripts/tests -p "test_*.py"`：4 个测试通过，新增规则回归测试覆盖当前供应商和 JSON 依赖边界。
-- `mvn clean '-DskipTests=false' test`：Core 42、Infrastructure 48、App 13，共 103 项测试通过；含流式 delta、模型调用失败、流式超时/取消、Turn 超时收敛、CAS、Workflow、Worker 和 Tool 边界测试。
+- `mvn clean '-DskipTests=false' test`：Core 45、Infrastructure 49、App 13，共 107 项测试通过；含上下文最新窗口、严格预算、摘要失败降级、Tool 敏感字段投影、流式 delta、模型调用失败、流式超时/取消、Turn 超时收敛、CAS、Workflow 和 Worker 测试。
 - `mvn -pl commerce-guardian-agent-app -am -DskipTests package`：应用可打包；启动探针实际加载 DeepSeek starter、Tomcat、Hikari 和 MyBatis。
 - `mvn dependency:analyze -DskipTests`：BUILD SUCCESS；Core、Infrastructure 和 App 均报告 `No dependency problems found`。
 - 专用 MySQL 实证：已确认 `127.0.0.1:3306`，创建并导入基线到 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821`；原 `COMMERCE_GUARDIAN_AGENT` 未重建。应用启动、Thread 创建、ACTIVE Turn 重启收敛为 `FAILED/RUNTIME_RESTARTED` 并生成 `TURN_STATE` 已验证；两路回答并发请求只有一路 202、另一路 409，数据库只产生一个回答 Turn，QuestionCard 版本单调推进并可失败对账释放。
@@ -76,9 +76,11 @@ updated: 2026-08-21
 - 本轮直接依赖追踪文档提交：`9fa3ac7 docs: record direct dependency calibration`。
 - `131924a fix: correlate and validate tool calls`：Tool Call/Result Item 生成每次调用唯一 `invocationId` 并按 ID 记录耗时和失败结果；订单号、退款原因等 Tool 参数在网关/Workflow 之前做非空校验，补充同名调用、异常关联和 Workflow 边界测试。
 - 本轮 Tool 边界追踪文档提交：`8a2b1cd docs: record tool boundary calibration`。
+- `401e856 fix: enforce context history and budget boundaries`：上下文使用最新 Item 窗口而非正序首页，预算报告计入当前请求，摘要边界基于原始终态 Item，摘要失败继续安全降级；新增严格预算、最新窗口和摘要失败回归测试。
+- `0ed8688 fix: project bounded model-safe tool results`：订单 Tool 改为受控业务字段投影，移除内部 `userId` 等所有权字段；物流和订单结果在返回模型前统一截断，避免原始 Record 文本直接进入模型和 Item 轨迹；新增敏感字段隔离测试。
 
 ## 下一步唯一动作
 
-审计 Context 的严格预算、摘要失败降级、最新历史读取和敏感信息隔离，再继续 DeepSeek 与 API/SQL 契约；逐项证明旧实现和兼容层是否可删除，并运行完整检查矩阵。DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
+审计 DeepSeek 请求/响应契约、API DTO/SSE、SQL 基线和配置一致性，检查历史兼容层与旧实现的真实调用路径；随后补齐可执行的 P1 验证。DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。
