@@ -71,6 +71,7 @@ updated: 2026-08-21
 - 本轮数据库一致性校准未修改生产代码；真实 MySQL 证据已覆盖 Thread 行锁下的并发 Turn、Item Sequence 唯一性、本地事务回滚、QuestionCard reserve/enqueue/close 的 CAS 竞争和回答入队事务回滚。故障触发器只存在于 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821`，探针结束后已删除。
 - 本轮证据文档提交：`c3f67ce docs: record mysql consistency calibration`。
 - `e83b9c9 fix: align convention checks with runtime dependencies`：移除与当前 DeepSeek 产品契约冲突的禁止文本项，纠正 Spring Boot 4 使用的 Jackson 3 直接依赖白名单和旧 Jackson 2 禁止项；新增检查器回归测试，未修改用户已有的 AgentScope 规则删除改动。
+- 本轮依赖契约追踪文档提交：`80f0870 docs: record dependency contract calibration`。
 
 ## 下一步唯一动作
 
