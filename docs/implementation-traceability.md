@@ -21,8 +21,9 @@
 | --- | --- | --- | --- | --- |
 | 外部动作命令的 Lease、版本、重试与幂等 | 部分实现 | `ExternalActionCommandModel`、`MybatisExternalActionCommandStore` 已有版本/CAS、Lease、总尝试和重试周期；`ExternalActionOutcomeManager` 在命令 CAS 成功后于同一本地事务投影 WorkflowRun、Turn 和结构化 Item；真实 MySQL 锁/事务/重启仍未验证 | P0 | 用专用 MySQL 验证锁、事务回滚、Lease 接管和远程成功后的重跑 |
 | Thread → Turn → Item 事实一致性与恢复 | 部分实现 | MyBatis 创建 Turn 与首个 Item 已在 Thread 锁事务内；`AgentTurnModel.version` 与 `AGENT_TURN.VERSION_NO` 形成单调 CAS，运行时在竞争失败时停止后续 Item/SSE，终态不可重写；Core 19 项、Infrastructure 15 项直接测试通过，真实 MySQL 锁/CAS/重启仍未验证 | P0 | 用专用 MySQL 验证并发更新、事务失败和应用重启后的事实恢复 |
-| QuestionCard / Checkpoint / WorkflowRun 状态机 | 部分实现 | Question admission 已有保留、入队、关闭和重复回答控制；Workflow engine 有本地事务；SQL 缺少“同一来源 Turn 唯一 WorkflowRun”约束，取消/超时恢复仍需验证 | P0 | 完成动作事务后补来源 Turn、释放保留和恢复测试 |
+| QuestionCard / Checkpoint / WorkflowRun 状态机 | 部分实现 | Question admission 已有 `reserve → enqueue → close/release` 的版本 CAS、事务回滚、回答 Turn 幂等和重启对账；reserve 会锁定并核对 Thread 开放指针，CAS 竞争后使用数据库当前读返回并发重复请求的赢家；WorkflowRun 只允许显式状态转换、不可变终态和版本推进；SQL 已增加同一用户/来源 Turn/Workflow 类型唯一约束；Core 状态测试 4 项、Infrastructure Question 10 项、Answer admission 6 项、Engine 1 项、WorkflowRun Store 2 项通过，真实 MySQL 锁/重启仍未验证 | P0 | 安全确认专用 MySQL 后验证锁、CAS、事务回滚和重启恢复 |
 | 外部动作成功/失败/人工重试 | 部分实现 | `ExternalActionOutcomeManager` 统一写入 `EXTERNAL_ACTION_STATUS`、`TURN_STATE`，命令/Workflow/Turn/Item 在本地事务内收敛；Worker 已区分远程异常、本地事务失败和提交后事件发布失败；真实远程幂等与数据库恢复仍未验证 | P0 | 补专用 MySQL 和真实外部动作执行器验证，确认重试耗尽与人工重试不产生第二次副作用 |
+| 外部动作人工重试状态收口 | 部分实现 | `04a4c1c` 已验证 `MANUAL_RETRY_REQUIRED → WAITING_EXTERNAL_ACTION/COMPLETED`，人工重试成功不重写已失败 Turn；真实远程幂等与数据库恢复仍未验证 | P0 | 与专用 MySQL 和真实外部动作执行器一起验证重试耗尽和恢复 |
 | 类型化 Item 与统一序列日志 | 部分实现 | `AgentItemModel` 只有 envelope + 字符串 `data`；部分适配器使用 Jackson，部分代码手写 JSON/字符串；SSE/前端仍保留宽松 fallback | P1 | 在稳定动作事务后统一 codec、Item journal 和边界解码 |
 | Context、摘要和敏感信息隔离 | 部分实现 | 已有快照/窗口/截断测试和运行时组装器；完整历史倒序、摘要失败降级和敏感字段隔离缺少真实恢复证据 | P1 | 审计上下文窗口、摘要端口和真实历史读取 |
 | Spring AI / DeepSeek 请求契约 | 偏离目标 | POM 使用 OpenAI starter；`application.yml` 使用 DashScope/Qwen；Coordinator 使用非流式 `call()`，无明确 `max_tokens`、thinking 禁用和错误分类 | P1 | 切换专用 DeepSeek 配置与真实请求/取消/流式验证 |
@@ -35,7 +36,7 @@
 
 ## 当前里程碑边界
 
-本轮已完成三个独立里程碑：外部动作本地投影事务收口（`3e5e4a0`）、SSE 单连接回放/实时合并收口（`c927ca0`）、Turn 版本 CAS 与终态保护（`0c836c1`）。Turn 里程碑的 Core 19 项和 Infrastructure 15 项直接测试通过，并完成 staged diff 检查；后续仍须通过真实 MySQL、Servlet/浏览器和端到端恢复验证补足证据。
+本轮已完成四个独立里程碑：外部动作本地投影事务收口（`3e5e4a0`）、SSE 单连接回放/实时合并收口（`c927ca0`）、Turn 版本 CAS 与终态保护（`0c836c1`）、QuestionCard/WorkflowRun 状态机收口（`04a4c1c`）。状态机里程碑覆盖并发重复回答、Question 开放指针、事务回滚、重启对账、WorkflowRun 终态和人工重试，Core 状态测试 4 项、Infrastructure 24 项相关测试通过，并完成 staged diff 检查；后续仍须通过真实 MySQL、Servlet/浏览器和端到端恢复验证补足证据。
 
 ## 外部验证边界
 
