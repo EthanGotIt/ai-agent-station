@@ -25,17 +25,19 @@ updated: 2026-08-21
 - 提交 `9dba42b fix: preserve external action result type`：修复 MyBatis 外部动作结果实体将 `ACTION_TYPE` 映射到 `type` 导致幂等重放读取为空的问题，统一使用 `actionType` 并补回归测试。
 - 提交 `91f2afb fix: align console external action states`：前端按结构化外部动作状态恢复 Turn 展示，保留失败 Turn 的事实终态，接入人工重试 API，并移除不符合当前 SSE 契约的旧结构化事件兼容层。
 - 提交 `cef1052 fix: reconnect console SSE after network loss`：网络离线时主动取消 SSE reader，恢复在线后按当前 Item 游标重连；增加 reader 无数据超时兜底，并补组件级重连测试。
+- 提交 `d6d22ab fix: align agent input identity boundaries`：普通 Turn 消息、Thread 身份、标题和业务上下文在 Core、HTTP DTO、认证 Header 与 SQL 之间统一边界；客户端请求 ID 统一去空格，避免重试时因表现形式不同绕过幂等查询。
+- 提交 `871a155 chore: remove misleading frontend e2e alias`：将实际运行 Vitest Mock 组件测试的旧 `test:e2e` 命名改为 `test:component`，避免把组件替身误报为真实浏览器验收。
 
 ## 最近验证
 
 - `python -m scripts.convention_check`：通过；`e83b9c9` 校准了当前 DeepSeek 供应商契约和 Spring Boot 4/Jackson 3 直接依赖规则，仍保留旧项目/旧版本标记等禁用文本检查。
 - `python -m unittest discover -s scripts/tests -p "test_*.py"`：4 个测试通过，新增规则回归测试覆盖当前供应商和 JSON 依赖边界。
-- `mvn clean '-DskipTests=false' test`：Core 45、Infrastructure 49、App 13，共 107 项测试通过；含上下文最新窗口、严格预算、摘要失败降级、Tool 敏感字段投影、流式 delta、模型调用失败、流式超时/取消、Turn 超时收敛、CAS、Workflow 和 Worker 测试。
+- `mvn clean '-DskipTests=false' test`：当前基线 Core 48、Infrastructure 49、App 15，共 112 项测试通过；含上下文最新窗口、严格预算、摘要失败降级、Tool 敏感字段投影、流式 delta、模型调用失败、流式超时/取消、Turn 超时收敛、CAS、Workflow、Worker 和输入身份边界测试。
 - `mvn -pl commerce-guardian-agent-app -am -DskipTests package`：应用可打包；启动探针实际加载 DeepSeek starter、Tomcat、Hikari 和 MyBatis。
 - `mvn dependency:analyze -DskipTests`：BUILD SUCCESS；Core、Infrastructure 和 App 均报告 `No dependency problems found`。
 - 专用 MySQL 实证：已确认 `127.0.0.1:3306`，创建并导入基线到 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821`；原 `COMMERCE_GUARDIAN_AGENT` 未重建。应用启动、Thread 创建、ACTIVE Turn 重启收敛为 `FAILED/RUNTIME_RESTARTED` 并生成 `TURN_STATE` 已验证；两路回答并发请求只有一路 202、另一路 409，数据库只产生一个回答 Turn，QuestionCard 版本单调推进并可失败对账释放。
 - 当前未发现可用的 DeepSeek 凭据；探针使用假值且将模型端点指向本机不可达地址，仅验证启动和错误收敛，未发送真实用户数据，也不能替代真实 DeepSeek Tool Calling/流式/取消验证。
-- `agent-console/npm run typecheck`、`npm test -- --run`（17 项）、`npm run test:e2e`、`npm run build`：通过；新增人工重试按钮/API、外部动作终态映射和 SSE 重连测试。
+- `agent-console/npm run typecheck`、`npm test -- --run`（17 项）、`npm run test:component`（7 项）、`npm run build`：通过；新增人工重试按钮/API、外部动作终态映射和 SSE 重连测试。`test:component` 明确使用 Mock，不作为真实浏览器证据。
 - `python -m scripts.runtime_eval`：通过 5 项确定性 Runtime 检查。
 - Workflow 订单/物流校验已移到本地事务外；Question、WorkflowRun、ExternalActionCommand 和 Workflow Item 的写入由事务模板统一收口。
 - Playwright 真实浏览器已连接专用校准库：验证 Thread 创建、重命名、切换、历史 Item 恢复、QuestionCard 拒绝、执行时间线和页面重载后的结果恢复；另验证了本机不可达模型端点的可见失败 Turn。浏览器重载/关闭暴露的 SSE 异步连接异常已由 `821733c` 收口；真实 DeepSeek 仍未验证。
@@ -78,9 +80,11 @@ updated: 2026-08-21
 - 本轮 Tool 边界追踪文档提交：`8a2b1cd docs: record tool boundary calibration`。
 - `401e856 fix: enforce context history and budget boundaries`：上下文使用最新 Item 窗口而非正序首页，预算报告计入当前请求，摘要边界基于原始终态 Item，摘要失败继续安全降级；新增严格预算、最新窗口和摘要失败回归测试。
 - `0ed8688 fix: project bounded model-safe tool results`：订单 Tool 改为受控业务字段投影，移除内部 `userId` 等所有权字段；物流和订单结果在返回模型前统一截断，避免原始 Record 文本直接进入模型和 Item 轨迹；新增敏感字段隔离测试。
+- `d6d22ab fix: align agent input identity boundaries`：将 `AgentThreadModel` 的 Thread/User/标题/上下文边界作为 Core 不变量，HTTP DTO 复用同一常量；普通消息 DTO 与 Runtime 同为 256 字符，用户身份与 SQL `USER_ID VARCHAR(128)` 对齐，Workflow 回答仍使用 10000 字符存储列承载结构化输入；新增边界、规范化和 Header 测试。
+- `871a155 chore: remove misleading frontend e2e alias`：删除将 Vitest 组件替身称为 E2E 的脚本命名，运行手册改为 `test:component`。
 
 ## 下一步唯一动作
 
-审计 DeepSeek 请求/响应契约、API DTO/SSE、SQL 基线和配置一致性，检查历史兼容层与旧实现的真实调用路径；随后补齐可执行的 P1 验证。DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
+使用已确认的专用 MySQL 校准库执行真实长历史 Context/快照恢复探针，并记录最新窗口、快照续接和敏感字段隔离证据；随后运行真实 HTTP acceptance。DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。
