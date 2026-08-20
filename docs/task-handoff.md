@@ -69,6 +69,7 @@ updated: 2026-08-21
 - `91f2afb` 直接证据：前端 typecheck、16 项 Vitest 和生产 build 通过；真实浏览器人工重试后刷新仍保持失败 Turn 与最终成功外部动作 Item，证明状态映射没有把后续动作结果倒写成新的 Turn 终态。
 - `cef1052` 直接证据：前端 typecheck、17 项 Vitest 和生产 build 通过；真实浏览器 offline/online 后从 `afterSequence=13` 重新建立 SSE，恢复断线期间的 14–19 号 Item 且保持有序去重。
 - 本轮数据库一致性校准未修改生产代码；真实 MySQL 证据已覆盖 Thread 行锁下的并发 Turn、Item Sequence 唯一性、本地事务回滚、QuestionCard reserve/enqueue/close 的 CAS 竞争和回答入队事务回滚。故障触发器只存在于 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821`，探针结束后已删除。
+- 本轮证据文档提交：`c3f67ce docs: record mysql consistency calibration`。
 
 ## 下一步唯一动作
 
