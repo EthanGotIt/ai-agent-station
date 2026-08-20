@@ -1,7 +1,7 @@
-package cn.ethan.infrastructure.order.gateway;
+package cn.ethan.infrastructure.commerce.order.http;
 
-import cn.ethan.core.order.enums.OrderLookupStatusEnum;
-import cn.ethan.core.order.model.OrderLookupResultModel;
+import cn.ethan.core.commerce.order.OrderLookupResultModel;
+import cn.ethan.core.commerce.order.OrderLookupStatusEnum;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;

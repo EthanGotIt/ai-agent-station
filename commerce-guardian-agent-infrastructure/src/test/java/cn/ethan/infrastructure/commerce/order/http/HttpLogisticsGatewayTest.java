@@ -1,4 +1,4 @@
-package cn.ethan.infrastructure.order.gateway;
+package cn.ethan.infrastructure.commerce.order.http;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
