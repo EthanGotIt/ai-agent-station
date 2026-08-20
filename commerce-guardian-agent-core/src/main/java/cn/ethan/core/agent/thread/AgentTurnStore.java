@@ -15,6 +15,17 @@ public interface AgentTurnStore {
 
     Optional<AgentTurnModel> findTurnByRequest(String userId, String clientRequestId);
 
+    /**
+     * 在回答 admission 的 CAS 竞争后读取最新的请求幂等事实；数据库适配器应使用当前读。
+     *
+     * @param userId 用户标识
+     * @param clientRequestId 客户端请求幂等标识
+     * @return 已存在的 Turn，或空
+     */
+    default Optional<AgentTurnModel> findTurnByRequestForUpdate(String userId, String clientRequestId) {
+        return findTurnByRequest(userId, clientRequestId);
+    }
+
     void createTurn(AgentTurnModel turn);
 
     /**

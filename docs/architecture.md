@@ -95,4 +95,4 @@ SSE 事件包含完整 envelope：`eventId、threadId、turnId、itemId（可选
 
 ## 数据库
 
-`docs/dev-ops/mysql/commerce-guardian-agent.sql` 是唯一破坏性基线，包含演示订单/物流和 `AGENT_THREAD`、`AGENT_TURN`、`AGENT_ITEM`、`AGENT_CONTEXT_SNAPSHOT`、`AGENT_WORKFLOW_RUN`、`AGENT_WORKFLOW_QUESTION`、`EXTERNAL_ACTION_COMMAND`、`EXTERNAL_ACTION_RESULT`。没有运行时建表，也没有增量升级脚本。
+`docs/dev-ops/mysql/commerce-guardian-agent.sql` 是唯一破坏性基线，包含演示订单/物流和 `AGENT_THREAD`、`AGENT_TURN`、`AGENT_ITEM`、`AGENT_CONTEXT_SNAPSHOT`、`AGENT_WORKFLOW_RUN`、`AGENT_WORKFLOW_QUESTION`、`EXTERNAL_ACTION_COMMAND`、`EXTERNAL_ACTION_RESULT`。同一用户的同一来源 Turn 和 Workflow 类型只能有一个 WorkflowRun；没有运行时建表，也没有增量升级脚本。

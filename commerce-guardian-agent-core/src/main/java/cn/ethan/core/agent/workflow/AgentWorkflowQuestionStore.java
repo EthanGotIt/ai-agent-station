@@ -1,5 +1,7 @@
 package cn.ethan.core.agent.workflow;
 
+import java.time.Instant;
+import java.util.OptionalLong;
 import java.util.Optional;
 
 /**
@@ -16,5 +18,18 @@ public interface AgentWorkflowQuestionStore {
 
     void saveQuestion(AgentWorkflowQuestionModel question);
 
-    void answerQuestion(AgentWorkflowQuestionModel question);
+    /**
+     * 按 questionId + expectedVersion 预留唯一回答 Turn；失败表示版本已推进或已有回答在处理。
+     */
+    OptionalLong reserveAnswerTurn(String userId, String questionId, long expectedVersion, String answerTurnId);
+
+    /** 标记同一预留回答 Turn 已写入 FIFO。 */
+    OptionalLong markAnswerTurnEnqueued(String userId, String questionId, long expectedVersion, String answerTurnId);
+
+    /** 取消或超时释放同一回答 Turn，并以版本推进阻断旧回答。 */
+    boolean releaseAnswerTurn(String userId, String questionId, long expectedVersion, String answerTurnId);
+
+    /** 仅允许已入队的同一回答 Turn 关闭 QuestionCard。 */
+    boolean closeAnswerTurn(String userId, String questionId, long expectedVersion,
+                            String answerTurnId, Instant answeredAt);
 }

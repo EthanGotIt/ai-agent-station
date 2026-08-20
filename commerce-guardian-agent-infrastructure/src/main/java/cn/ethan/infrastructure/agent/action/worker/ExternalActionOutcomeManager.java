@@ -120,7 +120,7 @@ public final class ExternalActionOutcomeManager {
                 .orElseThrow(() -> new IllegalStateException("外部动作对应的 WorkflowRun 不存在：" + next.runId()));
         AgentWorkflowStatusEnum targetWorkflowStatus = workflowStatus(next.status());
         if (run.status() != targetWorkflowStatus) {
-            if (isTerminal(run.status())) {
+            if (isImmutableTerminal(run.status())) {
                 throw new IllegalStateException("WorkflowRun 已处于冲突终态：" + run.runId());
             }
             workflowRuns.update(run.status(targetWorkflowStatus, now));
@@ -220,11 +220,10 @@ public final class ExternalActionOutcomeManager {
         };
     }
 
-    private static boolean isTerminal(AgentWorkflowStatusEnum status) {
+    private static boolean isImmutableTerminal(AgentWorkflowStatusEnum status) {
         return status == AgentWorkflowStatusEnum.COMPLETED
                 || status == AgentWorkflowStatusEnum.REJECTED
-                || status == AgentWorkflowStatusEnum.FAILED
-                || status == AgentWorkflowStatusEnum.MANUAL_RETRY_REQUIRED;
+                || status == AgentWorkflowStatusEnum.FAILED;
     }
 
     private static boolean isTerminal(AgentTurnStatusEnum status) {

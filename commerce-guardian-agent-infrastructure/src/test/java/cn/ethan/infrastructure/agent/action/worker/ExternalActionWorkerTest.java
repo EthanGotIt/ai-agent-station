@@ -120,6 +120,38 @@ class ExternalActionWorkerTest {
     }
 
     @Test
+    void manualRetryReopensWorkflowRunWithoutRewritingFailedTurn() {
+        ExternalActionCommandModel claimed = claimed();
+        AcceptingCommandStore commands = new AcceptingCommandStore(claimed);
+        CountingItemStore items = new CountingItemStore();
+        CountingTurnStore turns = new CountingTurnStore(new AgentTurnModel(
+                "turn-1", "thread-1", "user-1", "request-1", "refund",
+                cn.ethan.core.agent.thread.AgentTurnStatusEnum.FAILED, 0,
+                "run-1", "EXTERNAL_ACTION_FAILED", NOW.minusSeconds(10), NOW.minusSeconds(5), NOW));
+        CountingWorkflowRunStore workflowRuns = new CountingWorkflowRunStore(new AgentWorkflowRunModel(
+                "run-1", "thread-1", "turn-1", "user-1", AgentWorkflowTypeEnum.REFUND,
+                AgentWorkflowStatusEnum.MANUAL_RETRY_REQUIRED, 1, NOW.minusSeconds(10), NOW.minusSeconds(1)));
+        AtomicInteger eventCount = new AtomicInteger();
+        ExternalActionWorker worker = new ExternalActionWorker(
+                commands, command -> new ExternalActionExecutor.ExternalActionResult(
+                        true, false, "ORDER_REFUNDED", "人工重试成功"), items,
+                turns, event -> eventCount.incrementAndGet(), Clock.fixed(NOW, ZoneOffset.UTC), workflowRuns,
+                Duration.ofSeconds(30), Duration.ofSeconds(5), Duration.ofSeconds(5), AgentRuntimeMetrics.noop());
+
+        try {
+            assertEquals(1, worker.runOnce(1, Duration.ofSeconds(30)));
+        } finally {
+            worker.destroy();
+        }
+
+        assertEquals(ExternalActionStatusEnum.SUCCEEDED, commands.next.status());
+        assertEquals(AgentWorkflowStatusEnum.COMPLETED, workflowRuns.updated.status());
+        assertEquals(0, turns.updateCount.get());
+        assertEquals(1, items.appended.size());
+        assertEquals(1, eventCount.get());
+    }
+
+    @Test
     void localProjectionFailureRollsBackCommandAndWorkflowState() {
         ExternalActionCommandModel claimed = claimed();
         AcceptingCommandStore commands = new AcceptingCommandStore(claimed);

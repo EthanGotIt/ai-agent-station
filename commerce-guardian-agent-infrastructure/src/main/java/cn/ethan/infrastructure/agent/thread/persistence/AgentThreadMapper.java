@@ -3,7 +3,9 @@ package cn.ethan.infrastructure.agent.thread.persistence;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -17,6 +19,14 @@ public interface AgentThreadMapper extends BaseMapper<AgentThreadEntity> {
 
     @Select("SELECT * FROM AGENT_THREAD WHERE THREAD_ID = #{threadId} FOR UPDATE")
     AgentThreadEntity selectForUpdate(String threadId);
+
+    @Update("UPDATE AGENT_THREAD SET OPEN_QUESTION_ID = #{questionId}, UPDATED_AT = #{updatedAt} "
+            + "WHERE THREAD_ID = #{threadId} AND USER_ID = #{userId} AND OPEN_QUESTION_ID IS NULL")
+    int setOpenQuestion(String threadId, String userId, String questionId, Instant updatedAt);
+
+    @Update("UPDATE AGENT_THREAD SET OPEN_QUESTION_ID = NULL, UPDATED_AT = #{updatedAt} "
+            + "WHERE THREAD_ID = #{threadId} AND USER_ID = #{userId} AND OPEN_QUESTION_ID = #{questionId}")
+    int clearOpenQuestion(String threadId, String userId, String questionId, Instant updatedAt);
 
     @Select("SELECT * FROM AGENT_THREAD WHERE USER_ID = #{userId} ORDER BY UPDATED_AT DESC")
     List<AgentThreadEntity> selectByUser(String userId);

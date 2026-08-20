@@ -96,6 +96,27 @@ class TransactionalAgentWorkflowAnswerAdmissionTest {
     }
 
     @Test
+    void concurrentDuplicateRequestReadsWinnerAfterQuestionCasConflict() {
+        Fixture winner = new Fixture();
+        AgentWorkflowAnswerAdmissionResult admitted = winner.admission.admit(
+                command(Map.of("decision", "APPROVE")));
+
+        Fixture raced = new Fixture();
+        raced.questions.failReserve = true;
+        raced.turns.hideInitialRequest = true;
+        raced.turns.lockedDuplicate = admitted.turn();
+
+        AgentWorkflowAnswerAdmissionResult duplicate = raced.admission.admit(
+                command(Map.of("decision", "APPROVE")));
+
+        assertFalse(duplicate.newlyAdmitted());
+        assertEquals(admitted.turn().turnId(), duplicate.turn().turnId());
+        assertEquals(List.of("turn.find", "question.find", "question.reserve", "turn.find.lock"),
+                raced.calls);
+        assertEquals(0, raced.questions.markCalls);
+    }
+
+    @Test
     void markFailureRollsBackTransactionAfterAtomicTurnWrite() {
         Fixture fixture = new Fixture();
         fixture.questions.failMark = true;
@@ -168,6 +189,7 @@ class TransactionalAgentWorkflowAnswerAdmissionTest {
                                 "decision", true, 32, List.of("APPROVE", "REJECT")),
                         new AgentWorkflowQuestionFieldModel("note", false, 128, List.of())));
         private boolean failMark;
+        private boolean failReserve;
         private int reserveCalls;
         private int markCalls;
 
@@ -197,7 +219,7 @@ class TransactionalAgentWorkflowAnswerAdmissionTest {
         ) {
             calls.add("question.reserve");
             reserveCalls++;
-            if (question.version() != expectedVersion
+            if (failReserve || question.version() != expectedVersion
                     || question.answerEnqueueStatus()
                     != AgentWorkflowQuestionStatusEnum.AnswerEnqueueStatusEnum.AVAILABLE) {
                 return OptionalLong.empty();
@@ -240,6 +262,8 @@ class TransactionalAgentWorkflowAnswerAdmissionTest {
         private AgentTurnModel turn;
         private AgentItemModel initialItem;
         private long nextSequence = 11L;
+        private boolean hideInitialRequest;
+        private AgentTurnModel lockedDuplicate;
 
         private TurnStore(List<String> calls) {
             this.calls = calls;
@@ -253,8 +277,17 @@ class TransactionalAgentWorkflowAnswerAdmissionTest {
         @Override
         public Optional<AgentTurnModel> findTurnByRequest(String userId, String clientRequestId) {
             calls.add("turn.find");
+            if (hideInitialRequest) {
+                return Optional.empty();
+            }
             return Optional.ofNullable(turn)
                     .filter(value -> value.clientRequestId().equals(clientRequestId));
+        }
+
+        @Override
+        public Optional<AgentTurnModel> findTurnByRequestForUpdate(String userId, String clientRequestId) {
+            calls.add("turn.find.lock");
+            return Optional.ofNullable(lockedDuplicate);
         }
 
         @Override

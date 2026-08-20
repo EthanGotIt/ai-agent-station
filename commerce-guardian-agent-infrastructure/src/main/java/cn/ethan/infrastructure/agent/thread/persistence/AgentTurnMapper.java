@@ -18,9 +18,20 @@ public interface AgentTurnMapper extends BaseMapper<AgentTurnEntity> {
     @Select("SELECT * FROM AGENT_TURN WHERE USER_ID = #{userId} AND CLIENT_REQUEST_ID = #{clientRequestId}")
     AgentTurnEntity selectByRequest(String userId, String clientRequestId);
 
-    @Select("SELECT * FROM AGENT_TURN WHERE USER_ID = #{userId} AND THREAD_ID = #{threadId} ORDER BY CREATED_AT")
-    List<AgentTurnEntity> selectByThread(String userId, String threadId);
+    @Select("SELECT * FROM AGENT_TURN WHERE USER_ID = #{userId} AND CLIENT_REQUEST_ID = #{clientRequestId} FOR UPDATE")
+    AgentTurnEntity selectByRequestForUpdate(String userId, String clientRequestId);
 
     @Select("SELECT * FROM AGENT_TURN WHERE STATUS IN ('QUEUED', 'ACTIVE') ORDER BY CREATED_AT")
     List<AgentTurnEntity> selectRecoverable();
+
+    @Select("""
+            SELECT T.*
+            FROM AGENT_TURN T
+            JOIN AGENT_WORKFLOW_QUESTION Q ON Q.ANSWER_TURN_ID = T.TURN_ID
+            WHERE T.STATUS IN ('FAILED', 'CANCELLED', 'TIMED_OUT')
+              AND Q.STATUS = 'OPEN'
+              AND Q.ANSWER_ENQUEUE_STATUS = 'ENQUEUED'
+            ORDER BY T.CREATED_AT
+            """)
+    List<AgentTurnEntity> selectWorkflowAnswerReconciliationCandidates();
 }

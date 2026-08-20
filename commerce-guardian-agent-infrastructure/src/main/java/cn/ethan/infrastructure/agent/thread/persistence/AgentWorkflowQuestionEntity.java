@@ -30,6 +30,10 @@ public final class AgentWorkflowQuestionEntity {
     private String checkpointId;
     @TableField("VERSION_NO")
     private Long versionNo;
+    @TableField("ANSWER_TURN_ID")
+    private String answerTurnId;
+    @TableField("ANSWER_ENQUEUE_STATUS")
+    private String answerEnqueueStatus;
     @TableField("TITLE")
     private String title;
     @TableField("PROMPT")
@@ -60,6 +64,10 @@ public final class AgentWorkflowQuestionEntity {
     public void setCheckpointId(String checkpointId) { this.checkpointId = checkpointId; }
     public Long getVersionNo() { return versionNo; }
     public void setVersionNo(Long versionNo) { this.versionNo = versionNo; }
+    public String getAnswerTurnId() { return answerTurnId; }
+    public void setAnswerTurnId(String answerTurnId) { this.answerTurnId = answerTurnId; }
+    public String getAnswerEnqueueStatus() { return answerEnqueueStatus; }
+    public void setAnswerEnqueueStatus(String answerEnqueueStatus) { this.answerEnqueueStatus = answerEnqueueStatus; }
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
     public String getPrompt() { return prompt; }

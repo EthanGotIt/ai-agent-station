@@ -24,12 +24,42 @@ public record AgentWorkflowRunModel(
                 || userId == null || userId.isBlank() || workflowType == null) {
             throw new IllegalArgumentException("WorkflowRun identity must not be blank");
         }
-        status = status == null ? AgentWorkflowStatusEnum.WAITING_USER_INPUT : status;
-        version = Math.max(0, version);
+        if (status == null || version < 0) {
+            throw new IllegalArgumentException("WorkflowRun 状态和版本必须有效");
+        }
     }
 
     public AgentWorkflowRunModel status(AgentWorkflowStatusEnum nextStatus, Instant now) {
+        if (nextStatus == null || now == null) {
+            throw new IllegalArgumentException("WorkflowRun 状态转换必须提供目标状态和时间");
+        }
+        if (isImmutableTerminal(status)) {
+            throw new IllegalStateException("WorkflowRun 不允许从不可变终态转换：" + status);
+        }
+        if (nextStatus == status || !isAllowed(status, nextStatus)) {
+            throw new IllegalStateException("WorkflowRun 不允许状态转换：" + status + " -> " + nextStatus);
+        }
         return new AgentWorkflowRunModel(runId, threadId, turnId, userId, workflowType,
                 nextStatus, version + 1, createdAt, now);
+    }
+
+    private static boolean isAllowed(AgentWorkflowStatusEnum current, AgentWorkflowStatusEnum next) {
+        return switch (current) {
+            case WAITING_USER_INPUT -> next == AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION
+                    || next == AgentWorkflowStatusEnum.REJECTED
+                    || next == AgentWorkflowStatusEnum.FAILED;
+            case WAITING_EXTERNAL_ACTION -> next == AgentWorkflowStatusEnum.COMPLETED
+                    || next == AgentWorkflowStatusEnum.MANUAL_RETRY_REQUIRED
+                    || next == AgentWorkflowStatusEnum.FAILED;
+            case MANUAL_RETRY_REQUIRED -> next == AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION
+                    || next == AgentWorkflowStatusEnum.COMPLETED;
+            case COMPLETED, REJECTED, FAILED -> false;
+        };
+    }
+
+    private static boolean isImmutableTerminal(AgentWorkflowStatusEnum value) {
+        return value == AgentWorkflowStatusEnum.COMPLETED
+                || value == AgentWorkflowStatusEnum.REJECTED
+                || value == AgentWorkflowStatusEnum.FAILED;
     }
 }

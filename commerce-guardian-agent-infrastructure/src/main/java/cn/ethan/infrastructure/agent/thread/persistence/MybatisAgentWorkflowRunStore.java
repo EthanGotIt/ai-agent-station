@@ -7,6 +7,7 @@ import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -40,7 +41,11 @@ public final class MybatisAgentWorkflowRunStore implements AgentWorkflowRunStore
         int updated = mapper.update(toEntity(run), new UpdateWrapper<AgentWorkflowRunEntity>()
                 .eq("RUN_ID", run.runId())
                 .eq("USER_ID", run.userId())
-                .eq("VERSION_NO", previousVersion));
+                .eq("VERSION_NO", previousVersion)
+                .notIn("STATUS", List.of(
+                        AgentWorkflowStatusEnum.COMPLETED.name(),
+                        AgentWorkflowStatusEnum.REJECTED.name(),
+                        AgentWorkflowStatusEnum.FAILED.name())));
         if (updated != 1) {
             throw new IllegalStateException("WorkflowRun 版本已变化");
         }

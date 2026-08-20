@@ -52,6 +52,11 @@ public final class MybatisAgentTurnStore implements AgentTurnStore {
     }
 
     @Override
+    public Optional<AgentTurnModel> findTurnByRequestForUpdate(String userId, String clientRequestId) {
+        return Optional.ofNullable(mapper.selectByRequestForUpdate(userId, clientRequestId)).map(this::toModel);
+    }
+
+    @Override
     public void createTurn(AgentTurnModel turn) {
         mapper.insert(toEntity(turn));
     }
