@@ -1,6 +1,6 @@
-package cn.ethan.dto;
+package cn.ethan.app.agent.api;
 
-import cn.ethan.core.agent.thread.model.AgentTurnModel;
+import cn.ethan.core.agent.thread.AgentTurnModel;
 
 import java.time.Instant;
 

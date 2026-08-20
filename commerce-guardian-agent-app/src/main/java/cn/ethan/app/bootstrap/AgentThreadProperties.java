@@ -1,4 +1,4 @@
-package cn.ethan.config;
+package cn.ethan.app.bootstrap;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 

@@ -1,4 +1,4 @@
-package cn.ethan.dto;
+package cn.ethan.app.agent.api;
 
 /**
  * 类型职责：表达 Turn 取消请求的实际收敛结果。

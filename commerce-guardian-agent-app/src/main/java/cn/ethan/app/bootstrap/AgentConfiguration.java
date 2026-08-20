@@ -1,11 +1,11 @@
-package cn.ethan.config;
+package cn.ethan.app.bootstrap;
 
-import cn.ethan.core.agent.thread.port.AgentThreadEventGateway;
-import cn.ethan.core.agent.thread.port.AgentThreadStore;
-import cn.ethan.core.agent.thread.service.AgentContextAssembler;
-import cn.ethan.core.agent.thread.service.AgentThreadRuntimeService;
-import cn.ethan.core.agent.thread.service.AgentThreadService;
-import cn.ethan.core.agent.thread.port.AgentCoordinatorProvider;
+import cn.ethan.core.agent.event.AgentThreadEventGateway;
+import cn.ethan.core.agent.thread.AgentThreadStore;
+import cn.ethan.core.agent.context.AgentContextAssembler;
+import cn.ethan.core.agent.execution.AgentThreadRuntimeService;
+import cn.ethan.core.agent.thread.AgentThreadService;
+import cn.ethan.core.agent.coordination.AgentCoordinatorProvider;
 import cn.ethan.core.agent.thread.support.InMemoryAgentThreadEventGateway;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.ai.chat.client.ChatClient;
@@ -30,9 +30,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Configuration
 @EnableScheduling
 @MapperScan({
-        "cn.ethan.infrastructure.order.mapper",
-        "cn.ethan.infrastructure.agent.thread.mapper",
-        "cn.ethan.infrastructure.agent.action.mapper"
+        "cn.ethan.infrastructure.commerce.order.persistence",
+        "cn.ethan.infrastructure.agent.thread.persistence",
+        "cn.ethan.infrastructure.agent.action.persistence"
 })
 @EnableConfigurationProperties({AgentRuntimeProperties.class, AgentThreadProperties.class})
 public class AgentConfiguration {

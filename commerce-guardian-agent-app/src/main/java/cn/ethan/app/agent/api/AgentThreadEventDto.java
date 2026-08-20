@@ -1,6 +1,6 @@
-package cn.ethan.dto;
+package cn.ethan.app.agent.api;
 
-import cn.ethan.core.agent.thread.port.AgentThreadEventGateway;
+import cn.ethan.core.agent.event.AgentThreadEventGateway;
 
 import java.time.Instant;
 

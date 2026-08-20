@@ -1,4 +1,4 @@
-package cn.ethan.dto;
+package cn.ethan.app.agent.api;
 
 import java.util.List;
 

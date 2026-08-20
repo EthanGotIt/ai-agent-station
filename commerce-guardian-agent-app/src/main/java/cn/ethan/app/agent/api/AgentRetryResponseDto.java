@@ -1,4 +1,4 @@
-package cn.ethan.dto;
+package cn.ethan.app.agent.api;
 
 /**
  * 类型职责：返回人工重试后仍使用原命令和幂等键的确认信息。

@@ -1,4 +1,4 @@
-package cn.ethan.config;
+package cn.ethan.app.agent.api;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Component;
