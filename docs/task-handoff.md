@@ -73,6 +73,7 @@ updated: 2026-08-21
 - `e83b9c9 fix: align convention checks with runtime dependencies`：移除与当前 DeepSeek 产品契约冲突的禁止文本项，纠正 Spring Boot 4 使用的 Jackson 3 直接依赖白名单和旧 Jackson 2 禁止项；新增检查器回归测试，未修改用户已有的 AgentScope 规则删除改动。
 - 本轮依赖契约追踪文档提交：`80f0870 docs: record dependency contract calibration`。
 - `d09ca23 fix: declare runtime direct dependencies`：按实际源码调用路径补齐 Core/Infrastructure/App 的 JSpecify、Jackson 3 core、Reactor、WebFlux、Reactor Netty 和 Netty transport 直接依赖；Maven dependency analyze warning 已清零，未增加新的模块方向。
+- 本轮直接依赖追踪文档提交：`9fa3ac7 docs: record direct dependency calibration`。
 
 ## 下一步唯一动作
 
