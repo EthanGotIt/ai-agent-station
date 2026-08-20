@@ -75,6 +75,7 @@ updated: 2026-08-21
 - `d09ca23 fix: declare runtime direct dependencies`：按实际源码调用路径补齐 Core/Infrastructure/App 的 JSpecify、Jackson 3 core、Reactor、WebFlux、Reactor Netty 和 Netty transport 直接依赖；Maven dependency analyze warning 已清零，未增加新的模块方向。
 - 本轮直接依赖追踪文档提交：`9fa3ac7 docs: record direct dependency calibration`。
 - `131924a fix: correlate and validate tool calls`：Tool Call/Result Item 生成每次调用唯一 `invocationId` 并按 ID 记录耗时和失败结果；订单号、退款原因等 Tool 参数在网关/Workflow 之前做非空校验，补充同名调用、异常关联和 Workflow 边界测试。
+- 本轮 Tool 边界追踪文档提交：`8a2b1cd docs: record tool boundary calibration`。
 
 ## 下一步唯一动作
 
