@@ -28,11 +28,11 @@ updated: 2026-08-21
 
 ## 最近验证
 
-- `python -m scripts.convention_check`：当前失败；既有 checker 报告禁止文本和 Infrastructure Jackson 直接依赖规则，详见追踪矩阵，未通过修改规则掩盖。
-- `python -m unittest discover -s scripts/tests -p "test_*.py"`：3 个测试中 2 个通过、1 个因上述 convention 问题失败。
+- `python -m scripts.convention_check`：通过；`e83b9c9` 校准了当前 DeepSeek 供应商契约和 Spring Boot 4/Jackson 3 直接依赖规则，仍保留旧项目/旧版本标记等禁用文本检查。
+- `python -m unittest discover -s scripts/tests -p "test_*.py"`：4 个测试通过，新增规则回归测试覆盖当前供应商和 JSON 依赖边界。
 - `mvn clean '-DskipTests=false' test`：Core 42、Infrastructure 45、App 13，共 100 项测试通过；含流式 delta、模型调用失败、流式超时/取消、Turn 超时收敛、CAS、Workflow 和 Worker 测试。
 - `mvn -pl commerce-guardian-agent-app -am -DskipTests package`：应用可打包；启动探针实际加载 DeepSeek starter、Tomcat、Hikari 和 MyBatis。
-- `mvn dependency:analyze -DskipTests`：待本轮脚本/前端阶段完成后再按完整矩阵复核；当前 Java 编译警告失败门禁已通过。
+- `mvn dependency:analyze -DskipTests`：BUILD SUCCESS；仍报告 `org.jspecify`、Jackson 3 core、Reactor、Reactor Netty、Netty 和 Spring WebFlux 等传递依赖未显式声明的 warning，下一轮按实际源码调用路径审计，不以白名单掩盖。
 - 专用 MySQL 实证：已确认 `127.0.0.1:3306`，创建并导入基线到 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821`；原 `COMMERCE_GUARDIAN_AGENT` 未重建。应用启动、Thread 创建、ACTIVE Turn 重启收敛为 `FAILED/RUNTIME_RESTARTED` 并生成 `TURN_STATE` 已验证；两路回答并发请求只有一路 202、另一路 409，数据库只产生一个回答 Turn，QuestionCard 版本单调推进并可失败对账释放。
 - 当前未发现可用的 DeepSeek 凭据；探针使用假值且将模型端点指向本机不可达地址，仅验证启动和错误收敛，未发送真实用户数据，也不能替代真实 DeepSeek Tool Calling/流式/取消验证。
 - `agent-console/npm run typecheck`、`npm test -- --run`（17 项）、`npm run test:e2e`、`npm run build`：通过；新增人工重试按钮/API、外部动作终态映射和 SSE 重连测试。
@@ -70,9 +70,10 @@ updated: 2026-08-21
 - `cef1052` 直接证据：前端 typecheck、17 项 Vitest 和生产 build 通过；真实浏览器 offline/online 后从 `afterSequence=13` 重新建立 SSE，恢复断线期间的 14–19 号 Item 且保持有序去重。
 - 本轮数据库一致性校准未修改生产代码；真实 MySQL 证据已覆盖 Thread 行锁下的并发 Turn、Item Sequence 唯一性、本地事务回滚、QuestionCard reserve/enqueue/close 的 CAS 竞争和回答入队事务回滚。故障触发器只存在于 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821`，探针结束后已删除。
 - 本轮证据文档提交：`c3f67ce docs: record mysql consistency calibration`。
+- `e83b9c9 fix: align convention checks with runtime dependencies`：移除与当前 DeepSeek 产品契约冲突的禁止文本项，纠正 Spring Boot 4 使用的 Jackson 3 直接依赖白名单和旧 Jackson 2 禁止项；新增检查器回归测试，未修改用户已有的 AgentScope 规则删除改动。
 
 ## 下一步唯一动作
 
-审计 Context/Tool/DeepSeek 与 API/SQL 契约，逐项证明旧实现和兼容层是否可删除，并运行完整检查矩阵；DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
+审计 dependency analyze 报告的实际调用路径，再审计 Context/Tool/DeepSeek 与 API/SQL 契约，逐项证明旧实现和兼容层是否可删除，并运行完整检查矩阵；DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。
