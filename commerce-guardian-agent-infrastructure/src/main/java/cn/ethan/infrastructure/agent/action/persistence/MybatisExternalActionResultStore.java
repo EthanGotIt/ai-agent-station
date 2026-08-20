@@ -18,7 +18,6 @@ import java.util.Optional;
  */
 @Repository
 public class MybatisExternalActionResultStore implements ExternalActionResultStore {
-
     private final ExternalActionResultMapper mapper;
 
     public MybatisExternalActionResultStore(ExternalActionResultMapper mapper) {
@@ -49,7 +48,7 @@ public class MybatisExternalActionResultStore implements ExternalActionResultSto
         entity.setResultId(model.resultId());
         entity.setCommandId(model.commandId());
         entity.setIdempotencyKey(model.idempotencyKey());
-        entity.setType(model.type());
+        entity.setActionType(model.type());
         entity.setStatus(model.status());
         entity.setResponseJson(model.responseJson());
         entity.setCreatedAt(model.createdAt());
@@ -58,6 +57,6 @@ public class MybatisExternalActionResultStore implements ExternalActionResultSto
 
     private ExternalActionResultModel toModel(ExternalActionResultEntity entity) {
         return new ExternalActionResultModel(entity.getResultId(), entity.getCommandId(), entity.getIdempotencyKey(),
-                entity.getType(), entity.getStatus(), entity.getResponseJson(), entity.getCreatedAt());
+                entity.getActionType(), entity.getStatus(), entity.getResponseJson(), entity.getCreatedAt());
     }
 }

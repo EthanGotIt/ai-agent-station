@@ -15,7 +15,7 @@ import java.time.Instant;
  * @author ethan
  * @date 2026-08-20
  */
-@TableName("EXTERNAL_ACTION_RESULT")
+@TableName(value = "EXTERNAL_ACTION_RESULT", autoResultMap = true)
 public final class ExternalActionResultEntity {
 
     @TableId(value = "RESULT_ID", type = IdType.INPUT)
@@ -25,7 +25,7 @@ public final class ExternalActionResultEntity {
     @TableField("IDEMPOTENCY_KEY")
     private String idempotencyKey;
     @TableField("ACTION_TYPE")
-    private ExternalActionTypeEnum type;
+    private ExternalActionTypeEnum actionType;
     @TableField("STATUS")
     private ExternalActionResultStatusEnum status;
     @TableField("RESPONSE_JSON")
@@ -42,8 +42,8 @@ public final class ExternalActionResultEntity {
     public void setCommandId(String commandId) { this.commandId = commandId; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public void setIdempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; }
-    public ExternalActionTypeEnum getType() { return type; }
-    public void setType(ExternalActionTypeEnum type) { this.type = type; }
+    public ExternalActionTypeEnum getActionType() { return actionType; }
+    public void setActionType(ExternalActionTypeEnum actionType) { this.actionType = actionType; }
     public ExternalActionResultStatusEnum getStatus() { return status; }
     public void setStatus(ExternalActionResultStatusEnum status) { this.status = status; }
     public String getResponseJson() { return responseJson; }
