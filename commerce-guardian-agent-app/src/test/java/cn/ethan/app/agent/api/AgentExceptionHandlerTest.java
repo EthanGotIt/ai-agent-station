@@ -5,6 +5,8 @@ import org.springframework.web.context.request.async.AsyncRequestNotUsableExcept
 import org.springframework.web.context.request.async.AsyncRequestTimeoutException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+import java.lang.reflect.Constructor;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
@@ -26,12 +28,21 @@ class AgentExceptionHandlerTest {
     }
 
     @Test
-    void mapsQueryParameterConversionFailureToBadRequest() {
+    void mapsQueryParameterConversionFailureToBadRequest() throws ReflectiveOperationException {
         AgentExceptionHandler handler = new AgentExceptionHandler();
-        MethodArgumentTypeMismatchException failure = new MethodArgumentTypeMismatchException(
-                "not-a-number", Integer.class, "page", null, new NumberFormatException());
+        MethodArgumentTypeMismatchException failure = newQueryParameterConversionFailure();
 
         assertEquals(400, handler.invalidParameter(failure).getStatusCode().value());
         assertEquals("INVALID_REQUEST", handler.invalidParameter(failure).getBody().code());
+    }
+
+    private MethodArgumentTypeMismatchException newQueryParameterConversionFailure()
+            throws ReflectiveOperationException {
+        Constructor<MethodArgumentTypeMismatchException> constructor =
+                MethodArgumentTypeMismatchException.class.getConstructor(
+                        Object.class, Class.class, String.class,
+                        Class.forName("org.springframework.core.MethodParameter"), Throwable.class);
+        return constructor.newInstance("not-a-number", Integer.class, "page", null,
+                new NumberFormatException());
     }
 }
