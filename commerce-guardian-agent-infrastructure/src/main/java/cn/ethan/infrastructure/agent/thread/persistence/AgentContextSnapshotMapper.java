@@ -1,6 +1,5 @@
 package cn.ethan.infrastructure.agent.thread.persistence;
 
-import cn.ethan.infrastructure.agent.thread.persistence.AgentContextSnapshotEntity;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Select;

@@ -1,6 +1,5 @@
 package cn.ethan.core.agent.workflow;
 
-import cn.ethan.core.agent.workflow.AgentQuestionModel;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.action.ExternalActionCommandModel;

@@ -2,8 +2,6 @@ package cn.ethan.infrastructure.agent.action.persistence;
 
 import cn.ethan.core.agent.action.ExternalActionCommandModel;
 import cn.ethan.core.agent.action.ExternalActionCommandStore;
-import cn.ethan.infrastructure.agent.action.persistence.ExternalActionCommandEntity;
-import cn.ethan.infrastructure.agent.action.persistence.ExternalActionCommandMapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.dao.DuplicateKeyException;

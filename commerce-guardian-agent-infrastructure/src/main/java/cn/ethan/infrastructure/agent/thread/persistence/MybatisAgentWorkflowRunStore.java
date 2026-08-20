@@ -2,8 +2,6 @@ package cn.ethan.infrastructure.agent.thread.persistence;
 
 import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
-import cn.ethan.infrastructure.agent.thread.persistence.AgentWorkflowRunEntity;
-import cn.ethan.infrastructure.agent.thread.persistence.AgentWorkflowRunMapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.stereotype.Repository;
 

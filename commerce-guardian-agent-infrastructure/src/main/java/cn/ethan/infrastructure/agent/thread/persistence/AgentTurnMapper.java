@@ -1,6 +1,5 @@
 package cn.ethan.infrastructure.agent.thread.persistence;
 
-import cn.ethan.infrastructure.agent.thread.persistence.AgentTurnEntity;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Select;

@@ -1,6 +1,5 @@
 package cn.ethan.core.agent.thread;
 
-import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 
 import java.time.Instant;
 

@@ -1,6 +1,5 @@
 package cn.ethan.infrastructure.agent.action.persistence;
 
-import cn.ethan.infrastructure.agent.action.persistence.ExternalActionCommandEntity;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Select;

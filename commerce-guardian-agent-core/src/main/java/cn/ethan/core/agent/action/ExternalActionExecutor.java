@@ -1,6 +1,5 @@
 package cn.ethan.core.agent.action;
 
-import cn.ethan.core.agent.action.ExternalActionCommandModel;
 
 /**
  * 类型职责：执行单个已取得租约的远程动作，并返回可分类的结果。

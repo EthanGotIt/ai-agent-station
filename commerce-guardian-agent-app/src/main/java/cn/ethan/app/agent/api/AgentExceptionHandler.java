@@ -2,7 +2,6 @@ package cn.ethan.app.agent.api;
 
 import cn.ethan.core.agent.thread.AgentThreadConflictException;
 import cn.ethan.core.agent.thread.AgentThreadNotFoundException;
-import cn.ethan.app.agent.api.AgentErrorResponseDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;

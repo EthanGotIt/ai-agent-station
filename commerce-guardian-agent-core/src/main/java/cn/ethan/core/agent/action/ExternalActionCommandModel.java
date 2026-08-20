@@ -1,7 +1,5 @@
 package cn.ethan.core.agent.action;
 
-import cn.ethan.core.agent.action.ExternalActionStatusEnum;
-import cn.ethan.core.agent.action.ExternalActionTypeEnum;
 
 import java.time.Instant;
 

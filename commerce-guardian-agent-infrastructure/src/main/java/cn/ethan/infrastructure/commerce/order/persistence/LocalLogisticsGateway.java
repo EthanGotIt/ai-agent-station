@@ -2,8 +2,6 @@ package cn.ethan.infrastructure.commerce.order.persistence;
 
 import cn.ethan.core.commerce.order.LogisticsEventModel;
 import cn.ethan.core.commerce.order.LogisticsGateway;
-import cn.ethan.infrastructure.commerce.order.persistence.DemoLogisticsEventEntity;
-import cn.ethan.infrastructure.commerce.order.persistence.DemoLogisticsEventMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;

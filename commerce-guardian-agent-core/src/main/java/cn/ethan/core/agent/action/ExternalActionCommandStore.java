@@ -1,6 +1,5 @@
 package cn.ethan.core.agent.action;
 
-import cn.ethan.core.agent.action.ExternalActionCommandModel;
 
 import java.time.Instant;
 import java.util.List;
