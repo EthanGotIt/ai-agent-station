@@ -1,12 +1,12 @@
 package cn.ethan.app.bootstrap;
 
+import cn.ethan.app.agent.stream.InMemoryAgentEventBus;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.thread.AgentThreadStore;
 import cn.ethan.core.agent.context.AgentContextAssembler;
 import cn.ethan.core.agent.execution.AgentThreadRuntimeService;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import cn.ethan.core.agent.coordination.AgentCoordinatorProvider;
-import cn.ethan.core.agent.thread.support.InMemoryAgentThreadEventGateway;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
@@ -80,8 +80,8 @@ public class AgentConfiguration {
     }
 
     @Bean
-    public InMemoryAgentThreadEventGateway agentThreadEventPublisher() {
-        return new InMemoryAgentThreadEventGateway();
+    public InMemoryAgentEventBus agentThreadEventPublisher() {
+        return new InMemoryAgentEventBus();
     }
 
     @Bean

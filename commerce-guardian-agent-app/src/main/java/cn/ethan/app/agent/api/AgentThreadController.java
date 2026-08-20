@@ -1,7 +1,7 @@
 package cn.ethan.app.agent.api;
 
 import cn.ethan.app.bootstrap.AgentRuntimeProperties;
-import cn.ethan.app.agent.api.AgentUserContext;
+import cn.ethan.core.agent.event.AgentThreadEventSubscription;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.action.ExternalActionCommandModel;
 import cn.ethan.core.agent.action.ExternalActionStatusEnum;
@@ -10,19 +10,6 @@ import cn.ethan.core.agent.thread.AgentThreadConflictException;
 import cn.ethan.core.agent.thread.AgentThreadNotFoundException;
 import cn.ethan.core.agent.execution.AgentThreadRuntimeService;
 import cn.ethan.core.agent.thread.AgentThreadService;
-import cn.ethan.core.agent.thread.support.InMemoryAgentThreadEventGateway;
-import cn.ethan.app.agent.api.AgentCancelResponseDto;
-import cn.ethan.app.agent.api.AgentItemDto;
-import cn.ethan.app.agent.api.AgentItemPageResponseDto;
-import cn.ethan.app.agent.api.AgentQuestionAnswerRequestDto;
-import cn.ethan.app.agent.api.AgentRetryResponseDto;
-import cn.ethan.app.agent.api.AgentThreadCreateRequestDto;
-import cn.ethan.app.agent.api.AgentThreadDto;
-import cn.ethan.app.agent.api.AgentThreadEventDto;
-import cn.ethan.app.agent.api.AgentThreadPageResponseDto;
-import cn.ethan.app.agent.api.AgentThreadUpdateRequestDto;
-import cn.ethan.app.agent.api.AgentTurnAcceptedResponseDto;
-import cn.ethan.app.agent.api.AgentTurnSubmitRequestDto;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -59,7 +46,7 @@ public final class AgentThreadController {
 
     private final AgentThreadService threads;
     private final AgentThreadRuntimeService runtime;
-    private final InMemoryAgentThreadEventGateway events;
+    private final AgentThreadEventSubscription events;
     private final AgentRuntimeProperties properties;
     private final AgentUserContext userContext;
     private final ExternalActionCommandStore actions;
@@ -68,7 +55,7 @@ public final class AgentThreadController {
     public AgentThreadController(
             AgentThreadService threads,
             AgentThreadRuntimeService runtime,
-            InMemoryAgentThreadEventGateway events,
+            AgentThreadEventSubscription events,
             AgentRuntimeProperties properties,
             AgentUserContext userContext,
             ExternalActionCommandStore actions,
