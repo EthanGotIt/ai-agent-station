@@ -33,6 +33,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 类型职责：以 Thread 为队列键，负责 Turn 生命周期、持久化 Item 和可恢复 HITL。
@@ -129,7 +130,7 @@ public final class AgentTurnRuntimeService {
                     continue;
                 }
                 QueuedTurn queued = new QueuedTurn(
-                        persisted, Map.of(), new AtomicBoolean(false), new AtomicBoolean(false));
+                        persisted, Map.of(), new AtomicBoolean(false), new AtomicBoolean(false), new AtomicReference<>());
                 slot.queue.addLast(queued);
                 pendingGlobal.incrementAndGet();
                 publishTurn(persisted);
@@ -168,7 +169,7 @@ public final class AgentTurnRuntimeService {
             turns.createTurn(turn);
             appendItem(turn, AgentItemTypeEnum.USER_MESSAGE, message);
             appendItem(turn, AgentItemTypeEnum.TURN_STATE, turnStatePayload(turn.status(), null));
-            queued = new QueuedTurn(turn, Map.of(), new AtomicBoolean(false), new AtomicBoolean(false));
+            queued = new QueuedTurn(turn, Map.of(), new AtomicBoolean(false), new AtomicBoolean(false), new AtomicReference<>());
             slot.queue.addLast(queued);
             pendingGlobal.incrementAndGet();
             publishTurn(turn);
@@ -216,7 +217,7 @@ public final class AgentTurnRuntimeService {
             turns.createTurn(turn);
             appendItem(turn, AgentItemTypeEnum.WORKFLOW_ANSWER, answers.toString());
             appendItem(turn, AgentItemTypeEnum.TURN_STATE, turnStatePayload(turn.status(), null));
-            QueuedTurn queued = new QueuedTurn(turn, Map.copyOf(answers), new AtomicBoolean(false), new AtomicBoolean(false));
+            QueuedTurn queued = new QueuedTurn(turn, Map.copyOf(answers), new AtomicBoolean(false), new AtomicBoolean(false), new AtomicReference<>());
             slot.queue.addLast(queued);
             pendingGlobal.incrementAndGet();
             publishTurn(turn);
@@ -262,6 +263,8 @@ public final class AgentTurnRuntimeService {
             }
             if (slot.active != null && slot.active.turn.turnId().equals(turnId)) {
                 slot.active.cancelled.set(true);
+                AgentExecutionContext context = slot.active.executionContext.get();
+                if (context != null) context.cancel();
                 return true;
             }
         }
@@ -311,16 +314,21 @@ public final class AgentTurnRuntimeService {
         turns.updateTurn(active);
         appendItem(active, AgentItemTypeEnum.TURN_STATE, turnStatePayload(active.status(), null));
         publishTurn(active);
+        AgentExecutionContext executionContext = new AgentExecutionContext(clock, started.plus(turnTimeout));
+        execution.executionContext.set(executionContext);
         ScheduledFuture<?> timeout = scheduler.schedule(
                 () -> {
                     execution.timedOut.set(true);
                     execution.cancelled.set(true);
+                    executionContext.cancel();
                 }, turnTimeout.toMillis(), TimeUnit.MILLISECONDS
         );
         try {
-            List<AgentItemModel> context = contextAssembler.assemble(thread);
-            AgentTurnCoordinator.AgentCoordinatorResult result = coordinator.run(thread, active, context, execution.answer);
-            if (execution.cancelled.get()) {
+            List<AgentItemModel> context = contextAssembler.assemble(thread, active.turnId());
+            executionContext.checkActive();
+            AgentTurnCoordinator.AgentCoordinatorResult result = coordinator.run(
+                    thread, active, context, execution.answer, executionContext);
+            if (execution.cancelled.get() || executionContext.cancelled()) {
                 finish(active, execution.timedOut.get() ? AgentTurnStatusEnum.TIMED_OUT : AgentTurnStatusEnum.CANCELLED,
                         execution.timedOut.get() ? "TURN_TIMEOUT" : "CLIENT_CANCELLED");
                 return;
@@ -343,11 +351,18 @@ public final class AgentTurnRuntimeService {
             }
             finish(active, AgentTurnStatusEnum.COMPLETED, null);
         } catch (RuntimeException failure) {
-            appendItem(active, AgentItemTypeEnum.ERROR, failure.getMessage() == null ? "Agent 执行失败" : failure.getMessage());
-            finish(active, execution.timedOut.get() ? AgentTurnStatusEnum.TIMED_OUT : AgentTurnStatusEnum.FAILED,
-                    execution.timedOut.get() ? "TURN_TIMEOUT" : "AGENT_EXECUTION_FAILED");
+            boolean cancelled = failure instanceof AgentExecutionCancelledException || execution.cancelled.get();
+            if (!cancelled) {
+                appendItem(active, AgentItemTypeEnum.ERROR,
+                        failure.getMessage() == null ? "Agent 执行失败" : failure.getMessage());
+            }
+            finish(active, execution.timedOut.get() ? AgentTurnStatusEnum.TIMED_OUT
+                            : cancelled ? AgentTurnStatusEnum.CANCELLED : AgentTurnStatusEnum.FAILED,
+                    execution.timedOut.get() ? "TURN_TIMEOUT"
+                            : cancelled ? "CLIENT_CANCELLED" : "AGENT_EXECUTION_FAILED");
         } finally {
             timeout.cancel(false);
+            execution.executionContext.set(null);
             slot.active = null;
         }
     }
@@ -441,7 +456,8 @@ public final class AgentTurnRuntimeService {
             AgentTurnModel turn,
             Map<String, String> answer,
             AtomicBoolean cancelled,
-            AtomicBoolean timedOut
+            AtomicBoolean timedOut,
+            AtomicReference<AgentExecutionContext> executionContext
     ) {
     }
 }

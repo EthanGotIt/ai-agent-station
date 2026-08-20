@@ -51,7 +51,7 @@ Thread
 
 Item 是唯一事实来源。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersion=1` 和 `kind` 判别 envelope；`TURN_STATE` 记录 QUEUED、ACTIVE、WAITING、终态等生命周期事实。文本增量只通过 SSE 发送，完成消息、工具调用、工具结果、Workflow 状态和错误才持久化。客户端断线时先按 `afterSequence` 读取 Items，再订阅事件，不重放丢失的增量文本。
 
-`AgentContextAssembler` 依次放入系统提示和工具定义、最新快照、快照之后的最近 Item、当前输入，并为输出预留预算。超过阈值时压缩最旧已完成 Turn；摘要失败沿用旧快照和最近窗口，不阻塞执行。所有预算和工具结果截断上限均配置化。
+`AgentContextAssembler` 从最新快照的 `throughSequence` 继续读取，过滤当前 Turn 已写入的输入，依次放入系统提示和工具定义、快照之后的最近 Item、当前输入，并为输出预留预算。超过阈值时通过 `AgentContextSummarizer` 压缩最旧已完成 Turn；摘要失败沿用旧快照和最近窗口，`AgentContextBudgetReport` 标记降级但不阻塞执行。所有预算和工具结果截断上限均配置化。
 
 ## 编排和审批
 

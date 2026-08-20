@@ -4,6 +4,7 @@ import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
+import cn.ethan.core.agent.execution.AgentExecutionContext;
 
 import java.util.List;
 import java.util.Map;
@@ -22,6 +23,19 @@ public interface AgentTurnCoordinator {
             List<AgentItemModel> context,
             Map<String, String> answer
     );
+
+    default AgentCoordinatorResult run(
+            AgentThreadModel thread,
+            AgentTurnModel turn,
+            List<AgentItemModel> context,
+            Map<String, String> answer,
+            AgentExecutionContext executionContext
+    ) {
+        executionContext.checkActive();
+        AgentCoordinatorResult result = run(thread, turn, context, answer);
+        executionContext.checkActive();
+        return result;
+    }
 
     record AgentCoordinatorResult(
             String assistantMessage,

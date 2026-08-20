@@ -64,6 +64,29 @@ class AgentContextAssemblerTest {
         assertTrue(result.stream().mapToInt(item -> item.payload().length() / 2 + 1).sum() <= 872);
     }
 
+    @Test
+    void resumesAfterLatestSnapshotAndExcludesCurrentTurn() {
+        List<AgentItemModel> history = List.of(
+                new AgentItemModel("old", "thread-1", "turn-old", 11,
+                        AgentItemTypeEnum.USER_MESSAGE, "old", NOW),
+                new AgentItemModel("current", "thread-1", "turn-current", 12,
+                        AgentItemTypeEnum.USER_MESSAGE, "current", NOW),
+                new AgentItemModel("next", "thread-1", "turn-next", 13,
+                        AgentItemTypeEnum.USER_MESSAGE, "next", NOW)
+        );
+        RecordingItems items = new RecordingItems(history);
+        RecordingSnapshots snapshots = new RecordingSnapshots();
+        snapshots.saved.add(new AgentContextSnapshotModel("snapshot-1", "thread-1", 10, 1, 4, "summary", NOW));
+        AgentContextAssembler assembler = new AgentContextAssembler(
+                items, snapshots, Clock.fixed(NOW, ZoneOffset.UTC), 2_000, 1_500, 256, 128);
+
+        List<AgentItemModel> result = assembler.assemble(thread(), "turn-current");
+
+        assertEquals(10L, items.lastAfterSequence);
+        assertTrue(result.stream().noneMatch(item -> "turn-current".equals(item.turnId())));
+        assertTrue(result.stream().anyMatch(item -> item.payload().contains("summary")));
+    }
+
     private AgentThreadModel thread() {
         return new AgentThreadModel(
                 "thread-1", "user-1", "测试 Thread", AgentThreadStatusEnum.ACTIVE,
@@ -73,6 +96,7 @@ class AgentContextAssemblerTest {
 
     private static final class RecordingItems implements AgentItemStore {
         private final List<AgentItemModel> history;
+        private long lastAfterSequence;
 
         private RecordingItems(List<AgentItemModel> history) {
             this.history = history;
@@ -85,6 +109,7 @@ class AgentContextAssemblerTest {
 
         @Override
         public List<AgentItemModel> listItems(String userId, String threadId, long afterSequence, int limit) {
+            lastAfterSequence = afterSequence;
             return history.stream().filter(item -> item.sequence() > afterSequence).limit(limit).toList();
         }
     }
