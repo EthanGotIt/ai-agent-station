@@ -38,6 +38,7 @@ updated: 2026-08-21
 - Workflow 订单/物流校验已移到本地事务外；Question、WorkflowRun、ExternalActionCommand 和 Workflow Item 的写入由事务模板统一收口。
 - Playwright 真实浏览器已连接专用校准库：验证 Thread 创建、重命名、切换、历史 Item 恢复、QuestionCard 拒绝、执行时间线和页面重载后的结果恢复；另验证了本机不可达模型端点的可见失败 Turn。浏览器重载/关闭暴露的 SSE 异步连接异常已由 `821733c` 收口；尚未将真实 DeepSeek 或人为网络断开记作通过。
 - 专用 MySQL ExternalAction 实证：单 Worker 成功命令完成且结果表幂等键只有 1 行；故意制造 WorkflowRun 冲突终态后本地投影回滚、Lease 到期接管并复用同一结果，干净校准命令最终 `PROCESSING(v1, attempt1) → SUCCEEDED(v3, attempt2)`，WorkflowRun/Turn 完成且 Item 序列为 1/2；两个同时启动的 Worker 竞争同一 PENDING 命令时只产生一次远程结果和一次执行。
+- 专用 MySQL ExternalAction 重试矩阵：仅在校准库建立失败触发器后，Worker 两次执行失败收敛为 `MANUAL_RETRY_REQUIRED(v4, attempt2, cycle2)`，WorkflowRun 为 `MANUAL_RETRY_REQUIRED(v1)`，Turn 为 `FAILED(v2, EXTERNAL_ACTION_FAILED)`，4 条失败轨迹且无结果；移除触发器后真实 `/retry` 返回原 command/idempotencyKey，Worker 收敛为 `SUCCEEDED(v7, attempt3)`，WorkflowRun `COMPLETED(v2)`，失败 Turn 保持不变，结果表/幂等键各 1 行，重复 `/retry` 返回 409。触发器已从专用库移除。
 
 ## 本轮实现校准
 
@@ -58,9 +59,10 @@ updated: 2026-08-21
 - `dd7a5c3` 直接证据：失败回答对账 6 项、Workflow Engine Item ID 边界 1 项、Workflow 回答运行时 16 项测试通过；真实浏览器 QuestionCard 拒绝后数据库状态为 `ANSWERED/CONSUMED/REJECTED`，页面重载后不重复展示旧 QuestionCard。
 - `821733c` 直接证据：App 异常边界测试 13 项全量通过，其中包含 `AsyncRequestNotUsableException` 和 `AsyncRequestTimeoutException` 的生命周期处理。
 - `9dba42b` 直接证据：外部动作结果 Store 回归测试与 Worker 4 项测试通过；真实 MySQL 重启接管后确认 `ACTION_TYPE=REFUND` 正确反序列化，避免幂等重放被误分类为 Worker 异常。
+- ExternalAction Worker 真实校准直接证据：失败重试耗尽、人工重试 API、终态 Turn 不重写、重复重试冲突和结果幂等均已在专用 MySQL 完成；未修改产品代码或 SQL 基线。
 
 ## 下一步唯一动作
 
-在已确认的专用 MySQL 校准库上补一组干净的重试耗尽与人工重试幂等验证，并核对 `MANUAL_RETRY_REQUIRED` 的 API/Workflow/Turn/Item 终态；随后复核前端外部动作状态映射与 API/SQL 契约。DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
+复核前端外部动作状态映射与 API/SQL 契约，补真实浏览器人为断线/游标续传证据；随后运行对应前端里程碑的完整检查。DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。
