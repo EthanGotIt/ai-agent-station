@@ -28,6 +28,7 @@ updated: 2026-08-21
 - 提交 `d6d22ab fix: align agent input identity boundaries`：普通 Turn 消息、Thread 身份、标题和业务上下文在 Core、HTTP DTO、认证 Header 与 SQL 之间统一边界；客户端请求 ID 统一去空格，避免重试时因表现形式不同绕过幂等查询。
 - 提交 `871a155 chore: remove misleading frontend e2e alias`：将实际运行 Vitest Mock 组件测试的旧 `test:e2e` 命名改为 `test:component`，避免把组件替身误报为真实浏览器验收。
 - 本里程碑已完成真实 Context 长历史探针：在专用库 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821` 创建一个 Thread，连续提交 30 个失败终态 Turn，得到 180 个 Item、连续序列 1–180 和 6 个快照（版本 1–6，覆盖到序列 156）。应用受控停止并重启后，同一 Thread 的追加 Turn 仍收敛为 `FAILED`，Item 恢复返回 186 条且序列有序；再追加 10 轮后得到 246 个 Item、41 个终态 Turn，快照扩展至版本 8、覆盖到序列 210。持久化 `CONTEXT_ASSEMBLED` 事实记录重启后的 `snapshotThroughSequence=156`，并记录后续 `compressed=true`、`degraded=false`，证明快照读取、压缩和恢复链路实际运行。
+- 提交 `5c6f1f5 fix: align normalized turn item facts`：修复普通 Turn 已规范化输入但首个 `USER_MESSAGE` Item 仍保存原始空白的问题；数据库唯一键竞态的重复请求恢复查询也统一使用规范化用户和请求 ID。Core Runtime 4 项聚焦测试覆盖 Item 事实一致性和创建竞态恢复。
 
 ## 最近验证
 
@@ -35,6 +36,7 @@ updated: 2026-08-21
 - `python -m unittest discover -s scripts/tests -p "test_*.py"`：4 个测试通过，新增规则回归测试覆盖当前供应商和 JSON 依赖边界。
 - `mvn clean '-DskipTests=false' test`：当前基线 Core 48、Infrastructure 49、App 15，共 112 项测试通过；含上下文最新窗口、严格预算、摘要失败降级、Tool 敏感字段投影、流式 delta、模型调用失败、流式超时/取消、Turn 超时收敛、CAS、Workflow、Worker 和输入身份边界测试。
 - `mvn -pl commerce-guardian-agent-app -am -DskipTests package`：应用可打包；启动探针实际加载 DeepSeek starter、Tomcat、Hikari 和 MyBatis。
+- `mvn -pl commerce-guardian-agent-core -Dtest=AgentTurnRuntimeServiceTest test`：4 项 Runtime 边界测试通过，包含规范化 `USER_MESSAGE` Item 和唯一键创建竞态恢复。
 - `mvn dependency:analyze -DskipTests`：BUILD SUCCESS；Core、Infrastructure 和 App 均报告 `No dependency problems found`。
 - 专用 MySQL 实证：已确认 `127.0.0.1:3306`，创建并导入基线到 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821`；原 `COMMERCE_GUARDIAN_AGENT` 未重建。应用启动、Thread 创建、ACTIVE Turn 重启收敛为 `FAILED/RUNTIME_RESTARTED` 并生成 `TURN_STATE` 已验证；两路回答并发请求只有一路 202、另一路 409，数据库只产生一个回答 Turn，QuestionCard 版本单调推进并可失败对账释放。
 - 当前未发现可用的 DeepSeek 凭据；探针使用假值且将模型端点指向本机不可达地址，仅验证启动和错误收敛，未发送真实用户数据，也不能替代真实 DeepSeek Tool Calling/流式/取消验证。
@@ -87,6 +89,6 @@ updated: 2026-08-21
 
 ## 下一步唯一动作
 
-基于当前追踪矩阵继续处理剩余 P1：先完成类型化 Item/边界解码与 API、SQL、配置契约的只读审查，补充必要回归测试并运行完整验证矩阵；DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
+基于当前追踪矩阵继续审查 Item envelope/边界解码与 API 分页、参数异常路径，只有发现真实契约或恢复风险才补充最小修复和测试；随后运行完整验证矩阵。DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。
