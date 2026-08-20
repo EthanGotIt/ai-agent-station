@@ -41,10 +41,12 @@ updated: 2026-08-21
 - `AgentThreadEventStreamTest` 当前覆盖回放/实时顺序、并发发布、重复事件和晚绑定订阅清理，共 3 项通过；Servlet 端到端和浏览器重连尚未验证。
 - 提交 `21b12e5 fix: guard console thread switching`：前端历史请求和 SSE 连接使用 generation/AbortController；旧 Thread 事件、迟到历史和旧 Turn/Answer 请求不会覆盖当前工作区；QuestionCard 提交值对齐 `APPROVE/REJECT`。
 - 前端 typecheck、Vitest 14 项和生产 build 均通过；仍未替代真实浏览器重连和服务端端到端证据。实现过程中按 `vercel-react-best-practices` 检查了异步取消、函数式状态更新和稳定事件边界。
+- 提交 `0c836c1 fix: enforce turn version CAS`：`AgentTurnModel` 携带单调 `version`，MyBatis `AGENT_TURN.VERSION_NO` 以 expected-version 条件更新；运行时、外部动作投影和回答失败对账在 CAS 失败时停止或回滚后续事实，终态 Turn 不允许重写。
+- Turn 里程碑直接证据：Core 19 项测试、Infrastructure 15 项测试通过；覆盖生命周期版本、MyBatis 更新条件/0 行竞争、终态保护、回答失败事务回滚、已终态恢复和 Worker 调用路径。真实 MySQL 锁/CAS/事务/重启尚未验证。
 - 保留工作树中此前已存在的 `.idea`、部署、Docker、Hook 以及未纳入本提交的其他改动；本轮未 reset、checkout 或覆盖这些文件。
 
 ## 下一步唯一动作
 
-审计并修复 `AgentTurnModel` 到 MyBatis `AGENT_TURN` 的状态更新 CAS：为旧 Worker/恢复流程不能覆盖新状态建立持久版本边界，补充并发更新、终态保护、重启恢复和事务失败测试，并同步 SQL/映射文档；只修改 Turn 持久化边界及直接测试，完成后运行对应 Maven 验证并提交。
+审计并修复 QuestionCard / WorkflowRun 的状态机边界：逐条核对 `reserve → enqueue → close/release`、QuestionCard 版本、回答 Turn 幂等和重启对账的真实调用路径，补充并发重复回答、事务回滚、终态重写和恢复测试；只修改该状态机边界及直接测试，完成后运行对应 Maven 验证并提交。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。
