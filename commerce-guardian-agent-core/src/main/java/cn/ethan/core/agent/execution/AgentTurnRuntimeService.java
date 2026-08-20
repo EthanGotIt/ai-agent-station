@@ -45,6 +45,8 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public final class AgentTurnRuntimeService {
 
+    private static final String SAFE_EXECUTION_ERROR = "Agent 执行失败";
+
     private static final long FAILURE_RECONCILIATION_MAX_BACKOFF_MILLIS = 30_000L;
 
     private final AgentThreadStore threadStore;
@@ -551,7 +553,7 @@ public final class AgentTurnRuntimeService {
             if (!cancelled) {
                 try {
                     appendItem(active, AgentItemTypeEnum.ERROR,
-                            failure.getMessage() == null ? "Agent 执行失败" : failure.getMessage());
+                            SAFE_EXECUTION_ERROR);
                 } catch (RuntimeException itemFailure) {
                     failure.addSuppressed(itemFailure);
                 }

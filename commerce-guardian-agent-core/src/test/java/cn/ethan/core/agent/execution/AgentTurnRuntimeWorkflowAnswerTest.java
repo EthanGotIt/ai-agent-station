@@ -199,7 +199,7 @@ class AgentTurnRuntimeWorkflowAnswerTest {
         Fixture fixture = new Fixture();
         fixture.openQuestion();
         AgentTurnModel answer = fixture.answer("request-engine-failure", Map.of("decision", "APPROVE"));
-        fixture.coordinator.failure = new IllegalStateException("模拟 Engine 数据库异常");
+        fixture.coordinator.failure = new IllegalStateException("apiKey=DO_NOT_PERSIST");
 
         fixture.executor.runAll();
 
@@ -208,6 +208,9 @@ class AgentTurnRuntimeWorkflowAnswerTest {
                 fixture.persistence.question.answerEnqueueStatus());
         assertEquals(AgentTurnStatusEnum.FAILED,
                 fixture.persistence.findTurn("user-1", answer.turnId()).orElseThrow().status());
+        assertTrue(fixture.persistence.items.stream()
+                .filter(item -> answer.turnId().equals(item.turnId()))
+                .noneMatch(item -> item.payloadJson().contains("DO_NOT_PERSIST")));
     }
 
     @Test
