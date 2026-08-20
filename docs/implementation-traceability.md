@@ -11,8 +11,8 @@
 - `scripts.convention_check`：通过。
 - `scripts/tests`：3 个测试通过。
 - Maven clean test：100 个测试通过（core 42、infrastructure 45、app 13）。
-- 前端 typecheck：通过；Vitest：16 个测试通过；生产构建：通过。
-- 以上本地测试已补充专用 MySQL 启动、重启恢复、并发回答 HTTP 和 ExternalAction Worker 状态矩阵实证；真实浏览器已补充 Thread/QuestionCard/重载恢复证据，真实 DeepSeek 仍尚未验证，不能据此宣称目标完成。
+- 前端 typecheck：通过；Vitest：17 个测试通过；生产构建：通过。
+- 以上本地测试已补充专用 MySQL 启动、重启恢复、并发回答 HTTP 和 ExternalAction Worker 状态矩阵实证；真实浏览器已补充 Thread/QuestionCard/重载恢复和 SSE 游标续传证据，真实 DeepSeek 仍尚未验证，不能据此宣称目标完成。
 - 当前工作树包含此前任务产生的功能代码和用户既有的 `.idea`、部署、Docker、Hook 等改动；本轮不得覆盖或混入后者。
 
 ## 追踪矩阵
@@ -28,16 +28,16 @@
 | Context、摘要和敏感信息隔离 | 部分实现 | 已有快照/窗口/截断测试和运行时组装器；完整历史倒序、摘要失败降级和敏感字段隔离缺少真实恢复证据 | P1 | 审计上下文窗口、摘要端口和真实历史读取 |
 | Spring AI / DeepSeek 请求契约 | 部分实现 | 提交 `c5ca160` 已切换 `spring-ai-starter-model-deepseek`，配置固定 `deepseek-chat`、`max-tokens`、单次重试、连接/读取超时；Coordinator 使用 `stream().content()`，明确区分模型错误、取消和超时，并有 5 项流式协调测试；真实 DeepSeek 凭据/请求/Tool Calling 尚未验证 | P1 | 凭据可用时执行真实 DeepSeek Tool Calling、流式、取消、超时和敏感信息检查 |
 | Tool Calling 与 Workflow 边界 | 部分实现 | Coordinator 将只读工具与 Workflow 工具分离，写操作进入确定性 Workflow；调用关联仍以工具名为主，缺少稳定 invocationId 和真实模型证据 | P1 | 补调用关联、参数校验、错误分类和 live eval |
-| SSE 断线恢复、去重、有序合并 | 部分实现 | `AgentThreadEventStream` 已实现单连接 buffer → backlog → ordered flush → live、`eventId + sequence` 去重和晚绑定清理，并有并发单元测试；真实浏览器已验证页面重载后的 Item/QuestionCard 结果恢复，`821733c` 将异步连接关闭/超时排除出通用 JSON 错误边界；人为网络断开与游标续传仍需补齐 | P0 | 在专用 MySQL 上补充人为连接断开、游标续传和前端合并验证 |
-| 前端线程切换与 QuestionCard | 已验证完成 | `useThreadWorkspace` 已有 generation、历史 AbortController、旧事件 Thread 过滤和切换期间禁用；QuestionCard 已提交 `APPROVE/REJECT`，组件测试覆盖迟到历史和答案体；`91f2afb` 按结构化外部动作状态恢复 Turn 展示并接入人工重试；真实浏览器已验证创建、重命名、切换、QuestionCard 拒绝、失败 Turn、人工重试和重载恢复，重试后最终成功 Action Item 不会覆盖失败 Turn 事实终态 | P0 | 保留真实浏览器与 16 项前端测试证据，纳入最终完整矩阵 |
-| API、SQL、配置、文档一致性 | 部分实现 | API 路径、Item envelope、DeepSeek 配置和 `.env.example` 已在后端提交中对齐；旧数据库因未执行基线会缺少新列，运行手册已明确只能在可丢弃库执行基线；前端事件契约仍需真实浏览器复核 | P1 | 运行完整规则检查并核对浏览器实际请求/响应/SSE 契约 |
+| SSE 断线恢复、去重、有序合并 | 已验证完成 | `AgentThreadEventStream` 已实现单连接 buffer → backlog → ordered flush → live、`eventId + sequence` 去重和晚绑定清理，并有并发单元测试；`cef1052` 让前端在 offline 时取消 reader、online 时从当前游标重连，并以无数据超时兜底；真实浏览器在 `afterSequence=13` 连接上切换 offline/online 后，实际恢复断线期间的 14–19 号 Item，网络记录出现两次 `events?afterSequence=13`，页面无重复且控制台无错误 | P0 | 保留专用 MySQL 与真实浏览器证据，纳入最终完整矩阵 |
+| 前端线程切换与 QuestionCard | 已验证完成 | `useThreadWorkspace` 已有 generation、历史 AbortController、旧事件 Thread 过滤和切换期间禁用；QuestionCard 已提交 `APPROVE/REJECT`，组件测试覆盖迟到历史和答案体；`91f2afb` 按结构化外部动作状态恢复 Turn 展示并接入人工重试；真实浏览器已验证创建、重命名、切换、QuestionCard 拒绝、失败 Turn、人工重试和重载恢复，重试后最终成功 Action Item 不会覆盖失败 Turn 事实终态 | P0 | 保留真实浏览器与 17 项前端测试证据，纳入最终完整矩阵 |
+| API、SQL、配置、文档一致性 | 部分实现 | API 路径、Item envelope、DeepSeek 配置和 `.env.example` 已在后端提交中对齐；真实浏览器已核对 items/events 请求、`afterSequence` 游标和 SSE `item.*` 事件；旧数据库因未执行基线会缺少新列，运行手册已明确只能在可丢弃库执行基线 | P1 | 运行完整规则检查，核对 SQL 基线与配置文档并完成全契约矩阵 |
 | Runtime eval / acceptance / live eval | 缺少验证 | 当前 runtime eval 是确定性本地替身；前端 `test:e2e` 实际运行 Vitest；真实浏览器已取得本地模型失败和 QuestionCard 重载恢复证据，但真实 acceptance/live DeepSeek 流程尚未取得运行证据 | P1 | 改为真实 Java runtime、真实浏览器、专用 MySQL 和凭据可用时的 DeepSeek 验证 |
 | 清理旧实现、兼容层和无效测试 | 缺少验证 | `91f2afb` 已删除 `sse.ts` 中不符合当前 `ready/heartbeat/item.* /turn.*` 契约的旧结构化事件兼容集合；OpenAI/Qwen 配置和 fake e2e 命名仍在，是否可删需继续按调用路径和配置契约证明 | P2 | 逐项证明不可达/被替代后删除，禁止盲删 |
 
 ## 当前里程碑边界
 
-本轮已完成九个代码里程碑：外部动作本地投影事务收口（`3e5e4a0`）、SSE 单连接回放/实时合并收口（`c927ca0`）、Turn 版本 CAS 与终态保护（`0c836c1`）、QuestionCard/WorkflowRun 状态机收口（`04a4c1c`）、Runtime/DeepSeek/Boot 兼容与超时分类收口（`c5ca160`）、Workflow 回答失败重试投影与 Item ID 边界收口（`dd7a5c3`）、SSE 异步连接结束边界收口（`821733c`）、外部动作结果实体映射收口（`9dba42b`）、前端外部动作状态与人工重试契约收口（`91f2afb`）。当前全量 Maven 100 项通过，并完成专用 MySQL 启动、重启恢复、并发回答 HTTP 和 ExternalAction Lease/CAS/回滚/幂等/双 Worker/重试耗尽/人工重试实证，以及真实浏览器 QuestionCard/人工重试/重载恢复实证；仍须完成真实浏览器人为断线、真实 DeepSeek 以及剩余 P0/P1 矩阵。
+本轮已完成十个代码里程碑：外部动作本地投影事务收口（`3e5e4a0`）、SSE 单连接回放/实时合并收口（`c927ca0`）、Turn 版本 CAS 与终态保护（`0c836c1`）、QuestionCard/WorkflowRun 状态机收口（`04a4c1c`）、Runtime/DeepSeek/Boot 兼容与超时分类收口（`c5ca160`）、Workflow 回答失败重试投影与 Item ID 边界收口（`dd7a5c3`）、SSE 异步连接结束边界收口（`821733c`）、外部动作结果实体映射收口（`9dba42b`）、前端外部动作状态与人工重试契约收口（`91f2afb`）、前端 SSE 断线续传收口（`cef1052`）。当前全量 Maven 100 项通过，并完成专用 MySQL 启动、重启恢复、并发回答 HTTP 和 ExternalAction Lease/CAS/回滚/幂等/双 Worker/重试耗尽/人工重试实证，以及真实浏览器 QuestionCard/人工重试/重载恢复/人为断线续传实证；仍须完成真实 DeepSeek 以及剩余 P0/P1 矩阵。
 
 ## 外部验证边界
 
-已确认专用校准边界为本机 `127.0.0.1:3306/COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821`，当前只在该库导入基线；原 `COMMERCE_GUARDIAN_AGENT` 未重建。数据库日志和命令输出均未打印密码；重试探针使用的失败触发器只存在于专用库，验证后已移除。真实浏览器已执行 Thread/QuestionCard/重载恢复流程；人为网络断开和真实 DeepSeek 尚未验证。当前环境没有可用的 DeepSeek 凭据，探针仅使用假值/本机不可达端点，因此真实模型验证必须继续标记为未验证，不能用替身测试替代。
+已确认专用校准边界为本机 `127.0.0.1:3306/COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821`，当前只在该库导入基线；原 `COMMERCE_GUARDIAN_AGENT` 未重建。数据库日志和命令输出均未打印密码；重试探针使用的失败触发器只存在于专用库，验证后已移除。真实浏览器已执行 Thread/QuestionCard/重载恢复和 offline/online 游标续传流程；真实 DeepSeek 尚未验证。当前环境没有可用的 DeepSeek 凭据，探针仅使用假值/本机不可达端点，因此真实模型验证必须继续标记为未验证，不能用替身测试替代。
