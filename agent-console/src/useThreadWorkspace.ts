@@ -71,6 +71,19 @@ function payloadText(payload: AgentItemPayload): string {
   return typeof payload.data === "string" ? payload.data : JSON.stringify(payload.data);
 }
 
+function itemTrace(item: AgentItem, threadId: string): AgentThreadEvent {
+  return {
+    eventId: item.itemId,
+    threadId,
+    turnId: item.turnId,
+    itemId: item.itemId,
+    type: `item.${item.type.toLowerCase()}`,
+    payload: JSON.stringify(item.payload),
+    sequence: item.sequence,
+    timestamp: item.createdAt
+  };
+}
+
 function rebuildTurns(items: AgentItem[]): ThreadViewTurn[] {
   const grouped = new Map<string, ThreadViewTurn>();
   for (const item of items) {
@@ -126,10 +139,12 @@ export function useThreadWorkspace(userId: string) {
   const itemsRef = useRef<AgentItem[]>([]);
   const activeTurnRef = useRef<string | null>(null);
   const eventControllerRef = useRef<AbortController | null>(null);
+  const historyControllerRef = useRef<AbortController | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const threadIdRef = useRef<string | null>(null);
+  const generationRef = useRef(0);
 
-  const applyItems = useCallback((incoming: Array<AgentItem | AgentItemWire>) => {
+  const applyItems = useCallback((incoming: Array<AgentItem | AgentItemWire>, sourceThreadId = threadIdRef.current ?? "") => {
     const byId = new Map(itemsRef.current.map((item) => [item.itemId, item]));
     for (const wire of incoming) {
       const item = normalizeItem(wire);
@@ -140,6 +155,14 @@ export function useThreadWorkspace(userId: string) {
     itemsRef.current = next;
     setItems(next);
     setTurns(rebuildTurns(next));
+    setTrace((current) => {
+      const byEventId = new Map(current.map((event) => [event.eventId, event]));
+      for (const item of next) byEventId.set(item.itemId, itemTrace(item, sourceThreadId));
+      return [...byEventId.values()]
+        .sort((left, right) => (left.sequence < 0 ? Number.MAX_SAFE_INTEGER : left.sequence)
+          - (right.sequence < 0 ? Number.MAX_SAFE_INTEGER : right.sequence))
+        .slice(-100);
+    });
     for (const item of incoming) {
       const normalized = normalizeItem(item);
       if (normalized.type === "WORKFLOW_QUESTION") setQuestion(parseQuestion(normalized.payload));
@@ -148,6 +171,7 @@ export function useThreadWorkspace(userId: string) {
   }, []);
 
   const applyEvent = useCallback((event: AgentThreadEvent) => {
+    if (!threadIdRef.current || event.threadId !== threadIdRef.current) return;
     if (event.sequence >= 0) cursorRef.current = Math.max(cursorRef.current, event.sequence);
     if (event.type.startsWith("item.")) {
       const item: AgentItemWire = {
@@ -172,6 +196,15 @@ export function useThreadWorkspace(userId: string) {
         : turn));
       if (status === "WAITING_USER_INPUT") setBusy(false);
       if (terminal(status)) setBusy(false);
+      setTrace((current) => current.some((value) => value.eventId === event.eventId)
+        ? current
+        : [...current.slice(-99), event]);
+      return;
+    }
+    if (event.type === "assistant.delta" && event.turnId) {
+      setTurns((current) => current.map((turn) => turn.turnId === event.turnId
+        ? { ...turn, content: `${turn.content}${event.payload}` }
+        : turn));
       setTrace((current) => current.some((value) => value.eventId === event.eventId)
         ? current
         : [...current.slice(-99), event]);
@@ -200,7 +233,9 @@ export function useThreadWorkspace(userId: string) {
     if (buffer.trim() && !signal.aborted) appendSseChunk(`${buffer}\n\n`, append);
   }, []);
 
-  const connect = useCallback(async (nextThreadId: string, afterSequence: number) => {
+  const connect = useCallback(async (nextThreadId: string, afterSequence: number, generation: number) => {
+    const isCurrent = () => generationRef.current === generation && threadIdRef.current === nextThreadId;
+    if (!isCurrent()) return;
     eventControllerRef.current?.abort();
     const controller = new AbortController();
     eventControllerRef.current = controller;
@@ -214,18 +249,24 @@ export function useThreadWorkspace(userId: string) {
         return;
       }
       await consumeSse(response, applyEvent, controller.signal);
-      if (!controller.signal.aborted && threadIdRef.current === nextThreadId) {
-        reconnectTimerRef.current = window.setTimeout(() => void connect(nextThreadId, cursorRef.current), 800);
+      if (!controller.signal.aborted && isCurrent()) {
+        reconnectTimerRef.current = window.setTimeout(
+          () => void connect(nextThreadId, cursorRef.current, generation), 800);
       }
     } catch (failure) {
-      if (!controller.signal.aborted && threadIdRef.current === nextThreadId) {
+      if (!controller.signal.aborted && isCurrent()) {
         setError(failure instanceof Error ? failure.message : "实时事件连接失败");
-        reconnectTimerRef.current = window.setTimeout(() => void connect(nextThreadId, cursorRef.current), 1200);
+        reconnectTimerRef.current = window.setTimeout(
+          () => void connect(nextThreadId, cursorRef.current, generation), 1200);
       }
     }
   }, [applyEvent, consumeSse, userId]);
 
-  const loadThread = useCallback(async (nextThreadId: string) => {
+  const loadThread = useCallback(async (nextThreadId: string, generation: number) => {
+    if (generationRef.current !== generation || threadIdRef.current !== nextThreadId) return;
+    historyControllerRef.current?.abort();
+    const controller = new AbortController();
+    historyControllerRef.current = controller;
     setLoading(true);
     setError(null);
     itemsRef.current = [];
@@ -235,28 +276,48 @@ export function useThreadWorkspace(userId: string) {
     setTrace([]);
     setQuestion(null);
     try {
-      const page = await requestJson<AgentItemPage>(
-        `${API}/threads/${encodeURIComponent(nextThreadId)}/items?afterSequence=0&limit=500`,
-        { headers: { "X-User-Id": userId } }
-      );
-      applyItems(page.items);
-      threadIdRef.current = nextThreadId;
+      const recovered: AgentItemWire[] = [];
+      let afterSequence = 0;
+      let hasMore = true;
+      while (hasMore) {
+        const page = await requestJson<AgentItemPage>(
+          `${API}/threads/${encodeURIComponent(nextThreadId)}/items?afterSequence=${afterSequence}&limit=500`,
+          { headers: { "X-User-Id": userId }, signal: controller.signal }
+        );
+        if (controller.signal.aborted || generationRef.current !== generation
+          || threadIdRef.current !== nextThreadId) return;
+        recovered.push(...page.items);
+        hasMore = page.hasMore && page.items.length > 0;
+        afterSequence = page.nextAfterSequence;
+      }
+      if (controller.signal.aborted || generationRef.current !== generation
+        || threadIdRef.current !== nextThreadId) return;
+      applyItems(recovered, nextThreadId);
       setThreadId(nextThreadId);
       setLoading(false);
-      void connect(nextThreadId, page.nextAfterSequence);
+      void connect(nextThreadId, afterSequence, generation);
     } catch (failure) {
-      setLoading(false);
-      setError(failure instanceof Error ? failure.message : "Thread 历史加载失败");
+      if (!controller.signal.aborted && generationRef.current === generation
+        && threadIdRef.current === nextThreadId) {
+        setLoading(false);
+        setError(failure instanceof Error ? failure.message : "Thread 历史加载失败");
+      }
+    } finally {
+      if (historyControllerRef.current === controller) historyControllerRef.current = null;
     }
   }, [applyItems, connect, userId]);
 
   const selectThread = useCallback((nextThreadId: string) => {
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
+    historyControllerRef.current?.abort();
     eventControllerRef.current?.abort();
     if (reconnectTimerRef.current !== null) window.clearTimeout(reconnectTimerRef.current);
     threadIdRef.current = nextThreadId;
     activeTurnRef.current = null;
+    setThreadId(null);
     setBusy(false);
-    void loadThread(nextThreadId);
+    void loadThread(nextThreadId, generation);
   }, [loadThread]);
 
   useEffect(() => {
@@ -291,6 +352,8 @@ export function useThreadWorkspace(userId: string) {
     void loadThreads();
     return () => {
       cancelled = true;
+      generationRef.current += 1;
+      historyControllerRef.current?.abort();
       eventControllerRef.current?.abort();
       if (reconnectTimerRef.current !== null) window.clearTimeout(reconnectTimerRef.current);
     };
@@ -313,53 +376,69 @@ export function useThreadWorkspace(userId: string) {
 
   const send = useCallback(async (message: string) => {
     if (!threadId || busy || question) return;
+    const requestThreadId = threadId;
+    const generation = generationRef.current;
     setBusy(true);
     setError(null);
     try {
-      const accepted = await requestJson<{ turnId: string }>(`${API}/threads/${encodeURIComponent(threadId)}/turns`, {
+      const accepted = await requestJson<{ turnId: string }>(`${API}/threads/${encodeURIComponent(requestThreadId)}/turns`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-User-Id": userId },
         body: JSON.stringify({ clientRequestId: id("turn"), message })
       });
-      activeTurnRef.current = accepted.turnId;
+      if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
+        activeTurnRef.current = accepted.turnId;
+      }
     } catch (failure) {
-      setBusy(false);
-      setError(failure instanceof Error ? failure.message : "Turn 提交失败");
+      if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
+        setBusy(false);
+        setError(failure instanceof Error ? failure.message : "Turn 提交失败");
+      }
     }
   }, [busy, question, threadId, userId]);
 
   const answer = useCallback(async (answers: Record<string, string>) => {
     if (!question || busy) return;
+    const requestQuestion = question;
+    const requestThreadId = threadIdRef.current;
+    const generation = generationRef.current;
     setBusy(true);
     setError(null);
     try {
       const accepted = await requestJson<{ turnId: string }>(
-        `${API}/workflow-runs/${encodeURIComponent(question.runId)}/questions/${encodeURIComponent(question.questionId)}/answers`,
+        `${API}/workflow-runs/${encodeURIComponent(requestQuestion.runId)}/questions/${encodeURIComponent(requestQuestion.questionId)}/answers`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-User-Id": userId },
-          body: JSON.stringify({ clientRequestId: id("answer"), checkpointId: question.checkpointId,
-            expectedVersion: question.version, answers })
+          body: JSON.stringify({ clientRequestId: id("answer"), checkpointId: requestQuestion.checkpointId,
+            expectedVersion: requestQuestion.version, answers })
         }
       );
-      activeTurnRef.current = accepted.turnId;
+      if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
+        activeTurnRef.current = accepted.turnId;
+      }
     } catch (failure) {
-      setBusy(false);
-      setError(failure instanceof Error ? failure.message : "QuestionCard 提交失败");
+      if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
+        setBusy(false);
+        setError(failure instanceof Error ? failure.message : "QuestionCard 提交失败");
+      }
     }
   }, [busy, question, userId]);
 
   const cancel = useCallback(async () => {
     const turnId = activeTurnRef.current;
     if (!turnId) return;
+    const generation = generationRef.current;
     try {
       await requestJson(`${API}/turns/${encodeURIComponent(turnId)}/cancel`, {
         method: "POST", headers: { "X-User-Id": userId }
       });
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "取消失败");
+      if (generationRef.current === generation) {
+        setError(failure instanceof Error ? failure.message : "取消失败");
+      }
     } finally {
-      setBusy(false);
+      if (generationRef.current === generation) setBusy(false);
     }
   }, [userId]);
 
@@ -376,11 +455,6 @@ export function useThreadWorkspace(userId: string) {
       setError(failure instanceof Error ? failure.message : "Thread 重命名失败");
     }
   }, [threadId, userId]);
-
-  useEffect(() => () => {
-    eventControllerRef.current?.abort();
-    if (reconnectTimerRef.current !== null) window.clearTimeout(reconnectTimerRef.current);
-  }, []);
 
   return {
     answer,
