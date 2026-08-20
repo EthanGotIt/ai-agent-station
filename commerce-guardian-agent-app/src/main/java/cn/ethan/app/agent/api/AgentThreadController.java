@@ -153,9 +153,6 @@ public final class AgentThreadController {
             @Valid @RequestBody AgentWorkflowQuestionAnswerRequestDto body,
             HttpServletRequest request
     ) {
-        if (!runId.equals(body.runId()) || !questionId.equals(body.questionId())) {
-            throw new IllegalArgumentException("QuestionCard 路径参数与请求体不一致");
-        }
         return ResponseEntity.accepted().body(AgentTurnAcceptedResponseDto.from(runtime.answerQuestion(
                 userContext.currentUserId(request), body.clientRequestId(), runId, questionId,
                 body.checkpointId(), body.expectedVersion(), body.answers()

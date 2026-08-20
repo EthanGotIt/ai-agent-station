@@ -2,6 +2,7 @@ package cn.ethan.infrastructure.agent.thread.persistence;
 
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStatusEnum;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,7 +52,7 @@ public final class MybatisAgentWorkflowQuestionStore implements AgentWorkflowQue
                 .eq("STATUS", "OPEN")
                 .eq("VERSION_NO", previousVersion)
                 .set("VERSION_NO", question.version())
-                .set("STATUS", question.status())
+                .set("STATUS", question.status().name())
                 .set("ANSWERED_AT", question.answeredAt()));
         if (updated != 1) {
             throw new IllegalStateException("QuestionCard 已被其他请求处理");
@@ -70,7 +71,7 @@ public final class MybatisAgentWorkflowQuestionStore implements AgentWorkflowQue
         entity.setTitle(model.title());
         entity.setPrompt(model.prompt());
         entity.setFieldsJson(model.fieldsJson());
-        entity.setStatus(model.status());
+        entity.setStatus(model.status().name());
         entity.setCreatedAt(model.createdAt());
         entity.setAnsweredAt(model.answeredAt());
         return entity;
@@ -79,7 +80,8 @@ public final class MybatisAgentWorkflowQuestionStore implements AgentWorkflowQue
     private static AgentWorkflowQuestionModel toModel(AgentWorkflowQuestionEntity entity) {
         return new AgentWorkflowQuestionModel(entity.getRunId(), entity.getThreadId(), entity.getTurnId(), entity.getUserId(),
                 entity.getQuestionId(), entity.getCheckpointId(), value(entity.getVersionNo()), entity.getTitle(),
-                entity.getPrompt(), entity.getFieldsJson(), entity.getStatus(), entity.getCreatedAt(), entity.getAnsweredAt());
+                entity.getPrompt(), entity.getFieldsJson(), AgentWorkflowQuestionStatusEnum.valueOf(entity.getStatus()),
+                entity.getCreatedAt(), entity.getAnsweredAt());
     }
 
     private static long value(Long value) {

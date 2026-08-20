@@ -2,6 +2,8 @@ package cn.ethan.infrastructure.agent.thread.persistence;
 
 import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
+import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.stereotype.Repository;
 
@@ -50,8 +52,8 @@ public final class MybatisAgentWorkflowRunStore implements AgentWorkflowRunStore
         entity.setThreadId(run.threadId());
         entity.setTurnId(run.turnId());
         entity.setUserId(run.userId());
-        entity.setWorkflowType(run.workflowType());
-        entity.setStatus(run.status());
+        entity.setWorkflowType(run.workflowType().name());
+        entity.setStatus(run.status().name());
         entity.setVersionNo(run.version());
         entity.setCreatedAt(run.createdAt());
         entity.setUpdatedAt(run.updatedAt());
@@ -60,7 +62,8 @@ public final class MybatisAgentWorkflowRunStore implements AgentWorkflowRunStore
 
     private AgentWorkflowRunModel toModel(AgentWorkflowRunEntity entity) {
         return new AgentWorkflowRunModel(entity.getRunId(), entity.getThreadId(), entity.getTurnId(),
-                entity.getUserId(), entity.getWorkflowType(), entity.getStatus(),
+                entity.getUserId(), AgentWorkflowTypeEnum.valueOf(entity.getWorkflowType()),
+                AgentWorkflowStatusEnum.valueOf(entity.getStatus()),
                 entity.getVersionNo() == null ? 0 : entity.getVersionNo(),
                 entity.getCreatedAt(), entity.getUpdatedAt());
     }

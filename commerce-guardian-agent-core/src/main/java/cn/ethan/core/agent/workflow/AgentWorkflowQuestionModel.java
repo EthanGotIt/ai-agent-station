@@ -19,7 +19,7 @@ public record AgentWorkflowQuestionModel(
         String title,
         String prompt,
         String fieldsJson,
-        String status,
+        AgentWorkflowQuestionStatusEnum status,
         Instant createdAt,
         Instant answeredAt
 ) {
@@ -31,11 +31,12 @@ public record AgentWorkflowQuestionModel(
         title = title == null ? "需要确认" : title;
         prompt = prompt == null ? "" : prompt;
         fieldsJson = fieldsJson == null ? "[]" : fieldsJson;
-        status = status == null ? "OPEN" : status;
+        status = status == null ? AgentWorkflowQuestionStatusEnum.OPEN : status;
     }
 
     public AgentWorkflowQuestionModel answered(Instant at) {
         return new AgentWorkflowQuestionModel(runId, threadId, turnId, userId, questionId,
-                checkpointId, version + 1, title, prompt, fieldsJson, "ANSWERED", createdAt, at);
+                checkpointId, version + 1, title, prompt, fieldsJson,
+                AgentWorkflowQuestionStatusEnum.ANSWERED, createdAt, at);
     }
 }

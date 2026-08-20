@@ -13,8 +13,6 @@ import java.util.Map;
  */
 public record AgentWorkflowQuestionAnswerRequestDto(
         @NotBlank String clientRequestId,
-        @NotBlank String runId,
-        @NotBlank String questionId,
         @NotBlank String checkpointId,
         @NotNull Long expectedVersion,
         @NotNull Map<String, String> answers

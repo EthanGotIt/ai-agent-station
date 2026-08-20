@@ -13,22 +13,22 @@ public record AgentWorkflowRunModel(
         String threadId,
         String turnId,
         String userId,
-        String workflowType,
-        String status,
+        AgentWorkflowTypeEnum workflowType,
+        AgentWorkflowStatusEnum status,
         long version,
         Instant createdAt,
         Instant updatedAt
 ) {
     public AgentWorkflowRunModel {
         if (runId == null || runId.isBlank() || threadId == null || threadId.isBlank()
-                || userId == null || userId.isBlank() || workflowType == null || workflowType.isBlank()) {
+                || userId == null || userId.isBlank() || workflowType == null) {
             throw new IllegalArgumentException("WorkflowRun identity must not be blank");
         }
-        status = status == null ? "WAITING_USER_INPUT" : status;
+        status = status == null ? AgentWorkflowStatusEnum.WAITING_USER_INPUT : status;
         version = Math.max(0, version);
     }
 
-    public AgentWorkflowRunModel status(String nextStatus, Instant now) {
+    public AgentWorkflowRunModel status(AgentWorkflowStatusEnum nextStatus, Instant now) {
         return new AgentWorkflowRunModel(runId, threadId, turnId, userId, workflowType,
                 nextStatus, version + 1, createdAt, now);
     }

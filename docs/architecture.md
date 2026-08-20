@@ -55,7 +55,7 @@ Item 是唯一事实来源。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersio
 
 ## 编排和审批
 
-`SpringAiAgentTurnCoordinator` 是唯一协调 Agent。只读 Tool 查询订单和物流；能力 Tool 只能启动退款或催发货 Workflow，不能直接产生外部副作用。Workflow 显式执行：
+`SpringAiAgentTurnCoordinator` 是唯一协调 Agent。只读 Tool 查询订单和物流；能力 Tool 只能启动退款或催发货 Workflow，不能直接产生外部副作用。Tool Call/Result 只记录受控参数、状态、截断标志，不记录 Prompt 或 Thinking。Workflow 类型、状态和 QuestionCard 状态使用枚举，并显式执行：
 
 ```text
 校验 → 持久化 QuestionCard → WAITING_USER_INPUT
@@ -63,7 +63,7 @@ Item 是唯一事实来源。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersio
      → Worker 执行 → SUCCEEDED / MANUAL_RETRY_REQUIRED
 ```
 
-回答必须携带 `runId + questionId + checkpointId + expectedVersion`，并作为同一 Thread 的新 Turn 进入 FIFO。一个 Thread 同时最多一个开放 QuestionCard。原始模型思考内容不进入 API、SSE、数据库或日志。
+回答路径参数携带 `runId + questionId`，请求体只携带 `clientRequestId + checkpointId + expectedVersion + answers`，并作为同一 Thread 的新 Turn 进入 FIFO。启动、问题创建和版本关闭受本地事务约束；同一 Thread 同时最多一个开放 QuestionCard。退款仅允许 PAID/SHIPPED/DELIVERED，催发货仅允许 PAID；原始模型思考内容不进入 API、SSE、数据库或日志。
 
 ## Runtime 可靠性
 

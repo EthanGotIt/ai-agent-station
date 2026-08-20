@@ -8,6 +8,7 @@ import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -82,8 +83,11 @@ public final class ExternalActionWorker {
                     : claimed.retryAt(now.plusSeconds(15), result.code(), result.message(), now);
             commands.update(updated);
             workflowRuns.find(updated.userId(), updated.runId()).ifPresent(run ->
-                    workflowRuns.update(run.status(updated.status().name().equals("SUCCEEDED")
-                            ? "COMPLETED" : updated.status().name(), now)));
+                    workflowRuns.update(run.status(updated.status() == cn.ethan.core.agent.action.ExternalActionStatusEnum.SUCCEEDED
+                            ? AgentWorkflowStatusEnum.COMPLETED
+                            : updated.status() == cn.ethan.core.agent.action.ExternalActionStatusEnum.MANUAL_RETRY_REQUIRED
+                            ? AgentWorkflowStatusEnum.MANUAL_RETRY_REQUIRED
+                            : AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, now)));
             appendStatus(updated, result.message());
         } catch (RuntimeException failure) {
             Instant now = clock.instant();
@@ -91,7 +95,9 @@ public final class ExternalActionWorker {
                     now.plusSeconds(15), "WORKER_EXCEPTION", failure.getClass().getSimpleName(), now);
             commands.update(updated);
             workflowRuns.find(updated.userId(), updated.runId()).ifPresent(run ->
-                    workflowRuns.update(run.status(updated.status().name(), now)));
+                    workflowRuns.update(run.status(updated.status() == cn.ethan.core.agent.action.ExternalActionStatusEnum.MANUAL_RETRY_REQUIRED
+                            ? AgentWorkflowStatusEnum.MANUAL_RETRY_REQUIRED
+                            : AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, now)));
             appendStatus(updated, "Worker 执行异常");
             LOGGER.warn("外部动作执行异常，commandId={}, errorType={}",
                     claimed.commandId(), failure.getClass().getSimpleName());

@@ -189,13 +189,13 @@ public final class AgentTurnRuntimeService {
             Map<String, String> answers
     ) {
         AgentThreadModel thread = ownedThread(userId, threadId);
-        AgentWorkflowQuestionModel question = questions.findOpenQuestion(userId, threadId)
-                .orElseThrow(() -> new AgentThreadConflictException("QUESTION_NOT_OPEN", "QuestionCard 已关闭"));
         requireText(requestId, "clientRequestId");
         Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(userId, requestId);
         if (duplicate.isPresent()) {
             return duplicate.get();
         }
+        AgentWorkflowQuestionModel question = questions.findOpenQuestion(userId, threadId)
+                .orElseThrow(() -> new AgentThreadConflictException("QUESTION_NOT_OPEN", "QuestionCard 已关闭"));
         if (!question.runId().equals(runId) || !question.questionId().equals(questionId)
                 || !question.checkpointId().equals(checkpointId) || question.version() != expectedVersion) {
             throw new AgentThreadConflictException("WORKFLOW_VERSION_CONFLICT", "QuestionCard 检查点或版本已变化");
@@ -332,7 +332,6 @@ public final class AgentTurnRuntimeService {
                 appendItem(active, AgentItemTypeEnum.WORKFLOW_STARTED,
                         result.workflowRunId() == null ? "workflow started" : result.workflowRunId());
                 appendItem(active, AgentItemTypeEnum.WORKFLOW_QUESTION, questionPayload(result.question()));
-                questions.saveQuestion(result.question());
                 AgentTurnModel waiting = active.workflow(result.workflowRunId(), AgentTurnStatusEnum.WAITING_USER_INPUT);
                 turns.updateTurn(waiting);
                 appendItem(waiting, AgentItemTypeEnum.TURN_STATE, turnStatePayload(waiting.status(), null));

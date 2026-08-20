@@ -338,7 +338,8 @@ export function useThreadWorkspace(userId: string) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-User-Id": userId },
-          body: JSON.stringify({ clientRequestId: id("answer"), ...question, answers })
+          body: JSON.stringify({ clientRequestId: id("answer"), checkpointId: question.checkpointId,
+            expectedVersion: question.version, answers })
         }
       );
       activeTurnRef.current = accepted.turnId;
