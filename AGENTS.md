@@ -35,7 +35,7 @@
 ## 项目与文档命名（硬约束）
 
 - 对外产品名统一写作 `Commerce Guardian Agent`；正文、页面标题、日志提示和示例不得再使用旧项目名或版本号作为产品名。
-- Maven 根项目、模块目录、ArtifactId、前端目录和 npm package 使用小写 kebab-case：`commerce-guardian-agent`、`commerce-guardian-agent-core`、`commerce-guardian-agent-infrastructure`、`commerce-guardian-agent-app`、`commerce-guardian-agent-console`。
+- Maven 根项目、模块目录、ArtifactId、前端目录和 npm package 使用小写 kebab-case：`commerce-guardian-agent`、`commerce-guardian-agent-core`、`commerce-guardian-agent-infrastructure`、`commerce-guardian-agent-app`、`agent-console`。
 - 文档文件名使用小写 kebab-case，表达稳定职责，不在文件名中编码版本号或日期；例如 `architecture.md`、`runbook.md`、`task-handoff.md`。SQL 基线命名为 `commerce-guardian-agent.sql`。
 - Java 类型仍使用 PascalCase，Python 模块使用 snake_case，前端组件使用 PascalCase；目录名遵循所属生态的标准命名。
 - 修改项目名时必须同步检查构建文件、运行配置、数据库名、前端元数据、脚本提示、文档链接和验收示例；不得留下旧项目名或版本标签的功能性引用。

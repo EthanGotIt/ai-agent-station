@@ -14,13 +14,13 @@ Commerce Guardian Agent 是一个 Agent-first 执行平台：业务订单、物�
 - `commerce-guardian-agent-core`：纯 Java 领域模型、端口和 Thread Runtime，不依赖 Spring 或数据库。
 - `commerce-guardian-agent-infrastructure`：MyBatis-Plus 持久化、Spring AI 协调器、订单夹具和外部动作 Worker。
 - `commerce-guardian-agent-app`：Spring Boot 启动、配置和唯一 `/api/agent` HTTP/SSE 契约。
-- `commerce-guardian-agent-console`：React + TypeScript + Vite Thread 工作区。
+- `agent-console`：React + TypeScript + Vite Thread 工作区。
 
-准备 JDK 17、Maven、Node.js 和 MySQL 后，先执行 `docs/dev-ops/mysql/sql/commerce-guardian-agent.sql`，再启动：
+准备 JDK 17、Maven、Node.js 和 MySQL 后，先执行 `docs/dev-ops/mysql/commerce-guardian-agent.sql`，再启动：
 
 ```text
 mvn spring-boot:run -pl commerce-guardian-agent-app
-cd commerce-guardian-agent-console
+cd agent-console
 npm install
 npm run dev
 ```
@@ -33,7 +33,7 @@ npm run dev
 python -m scripts.convention_check
 python -m unittest discover -s scripts/tests -p "test_*.py"
 mvn clean '-DskipTests=false' test
-cd commerce-guardian-agent-console
+cd agent-console
 npm run typecheck
 npm test -- --run
 npm run build

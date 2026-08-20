@@ -1,29 +1,22 @@
-status: completed
+status: active
 updated: 2026-08-20
 
 # Commerce Guardian Agent 交接
 
-## 已完成
+## 当前状态
 
-- 已建立 Thread、Turn、Item、ContextSnapshot、QuestionCard 和 ExternalActionCommand 核心模型及 MyBatis-Plus 存储。
-- 已切换 Spring AI 协调器、确定性 Workflow、FIFO/取消/超时、SSE 和 React + TypeScript Thread 工作区。
-- 已将 Maven 模块、前端工作区、运行时应用名、数据库名和 SQL 基线统一为 Commerce Guardian Agent。
-- 已删除旧业务聚合、旧入口、旧框架依赖和增量 SQL；唯一基线为 `docs/dev-ops/mysql/sql/commerce-guardian-agent.sql`。
-- 已移除前端旧 Memory、Review、场景启动器和 Intervention 样式，仅保留 Thread 工作区样式。
-- 已将 Git 提交守则与项目、文档命名规范写入 `AGENTS.md`，架构与文档统一使用 Commerce Guardian Agent 名称。
+- 已建立 Agent-first 分包守则，完成 Core、Infrastructure 和 App 的能力内聚迁移。
+- 已拆分 Thread、Turn、Item、QuestionCard、ContextSnapshot 存储端口，并保持 MyBatis-Plus 适配器可构建。
+- 已将 SSE 事件总线移到 App `agent.stream`，Core 仅保留事件发布和订阅端口。
+- 已移除无调用的订单分析、商品明细和近期订单分支，以及对应的直接依赖。
+- 唯一 SQL 基线为 `docs/dev-ops/mysql/commerce-guardian-agent.sql`；前端目录为 `agent-console`。
 
 ## 最近验证
 
+- `python -m scripts.convention_check`：通过。
 - `mvn -pl commerce-guardian-agent-app -am -DskipTests compile`：通过。
-- `commerce-guardian-agent-console/npm run typecheck`、`npm test -- --run`、`npm run test:e2e`、`npm run build`：通过。
 
-## 最终验证
+## 下一步唯一动作
 
-```text
-python -m scripts.convention_check
-python -m unittest discover -s scripts/tests -p "test_*.py"
-mvn clean '-DskipTests=false' test
-cd commerce-guardian-agent-console; npm run typecheck; npm test -- --run; npm run test:e2e; npm run build
-```
-
-规范检查、脚本单测、Maven 全量测试、前端类型检查、组件测试、轻量端到端测试和生产构建均已通过。`python -m scripts.acceptance` 需要在已启动并连接 MySQL/模型的环境中运行。
+补齐 SQL 基线与前端目录相关文档后，执行 Python、Maven 和 `agent-console` 全量验证，
+再按阶段检查 staged diff 并提交测试与文档收尾。
