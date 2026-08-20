@@ -27,6 +27,7 @@ updated: 2026-08-21
 - 提交 `cef1052 fix: reconnect console SSE after network loss`：网络离线时主动取消 SSE reader，恢复在线后按当前 Item 游标重连；增加 reader 无数据超时兜底，并补组件级重连测试。
 - 提交 `d6d22ab fix: align agent input identity boundaries`：普通 Turn 消息、Thread 身份、标题和业务上下文在 Core、HTTP DTO、认证 Header 与 SQL 之间统一边界；客户端请求 ID 统一去空格，避免重试时因表现形式不同绕过幂等查询。
 - 提交 `871a155 chore: remove misleading frontend e2e alias`：将实际运行 Vitest Mock 组件测试的旧 `test:e2e` 命名改为 `test:component`，避免把组件替身误报为真实浏览器验收。
+- 本里程碑已完成真实 Context 长历史探针：在专用库 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821` 创建一个 Thread，连续提交 30 个失败终态 Turn，得到 180 个 Item、连续序列 1–180 和 6 个快照（版本 1–6，覆盖到序列 156）。应用受控停止并重启后，同一 Thread 的追加 Turn 仍收敛为 `FAILED`，Item 恢复返回 186 条且序列有序；再追加 10 轮后得到 246 个 Item、41 个终态 Turn，快照扩展至版本 8、覆盖到序列 210。持久化 `CONTEXT_ASSEMBLED` 事实记录重启后的 `snapshotThroughSequence=156`，并记录后续 `compressed=true`、`degraded=false`，证明快照读取、压缩和恢复链路实际运行。
 
 ## 最近验证
 
@@ -39,6 +40,7 @@ updated: 2026-08-21
 - 当前未发现可用的 DeepSeek 凭据；探针使用假值且将模型端点指向本机不可达地址，仅验证启动和错误收敛，未发送真实用户数据，也不能替代真实 DeepSeek Tool Calling/流式/取消验证。
 - `agent-console/npm run typecheck`、`npm test -- --run`（17 项）、`npm run test:component`（7 项）、`npm run build`：通过；新增人工重试按钮/API、外部动作终态映射和 SSE 重连测试。`test:component` 明确使用 Mock，不作为真实浏览器证据。
 - `python -m scripts.runtime_eval`：通过 5 项确定性 Runtime 检查。
+- 真实 HTTP acceptance：`python -m scripts.acceptance --base-url http://127.0.0.1:8090 --user-id acceptance-calibration-user` 通过 `thread-list`、`thread-create`、`item-recovery`、`turn-accepted`、`turn-idempotency`、`execution-replay` 六项检查；运行使用专用 MySQL 和本机不可达模型端点，未伪称为真实 DeepSeek 证据。
 - Workflow 订单/物流校验已移到本地事务外；Question、WorkflowRun、ExternalActionCommand 和 Workflow Item 的写入由事务模板统一收口。
 - Playwright 真实浏览器已连接专用校准库：验证 Thread 创建、重命名、切换、历史 Item 恢复、QuestionCard 拒绝、执行时间线和页面重载后的结果恢复；另验证了本机不可达模型端点的可见失败 Turn。浏览器重载/关闭暴露的 SSE 异步连接异常已由 `821733c` 收口；真实 DeepSeek 仍未验证。
 - Playwright 真实浏览器 SSE 断线续传实证：在 `cal-browser-retry-thread-052603808` 已建立 `afterSequence=13` 的连接后切换 offline，随后通过真实 HTTP 提交 Turn `67fa7ae5-6b61-45cd-bc42-2acd1bd7ce58`；专用 MySQL 记录该 Turn `FAILED/AGENT_EXECUTION_FAILED`，新增 Item 14–19。恢复 online 后浏览器网络记录出现两次 `events?afterSequence=13`，页面按序展示 14–19 号 Item 且无重复，浏览器错误级控制台消息为 0。
@@ -85,6 +87,6 @@ updated: 2026-08-21
 
 ## 下一步唯一动作
 
-使用已确认的专用 MySQL 校准库执行真实长历史 Context/快照恢复探针，并记录最新窗口、快照续接和敏感字段隔离证据；随后运行真实 HTTP acceptance。DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
+基于当前追踪矩阵继续处理剩余 P1：先完成类型化 Item/边界解码与 API、SQL、配置契约的只读审查，补充必要回归测试并运行完整验证矩阵；DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。
