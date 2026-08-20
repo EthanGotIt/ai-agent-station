@@ -3,12 +3,14 @@ package cn.ethan.infrastructure.agent.action.worker;
 import cn.ethan.core.agent.action.ExternalActionCommandModel;
 import cn.ethan.core.agent.action.ExternalActionCommandStore;
 import cn.ethan.core.agent.action.ExternalActionExecutor;
-import cn.ethan.core.agent.thread.AgentItemTypeEnum;
+import cn.ethan.core.agent.event.AgentThreadEventGateway;
+import cn.ethan.core.agent.execution.AgentRuntimeMetrics;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemStore;
-import cn.ethan.core.agent.event.AgentThreadEventGateway;
+import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
-import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -40,39 +42,61 @@ public final class ExternalActionWorker implements DisposableBean {
 
     private final ExternalActionCommandStore commands;
     private final ExternalActionExecutor executor;
-    private final AgentItemStore items;
     private final AgentThreadEventGateway events;
     private final Clock clock;
-    private final AgentWorkflowRunStore workflowRuns;
+    private final ExternalActionOutcomeManager outcomes;
     private final Duration leaseDuration;
     private final Duration retryBaseDelay;
     private final Duration actionTimeout;
+    private final AgentRuntimeMetrics metrics;
     private final ExecutorService actionExecutor = Executors.newCachedThreadPool(runnable -> {
         Thread thread = new Thread(runnable, "agent-external-action");
         thread.setDaemon(true);
         return thread;
     });
 
+    @Autowired
+    public ExternalActionWorker(
+            ExternalActionCommandStore commands,
+            ExternalActionExecutor executor,
+            AgentThreadEventGateway events,
+            Clock clock,
+            @Value("${ai-agent.worker.lease-duration:PT30S}") Duration leaseDuration,
+            @Value("${ai-agent.worker.retry-base-delay:PT5S}") Duration retryBaseDelay,
+            @Value("${ai-agent.worker.action-timeout:PT30S}") Duration actionTimeout,
+            AgentRuntimeMetrics metrics,
+            ExternalActionOutcomeManager outcomes
+    ) {
+        this.commands = commands;
+        this.executor = executor;
+        this.events = events;
+        this.clock = clock;
+        this.outcomes = outcomes;
+        this.leaseDuration = positive(leaseDuration, Duration.ofSeconds(30));
+        this.retryBaseDelay = positive(retryBaseDelay, Duration.ofSeconds(5));
+        this.actionTimeout = positive(actionTimeout, Duration.ofSeconds(30));
+        this.metrics = metrics == null ? AgentRuntimeMetrics.noop() : metrics;
+    }
+
+    /**
+     * 保留内存测试的显式依赖构造边界；生产调用使用带事务的 OutcomeManager。
+     */
     public ExternalActionWorker(
             ExternalActionCommandStore commands,
             ExternalActionExecutor executor,
             AgentItemStore items,
+            AgentTurnStore turns,
             AgentThreadEventGateway events,
             Clock clock,
             AgentWorkflowRunStore workflowRuns,
-            @Value("${ai-agent.worker.lease-duration:PT30S}") Duration leaseDuration,
-            @Value("${ai-agent.worker.retry-base-delay:PT5S}") Duration retryBaseDelay,
-            @Value("${ai-agent.worker.action-timeout:PT30S}") Duration actionTimeout
+            Duration leaseDuration,
+            Duration retryBaseDelay,
+            Duration actionTimeout,
+            AgentRuntimeMetrics metrics
     ) {
-        this.commands = commands;
-        this.executor = executor;
-        this.items = items;
-        this.events = events;
-        this.clock = clock;
-        this.workflowRuns = workflowRuns;
-        this.leaseDuration = positive(leaseDuration, Duration.ofSeconds(30));
-        this.retryBaseDelay = positive(retryBaseDelay, Duration.ofSeconds(5));
-        this.actionTimeout = positive(actionTimeout, Duration.ofSeconds(30));
+        this(commands, executor, events, clock, leaseDuration, retryBaseDelay, actionTimeout, metrics,
+                new ExternalActionOutcomeManager(commands, items, turns, workflowRuns,
+                        new ObjectMapper()));
     }
 
     public int runOnce(int limit, Duration leaseDuration) {
@@ -82,6 +106,10 @@ public final class ExternalActionWorker implements DisposableBean {
         List<ExternalActionCommandModel> claimed = commands.claimDue(
                 now, now.plus(effectiveLease), workerId, limit);
         for (ExternalActionCommandModel command : claimed) {
+            // attemptCount>1 同时覆盖重试和过期 Lease 接管，指标只用于低基数运行态势
+            if (command.attemptCount() > 1) {
+                metrics.observeLeaseTakeover();
+            }
             execute(command);
         }
         return claimed.size();
@@ -102,47 +130,79 @@ public final class ExternalActionWorker implements DisposableBean {
     }
 
     private void execute(ExternalActionCommandModel claimed) {
+        ExternalActionExecutor.ExternalActionResult result;
         try {
-            ExternalActionExecutor.ExternalActionResult result = executeWithTimeout(claimed);
-            Instant now = clock.instant();
-            ExternalActionCommandModel updated = result.success()
-                    ? claimed.succeeded(now)
-                    : result.retryable()
-                    ? claimed.retryAt(now.plus(retryDelay(claimed.attemptCount())), result.code(), result.message(), now)
-                    : claimed.failedPermanently(result.code(), result.message(), now);
-            commands.update(updated);
-            workflowRuns.find(updated.userId(), updated.runId()).ifPresent(run ->
-                    workflowRuns.update(run.status(updated.status() == cn.ethan.core.agent.action.ExternalActionStatusEnum.SUCCEEDED
-                            ? AgentWorkflowStatusEnum.COMPLETED
-                            : updated.status() == cn.ethan.core.agent.action.ExternalActionStatusEnum.MANUAL_RETRY_REQUIRED
-                            ? AgentWorkflowStatusEnum.MANUAL_RETRY_REQUIRED
-                            : AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, now)));
-            appendStatus(updated, result.message());
+            result = executeWithTimeout(claimed);
         } catch (RuntimeException failure) {
-            Instant now = clock.instant();
-            ExternalActionCommandModel updated = claimed.retryAt(
-                    now.plus(retryDelay(claimed.attemptCount())), "WORKER_EXCEPTION", failure.getClass().getSimpleName(), now);
-            commands.update(updated);
-            workflowRuns.find(updated.userId(), updated.runId()).ifPresent(run ->
-                    workflowRuns.update(run.status(updated.status() == cn.ethan.core.agent.action.ExternalActionStatusEnum.MANUAL_RETRY_REQUIRED
-                            ? AgentWorkflowStatusEnum.MANUAL_RETRY_REQUIRED
-                            : AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, now)));
-            appendStatus(updated, "Worker 执行异常");
-            LOGGER.warn("外部动作执行异常，commandId={}, errorType={}",
+            retryAfterExecutionFailure(claimed, failure);
+            return;
+        }
+        if (result == null) {
+            retryAfterExecutionFailure(claimed, new IllegalStateException("外部动作执行器返回空结果"));
+            return;
+        }
+
+        Instant now = clock.instant();
+        ExternalActionCommandModel updated = result.success()
+                ? claimed.succeeded(now)
+                : result.retryable()
+                ? claimed.retryAt(now.plus(retryDelay(claimed.attemptCount())), result.code(), result.message(), now)
+                : claimed.failedPermanently(result.code(), result.message(), now);
+        if (!result.success() && result.retryable()) {
+            metrics.observeWorkerRetry();
+        }
+        try {
+            ExternalActionOutcomeManager.Projection projection = outcomes.transition(
+                    claimed, updated, result.code(), result.message(), clock);
+            if (projection == null) {
+                LOGGER.info("外部动作 Lease 已失效，停止投影，commandId={}, version={}",
+                        claimed.commandId(), claimed.version());
+                return;
+            }
+            publishSafely(projection);
+        } catch (RuntimeException failure) {
+            // 本地事务失败时保持 PROCESSING，等待 Lease 到期后的相同幂等键恢复；不得重做远程动作。
+            LOGGER.warn("外部动作本地投影失败，等待 Lease 恢复，commandId={}, errorType={}",
                     claimed.commandId(), failure.getClass().getSimpleName());
         }
     }
 
-    private void appendStatus(ExternalActionCommandModel command, String message) {
-        AgentItemModel item = new AgentItemModel(
-                UUID.randomUUID().toString(), command.threadId(), command.turnId(), 0,
-                AgentItemTypeEnum.EXTERNAL_ACTION_STATUS,
-                command.commandId() + "|" + command.status().name() + "|" + message,
-                clock.instant()
-        );
-        long sequence = items.appendItem(item);
-        events.itemCreated(new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), sequence,
-                item.type(), item.payload(), item.createdAt()));
+    private void retryAfterExecutionFailure(ExternalActionCommandModel claimed, RuntimeException failure) {
+        Instant now = clock.instant();
+        metrics.observeWorkerRetry();
+        ExternalActionCommandModel updated = claimed.retryAt(
+                now.plus(retryDelay(claimed.attemptCount())), "WORKER_EXCEPTION",
+                failure.getClass().getSimpleName(), now);
+        try {
+            ExternalActionOutcomeManager.Projection projection = outcomes.transition(
+                    claimed, updated, "WORKER_EXCEPTION", failure.getClass().getSimpleName(), clock);
+            if (projection == null) {
+                LOGGER.info("异常收敛时外部动作 Lease 已失效，停止投影，commandId={}, version={}",
+                        claimed.commandId(), claimed.version());
+                return;
+            }
+            publishSafely(projection);
+            LOGGER.warn("外部动作执行异常，commandId={}, errorType={}",
+                    claimed.commandId(), failure.getClass().getSimpleName());
+        } catch (RuntimeException projectionFailure) {
+            LOGGER.warn("外部动作异常结果无法本地收敛，等待 Lease 恢复，commandId={}, errorType={}",
+                    claimed.commandId(), projectionFailure.getClass().getSimpleName());
+        }
+    }
+
+    private void publishSafely(ExternalActionOutcomeManager.Projection projection) {
+        try {
+            for (AgentItemModel item : projection.items()) {
+                events.itemCreated(item);
+            }
+            if (projection.turn() != null) {
+                events.turnUpdated(projection.turn());
+            }
+        } catch (RuntimeException failure) {
+            // Item 已经持久化；SSE 断线可从游标回放，不能因发布失败再次执行外部动作。
+            LOGGER.warn("外部动作事实已提交但实时事件发布失败，commandId={}, errorType={}",
+                    projection.command().commandId(), failure.getClass().getSimpleName());
+        }
     }
 
     private ExternalActionExecutor.ExternalActionResult executeWithTimeout(ExternalActionCommandModel command) {
