@@ -11,6 +11,8 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+import org.springframework.web.context.request.async.AsyncRequestTimeoutException;
 
 import java.util.Objects;
 
@@ -60,6 +62,11 @@ public final class AgentExceptionHandler {
     public ResponseEntity<AgentErrorResponseDto> unreadable(HttpMessageNotReadableException exception) {
         return ResponseEntity.badRequest()
                 .body(new AgentErrorResponseDto("INVALID_REQUEST", "请求体格式不正确", null));
+    }
+
+    @ExceptionHandler({AsyncRequestNotUsableException.class, AsyncRequestTimeoutException.class})
+    public void asyncRequestClosed(Exception exception) {
+        LOGGER.debug("SSE 异步连接已关闭，exception={}", exception.getClass().getSimpleName());
     }
 
     @ExceptionHandler(Exception.class)
