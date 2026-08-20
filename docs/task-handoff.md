@@ -29,6 +29,7 @@ updated: 2026-08-21
 - 提交 `871a155 chore: remove misleading frontend e2e alias`：将实际运行 Vitest Mock 组件测试的旧 `test:e2e` 命名改为 `test:component`，避免把组件替身误报为真实浏览器验收。
 - 本里程碑已完成真实 Context 长历史探针：在专用库 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821` 创建一个 Thread，连续提交 30 个失败终态 Turn，得到 180 个 Item、连续序列 1–180 和 6 个快照（版本 1–6，覆盖到序列 156）。应用受控停止并重启后，同一 Thread 的追加 Turn 仍收敛为 `FAILED`，Item 恢复返回 186 条且序列有序；再追加 10 轮后得到 246 个 Item、41 个终态 Turn，快照扩展至版本 8、覆盖到序列 210。持久化 `CONTEXT_ASSEMBLED` 事实记录重启后的 `snapshotThroughSequence=156`，并记录后续 `compressed=true`、`degraded=false`，证明快照读取、压缩和恢复链路实际运行。
 - 提交 `5c6f1f5 fix: align normalized turn item facts`：修复普通 Turn 已规范化输入但首个 `USER_MESSAGE` Item 仍保存原始空白的问题；数据库唯一键竞态的重复请求恢复查询也统一使用规范化用户和请求 ID。Core Runtime 4 项聚焦测试覆盖 Item 事实一致性和创建竞态恢复。
+- 配置/文档校准：修正 `.env.example` 指向不存在的 MySQL SQL 子目录；追踪矩阵不再复制规则检查器禁止的旧供应商 token。`python -m scripts.convention_check` 重新通过，未放宽检查规则。
 
 ## 最近验证
 

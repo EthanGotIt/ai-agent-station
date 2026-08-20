@@ -32,7 +32,7 @@
 | 前端线程切换与 QuestionCard | 已验证完成 | `useThreadWorkspace` 已有 generation、历史 AbortController、旧事件 Thread 过滤和切换期间禁用；QuestionCard 已提交 `APPROVE/REJECT`，组件测试覆盖迟到历史和答案体；`91f2afb` 按结构化外部动作状态恢复 Turn 展示并接入人工重试；真实浏览器已验证创建、重命名、切换、QuestionCard 拒绝、失败 Turn、人工重试和重载恢复，重试后最终成功 Action Item 不会覆盖失败 Turn 事实终态 | P0 | 保留真实浏览器与 17 项前端测试证据，纳入最终完整矩阵 |
 | API、SQL、配置、文档一致性 | 部分实现 | API 路径、Item envelope、DeepSeek 配置和 `.env.example` 已在后端提交中对齐；`d6d22ab` 统一 Core/DTO/Header 的身份、标题、上下文和普通消息边界，`5c6f1f5` 又保证规范化消息同时进入 Turn 和首个 `USER_MESSAGE` Item，并在 SQL `INPUT_TEXT` 注明结构化 Workflow 回答仍使用 10000 字符存储列；真实浏览器已核对 items/events 请求、`afterSequence` 游标和 SSE `item.*` 事件；`e83b9c9` 使规则检查与 Jackson 3 依赖边界一致，`d09ca23` 按源码调用路径补齐直接依赖且 Maven dependency analyze 三模块无 warning；专用 MySQL 长历史和重启探针已验证 API、SQL、Item/Snapshot 事实能够持续恢复；旧数据库因未执行基线会缺少新列，运行手册已明确只能在可丢弃库执行基线 | P1 | 审查剩余 DTO、分页参数和异常响应路径，再运行全契约矩阵 |
 | Runtime eval / acceptance / live eval | 部分实现 | 当前 runtime eval 是明确标注的确定性本地替身；`871a155` 将前端 Mock 组件脚本改名为 `test:component`；真实 HTTP acceptance 已在专用 MySQL 上通过 Thread 列表、创建、Item 恢复、Turn 入队、幂等和执行轨迹回放六项检查；真实浏览器已取得本地模型失败和 QuestionCard 重载恢复证据，但真实 DeepSeek live eval 仍未取得运行证据 | P1 | 在凭据可用时执行 DeepSeek Tool Calling、流式、取消、超时和 live eval，否则保留未验证结论 |
-| 清理旧实现、兼容层和无效测试 | 部分实现 | `91f2afb` 已删除 `sse.ts` 中不符合当前 `ready/heartbeat/item.* /turn.*` 契约的旧结构化事件兼容集合；`rg` 未发现可达的 OpenAI/Qwen 配置或实现，`qwen3.7-max` 仅存在于 convention checker 的禁用文本回归规则；`871a155` 已清理误导性的 `test:e2e` 命名，runtime eval 的 Fake 类型是文档明确的确定性门禁而非生产实现 | P2 | 对剩余测试替身和禁用规则保留“有意隔离”的依据，禁止盲删 |
+| 清理旧实现、兼容层和无效测试 | 部分实现 | `91f2afb` 已删除 `sse.ts` 中不符合当前 `ready/heartbeat/item.* /turn.*` 契约的旧结构化事件兼容集合；`rg` 未发现可达的 OpenAI/Qwen 配置或实现，旧供应商模型标记仅存在于 convention checker 的禁用文本回归规则；`871a155` 已清理误导性的 `test:e2e` 命名，runtime eval 的 Fake 类型是文档明确的确定性门禁而非生产实现 | P2 | 对剩余测试替身和禁用规则保留“有意隔离”的依据，禁止盲删 |
 
 ## 当前里程碑边界
 
