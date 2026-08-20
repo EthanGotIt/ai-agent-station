@@ -25,10 +25,10 @@
 
 ## 命名与数据边界（硬约束）
 
-- 接口按职责命名，如 `*Gateway`、`*Store`、`*Provider`、`*Executor`、`*Node`，不使用 `I` 前缀；实现通过技术或策略前缀区分。
-- Core 业务数据使用 `*Model`；数据库映射只在 Infrastructure 的 `entity` 包中使用 `*Entity`；HTTP 请求、响应和 SSE 事件使用 `*Dto`。三者必须在边界转换，不跨层复用。
+- 接口按职责命名：`*Gateway` 表示外部或跨能力边界，`*Store` 表示本地事实持久化，`*Executor` 执行外部动作，`*Coordinator` 负责单 Turn 协调，`*Engine` 负责确定性 Workflow，`*Subscription` 表示实时订阅；不使用 `I` 前缀，具体实现通过技术或策略前缀区分。
+- Core 的持久业务状态使用 `*Model`；端口内部的 `Command`、`Result`、`Draft` 等操作值使用语义名称即可。数据库映射类型统一位于 Infrastructure 的 `<capability>.persistence` 叶子包并使用 `*Entity`、`*Mapper`；HTTP 请求、响应和 SSE 事件使用 `*Dto`。三者必须在边界转换，不跨层复用。
 - Agent DTO 使用统一业务前缀和操作前缀，例如 `AgentThreadCreateRequestDto`、`AgentTurnAcceptedResponseDto`、`AgentThreadEventDto`、`AgentErrorResponseDto`。`body` 只表达 `@RequestBody` 参数位置，不作类型后缀。
-- 枚举以 `Enum` 结尾；服务、管理器、映射器、校验器、配置、控制器、异常处理器和异常分别使用 `*Service`、`*Manager`、`*Mapper`、`*Validator`、`*Configuration`、`*Controller`、`*ExceptionHandler`、`*Exception`。测试使用 `*Test`，集成测试使用 `*IT`。
+- 枚举以 `Enum` 结尾；只有表达完整用例边界的类型才使用 `*Service`，其他职责分别使用 `*Manager`、`*Mapper`、`*Validator`、`*Configuration`、`*Controller`、`*ExceptionHandler`、`*Exception`。队列调度使用 `*Queue`，上下文组装使用 `*Assembler`，租约任务使用 `*Worker`。测试使用 `*Test`，集成测试使用 `*IT`。
 - `*Utils` 只表示同一主题的多个无状态方法，类型必须是 `final` 并有私有构造器。避免 `Common`、`Helper` 等模糊名称。
 - 数据库库、表、列、索引和约束使用大写 `UPPER_SNAKE_CASE`；Java 字段和方法使用 `lowerCamelCase`。
 

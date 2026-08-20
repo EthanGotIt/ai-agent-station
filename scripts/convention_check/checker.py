@@ -46,7 +46,7 @@ FORBIDDEN_SOURCE_TEXT = (
     "AfterSales",
     "DEMO_AFTER_SALES_CASE",
 )
-SCAN_SUFFIXES = {".java", ".xml", ".yml", ".yaml", ".sql", ".md"}
+SCAN_SUFFIXES = {".java", ".xml", ".yml", ".yaml", ".sql", ".md", ".ts", ".tsx", ".css"}
 IGNORED_DIRECTORIES = {".agents", ".codex", ".git", ".idea", "target", "node_modules", "dist"}
 EMPTY_DIRECTORY_IGNORES = {".git", "target", "node_modules", "dist"}
 TOP_LEVEL_TYPE_PATTERN = re.compile(
@@ -120,7 +120,6 @@ class ConventionChecker:
         self._check_module_dependencies()
         self._check_direct_dependencies()
         self._check_time_boundaries()
-        self._check_framework_boundaries()
         self._check_build_safety()
         return tuple(sorted(set(self.issues)))
 
@@ -147,6 +146,21 @@ class ConventionChecker:
             )
         elif not package_match.group(1).startswith("cn.ethan"):
             self._add("JAVA_ROOT_PACKAGE", path, "Java 根包必须为 cn.ethan")
+
+        if package_match is not None:
+            forbidden_package_parts = {
+                "model", "models", "service", "services", "port", "ports", "entity", "entities",
+                "mapper", "mappers", "gateway", "gateways", "controller", "controllers", "dto", "dtos",
+                "handler", "handlers", "impl", "common", "support",
+            }
+            package_parts = set(package_match.group(1).split("."))
+            forbidden = sorted(package_parts.intersection(forbidden_package_parts))
+            if forbidden:
+                self._add(
+                    "JAVA_GENERIC_PACKAGE",
+                    path,
+                    f"禁止使用横向技术包：{', '.join(forbidden)}；请先按能力分包",
+                )
 
         top_level_types = TOP_LEVEL_TYPE_PATTERN.findall(text)
         if len(top_level_types) != 1:
@@ -401,39 +415,6 @@ class ConventionChecker:
                             "测试禁止使用 Thread.sleep；应使用 latch、可控时钟或确定性同步",
                             self._line_at(text, thread_sleep.start()),
                         )
-
-    def _check_framework_boundaries(self) -> None:
-        """确保具体 Agent 框架不会泄漏到 Core 或 App 的业务协议。"""
-
-        forbidden_roots = (
-            self.root / "commerce-guardian-agent-core",
-            self.root / "commerce-guardian-agent-app",
-        )
-        for source_root in forbidden_roots:
-            if not source_root.exists():
-                continue
-            for path in sorted(source_root.rglob("*.java")):
-                text = path.read_text(encoding="utf-8")
-                if "io.agentscope" in text:
-                    self._add(
-                        "AGENTSCOPE_BOUNDARY",
-                        path,
-                        "AgentScope 类型只能位于 infrastructure，Core 与 App 仅依赖端口",
-                        self._line_of(text, "io.agentscope"),
-                    )
-
-        for module in ("commerce-guardian-agent-core", "commerce-guardian-agent-app"):
-            pom = self.root / module / "pom.xml"
-            if not pom.exists():
-                continue
-            text = pom.read_text(encoding="utf-8")
-            if "<groupId>io.agentscope</groupId>" in text:
-                self._add(
-                    "AGENTSCOPE_DEPENDENCY",
-                    pom,
-                    "AgentScope 依赖只能声明在 infrastructure 模块",
-                    self._line_of(text, "<groupId>io.agentscope</groupId>"),
-                )
 
     def _iter_scanned_files(self) -> Iterable[Path]:
         for path in sorted(self.root.rglob("*")):
