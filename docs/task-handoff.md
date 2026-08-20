@@ -30,15 +30,19 @@ updated: 2026-08-21
 - 本里程碑已完成真实 Context 长历史探针：在专用库 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821` 创建一个 Thread，连续提交 30 个失败终态 Turn，得到 180 个 Item、连续序列 1–180 和 6 个快照（版本 1–6，覆盖到序列 156）。应用受控停止并重启后，同一 Thread 的追加 Turn 仍收敛为 `FAILED`，Item 恢复返回 186 条且序列有序；再追加 10 轮后得到 246 个 Item、41 个终态 Turn，快照扩展至版本 8、覆盖到序列 210。持久化 `CONTEXT_ASSEMBLED` 事实记录重启后的 `snapshotThroughSequence=156`，并记录后续 `compressed=true`、`degraded=false`，证明快照读取、压缩和恢复链路实际运行。
 - 提交 `5c6f1f5 fix: align normalized turn item facts`：修复普通 Turn 已规范化输入但首个 `USER_MESSAGE` Item 仍保存原始空白的问题；数据库唯一键竞态的重复请求恢复查询也统一使用规范化用户和请求 ID。Core Runtime 4 项聚焦测试覆盖 Item 事实一致性和创建竞态恢复。
 - 配置/文档校准：修正 `.env.example` 指向不存在的 MySQL SQL 子目录；追踪矩阵不再复制规则检查器禁止的旧供应商 token。`python -m scripts.convention_check` 重新通过，未放宽检查规则。
+- 提交 `a0751c8 docs: align frontend validation command`：只修正 README 中已废弃的 `test:e2e` 命令为真实脚本名 `test:component`；README 其余用户已有新增内容保持未暂存。
+- 提交 `94a786c fix: normalize invalid pagination requests`：分页偏移超出 Java `int` 范围和 query 参数类型错误现在统一返回 400 `INVALID_REQUEST`，不再由算术异常落成 500；补充 Core/App 回归测试。
+- 提交 `7380257 fix: bound persisted execution errors`：执行失败 Item 只持久化受控错误文案，不再把远端 URL、响应片段或异常消息写入 Item；Workflow 失败测试使用敏感标记验证不会泄露。
+- 提交 `9215ed8 chore: declare app test dependencies`：为直接使用 Spring MVC 异常类型的 App 测试显式声明 test-scope `spring-core`/`spring-test`，Maven dependency analyze 警告清零。
 
 ## 最近验证
 
 - `python -m scripts.convention_check`：通过；`e83b9c9` 校准了当前 DeepSeek 供应商契约和 Spring Boot 4/Jackson 3 直接依赖规则，仍保留旧项目/旧版本标记等禁用文本检查。
 - `python -m unittest discover -s scripts/tests -p "test_*.py"`：4 个测试通过，新增规则回归测试覆盖当前供应商和 JSON 依赖边界。
-- `mvn clean '-DskipTests=false' test`：当前基线 Core 48、Infrastructure 49、App 15，共 112 项测试通过；含上下文最新窗口、严格预算、摘要失败降级、Tool 敏感字段投影、流式 delta、模型调用失败、流式超时/取消、Turn 超时收敛、CAS、Workflow、Worker 和输入身份边界测试。
+- `mvn clean '-DskipTests=false' test`：当前基线 Core 51、Infrastructure 49、App 16，共 116 项测试通过；含上下文最新窗口、严格预算、摘要失败降级、Tool 敏感字段投影、流式 delta、模型调用失败、流式超时/取消、Turn 超时收敛、CAS、Workflow、Worker、输入身份、分页异常和执行错误持久化边界测试。
 - `mvn -pl commerce-guardian-agent-app -am -DskipTests package`：应用可打包；启动探针实际加载 DeepSeek starter、Tomcat、Hikari 和 MyBatis。
 - `mvn -pl commerce-guardian-agent-core -Dtest=AgentTurnRuntimeServiceTest test`：4 项 Runtime 边界测试通过，包含规范化 `USER_MESSAGE` Item 和唯一键创建竞态恢复。
-- `mvn dependency:analyze -DskipTests`：BUILD SUCCESS；Core、Infrastructure 和 App 均报告 `No dependency problems found`。
+- `mvn dependency:analyze -DskipTests`：`9215ed8` 后 BUILD SUCCESS；Core、Infrastructure 和 App 均报告 `No dependency problems found`，App 测试直接依赖已显式归入 test scope。
 - 专用 MySQL 实证：已确认 `127.0.0.1:3306`，创建并导入基线到 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821`；原 `COMMERCE_GUARDIAN_AGENT` 未重建。应用启动、Thread 创建、ACTIVE Turn 重启收敛为 `FAILED/RUNTIME_RESTARTED` 并生成 `TURN_STATE` 已验证；两路回答并发请求只有一路 202、另一路 409，数据库只产生一个回答 Turn，QuestionCard 版本单调推进并可失败对账释放。
 - 当前未发现可用的 DeepSeek 凭据；探针使用假值且将模型端点指向本机不可达地址，仅验证启动和错误收敛，未发送真实用户数据，也不能替代真实 DeepSeek Tool Calling/流式/取消验证。
 - `agent-console/npm run typecheck`、`npm test -- --run`（17 项）、`npm run test:component`（7 项）、`npm run build`：通过；新增人工重试按钮/API、外部动作终态映射和 SSE 重连测试。`test:component` 明确使用 Mock，不作为真实浏览器证据。
@@ -87,9 +91,12 @@ updated: 2026-08-21
 - `0ed8688 fix: project bounded model-safe tool results`：订单 Tool 改为受控业务字段投影，移除内部 `userId` 等所有权字段；物流和订单结果在返回模型前统一截断，避免原始 Record 文本直接进入模型和 Item 轨迹；新增敏感字段隔离测试。
 - `d6d22ab fix: align agent input identity boundaries`：将 `AgentThreadModel` 的 Thread/User/标题/上下文边界作为 Core 不变量，HTTP DTO 复用同一常量；普通消息 DTO 与 Runtime 同为 256 字符，用户身份与 SQL `USER_ID VARCHAR(128)` 对齐，Workflow 回答仍使用 10000 字符存储列承载结构化输入；新增边界、规范化和 Header 测试。
 - `871a155 chore: remove misleading frontend e2e alias`：删除将 Vitest 组件替身称为 E2E 的脚本命名，运行手册改为 `test:component`。
+- `94a786c` 直接证据：Core 分页溢出测试和 App query 类型异常测试通过；非法分页请求不再经过 `ArithmeticException` 进入 500，统一返回 400 `INVALID_REQUEST`。
+- `7380257` 直接证据：Workflow 失败测试以 `apiKey=DO_NOT_PERSIST` 作为异常标记，验证该标记不出现在该 Turn 的任何 Item 中；执行失败仍保留受控 ERROR 事实和可恢复终态。
+- `9215ed8` 直接证据：App 异常/身份聚焦测试 4 项通过；依赖分析从未声明依赖警告收口为三模块 `No dependency problems found`。
 
 ## 下一步唯一动作
 
-基于当前追踪矩阵继续审查 Item envelope/边界解码与 API 分页、参数异常路径，只有发现真实契约或恢复风险才补充最小修复和测试；随后运行完整验证矩阵。DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
+Item envelope、历史裸 payload fallback、API 分页/参数异常和执行错误持久化边界已完成审查并提交；下一步只执行最终完整验证矩阵、复核 staged/unstaged 边界并覆盖 handoff。DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。
