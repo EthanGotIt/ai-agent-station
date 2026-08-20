@@ -36,7 +36,7 @@ class AgentContextAssemblerTest {
                     "item-" + index,
                     "thread-1",
                     "turn-" + index,
-                    index,
+                    index + 1L,
                     AgentItemTypeEnum.USER_MESSAGE,
                     "x".repeat(220),
                     NOW
@@ -67,7 +67,7 @@ class AgentContextAssemblerTest {
     private AgentThreadModel thread() {
         return new AgentThreadModel(
                 "thread-1", "user-1", "测试 Thread", AgentThreadStatusEnum.ACTIVE,
-                null, null, 6, NOW, NOW
+                null, null, 7, NOW, NOW
         );
     }
 

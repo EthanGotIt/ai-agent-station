@@ -111,7 +111,10 @@ public final class MybatisAgentThreadStore implements AgentThreadStore, AgentTur
         if (thread == null) {
             throw new IllegalStateException("Thread 不存在：" + item.threadId());
         }
-        long sequence = thread.getNextSequence() == null ? 0L : thread.getNextSequence();
+        // API 游标从 0 开始且采用排他读取，因此第一条事实必须使用序号 1。
+        long sequence = thread.getNextSequence() == null || thread.getNextSequence() < 1
+                ? 1L
+                : thread.getNextSequence();
         AgentItemEntity entity = toEntity(item, sequence);
         itemMapper.insert(entity);
         thread.setNextSequence(sequence + 1);

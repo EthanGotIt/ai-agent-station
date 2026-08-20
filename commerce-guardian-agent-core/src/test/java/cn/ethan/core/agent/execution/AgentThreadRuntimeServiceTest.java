@@ -167,7 +167,7 @@ class AgentThreadRuntimeServiceTest {
         @Override
         public long appendItem(AgentItemModel item) {
             long sequence = items.stream().filter(value -> value.threadId().equals(item.threadId()))
-                    .mapToLong(AgentItemModel::sequence).max().orElse(-1) + 1;
+                    .mapToLong(AgentItemModel::sequence).max().orElse(0) + 1;
             items.add(new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), sequence,
                     item.type(), item.payload(), item.createdAt()));
             return sequence;
