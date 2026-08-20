@@ -17,14 +17,11 @@ export function appendSseChunk(
     }
     if (data.length === 0) continue;
     const payload = data.join("\n");
-    if (!STRUCTURED_EVENT_TYPES.has(event)) {
-      append(event, payload);
-      continue;
-    }
     try {
       append(event, JSON.parse(payload));
     } catch {
-      append("error", "SSE payload could not be parsed");
+      if (STRUCTURED_EVENT_TYPES.has(event)) append("error", "SSE payload could not be parsed");
+      else append(event, payload);
     }
   }
   return remainder;

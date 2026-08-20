@@ -41,7 +41,7 @@ public final class MybatisAgentItemStore implements AgentItemStore {
         entity.setTurnId(item.turnId());
         entity.setSequenceNo(sequence);
         entity.setItemType(item.type().name());
-        entity.setPayload(item.payload());
+        entity.setPayloadJson(item.payloadJson());
         entity.setCreatedAt(item.createdAt());
         itemMapper.insert(entity);
         thread.setNextSequence(sequence + 1);
@@ -63,7 +63,7 @@ public final class MybatisAgentItemStore implements AgentItemStore {
 
     private static AgentItemModel toModel(AgentItemEntity entity) {
         return new AgentItemModel(entity.getItemId(), entity.getThreadId(), entity.getTurnId(), value(entity.getSequenceNo()),
-                AgentItemTypeEnum.valueOf(entity.getItemType()), entity.getPayload(), entity.getCreatedAt());
+                AgentItemTypeEnum.valueOf(entity.getItemType()), entity.getPayloadJson(), entity.getCreatedAt());
     }
 
     private static long value(Long value) {

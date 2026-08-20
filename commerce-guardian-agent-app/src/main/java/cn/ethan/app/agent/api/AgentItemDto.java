@@ -15,10 +15,12 @@ public record AgentItemDto(
         String turnId,
         long sequence,
         String type,
+        int schemaVersion,
         String payload,
         Instant createdAt
 ) {
     public static AgentItemDto from(AgentItemModel item) {
-        return new AgentItemDto(item.itemId(), item.turnId(), item.sequence(), item.type().name(), item.payload(), item.createdAt());
+        return new AgentItemDto(item.itemId(), item.turnId(), item.sequence(), item.kind().name(),
+                item.schemaVersion(), item.payloadJson(), item.createdAt());
     }
 }

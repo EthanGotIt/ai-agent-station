@@ -26,8 +26,8 @@ public final class AgentItemEntity {
     private Long sequenceNo;
     @TableField("ITEM_TYPE")
     private String itemType;
-    @TableField("PAYLOAD")
-    private String payload;
+    @TableField("PAYLOAD_JSON")
+    private String payloadJson;
     @TableField("CREATED_AT")
     private Instant createdAt;
 
@@ -44,8 +44,8 @@ public final class AgentItemEntity {
     public void setSequenceNo(Long sequenceNo) { this.sequenceNo = sequenceNo; }
     public String getItemType() { return itemType; }
     public void setItemType(String itemType) { this.itemType = itemType; }
-    public String getPayload() { return payload; }
-    public void setPayload(String payload) { this.payload = payload; }
+    public String getPayloadJson() { return payloadJson; }
+    public void setPayloadJson(String payloadJson) { this.payloadJson = payloadJson; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 }

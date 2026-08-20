@@ -28,6 +28,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.time.Clock;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -188,8 +189,7 @@ public final class AgentThreadController {
         SseEmitter emitter = new SseEmitter(properties.streamTimeoutMillis());
         AtomicBoolean open = new AtomicBoolean(true);
         AtomicLong cursor = new AtomicLong(Math.max(0, afterSequence));
-        try {
-            AutoCloseable subscription = events.subscribe(event -> {
+        AutoCloseable subscription = events.subscribe(event -> {
                 if (!open.get() || !event.threadId().equals(threadId)) return;
                 if (event.sequence() >= 0 && event.sequence() <= cursor.get()) return;
                 send(emitter, AgentThreadEventDto.from(event), open);
@@ -199,22 +199,19 @@ public final class AgentThreadController {
             emitter.onTimeout(() -> close(open, subscription));
             emitter.onError(failure -> close(open, subscription));
             for (AgentItemModel item : threads.listItems(userId, threadId, cursor.get(), 500)) {
-                send(emitter, new AgentThreadEventDto(item.itemId(), threadId, item.turnId(),
-                        "item." + item.type().name().toLowerCase(), item.payload(), item.sequence(), item.createdAt()), open);
+                send(emitter, new AgentThreadEventDto(item.itemId(), threadId, item.turnId(), item.itemId(),
+                        "item." + item.type().name().toLowerCase(), item.payloadJson(), item.sequence(), item.createdAt()), open);
                 cursor.set(item.sequence());
             }
-            emitter.send(SseEmitter.event().name("ready")
-                    .data("{\"threadId\":\"" + threadId + "\",\"afterSequence\":" + cursor.get() + "}"));
-        } catch (IOException failure) {
-            emitter.completeWithError(failure);
-        }
+            send(emitter, new AgentThreadEventDto("ready-" + UUID.randomUUID(), threadId, null, null,
+                    "ready", "{\"afterSequence\":" + cursor.get() + "}", cursor.get(), clock.instant()), open);
         return emitter;
     }
 
     private void send(SseEmitter emitter, AgentThreadEventDto event, AtomicBoolean open) {
         if (!open.get()) return;
         try {
-            emitter.send(SseEmitter.event().id(event.eventId()).name(event.type()).data(event.payload()));
+            emitter.send(SseEmitter.event().id(event.eventId()).name(event.type()).data(event));
         } catch (IOException failure) {
             close(open, null);
         }

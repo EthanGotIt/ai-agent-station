@@ -14,13 +14,14 @@ public record AgentThreadEventDto(
         String eventId,
         String threadId,
         String turnId,
+        String itemId,
         String type,
         String payload,
         long sequence,
-        Instant at
+        Instant timestamp
 ) {
     public static AgentThreadEventDto from(AgentThreadEventGateway.AgentThreadEvent event) {
-        return new AgentThreadEventDto(event.eventId(), event.threadId(), event.turnId(), event.type(),
-                event.payload(), event.sequence(), event.at());
+        return new AgentThreadEventDto(event.eventId(), event.threadId(), event.turnId(), event.itemId(),
+                event.type(), event.payload(), event.sequence(), event.timestamp());
     }
 }

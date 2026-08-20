@@ -18,6 +18,8 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 
 /**
  * 类型职责：使用 Spring AI Tool Calling 协调只读查询和确定性 Workflow 启动。
@@ -79,7 +81,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                             """)
                     .user(renderContext(context, turn.input()))
                     .tools(
-                            new ReadOnlyTools(thread.userId(), orders, logistics),
+                            new ReadOnlyTools(thread.userId(), orders, logistics, invocation),
                             new WorkflowTools(thread, turn, workflowEngine, invocation)
                     )
                     .call()
@@ -88,14 +90,14 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 AgentWorkflowEngine.StartResult result = invocation.result;
                 return new AgentCoordinatorResult(
                         "我已创建需要明确授权的 Workflow，请在 QuestionCard 中确认。",
-                        List.of(new AgentItemDraft("WORKFLOW_STARTED", result.runId())),
+                        append(invocation.traces, new AgentItemDraft("WORKFLOW_STARTED", result.runId())),
                         result.question(), result.runId(), true
                 );
             }
             if (content == null || content.isBlank()) {
                 throw new IllegalStateException("模型未返回可用的 Agent 消息");
             }
-            return new AgentCoordinatorResult(content.trim(), List.of(), null, null, false);
+            return new AgentCoordinatorResult(content.trim(), List.copyOf(invocation.traces), null, null, false);
         } catch (RuntimeException failure) {
             LOGGER.warn("Agent 模型调用失败，threadId={}, turnId={}, errorType={}",
                     thread.threadId(), turn.turnId(), failure.getClass().getSimpleName());
@@ -110,6 +112,12 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         return prompt.append("当前请求：\n").append(message).toString();
     }
 
+    private List<AgentItemDraft> append(List<AgentItemDraft> traces, AgentItemDraft item) {
+        List<AgentItemDraft> result = new ArrayList<>(traces);
+        result.add(item);
+        return result;
+    }
+
     /**
      * 类型职责：向模型公开用户归属受控的只读查询工具。
      *
@@ -120,22 +128,46 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         private final String userId;
         private final OrderGateway orders;
         private final LogisticsGateway logistics;
+        private final WorkflowInvocation invocation;
 
-        public ReadOnlyTools(String userId, OrderGateway orders, LogisticsGateway logistics) {
+        public ReadOnlyTools(String userId, OrderGateway orders, LogisticsGateway logistics,
+                             WorkflowInvocation invocation) {
             this.userId = userId;
             this.orders = orders;
             this.logistics = logistics;
+            this.invocation = invocation;
         }
 
         @Tool(name = "lookup_order", description = "按订单号查询当前用户的订单快照，只读")
         public String lookupOrder(@ToolParam(description = "订单号") String orderId) {
-            return orders.findOrder(orderId, userId).toString();
+            return invoke("lookup_order", Map.of("orderId", value(orderId)),
+                    () -> orders.findOrder(orderId, userId).toString());
         }
 
         @Tool(name = "logistics_trace", description = "查询当前用户订单的物流时间线，只读")
         public String logisticsTrace(@ToolParam(description = "订单号") String orderId) {
-            return logistics.findTrace(orderId, userId).toString();
+            return invoke("logistics_trace", Map.of("orderId", value(orderId)),
+                    () -> logistics.findTrace(orderId, userId).toString());
         }
+
+        private String invoke(String name, Map<String, String> arguments, ToolCall call) {
+            invocation.recordCall(name, arguments);
+            try {
+                String result = call.run();
+                invocation.recordResult(name, "SUCCESS", result);
+                return result;
+            } catch (RuntimeException failure) {
+                invocation.recordResult(name, "FAILED", failure.getClass().getSimpleName());
+                throw failure;
+            }
+        }
+
+        private String value(String value) {
+            return value == null ? "" : value;
+        }
+
+        @FunctionalInterface
+        private interface ToolCall { String run(); }
     }
 
     /**
@@ -176,12 +208,62 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         }
 
         private String start(String operation, Map<String, String> arguments) {
-            invocation.result = engine.start(thread, turn, operation, arguments);
-            return "Workflow 已启动，等待用户在 QuestionCard 中明确授权。";
+            invocation.recordCall("start_" + operation.toLowerCase() + "_workflow", arguments);
+            try {
+                invocation.result = engine.start(thread, turn, operation, arguments);
+                invocation.recordResult("start_" + operation.toLowerCase() + "_workflow", "SUCCESS",
+                        invocation.result.runId());
+                return "Workflow 已启动，等待用户在 QuestionCard 中明确授权。";
+            } catch (RuntimeException failure) {
+                invocation.recordResult("start_" + operation.toLowerCase() + "_workflow", "FAILED",
+                        failure.getClass().getSimpleName());
+                throw failure;
+            }
         }
     }
 
     private static final class WorkflowInvocation {
         private AgentWorkflowEngine.StartResult result;
+        private final List<AgentItemDraft> traces = new ArrayList<>();
+
+        private void recordCall(String tool, Map<String, String> arguments) {
+            traces.add(new AgentItemDraft("TOOL_CALL", json(tool, arguments, null, null)));
+        }
+
+        private void recordResult(String tool, String status, String value) {
+            boolean truncated = value != null && value.length() > 2000;
+            String bounded = truncated ? value.substring(0, 2000) : value;
+            traces.add(new AgentItemDraft("TOOL_RESULT", json(tool, Map.of(), status, bounded, truncated)));
+        }
+
+        private static String json(String tool, Map<String, String> arguments, String status, String result) {
+            return json(tool, arguments, status, result, false);
+        }
+
+        private static String json(String tool, Map<String, String> arguments, String status,
+                                   String result, boolean truncated) {
+            StringBuilder value = new StringBuilder("{\"tool\":\"")
+                    .append(escape(tool)).append("\"");
+            if (arguments != null && !arguments.isEmpty()) {
+                value.append(",\"arguments\":{");
+                boolean first = true;
+                for (Map.Entry<String, String> entry : new LinkedHashMap<>(arguments).entrySet()) {
+                    if (!first) value.append(',');
+                    value.append("\"").append(escape(entry.getKey())).append("\":\"")
+                            .append(escape(entry.getValue())).append("\"");
+                    first = false;
+                }
+                value.append('}');
+            }
+            if (status != null) value.append(",\"status\":\"").append(escape(status)).append("\"");
+            if (result != null) value.append(",\"result\":\"").append(escape(result)).append("\"");
+            if (status != null) value.append(",\"truncated\":").append(truncated);
+            return value.append('}').toString();
+        }
+
+        private static String escape(String value) {
+            return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"")
+                    .replace("\r", "\\r").replace("\n", "\\n");
+        }
     }
 }

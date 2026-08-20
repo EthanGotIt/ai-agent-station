@@ -22,6 +22,14 @@ public interface AgentThreadEventGateway {
             long sequence,
             java.time.Instant at
     ) {
+        /** Item 事件的 eventId 与持久化 itemId 相同，Turn 状态事件没有 itemId。 */
+        public String itemId() {
+            return sequence >= 0 ? eventId : null;
+        }
+
+        public java.time.Instant timestamp() {
+            return at;
+        }
     }
 
     default void itemCreated(AgentItemModel item) {

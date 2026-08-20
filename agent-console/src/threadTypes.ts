@@ -23,6 +23,7 @@ export type AgentTurnStatus =
 
 export type AgentItemType =
   | "USER_MESSAGE"
+  | "TURN_STATE"
   | "ASSISTANT_MESSAGE"
   | "TOOL_CALL"
   | "TOOL_RESULT"
@@ -35,12 +36,30 @@ export type AgentItemType =
   | "ERROR"
   | string;
 
+export type AgentItemPayload =
+  | { schemaVersion: 1; kind: "USER_MESSAGE"; data: string }
+  | { schemaVersion: 1; kind: "ASSISTANT_MESSAGE"; data: string }
+  | { schemaVersion: 1; kind: "TURN_STATE"; data: { status: AgentTurnStatus; errorCode?: string | null } }
+  | { schemaVersion: 1; kind: "WORKFLOW_QUESTION"; data: QuestionCardState }
+  | { schemaVersion: 1; kind: AgentItemType; data: unknown };
+
+export type AgentItemWire = {
+  itemId: string;
+  turnId: string | null;
+  sequence: number;
+  type: AgentItemType;
+  schemaVersion: number;
+  payload: string;
+  createdAt: string;
+};
+
 export type AgentItem = {
   itemId: string;
   turnId: string | null;
   sequence: number;
   type: AgentItemType;
-  payload: string;
+  schemaVersion: 1;
+  payload: AgentItemPayload;
   createdAt: string;
 };
 
@@ -48,10 +67,11 @@ export type AgentThreadEvent = {
   eventId: string;
   threadId: string;
   turnId: string | null;
+  itemId: string | null;
   type: string;
   payload: string;
   sequence: number;
-  at: string;
+  timestamp: string;
 };
 
 export type QuestionField = {
@@ -90,7 +110,7 @@ export type AgentThreadPage = {
 };
 
 export type AgentItemPage = {
-  items: AgentItem[];
+  items: AgentItemWire[];
   afterSequence: number;
   nextAfterSequence: number;
   hasMore: boolean;

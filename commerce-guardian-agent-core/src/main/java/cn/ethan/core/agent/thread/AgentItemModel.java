@@ -25,6 +25,18 @@ public record AgentItemModel(
         if (sequence < 0 || type == null) {
             throw new IllegalArgumentException("sequence and type must be valid");
         }
-        payload = payload == null ? "" : payload;
+        payload = AgentItemPayloadModel.ensure(type, payload);
+    }
+
+    public int schemaVersion() {
+        return AgentItemPayloadModel.CURRENT_SCHEMA_VERSION;
+    }
+
+    public AgentItemTypeEnum kind() {
+        return type;
+    }
+
+    public String payloadJson() {
+        return payload;
     }
 }

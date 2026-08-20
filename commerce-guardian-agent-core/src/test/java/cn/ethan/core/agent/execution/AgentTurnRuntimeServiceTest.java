@@ -77,6 +77,7 @@ class AgentTurnRuntimeServiceTest {
         assertEquals(AgentTurnStatusEnum.COMPLETED, persistence.findTurnByRequest("user-1", second.clientRequestId())
                 .orElseThrow().status());
         assertTrue(events.published.stream().anyMatch(event -> event.type().equals("item.assistant_message")));
+        assertTrue(events.published.stream().anyMatch(event -> event.type().equals("item.turn_state")));
         scheduler.shutdownNow();
     }
 

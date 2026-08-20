@@ -110,6 +110,7 @@ public final class AgentTurnRuntimeService {
                             "RUNTIME_RESTARTED", clock.instant());
                     turns.updateTurn(failed);
                     appendItem(failed, AgentItemTypeEnum.ERROR, "运行时重启，未恢复执行中的 Turn");
+                    appendItem(failed, AgentItemTypeEnum.TURN_STATE, turnStatePayload(failed.status(), failed.errorCode()));
                     publishTurn(failed);
                     continue;
                 }
@@ -123,6 +124,7 @@ public final class AgentTurnRuntimeService {
                             "RUNTIME_QUEUE_OVERFLOW", clock.instant());
                     turns.updateTurn(failed);
                     appendItem(failed, AgentItemTypeEnum.ERROR, "运行时重启后排队容量不足");
+                    appendItem(failed, AgentItemTypeEnum.TURN_STATE, turnStatePayload(failed.status(), failed.errorCode()));
                     publishTurn(failed);
                     continue;
                 }
@@ -165,6 +167,7 @@ public final class AgentTurnRuntimeService {
             );
             turns.createTurn(turn);
             appendItem(turn, AgentItemTypeEnum.USER_MESSAGE, message);
+            appendItem(turn, AgentItemTypeEnum.TURN_STATE, turnStatePayload(turn.status(), null));
             queued = new QueuedTurn(turn, Map.of(), new AtomicBoolean(false), new AtomicBoolean(false));
             slot.queue.addLast(queued);
             pendingGlobal.incrementAndGet();
@@ -212,6 +215,7 @@ public final class AgentTurnRuntimeService {
             );
             turns.createTurn(turn);
             appendItem(turn, AgentItemTypeEnum.WORKFLOW_ANSWER, answers.toString());
+            appendItem(turn, AgentItemTypeEnum.TURN_STATE, turnStatePayload(turn.status(), null));
             QueuedTurn queued = new QueuedTurn(turn, Map.copyOf(answers), new AtomicBoolean(false), new AtomicBoolean(false));
             slot.queue.addLast(queued);
             pendingGlobal.incrementAndGet();
@@ -251,6 +255,7 @@ public final class AgentTurnRuntimeService {
                     AgentTurnModel cancelled = queued.turn.terminal(AgentTurnStatusEnum.CANCELLED, "CLIENT_CANCELLED", clock.instant());
                     turns.updateTurn(cancelled);
                     appendItem(cancelled, AgentItemTypeEnum.EXECUTION_EVENT, "排队 Turn 已取消");
+                    appendItem(cancelled, AgentItemTypeEnum.TURN_STATE, turnStatePayload(cancelled.status(), cancelled.errorCode()));
                     publishTurn(cancelled);
                     return true;
                 }
@@ -304,6 +309,7 @@ public final class AgentTurnRuntimeService {
         Instant started = clock.instant();
         AgentTurnModel active = turn.active(started);
         turns.updateTurn(active);
+        appendItem(active, AgentItemTypeEnum.TURN_STATE, turnStatePayload(active.status(), null));
         publishTurn(active);
         ScheduledFuture<?> timeout = scheduler.schedule(
                 () -> {
@@ -329,6 +335,7 @@ public final class AgentTurnRuntimeService {
                 questions.saveQuestion(result.question());
                 AgentTurnModel waiting = active.workflow(result.workflowRunId(), AgentTurnStatusEnum.WAITING_USER_INPUT);
                 turns.updateTurn(waiting);
+                appendItem(waiting, AgentItemTypeEnum.TURN_STATE, turnStatePayload(waiting.status(), null));
                 publishTurn(waiting);
                 return;
             }
@@ -349,6 +356,7 @@ public final class AgentTurnRuntimeService {
     private void finish(AgentTurnModel active, AgentTurnStatusEnum status, String code) {
         AgentTurnModel terminal = active.terminal(status, code, clock.instant());
         turns.updateTurn(terminal);
+        appendItem(terminal, AgentItemTypeEnum.TURN_STATE, turnStatePayload(status, code));
         publishTurn(terminal);
     }
 
@@ -381,6 +389,7 @@ public final class AgentTurnRuntimeService {
                     "QUEUE_WAIT_TIMEOUT", clock.instant());
             turns.updateTurn(timedOut);
             appendItem(timedOut, AgentItemTypeEnum.EXECUTION_EVENT, "排队等待超时");
+            appendItem(timedOut, AgentItemTypeEnum.TURN_STATE, turnStatePayload(timedOut.status(), timedOut.errorCode()));
             publishTurn(timedOut);
         }
     }
@@ -394,6 +403,11 @@ public final class AgentTurnRuntimeService {
                 + escape(question.questionId()) + "\",\"checkpointId\":\"" + escape(question.checkpointId())
                 + "\",\"version\":" + question.version() + ",\"title\":\"" + escape(question.title())
                 + "\",\"prompt\":\"" + escape(question.prompt()) + "\",\"fields\":" + question.fieldsJson() + "}";
+    }
+
+    private String turnStatePayload(AgentTurnStatusEnum status, String errorCode) {
+        return "{\"status\":\"" + status.name() + "\",\"errorCode\":"
+                + (errorCode == null ? "null" : "\"" + escape(errorCode) + "\"") + "}";
     }
 
     private String escape(String value) {

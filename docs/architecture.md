@@ -49,7 +49,7 @@ Thread
 └── ContextSnapshot（截至某个 sequence 的版本化摘要）
 ```
 
-Item 是唯一事实来源。文本增量只通过 SSE 发送，完成消息、工具调用、工具结果、Workflow 状态和错误才持久化。客户端断线时先按 `afterSequence` 读取 Items，再订阅事件，不重放丢失的增量文本。
+Item 是唯一事实来源。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersion=1` 和 `kind` 判别 envelope；`TURN_STATE` 记录 QUEUED、ACTIVE、WAITING、终态等生命周期事实。文本增量只通过 SSE 发送，完成消息、工具调用、工具结果、Workflow 状态和错误才持久化。客户端断线时先按 `afterSequence` 读取 Items，再订阅事件，不重放丢失的增量文本。
 
 `AgentContextAssembler` 依次放入系统提示和工具定义、最新快照、快照之后的最近 Item、当前输入，并为输出预留预算。超过阈值时压缩最旧已完成 Turn；摘要失败沿用旧快照和最近窗口，不阻塞执行。所有预算和工具结果截断上限均配置化。
 
@@ -88,7 +88,7 @@ POST   /workflow-runs/{runId}/questions/{questionId}/answers
 POST   /workflow-runs/{runId}/retry
 ```
 
-SSE 事件包含 `eventId、threadId、turnId、itemId（可选）、type、timestamp、payload`。身份只从认证上下文读取，不信任请求体中的用户字段。
+SSE 事件包含完整 envelope：`eventId、threadId、turnId、itemId（可选）、type、sequence、timestamp、payload`；`data` 不再只发送 payload。客户端按真实 `eventId/itemId/sequence` 去重。身份只从认证上下文读取，不信任请求体中的用户字段。
 
 ## 数据库
 

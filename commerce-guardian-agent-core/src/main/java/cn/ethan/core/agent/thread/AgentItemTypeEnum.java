@@ -8,6 +8,7 @@ package cn.ethan.core.agent.thread;
  */
 public enum AgentItemTypeEnum {
     USER_MESSAGE,
+    TURN_STATE,
     ASSISTANT_MESSAGE,
     TOOL_CALL,
     TOOL_RESULT,

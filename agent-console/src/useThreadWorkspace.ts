@@ -3,7 +3,9 @@ import { HttpRequestError, readJsonResponse, requestJson } from "./http";
 import { appendSseChunk } from "./sse";
 import type {
   AgentItem,
+  AgentItemPayload,
   AgentItemPage,
+  AgentItemWire,
   AgentThread,
   AgentThreadEvent,
   AgentThreadPage,
@@ -26,8 +28,9 @@ function safeJson<T>(payload: string): T | null {
   }
 }
 
-function parseQuestion(payload: string): QuestionCardState | null {
-  const value = safeJson<Partial<QuestionCardState> & { fields?: unknown }>(payload);
+function parseQuestion(payload: AgentItemPayload): QuestionCardState | null {
+  const raw = payload.kind === "WORKFLOW_QUESTION" ? payload.data : null;
+  const value = raw && typeof raw === "object" ? raw as Partial<QuestionCardState> & { fields?: unknown } : null;
   if (!value?.runId || !value.questionId || !value.checkpointId) return null;
   const fields = Array.isArray(value.fields)
     ? value.fields
@@ -45,6 +48,29 @@ function parseQuestion(payload: string): QuestionCardState | null {
   };
 }
 
+function decodePayload(type: string, payload: string, schemaVersion: number): AgentItemPayload {
+  const parsed = safeJson<AgentItemPayload>(payload);
+  if (schemaVersion === 1 && parsed?.schemaVersion === 1 && parsed.kind) return parsed;
+  return {
+    schemaVersion: 1,
+    kind: type,
+    data: payload
+  } as AgentItemPayload;
+}
+
+function normalizeItem(item: AgentItemWire | AgentItem): AgentItem {
+  if (typeof item.payload === "object") return item as AgentItem;
+  return {
+    ...item,
+    schemaVersion: 1,
+    payload: decodePayload(item.type, item.payload, item.schemaVersion)
+  };
+}
+
+function payloadText(payload: AgentItemPayload): string {
+  return typeof payload.data === "string" ? payload.data : JSON.stringify(payload.data);
+}
+
 function rebuildTurns(items: AgentItem[]): ThreadViewTurn[] {
   const grouped = new Map<string, ThreadViewTurn>();
   for (const item of items) {
@@ -58,12 +84,20 @@ function rebuildTurns(items: AgentItem[]): ThreadViewTurn[] {
       startedAt: item.createdAt,
       finishedAt: null
     };
-    if (item.type === "USER_MESSAGE") current.userMessage = item.payload;
-    if (item.type === "ASSISTANT_MESSAGE") current.content = `${current.content}${current.content ? "\n" : ""}${item.payload}`;
+    if (item.type === "USER_MESSAGE") current.userMessage = payloadText(item.payload);
+    if (item.type === "ASSISTANT_MESSAGE") current.content = `${current.content}${current.content ? "\n" : ""}${payloadText(item.payload)}`;
     if (item.type === "ERROR") {
-      current.error = item.payload;
+      current.error = payloadText(item.payload);
       current.status = "FAILED";
       current.finishedAt = item.createdAt;
+    }
+    if (item.type === "TURN_STATE" && item.payload.kind === "TURN_STATE") {
+      const state = item.payload.data;
+      if (state && typeof state === "object" && "status" in state && typeof state.status === "string") {
+        const status = state.status as AgentTurnStatus;
+        current.status = status;
+        if (terminal(status)) current.finishedAt = item.createdAt;
+      }
     }
     if (item.type === "WORKFLOW_QUESTION") current.status = "WAITING_USER_INPUT";
     if (item.type === "EXTERNAL_ACTION_STATUS") current.status = "WAITING_EXTERNAL_ACTION";
@@ -95,9 +129,10 @@ export function useThreadWorkspace(userId: string) {
   const reconnectTimerRef = useRef<number | null>(null);
   const threadIdRef = useRef<string | null>(null);
 
-  const applyItems = useCallback((incoming: AgentItem[]) => {
+  const applyItems = useCallback((incoming: Array<AgentItem | AgentItemWire>) => {
     const byId = new Map(itemsRef.current.map((item) => [item.itemId, item]));
-    for (const item of incoming) {
+    for (const wire of incoming) {
+      const item = normalizeItem(wire);
       byId.set(item.itemId, item);
       cursorRef.current = Math.max(cursorRef.current, item.sequence);
     }
@@ -106,34 +141,40 @@ export function useThreadWorkspace(userId: string) {
     setItems(next);
     setTurns(rebuildTurns(next));
     for (const item of incoming) {
-      if (item.type === "WORKFLOW_QUESTION") setQuestion(parseQuestion(item.payload));
-      if (item.type === "WORKFLOW_ANSWER") setQuestion(null);
+      const normalized = normalizeItem(item);
+      if (normalized.type === "WORKFLOW_QUESTION") setQuestion(parseQuestion(normalized.payload));
+      if (normalized.type === "WORKFLOW_ANSWER") setQuestion(null);
     }
   }, []);
 
   const applyEvent = useCallback((event: AgentThreadEvent) => {
     if (event.sequence >= 0) cursorRef.current = Math.max(cursorRef.current, event.sequence);
     if (event.type.startsWith("item.")) {
-      const item: AgentItem = {
-        itemId: event.eventId,
+      const item: AgentItemWire = {
+        itemId: event.itemId ?? event.eventId,
         turnId: event.turnId,
         sequence: event.sequence,
         type: event.type.slice("item.".length).toUpperCase(),
+        schemaVersion: 1,
         payload: event.payload,
-        createdAt: event.at
+        createdAt: event.timestamp
       };
       applyItems([item]);
-      setTrace((current) => [...current.slice(-99), event]);
+      setTrace((current) => current.some((value) => value.eventId === event.eventId)
+        ? current
+        : [...current.slice(-99), event]);
       return;
     }
     if (event.type.startsWith("turn.")) {
       const status = event.type.slice("turn.".length).toUpperCase() as AgentTurnStatus;
       setTurns((current) => current.map((turn) => turn.turnId === event.turnId
-        ? { ...turn, status, finishedAt: terminal(status) ? event.at : turn.finishedAt }
+        ? { ...turn, status, finishedAt: terminal(status) ? event.timestamp : turn.finishedAt }
         : turn));
       if (status === "WAITING_USER_INPUT") setBusy(false);
       if (terminal(status)) setBusy(false);
-      setTrace((current) => [...current.slice(-99), event]);
+      setTrace((current) => current.some((value) => value.eventId === event.eventId)
+        ? current
+        : [...current.slice(-99), event]);
     }
   }, [applyItems]);
 
@@ -148,15 +189,8 @@ export function useThreadWorkspace(userId: string) {
     let buffer = "";
     const append = (type: string, data: unknown) => {
       if (type === "ready") return;
-      onEvent({
-        eventId: id("event"),
-        threadId: threadIdRef.current ?? "",
-        turnId: activeTurnRef.current,
-        type,
-        payload: typeof data === "string" ? data : JSON.stringify(data),
-        sequence: -1,
-        at: new Date().toISOString()
-      });
+      if (!data || typeof data !== "object") return;
+      onEvent(data as AgentThreadEvent);
     };
     while (!signal.aborted) {
       const chunk = await reader.read();
