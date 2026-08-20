@@ -1,21 +1,8 @@
 package cn.ethan.app.agent.api;
 
-import cn.ethan.app.bootstrap.AgentRuntimeProperties;
-import cn.ethan.core.agent.event.AgentThreadEventSubscription;
-import cn.ethan.core.agent.thread.AgentItemModel;
-import cn.ethan.core.agent.action.ExternalActionCommandModel;
-import cn.ethan.core.agent.action.ExternalActionStatusEnum;
-import cn.ethan.core.agent.action.ExternalActionCommandStore;
-import cn.ethan.core.agent.thread.AgentThreadConflictException;
-import cn.ethan.core.agent.thread.AgentThreadNotFoundException;
-import cn.ethan.core.agent.execution.AgentTurnRuntimeService;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,50 +11,23 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-
-import java.io.IOException;
-import java.time.Clock;
-import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 类型职责：提供唯一 `/api/agent` Thread、Turn、Item 和 SSE HTTP 契约。
+ * 类型职责：提供 Thread 元数据和游标化 Item 历史的 HTTP 协议转换。
  *
  * @author ethan
- * @date 2026-08-19
+ * @date 2026-08-20
  */
 @RestController
 @RequestMapping("/api/agent")
 public final class AgentThreadController {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(AgentThreadController.class);
-
     private final AgentThreadService threads;
-    private final AgentTurnRuntimeService runtime;
-    private final AgentThreadEventSubscription events;
-    private final AgentRuntimeProperties properties;
     private final AgentUserContext userContext;
-    private final ExternalActionCommandStore actions;
-    private final Clock clock;
 
-    public AgentThreadController(
-            AgentThreadService threads,
-            AgentTurnRuntimeService runtime,
-            AgentThreadEventSubscription events,
-            AgentRuntimeProperties properties,
-            AgentUserContext userContext,
-            ExternalActionCommandStore actions,
-            Clock clock
-    ) {
+    public AgentThreadController(AgentThreadService threads, AgentUserContext userContext) {
         this.threads = threads;
-        this.runtime = runtime;
-        this.events = events;
-        this.properties = properties;
         this.userContext = userContext;
-        this.actions = actions;
-        this.clock = clock;
     }
 
     @PostMapping("/threads")
@@ -121,105 +81,5 @@ public final class AgentThreadController {
         long next = page.isEmpty() ? Math.max(0, afterSequence) : page.get(page.size() - 1).sequence();
         return new AgentItemPageResponseDto(page.stream().map(AgentItemDto::from).toList(),
                 Math.max(0, afterSequence), next, items.size() > safeLimit);
-    }
-
-    @PostMapping("/threads/{threadId}/turns")
-    public ResponseEntity<AgentTurnAcceptedResponseDto> submit(
-            @PathVariable String threadId,
-            @Valid @RequestBody AgentTurnSubmitRequestDto body,
-            HttpServletRequest request
-    ) {
-        return ResponseEntity.accepted().body(AgentTurnAcceptedResponseDto.from(
-                runtime.submitTurn(userContext.currentUserId(request), threadId, body.clientRequestId(), body.message())
-        ));
-    }
-
-    @PostMapping("/turns/{turnId}/cancel")
-    public ResponseEntity<AgentTurnCancelResponseDto> cancel(
-            @PathVariable String turnId,
-            HttpServletRequest request
-    ) {
-        String userId = userContext.currentUserId(request);
-        boolean cancelled = runtime.cancel(userId, turnId);
-        return cancelled
-                ? ResponseEntity.ok(new AgentTurnCancelResponseDto(turnId, true))
-                : ResponseEntity.notFound().build();
-    }
-
-    @PostMapping("/workflow-runs/{runId}/questions/{questionId}/answers")
-    public ResponseEntity<AgentTurnAcceptedResponseDto> answer(
-            @PathVariable String runId,
-            @PathVariable String questionId,
-            @Valid @RequestBody AgentWorkflowQuestionAnswerRequestDto body,
-            HttpServletRequest request
-    ) {
-        return ResponseEntity.accepted().body(AgentTurnAcceptedResponseDto.from(runtime.answerQuestion(
-                userContext.currentUserId(request), body.clientRequestId(), runId, questionId,
-                body.checkpointId(), body.expectedVersion(), body.answers()
-        )));
-    }
-
-    @PostMapping("/workflow-runs/{runId}/retry")
-    public AgentWorkflowRetryResponseDto retry(
-            @PathVariable String runId,
-            HttpServletRequest request
-    ) {
-        String userId = userContext.currentUserId(request);
-        ExternalActionCommandModel command = actions.findByRunId(userId, runId)
-                .orElseThrow(() -> new AgentThreadNotFoundException(runId));
-        if (command.status() != ExternalActionStatusEnum.MANUAL_RETRY_REQUIRED) {
-            throw new AgentThreadConflictException("ACTION_NOT_RETRYABLE", "外部动作当前不需要人工重试");
-        }
-        ExternalActionCommandModel retried = command.manualRetry(clock.instant());
-        actions.update(retried);
-        return new AgentWorkflowRetryResponseDto(runId, retried.commandId(), retried.status().name(), retried.idempotencyKey());
-    }
-
-    @GetMapping(value = "/threads/{threadId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter events(
-            @PathVariable String threadId,
-            @RequestParam(defaultValue = "0") long afterSequence,
-            HttpServletRequest request
-    ) {
-        String userId = userContext.currentUserId(request);
-        threads.get(userId, threadId);
-        SseEmitter emitter = new SseEmitter(properties.streamTimeoutMillis());
-        AtomicBoolean open = new AtomicBoolean(true);
-        AtomicLong cursor = new AtomicLong(Math.max(0, afterSequence));
-        AutoCloseable subscription = events.subscribe(event -> {
-                if (!open.get() || !event.threadId().equals(threadId)) return;
-                if (event.sequence() >= 0 && event.sequence() <= cursor.get()) return;
-                send(emitter, AgentThreadEventDto.from(event), open);
-                if (event.sequence() >= 0) cursor.accumulateAndGet(event.sequence(), Math::max);
-            });
-            emitter.onCompletion(() -> close(open, subscription));
-            emitter.onTimeout(() -> close(open, subscription));
-            emitter.onError(failure -> close(open, subscription));
-            for (AgentItemModel item : threads.listItems(userId, threadId, cursor.get(), 500)) {
-                send(emitter, new AgentThreadEventDto(item.itemId(), threadId, item.turnId(), item.itemId(),
-                        "item." + item.type().name().toLowerCase(), item.payloadJson(), item.sequence(), item.createdAt()), open);
-                cursor.set(item.sequence());
-            }
-            send(emitter, new AgentThreadEventDto("ready-" + UUID.randomUUID(), threadId, null, null,
-                    "ready", "{\"afterSequence\":" + cursor.get() + "}", cursor.get(), clock.instant()), open);
-        return emitter;
-    }
-
-    private void send(SseEmitter emitter, AgentThreadEventDto event, AtomicBoolean open) {
-        if (!open.get()) return;
-        try {
-            emitter.send(SseEmitter.event().id(event.eventId()).name(event.type()).data(event));
-        } catch (IOException failure) {
-            close(open, null);
-        }
-    }
-
-    private void close(AtomicBoolean open, AutoCloseable subscription) {
-        if (!open.compareAndSet(true, false) || subscription == null) return;
-        try {
-            subscription.close();
-        } catch (Exception failure) {
-            LOGGER.debug("SSE subscription close failed, errorType={}", failure.getClass().getSimpleName());
-        }
     }
 }
