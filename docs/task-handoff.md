@@ -33,7 +33,8 @@ updated: 2026-08-21
 - 提交 `a0751c8 docs: align frontend validation command`：只修正 README 中已废弃的 `test:e2e` 命令为真实脚本名 `test:component`；README 其余用户已有新增内容保持未暂存。
 - 提交 `94a786c fix: normalize invalid pagination requests`：分页偏移超出 Java `int` 范围和 query 参数类型错误现在统一返回 400 `INVALID_REQUEST`，不再由算术异常落成 500；补充 Core/App 回归测试。
 - 提交 `7380257 fix: bound persisted execution errors`：执行失败 Item 只持久化受控错误文案，不再把远端 URL、响应片段或异常消息写入 Item；Workflow 失败测试使用敏感标记验证不会泄露。
-- 提交 `9215ed8 chore: declare app test dependencies`：为直接使用 Spring MVC 异常类型的 App 测试显式声明 test-scope `spring-core`/`spring-test`，Maven dependency analyze 警告清零。
+- 提交 `9215ed8 chore: declare app test dependencies`：为直接使用 Spring MVC 异常类型的 App 测试补充 test-scope `spring-test`；随后由 `87af4e0` 删除未被 App 源码直接使用的 `spring-core` 声明，保留正确的模块传递边界。
+- 提交 `87af4e0 fix: keep app test dependency boundary clean`：将 query 类型异常测试改为反射构造，避免测试实现细节把 `spring-core` 扩大为 App 直接依赖；clean Maven 和 dependency analyze 均通过。
 
 ## 最近验证
 
@@ -42,9 +43,10 @@ updated: 2026-08-21
 - `mvn clean '-DskipTests=false' test`：当前基线 Core 51、Infrastructure 49、App 16，共 116 项测试通过；含上下文最新窗口、严格预算、摘要失败降级、Tool 敏感字段投影、流式 delta、模型调用失败、流式超时/取消、Turn 超时收敛、CAS、Workflow、Worker、输入身份、分页异常和执行错误持久化边界测试。
 - `mvn -pl commerce-guardian-agent-app -am -DskipTests package`：应用可打包；启动探针实际加载 DeepSeek starter、Tomcat、Hikari 和 MyBatis。
 - `mvn -pl commerce-guardian-agent-core -Dtest=AgentTurnRuntimeServiceTest test`：4 项 Runtime 边界测试通过，包含规范化 `USER_MESSAGE` Item 和唯一键创建竞态恢复。
-- `mvn dependency:analyze -DskipTests`：`9215ed8` 后 BUILD SUCCESS；Core、Infrastructure 和 App 均报告 `No dependency problems found`，App 测试直接依赖已显式归入 test scope。
+- `mvn dependency:analyze -DskipTests`：`87af4e0` 后 BUILD SUCCESS；Core、Infrastructure 和 App 均报告 `No dependency problems found`，App 仅显式声明直接使用的 test-scope `spring-test`。
 - 专用 MySQL 实证：已确认 `127.0.0.1:3306`，创建并导入基线到 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821`；原 `COMMERCE_GUARDIAN_AGENT` 未重建。应用启动、Thread 创建、ACTIVE Turn 重启收敛为 `FAILED/RUNTIME_RESTARTED` 并生成 `TURN_STATE` 已验证；两路回答并发请求只有一路 202、另一路 409，数据库只产生一个回答 Turn，QuestionCard 版本单调推进并可失败对账释放。
 - 当前未发现可用的 DeepSeek 凭据；探针使用假值且将模型端点指向本机不可达地址，仅验证启动和错误收敛，未发送真实用户数据，也不能替代真实 DeepSeek Tool Calling/流式/取消验证。
+- 复核被 Git 忽略的 `commerce-guardian-agent-app/.env` 发现其原有 `AI_AGENT_MODEL_*` 是旧配置，当前 `application.yml` 不读取；已保留用户原值并补入 `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`、输出/重试/超时参数和空的 `DEEPSEEK_API_KEY` 占位。Spring Boot 不自动读取 `.env`，运行手册已补充显式加载方式；真实 DeepSeek 验证仍等待用户在本机填入 key，未打印或迁移旧 key。
 - `agent-console/npm run typecheck`、`npm test -- --run`（17 项）、`npm run test:component`（7 项）、`npm run build`：通过；新增人工重试按钮/API、外部动作终态映射和 SSE 重连测试。`test:component` 明确使用 Mock，不作为真实浏览器证据。
 - `python -m scripts.runtime_eval`：通过 5 项确定性 Runtime 检查。
 - 真实 HTTP acceptance：`python -m scripts.acceptance --base-url http://127.0.0.1:8090 --user-id acceptance-calibration-user` 通过 `thread-list`、`thread-create`、`item-recovery`、`turn-accepted`、`turn-idempotency`、`execution-replay` 六项检查；运行使用专用 MySQL 和本机不可达模型端点，未伪称为真实 DeepSeek 证据。
@@ -52,8 +54,10 @@ updated: 2026-08-21
 - Playwright 真实浏览器已连接专用校准库：验证 Thread 创建、重命名、切换、历史 Item 恢复、QuestionCard 拒绝、执行时间线和页面重载后的结果恢复；另验证了本机不可达模型端点的可见失败 Turn。浏览器重载/关闭暴露的 SSE 异步连接异常已由 `821733c` 收口；真实 DeepSeek 仍未验证。
 - Playwright 真实浏览器 SSE 断线续传实证：在 `cal-browser-retry-thread-052603808` 已建立 `afterSequence=13` 的连接后切换 offline，随后通过真实 HTTP 提交 Turn `67fa7ae5-6b61-45cd-bc42-2acd1bd7ce58`；专用 MySQL 记录该 Turn `FAILED/AGENT_EXECUTION_FAILED`，新增 Item 14–19。恢复 online 后浏览器网络记录出现两次 `events?afterSequence=13`，页面按序展示 14–19 号 Item 且无重复，浏览器错误级控制台消息为 0。
 - Playwright 真实浏览器人工重试实证：在 Thread `cal-browser-retry-thread-052603808` 点击“人工重试”，页面收到真实 `/retry` 响应和 SSE `EXTERNAL_ACTION_STATUS=SUCCEEDED`；失败 Turn 仍显示失败且不再展示人工重试按钮。页面刷新后仍恢复同一失败 Turn 和最终成功 Item；专用 MySQL 确认命令为 `SUCCEEDED(v7, attempt3, cycle1, lease=null)`、WorkflowRun 为 `COMPLETED(v2)`、Turn 为 `FAILED(v2, EXTERNAL_ACTION_FAILED)`，Item 序列为 1/2/3/4/5，结果表 1 行且幂等键 1 行。
+- 当前构建 Playwright 真实浏览器实证：在专用库新建 Thread，通过真实 Vite 代理提交一条普通消息，页面展示 `USER_MESSAGE → QUEUED → ACTIVE → CONTEXT_ASSEMBLED → ERROR → FAILED`；重载后仍恢复同一消息、受控执行错误和终态 Item，网络请求包含 202 入队、`items?afterSequence=0` 和 `events?afterSequence=6`，浏览器错误级控制台消息为 0。截图保存在 `output/playwright/current-browser-calibration.png`；模型端点为本机不可达地址，不作为真实供应商证据。
 - 专用 MySQL ExternalAction 实证：单 Worker 成功命令完成且结果表幂等键只有 1 行；故意制造 WorkflowRun 冲突终态后本地投影回滚、Lease 到期接管并复用同一结果，干净校准命令最终 `PROCESSING(v1, attempt1) → SUCCEEDED（版本3，attempt2）`，WorkflowRun/Turn 完成且 Item 序列为 1/2；两个同时启动的 Worker 竞争同一 PENDING 命令时只产生一次远程结果和一次执行。
 - 专用 MySQL ExternalAction 重试矩阵：仅在校准库建立失败触发器后，Worker 两次执行失败收敛为 `MANUAL_RETRY_REQUIRED(v4, attempt2, cycle2)`，WorkflowRun 为 `MANUAL_RETRY_REQUIRED(v1)`，Turn 为 `FAILED(v2, EXTERNAL_ACTION_FAILED)`，4 条失败轨迹且无结果；移除触发器后真实 `/retry` 返回原 command/idempotencyKey，Worker 收敛为 `SUCCEEDED(v7, attempt3)`，WorkflowRun `COMPLETED(v2)`，失败 Turn 保持不变，结果表/幂等键各 1 行，重复 `/retry` 返回 409。触发器已从专用库移除。
+- 专用库遗留校准数据恢复实证：发现手工历史 Thread 有 4 条 Item 但 `NEXT_SEQUENCE=4`，导致 Worker 重放时重复序列键并持续回滚；仅在已确认的 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821` 将该 Thread 计数修正为 `MAX(SEQUENCE_NO)+1=5`，未修改生产代码或原业务库。应用重启后 Worker 复用既有幂等结果，命令为 `SUCCEEDED(v256, attempt252)`、结果表仍 1 行、Item 序列扩展到 5、WorkflowRun 为 `COMPLETED(v2)`，原失败 Turn 保持 `FAILED(v2)`。
 - 专用 MySQL Thread→Turn→Item 并发实证：真实 HTTP 同时提交两个 Thread Turn（Thread `247d4c44-94bb-4c14-ae4f-200ff24b2b3c`），两路均返回 202；MyBatis 通过 Thread 行锁分配了两个 Turn 的 1–12 号 Item，`COUNT=12`、Sequence 全部唯一且连续，两个 Turn 均独立收敛为 `FAILED/AGENT_EXECUTION_FAILED`。在另一专用 Thread `47817a55-f3dc-4d38-950c-533fcd2216e0` 对 Item 插入注入一次性 NOT NULL 故障，接口返回 500 后 Thread/Turn/Item 均为 0 行且 `NEXT_SEQUENCE=0`，触发器已移除。
 - 专用 MySQL QuestionCard 并发与事务回滚实证：真实 HTTP 同时回答同一 QuestionCard `cal-q-question-055800521`，只有一路 202、另一路 409；最终为 `ANSWERED（版本3）/CONSUMED`，WorkflowRun 为 `REJECTED(v1)`，仅一个回答 Turn，7 个 Item Sequence 连续且无重复。对 QuestionCard `cal-q-rollback-question-055800521` 在回答 Turn 插入处注入专用库故障后接口返回 500，Question 仍为 `OPEN(v0)/AVAILABLE`、`ANSWER_TURN_ID=NULL`，WorkflowRun 保持 `WAITING_USER_INPUT(v0)`，Thread `NEXT_SEQUENCE=0` 且没有新增 Turn/Item；触发器已移除。
 
@@ -94,9 +98,10 @@ updated: 2026-08-21
 - `94a786c` 直接证据：Core 分页溢出测试和 App query 类型异常测试通过；非法分页请求不再经过 `ArithmeticException` 进入 500，统一返回 400 `INVALID_REQUEST`。
 - `7380257` 直接证据：Workflow 失败测试以 `apiKey=DO_NOT_PERSIST` 作为异常标记，验证该标记不出现在该 Turn 的任何 Item 中；执行失败仍保留受控 ERROR 事实和可恢复终态。
 - `9215ed8` 直接证据：App 异常/身份聚焦测试 4 项通过；依赖分析从未声明依赖警告收口为三模块 `No dependency problems found`。
+- `87af4e0` 直接证据：App 异常测试 2 项通过；clean Maven 116 项和 dependency analyze 三模块均通过，未把 `spring-core` 测试实现细节扩展为 App 直接依赖。
 
 ## 下一步唯一动作
 
-Item envelope、历史裸 payload fallback、API 分页/参数异常和执行错误持久化边界已完成审查并提交；下一步只执行最终完整验证矩阵、复核 staged/unstaged 边界并覆盖 handoff。DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
+Item envelope、历史裸 payload fallback、API 分页/参数异常、执行错误持久化和依赖边界已完成审查并提交；下一步只复核最终完整验证矩阵、工作树边界和 handoff。DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。

@@ -2,14 +2,24 @@
 
 ## 配置
 
-敏感配置只通过环境变量注入：`MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` 和 `DEEPSEEK_API_KEY`。DeepSeek 请求固定使用不启用 thinking 的 `deepseek-chat`；`DEEPSEEK_BASE_URL`、输出上限、重试次数、模型 HTTP 超时、Thread 上下文预算、队列容量、各层超时、SSE 心跳（`AI_AGENT_SSE_HEARTBEAT_INTERVAL`）和 Worker 轮询参数均在 `application.yml` 中以环境变量覆盖。
+敏感配置只通过环境变量注入：`MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` 和 `DEEPSEEK_API_KEY`。DeepSeek 请求固定使用不启用 thinking 的 `deepseek-chat`；`DEEPSEEK_BASE_URL`、输出上限、重试次数、模型 HTTP 超时、Thread 上下文预算、队列容量、各层超时、SSE 心跳（`AI_AGENT_SSE_HEARTBEAT_INTERVAL`）和 Worker 轮询参数均在 `application.yml` 中以环境变量覆盖。Spring Boot 不会自动读取被 Git 忽略的 `.env` 文件；使用该文件时必须先把它加载到当前启动进程，旧的 `AI_AGENT_MODEL_*` 变量不会被当前应用读取。
 
 ## 初始化与启动
 
 1. 使用可丢弃的本地 MySQL 执行 `docs/dev-ops/mysql/commerce-guardian-agent.sql`。脚本会删除旧表，禁止用于生产数据。
-2. 设置数据库和模型环境变量。
-3. 运行 `mvn spring-boot:run -pl commerce-guardian-agent-app`。
-4. 运行前端 `cd agent-console; npm run dev`。
+2. 在 `commerce-guardian-agent-app/.env` 填写真实 `DEEPSEEK_API_KEY`，并在启动前加载环境变量。PowerShell 可使用以下不打印值的方式：
+
+   ```powershell
+   $configPath = 'commerce-guardian-agent-app/.env'
+   Get-Content -LiteralPath $configPath | ForEach-Object {
+       if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$') {
+           [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], 'Process')
+       }
+   }
+   mvn spring-boot:run -pl commerce-guardian-agent-app
+   ```
+
+3. 运行前端 `cd agent-console; npm run dev`。
 
 本地演示身份通过 `X-User-Id: demo-user-1` 传递；真实部署应在网关完成认证并由应用认证适配器提供用户 ID。
 
