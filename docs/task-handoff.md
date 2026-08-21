@@ -1,4 +1,4 @@
-status: active
+status: completed
 updated: 2026-08-21
 
 # Commerce Guardian Agent 交接
@@ -35,6 +35,7 @@ updated: 2026-08-21
 - 提交 `7380257 fix: bound persisted execution errors`：执行失败 Item 只持久化受控错误文案，不再把远端 URL、响应片段或异常消息写入 Item；Workflow 失败测试使用敏感标记验证不会泄露。
 - 提交 `9215ed8 chore: declare app test dependencies`：为直接使用 Spring MVC 异常类型的 App 测试补充 test-scope `spring-test`；随后由 `87af4e0` 删除未被 App 源码直接使用的 `spring-core` 声明，保留正确的模块传递边界。
 - 提交 `87af4e0 fix: keep app test dependency boundary clean`：将 query 类型异常测试改为反射构造，避免测试实现细节把 `spring-core` 扩大为 App 直接依赖；clean Maven 和 dependency analyze 均通过。
+- 提交 `9c073ef fix: align local model environment contract`：清理 `.env.example` 中不再读取的旧 Worker 变量，补齐当前 SSE、Worker 运行时变量；与被忽略 `.env` 的 30 个变量完成同步校验。
 
 ## 最近验证
 
@@ -45,13 +46,15 @@ updated: 2026-08-21
 - `mvn -pl commerce-guardian-agent-core -Dtest=AgentTurnRuntimeServiceTest test`：4 项 Runtime 边界测试通过，包含规范化 `USER_MESSAGE` Item 和唯一键创建竞态恢复。
 - `mvn dependency:analyze -DskipTests`：`87af4e0` 后 BUILD SUCCESS；Core、Infrastructure 和 App 均报告 `No dependency problems found`，App 仅显式声明直接使用的 test-scope `spring-test`。
 - 专用 MySQL 实证：已确认 `127.0.0.1:3306`，创建并导入基线到 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821`；原 `COMMERCE_GUARDIAN_AGENT` 未重建。应用启动、Thread 创建、ACTIVE Turn 重启收敛为 `FAILED/RUNTIME_RESTARTED` 并生成 `TURN_STATE` 已验证；两路回答并发请求只有一路 202、另一路 409，数据库只产生一个回答 Turn，QuestionCard 版本单调推进并可失败对账释放。
-- 当前未发现可用的 DeepSeek 凭据；探针使用假值且将模型端点指向本机不可达地址，仅验证启动和错误收敛，未发送真实用户数据，也不能替代真实 DeepSeek Tool Calling/流式/取消验证。
-- 复核被 Git 忽略的 `commerce-guardian-agent-app/.env` 发现其原有 `AI_AGENT_MODEL_*` 是旧配置，当前 `application.yml` 不读取；已保留用户原值并补入 `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`、输出/重试/超时参数和空的 `DEEPSEEK_API_KEY` 占位。Spring Boot 不自动读取 `.env`，运行手册已补充显式加载方式；真实 DeepSeek 验证仍等待用户在本机填入 key，未打印或迁移旧 key。
+- 复核被 Git 忽略的 `commerce-guardian-agent-app/.env` 发现其原有 `AI_AGENT_MODEL_*`、Router/ReAct、旧队列和旧 Worker 参数均不属于当前 `application.yml`；已删除这些旧配置，并补齐当前 `DEEPSEEK_*`、Context、SSE、队列和 Worker 变量，使 `.env` 与 `.env.example` 的变量集合和非敏感默认值一致。Spring Boot 不自动读取 `.env`，运行手册已补充显式加载方式；本地 `DEEPSEEK_API_KEY` 已存在但未打印，`.env.example` 保持空 key。
+- 真实 DeepSeek Tool Calling 实证：使用 `.env` 当前 key、真实 `api.deepseek.com`、专用 MySQL 和合成订单查询，Thread `18313ac0-5907-40ec-80c8-63b7ab1b2f7b` 的 Turn `c6780114-356b-4314-bf5d-ec0814e42501` 生成 `lookup_order` Tool Call/Result，调用与结果 `invocationId` 匹配，结果长度 26，最终 `COMPLETED`；所有该 Turn Items 均未包含请求用户 ID或 API key。
+- 真实 DeepSeek 流式实证：Thread `e7273c5e-afd4-4587-990a-71c62df9c911` 的 Turn `8c023253-44eb-4414-9c19-092488b289f5` 通过真实 SSE 收到 71 个 `assistant.delta`，并同时收到 `tool_call`、`tool_result`、`item.assistant_message`、`turn.queued/active` 和最终终态事件；未打印 delta 内容或原始 Thinking。
+- 真实 DeepSeek 取消/超时实证：流式取消在收到第一段 `assistant.delta` 后调用 `/cancel`，响应 200，Turn 收敛为 `CANCELLED/CLIENT_CANCELLED`；使用临时 `AI_AGENT_THREAD_TURN_TIMEOUT=PT0.5S` 和 `AI_AGENT_STREAM_TIMEOUT=PT1S` 的真实端点探针收敛为 `TIMED_OUT/TURN_TIMEOUT`，日志记录模型流式调用超时。临时超时配置仅注入探针进程，未写入本地配置文件。
 - `agent-console/npm run typecheck`、`npm test -- --run`（17 项）、`npm run test:component`（7 项）、`npm run build`：通过；新增人工重试按钮/API、外部动作终态映射和 SSE 重连测试。`test:component` 明确使用 Mock，不作为真实浏览器证据。
 - `python -m scripts.runtime_eval`：通过 5 项确定性 Runtime 检查。
 - 真实 HTTP acceptance：`python -m scripts.acceptance --base-url http://127.0.0.1:8090 --user-id acceptance-calibration-user` 通过 `thread-list`、`thread-create`、`item-recovery`、`turn-accepted`、`turn-idempotency`、`execution-replay` 六项检查；运行使用专用 MySQL 和本机不可达模型端点，未伪称为真实 DeepSeek 证据。
 - Workflow 订单/物流校验已移到本地事务外；Question、WorkflowRun、ExternalActionCommand 和 Workflow Item 的写入由事务模板统一收口。
-- Playwright 真实浏览器已连接专用校准库：验证 Thread 创建、重命名、切换、历史 Item 恢复、QuestionCard 拒绝、执行时间线和页面重载后的结果恢复；另验证了本机不可达模型端点的可见失败 Turn。浏览器重载/关闭暴露的 SSE 异步连接异常已由 `821733c` 收口；真实 DeepSeek 仍未验证。
+- Playwright 真实浏览器已连接专用校准库：验证 Thread 创建、重命名、切换、历史 Item 恢复、QuestionCard 拒绝、执行时间线和页面重载后的结果恢复；另验证了本机不可达模型端点的可见失败 Turn。浏览器重载/关闭暴露的 SSE 异步连接异常已由 `821733c` 收口；真实 DeepSeek 另以 HTTP/SSE 探针完成验证。
 - Playwright 真实浏览器 SSE 断线续传实证：在 `cal-browser-retry-thread-052603808` 已建立 `afterSequence=13` 的连接后切换 offline，随后通过真实 HTTP 提交 Turn `67fa7ae5-6b61-45cd-bc42-2acd1bd7ce58`；专用 MySQL 记录该 Turn `FAILED/AGENT_EXECUTION_FAILED`，新增 Item 14–19。恢复 online 后浏览器网络记录出现两次 `events?afterSequence=13`，页面按序展示 14–19 号 Item 且无重复，浏览器错误级控制台消息为 0。
 - Playwright 真实浏览器人工重试实证：在 Thread `cal-browser-retry-thread-052603808` 点击“人工重试”，页面收到真实 `/retry` 响应和 SSE `EXTERNAL_ACTION_STATUS=SUCCEEDED`；失败 Turn 仍显示失败且不再展示人工重试按钮。页面刷新后仍恢复同一失败 Turn 和最终成功 Item；专用 MySQL 确认命令为 `SUCCEEDED(v7, attempt3, cycle1, lease=null)`、WorkflowRun 为 `COMPLETED(v2)`、Turn 为 `FAILED(v2, EXTERNAL_ACTION_FAILED)`，Item 序列为 1/2/3/4/5，结果表 1 行且幂等键 1 行。
 - 当前构建 Playwright 真实浏览器实证：在专用库新建 Thread，通过真实 Vite 代理提交一条普通消息，页面展示 `USER_MESSAGE → QUEUED → ACTIVE → CONTEXT_ASSEMBLED → ERROR → FAILED`；重载后仍恢复同一消息、受控执行错误和终态 Item，网络请求包含 202 入队、`items?afterSequence=0` 和 `events?afterSequence=6`，浏览器错误级控制台消息为 0。截图保存在 `output/playwright/current-browser-calibration.png`；模型端点为本机不可达地址，不作为真实供应商证据。
@@ -99,9 +102,10 @@ updated: 2026-08-21
 - `7380257` 直接证据：Workflow 失败测试以 `apiKey=DO_NOT_PERSIST` 作为异常标记，验证该标记不出现在该 Turn 的任何 Item 中；执行失败仍保留受控 ERROR 事实和可恢复终态。
 - `9215ed8` 直接证据：App 异常/身份聚焦测试 4 项通过；依赖分析从未声明依赖警告收口为三模块 `No dependency problems found`。
 - `87af4e0` 直接证据：App 异常测试 2 项通过；clean Maven 116 项和 dependency analyze 三模块均通过，未把 `spring-core` 测试实现细节扩展为 App 直接依赖。
+- 当前本地配置/契约直接证据：`.env` 与 `.env.example` 均为 30 个当前变量，非敏感值一致，旧变量为 0；真实 DeepSeek key 只存在于被忽略的 `.env`，未进入 Git。
 
 ## 下一步唯一动作
 
-Item envelope、历史裸 payload fallback、API 分页/参数异常、执行错误持久化和依赖边界已完成审查并提交；下一步只复核最终完整验证矩阵、工作树边界和 handoff。DeepSeek 凭据仍缺失时，继续明确记录真实 Tool Calling、流式、取消和超时为未验证，不用本地替身冒充证据。
+实现校准、真实 MySQL/浏览器/DeepSeek 验证、配置同步、完整本地矩阵和工作树边界均已复核；handoff 已完成。按用户要求，完成后暂停。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。
