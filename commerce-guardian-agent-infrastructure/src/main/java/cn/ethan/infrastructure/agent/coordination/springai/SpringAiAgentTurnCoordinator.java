@@ -341,10 +341,10 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             String maxAmount,
             String statuses,
             String keyword,
-            Integer logisticsStalledDays,
+            String logisticsStalledDays,
             String visibility
     ) {
-        Set<OrderStatusEnum> parsedStatuses = statuses == null || statuses.isBlank()
+            Set<OrderStatusEnum> parsedStatuses = statuses == null || statuses.isBlank()
                 ? Set.of()
                 : Arrays.stream(statuses.split(","))
                 .map(String::trim)
@@ -359,7 +359,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 parseBoundary("createdTo", createdTo, true),
                 parseAmount("minAmount", minAmount),
                 parseAmount("maxAmount", maxAmount),
-                parsedStatuses, keyword, logisticsStalledDays, parsedVisibility);
+                parsedStatuses, keyword, parseStalledDays(logisticsStalledDays), parsedVisibility);
     }
 
     private static BigDecimal parseAmount(String name, String value) {
@@ -368,6 +368,15 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             return new BigDecimal(value.trim());
         } catch (NumberFormatException failure) {
             throw new IllegalArgumentException("Tool 参数不是有效金额：" + name);
+        }
+    }
+
+    private static Integer parseStalledDays(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return Integer.valueOf(value.trim());
+        } catch (NumberFormatException failure) {
+            throw new IllegalArgumentException("Tool 参数不是有效物流停滞天数：logisticsStalledDays");
         }
     }
 
@@ -434,7 +443,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 @ToolParam(description = "可选，最高实付金额；无需筛选时留空") String maxAmount,
                 @ToolParam(description = "可选，订单状态；多个状态使用逗号分隔") String statuses,
                 @ToolParam(description = "可选，订单号、商品摘要或物流状态关键词") String keyword,
-                @ToolParam(description = "可选，物流连续多少天未更新；无需筛选时留空") Integer logisticsStalledDays,
+                @ToolParam(description = "可选，物流连续多少天未更新；无需筛选时留空或传空字符串") String logisticsStalledDays,
                 @ToolParam(description = "可选，可填写 ACTIVE、HIDDEN 或 ALL；默认 ACTIVE") String visibility
         ) {
             OrderSearchCriteria criteria = parseSearchCriteria(createdFrom, createdTo, minAmount, maxAmount,
@@ -443,7 +452,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                             "createdFrom", value(createdFrom), "createdTo", value(createdTo),
                             "minAmount", value(minAmount), "maxAmount", value(maxAmount),
                             "statuses", value(statuses), "keyword", value(keyword),
-                            "logisticsStalledDays", logisticsStalledDays == null ? "" : logisticsStalledDays.toString(),
+                            "logisticsStalledDays", value(logisticsStalledDays),
                             "visibility", value(visibility)),
                     () -> {
                         OrderSearchResultModel result = orders.searchOrders(criteria, userId);

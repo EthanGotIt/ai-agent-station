@@ -170,7 +170,7 @@ class SpringAiAgentToolBoundaryTest {
                 "user-1", orders, (orderId, userId) -> List.of(), invocation);
 
         String result = tools.searchOrders(
-                "2026-08-21", "2026-08-22", "50", "120", "PAID", "耳机", null, "ACTIVE");
+                "2026-08-21", "2026-08-22", "50", "120", "PAID", "耳机", "", "ACTIVE");
 
         JsonNode safe = new ObjectMapper().readTree(result);
         assertEquals("SUCCESS", safe.path("status").asString());
@@ -178,6 +178,8 @@ class SpringAiAgentToolBoundaryTest {
         assertFalse(result.contains("internal-user-1"));
         assertEquals("ORDER_LIST", invocation.traces().get(1).type());
         assertFalse(invocation.traces().get(1).payload().contains("internal-user-1"));
+        assertThrows(IllegalArgumentException.class, () -> tools.searchOrders(
+                null, null, null, null, null, null, "not-a-number", "ACTIVE"));
     }
 
     private SpringAiAgentTurnCoordinator.WorkflowInvocation invocation() {
