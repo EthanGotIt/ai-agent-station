@@ -1,21 +1,22 @@
-status: blocked
+status: active
 updated: 2026-08-23
 
 # Commerce Guardian Agent 交接
 
 ## 当前执行阶段
 
-- 当前目标：执行“订单售后 Workflow 推进计划”。实现、真实浏览器验收和本轮最终矩阵已完成到可验证范围；本轮又补齐了 HTTP 订单适配器的运行手册配置与请求头契约说明。由于连续多轮确认外部 HTTP 订单服务没有可用地址和凭据，目标已标记为 `blocked`，严格完成条件中的该项不能伪称通过。恢复后下一步唯一动作是取得专用凭据和地址并执行真实 HTTP 订单适配器验收。
+- 当前目标：执行“订单售后 Workflow 推进计划”。实现、真实浏览器验收和本轮最终矩阵已完成到可验证范围；本轮新增独立 HTTP 订单服务夹具并完成 Agent 到独立 SQLite 服务的真实查询、退款和幂等回放，目标已从外部服务阻塞中恢复为 `active`，下一步唯一动作是完成本轮完整验证矩阵并复核 handoff。
 - 已修改范围：统一 `ORDER_SERVICE` 的查询、物流、退款、催发货、隐藏/恢复订单历史能力，完成 QuestionCard、业务进度聚合、Thread 回收站/行内重命名、移动端抽屉、V5 增量迁移、显式外部动作确认和受限 Markdown 表格渲染。未触碰工作树中既有的 IDE、部署、Docker、Hook 和脚本改动。
 - 数据库证据：`COMMERCE_GUARDIAN_AGENT` 与 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821` 已由应用实际启动到 Flyway 版本 5；两库均保留演示订单/物流事实，`OPEN_QUESTION_ID`、Turn Workflow 字段、ExternalAction 版本/重试字段、结果表和幂等索引均可读。已确认的 V4 前备份仍保留在 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v4-commerce_guardian_agent-20260823.sql` 与 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v4-commerce_guardian_agent_calibration_20260821-20260823.sql`；该备份早于 V5，已导入专用克隆库 `COMMERCE_GUARDIAN_AGENT_V5_MIGRATION_20260823`，应用实际从版本 3 增量执行 V4、V5，保留 9 条订单、6 条物流事件并成功启动到版本 5。没有另外生成 V5 命名的迁移前备份，但已有前置备份覆盖 V5 前状态，克隆迁移和 V5 后恢复快照均已核验；该点作为已接受的 P2 运维记录保留，不表述为不存在的单独 V5 前备份。
 - V5 后恢复快照：已为当前配置库和专用校准库分别生成 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-after-v5-commerce_guardian_agent-20260823.sql`（100160 bytes）与 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-after-v5-commerce_guardian_agent_calibration_20260821-20260823.sql`（335421 bytes）；仅写入临时备份文件，未改动数据库。
-- 当前服务状态：`5173`、`8090`、`8092`、迁移验证临时端口 `8093` 均已关闭；MySQL 保留运行，专用克隆库仅用于迁移证据，未删除或覆盖原配置库。
-- 本轮提交：`e99dd12 docs: document order adapter boundary`、`9d433ca docs: classify migration backup residual risk`、`9fc19af test: verify remote action idempotency replay`、`22eb4de fix: reject invalid order action idempotency keys`、`9c0ce82 test: await question card state transition`、`7029122 fix: propagate order action idempotency`、`b1fc6bc fix: harden order action confirmation UI`、`5532463 fix: align legacy workflow schema`、`093076a fix: tolerate optional order tool input`、`4c7fcc8 fix: align optional order tool formatting`。本轮又同步了外部验证阻塞状态；每个提交只包含本轮明确路径，未带入用户既有改动；HTTP/本地幂等定向验证 10 项通过，完整验证矩阵通过：Python 规范检查、Python 4 项测试、Maven Core 56/Infrastructure 59/App 17、前端 typecheck、Vitest 23 项和 production build。
+- 当前服务状态：本轮验收期间独立订单服务运行在 `127.0.0.1:18080`，Agent 运行在 `8090`；MySQL 保留运行，专用克隆库仅用于迁移证据，未删除或覆盖原配置库。Docker CLI 可用但 Docker Desktop Linux 引擎未启动，因此本轮使用同一台电脑上的独立 Python 进程完成现场 HTTP 验收，Dockerfile/README 已提供可复现容器启动方式。
+- 本轮提交：`80c5ca9 feat: add isolated order service fixture`、`e99dd12 docs: document order adapter boundary`、`9d433ca docs: classify migration backup residual risk`、`9fc19af test: verify remote action idempotency replay`、`22eb4de fix: reject invalid order action idempotency keys`、`9c0ce82 test: await question card state transition`、`7029122 fix: propagate order action idempotency`、`b1fc6bc fix: harden order action confirmation UI`、`5532463 fix: align legacy workflow schema`、`093076a fix: tolerate optional order tool input`、`4c7fcc8 fix: align optional order tool formatting`。本轮新增夹具 4 项测试，完整 Python 测试增至 8 项；每个提交只包含本轮明确路径，未带入用户既有改动。
 - 真实浏览器证据：在 `5173 → 8090` 的真实 Vite 代理和真实 DeepSeek V4 Pro 下，验证“列出今天最新订单”、订单卡片查物流、退款原因 QuestionCard、刷新后恢复 QuestionCard、最终授权拒绝无副作用、隐藏后默认查询不再显示、恢复后重新显示、催发货最终授权、Thread Enter 重命名、Escape/失焦取消、ACTIVE→ARCHIVED→ACTIVE、移动端抽屉开关。页面只显示聚合业务进度、订单卡片/物流时间线和受限 Markdown 表格，不显示原始 `assistant.delta`、Tool JSON 或 Thinking。
 - 真实 Thread 回收站证据：校准库 Thread `1880e1e7-8122-4843-b140-c5bf8ae9341d` 通过真实 API 完成 ACTIVE 列表 → ARCHIVED 列表 → ACTIVE 恢复，归档时列表不再包含、恢复后重新出现；含开放 Question 的 Thread `7ef9ed22-b02f-4b28-bb04-7f186c76698b` 归档返回 409，拒绝 Question 后开放 Question/未完成动作均为 0，随后归档成功。
 - 真实订单动作证据：当前库 `EXTERNAL_ACTION_COMMAND`/`EXTERNAL_ACTION_RESULT` 中 `HIDE_ORDER`、`RESTORE_ORDER`、`EXPEDITE` 均为 `SUCCEEDED` 且各自只产生一个幂等回执；隐藏/恢复后的 `HIDDEN_AT` 最终为 NULL。退款浏览器流程选择拒绝，订单仍保持原状态，证明显式授权前和拒绝路径均没有退款副作用。
+- 独立 HTTP 订单服务证据：`scripts/acceptance/order_service_fixture` 使用独立 SQLite 数据库和真实 HTTP 线程提供订单搜索、详情、物流、退款、催发货、隐藏/恢复接口；Agent 通过 `http://127.0.0.1:18080` 查询“列出今天最新订单”实际得到 `ORDER-EXT-TODAY-001`，真实 QuestionCard 授权退款将 `ORDER-EXT-STALLED-001` 从 `SHIPPED` 更新为 `REFUNDED`。随后用同一 Workflow 幂等键重放，服务端幂等记录增量为 0、业务变更增量为 0；实际 Java HTTP 适配器对催发货、隐藏、恢复各发送一次并各重复一次，结果为 `EXPEDITED/HIDDEN/RESTORED`，服务端记录与业务变更各仅增加 3 次。该证据是独立本机服务验收，不伪称为第三方生产订单平台验收。
 - 真实 Thread/SSE 证据：此前已验证取消、超时、断线按游标恢复和顺序去重；本轮浏览器进一步验证 QuestionCard 刷新、订单动作期间的业务进度和 Thread 切换。SSE 仍保留为流式输出、取消和断线恢复边界，不再作为右侧开发者运行轨迹展示。
-- 当前剩余风险：外部 HTTP 订单服务没有可用凭据，因此只完成契约测试、本地真实适配器和协议级幂等回放验证；真实远程服务端去重仍未验收。V5 前置备份的历史流程差异已按已有 V4 前备份、专用克隆迁移和 V5 后快照证据接受为 P2 运维记录。外部 HTTP 验收未完成前，不能把 handoff 标记为 `completed`。
+- 当前剩余风险：独立本机 HTTP 订单服务的查询、物流、写操作和服务端幂等已现场验收；Docker Desktop 引擎未启动，容器镜像尚未现场构建，但同一服务已以独立进程运行并通过 Agent/Java HTTP 适配器验证。若部署到第三方生产订单平台，仍需按其实际鉴权契约另行验收；这不再阻塞本仓库的独立 HTTP 边界验证。V5 前置备份的历史流程差异已按已有 V4 前备份、专用克隆迁移和 V5 后快照证据接受为 P2 运维记录。
 
 ## 已完成
 
