@@ -4,6 +4,8 @@
 
 敏感配置只通过环境变量注入：`MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` 和 `DEEPSEEK_API_KEY`。DeepSeek 请求固定使用 `deepseek-v4-pro` thinking 模式；`DEEPSEEK_BASE_URL`、输出上限、重试次数、模型 HTTP 超时、Thread 上下文预算、队列容量、各层超时、SSE 心跳（`AI_AGENT_SSE_HEARTBEAT_INTERVAL`）和 Worker 轮询参数均在 `application.yml` 中以环境变量覆盖。Spring Boot 不会自动读取被 Git 忽略的 `.env` 文件；使用该文件时必须先把它加载到当前启动进程，旧的 `AI_AGENT_MODEL_*` 变量不会被当前应用读取。
 
+订单适配器默认使用本地 `local` 实现；验收外部订单服务时设置 `AI_AGENT_ORDER_GATEWAY=http`、`AI_AGENT_ORDER_BASE_URL` 和可选的 `AI_AGENT_ORDER_HTTP_TIMEOUT`。HTTP 订单服务必须按 `/orders/search`、`/orders/{id}`、`/orders/{id}/refund`、`/orders/{id}/expedite` 和 `/orders/{id}/visibility` 契约提供 JSON 响应；应用会发送 `X-User-Id`，所有写操作还会发送 `Idempotency-Key`。仓库没有约定额外的外部鉴权环境变量，启用真实服务前需取得其服务端鉴权和响应契约；不要把凭据写入文档或提交。
+
 ## 初始化与启动
 
 1. 使用可丢弃的本地 MySQL 执行 `docs/dev-ops/mysql/commerce-guardian-agent.sql`。脚本会删除旧表，禁止用于生产数据。

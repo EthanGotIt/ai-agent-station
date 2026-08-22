@@ -46,7 +46,7 @@
 
 ## 当前里程碑边界
 
-本阶段已闭合 `ORDER_SERVICE` Workflow、真实浏览器产品化、V5 旧库兼容、显式授权、可选 Tool 参数和 HTTP 写操作幂等键边界：`49311ca`、`6d40351`、`fcec19d`、`b1fc6bc`、`5532463`、`093076a`、`4c7fcc8`、`7029122`、`22eb4de`、`9c0ce82`、`9fc19af`。真实浏览器、真实 DeepSeek、真实本地 MySQL、迁移专用克隆和本轮完整 Python/Maven/npm 矩阵均已取得直接证据；完整矩阵结果为 Python 规范检查通过、Python 4 项通过、Maven Core 56/Infrastructure 59/App 17、前端 typecheck/Vitest 23 项/build 全部通过。handoff 保持 `active`，唯一未闭合的外部边界是外部 HTTP 订单服务无凭据；V5 前置备份差异已作为 P2 运维记录接受并保留证据。
+本阶段已闭合 `ORDER_SERVICE` Workflow、真实浏览器产品化、V5 旧库兼容、显式授权、可选 Tool 参数和 HTTP 写操作幂等键边界：`49311ca`、`6d40351`、`fcec19d`、`b1fc6bc`、`5532463`、`093076a`、`4c7fcc8`、`7029122`、`22eb4de`、`9c0ce82`、`9fc19af`。`9d433ca` 记录了 V5 备份差异的 P2 结论；本轮又在 `docs/runbook.md` 补齐 HTTP 订单适配器配置和请求头契约。真实浏览器、真实 DeepSeek、真实本地 MySQL、迁移专用克隆和本轮完整 Python/Maven/npm 矩阵均已取得直接证据；完整矩阵结果为 Python 规范检查通过、Python 4 项通过、Maven Core 56/Infrastructure 59/App 17、前端 typecheck/Vitest 23 项/build 全部通过。handoff 保持 `active`，唯一未闭合的外部边界是外部 HTTP 订单服务无凭据。
 
 ## 外部验证边界
 
