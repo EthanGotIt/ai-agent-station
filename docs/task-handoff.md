@@ -5,10 +5,10 @@ updated: 2026-08-22
 
 ## 当前执行阶段
 
-- 当前目标：执行“订单售后 Workflow 推进计划”，数据库与 owner Turn 恢复基线已完成，本阶段已收口 QuestionCard 动态交互和业务进度展示，下一阶段只处理订单发现、物流诊断与模型契约，不扩展无关产品范围。
-- 已修改范围：QuestionCard 字段契约新增 `allowCustom` 和最多三个选项约束；前端按持久化 Item 聚合业务进度、隐藏原始 delta/Execution Ledger、支持 QuestionCard 接管输入区、Enter/Shift+Enter/IME、Escape 取消、摘要和受限 Markdown；未触碰工作树中既有的 IDE、部署、Docker、Hook 和脚本改动。
-- 真实验证：原配置库 `COMMERCE_GUARDIAN_AGENT` 已先生成临时备份 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-original-20260822-v3.sql`，随后应用自身 Flyway 从 baseline v0 增量升级到 v1 并成功启动；专用校准库 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821` 启动恢复后，2 条“Question 已回答但 owner 仍等待输入”的历史记录收敛为 `COMPLETED/REJECTED`，2 条真实开放问题仍保持 `WAITING_USER_INPUT + OPEN + AVAILABLE`。应用已关闭，8090 无监听。
-- 本阶段验证：Core 53 项、Infrastructure 49 项、App 16 项测试通过；前端 typecheck、21 项 Vitest 和生产 build 通过；Impeccable 视觉规范检测返回空结果。主提交为 `394b5b2 feat: make question cards drive order conversations`。
+- 当前目标：执行“订单售后 Workflow 推进计划”，数据库与 owner Turn 恢复基线、QuestionCard 动态交互和订单发现/物流诊断的代码阶段已完成；下一阶段只处理统一 `ORDER_SERVICE` Workflow，不扩展无关产品范围。
+- 已修改范围：在现有 Thread → Turn → Item 契约上增加按时间、金额、状态、关键词、物流停滞和隐藏状态搜索；本地与 HTTP `/orders/search` 适配器同步；新增订单列表/详情和物流时间线 Item 及前端订单卡片；V2 只增量补齐订单摘要、隐藏时间、索引和演示事实；模型配置统一为 `deepseek-v4-pro` thinking；未触碰工作树中既有的 IDE、部署、Docker、Hook 和脚本改动。
+- 真实验证：已确认当前配置库与专用校准库分别在备份/克隆边界内由 Flyway 从版本 1 增量升级到版本 2，两个库均保留 9 条订单、6 条物流事件；应用实际启动并响应 `/actuator/health` 与 Thread 列表 API，随后关闭，8090/8091 均无监听。当前库 V2 前备份为 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v2-20260822.sql`，未打印密码或 API key。
+- 本阶段验证：脚本 Convention Check 与 4 项脚本测试通过；Maven 全量 Core 55、Infrastructure 51、App 16，共 122 项通过；前端 typecheck、22 项 Vitest 和生产 build 通过；Impeccable detector 返回 `[]`。主提交为 `13500ba feat: add structured order discovery`。
 
 ## 已完成
 
@@ -119,9 +119,14 @@ updated: 2026-08-22
 - 直接验证：前端 Vitest 21 项通过，覆盖动态 QuestionCard、“其他”输入、三选项上限、摘要、受限 Markdown、Enter/Shift+Enter/IME、Escape、delta 隐藏和业务进度聚合；`npm --prefix agent-console run typecheck` 与 `npm --prefix agent-console run build` 通过。Maven Core 53、Infrastructure 49、App 16 项通过。
 - 只读审查：`rg` 未发现前端残留 `Execution Ledger`/`execution-inspector`/`itemTrace` 或用于展示原始 Tool/事件 JSON 的代码；Impeccable detector 对本轮前端变更返回 `[]`。SSE 仍保留，原因是它继续承担流式回复、取消和断线重连，而非作为产品信息架构。
 - 本阶段未修改 `.env`、`.env.example` 或用户既有 IDE、部署、Docker、Hook、脚本改动；未进行真实浏览器操作，因为本阶段先完成可重复的交互契约测试，真实浏览器将在订单 Workflow 阶段统一验证。
+- `13500ba feat: add structured order discovery`：`OrderSearchCriteria` 将时间、金额、状态、关键词、物流停滞、隐藏状态和结果上限收敛为 Core 值；本地 MyBatis 与 HTTP `/orders/search` 均执行用户归属过滤、有限结果和临时失败降级。`OrderSnapshotModel` 增加商品摘要与隐藏时间，新增 `ORDER_LIST`、`ORDER_DETAIL`、`LOGISTICS_TIMELINE` 受控 Item，前端按 Item 聚合为订单卡片与物流时间线。
+- 同一提交：V2 Flyway migration 只新增 `ITEM_SUMMARY`、`HIDDEN_AT`、可见性索引和不存在的演示订单/物流事件，使用 `INSERT IGNORE` 不覆盖既有交易事实；基线 SQL 与 migration 字段保持一致。专用校准库先验证迁移，再对当前配置库备份并执行同一增量迁移。
+- 同一提交：模型配置与被忽略 `.env`、`.env.example` 同步为 `deepseek-v4-pro`，`application.yml` 开启 thinking 并设置 `reasoning-effort=max`；本阶段没有把 thinking 写入 Item、SSE、日志或摘要。真实 V4 Pro 调用仍未在本阶段重复验证，不能用历史旧模型证据替代。
+- 本阶段只读审查发现并修复两个真实问题：`renderOrderSnapshot`/物流事件 JSON 的前导逗号会生成无效结构，已改为确定性对象构造；`LocalOrderGateway` 的测试兼容双构造器缺少 Spring 注入选择，已用明确的两参数构造器注解修复并通过真实应用启动探针。
+- 本阶段仍未闭合：真实 DeepSeek V4 Pro 多轮 Tool Calling、流式响应、取消、超时和敏感信息检查；真实浏览器订单卡片/物流时间线在 QuestionCard、断线、刷新和 Thread 切换下的回归。下一阶段必须补齐这些证据，不得把本阶段标记为最终完成。
 
 ## 下一步唯一动作
 
-进入订单发现与物流诊断阶段：先盘点 `OrderGateway`、HTTP `/orders/search`、演示订单和 Tool/模型配置的真实调用路径，设计并验证按时间/金额/状态/关键词/物流停滞/隐藏状态搜索的结构化契约，再切换单一 `deepseek-v4-pro` 思考模式并同步 `.env`/`.env.example`；不得重新进行已完成的全量调查。
+进入统一 `ORDER_SERVICE` Workflow 阶段：沿现有退款/催发货入口盘点真实调用路径，替换分散写操作为确定性多步骤 Run（候选订单 → 订单/物流核验 → 原因/授权 Question → 幂等外部动作 → 终态），先完成退款英雄流程的 owner Turn 收敛、并发回答、重启恢复和单次执行测试；不得重新进行已完成的数据库、QuestionCard 和订单搜索全量调查。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。
