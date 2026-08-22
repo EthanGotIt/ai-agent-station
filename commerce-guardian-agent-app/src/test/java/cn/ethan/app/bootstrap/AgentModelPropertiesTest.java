@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * Agent 模型参数测试：验证 thinking 禁用和远程调用资源上限。
+ * Agent 模型参数测试：验证 DeepSeek V4 Pro thinking 契约和远程调用资源上限。
  *
  * @author ethan
  * @date 2026-08-21
@@ -19,7 +19,7 @@ class AgentModelPropertiesTest {
     void appliesDeepSeekDefaults() {
         AgentModelProperties properties = new AgentModelProperties(null, null, null, null);
 
-        assertEquals("deepseek-chat", properties.name());
+        assertEquals("deepseek-v4-pro", properties.name());
         assertEquals(1024, properties.maxOutputTokens());
         assertEquals(1, properties.maxAttempts());
         assertEquals(Duration.ofSeconds(30), properties.httpTimeout());
@@ -37,7 +37,7 @@ class AgentModelPropertiesTest {
     void rejectsUnboundedOutputBudget() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new AgentModelProperties("deepseek-chat", 8193, 1, Duration.ofSeconds(30))
+                () -> new AgentModelProperties("deepseek-v4-pro", 8193, 1, Duration.ofSeconds(30))
         );
     }
 
@@ -45,7 +45,7 @@ class AgentModelPropertiesTest {
     void rejectsExcessiveHttpTimeout() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new AgentModelProperties("deepseek-chat", 1024, 1, Duration.ofMinutes(6))
+                () -> new AgentModelProperties("deepseek-v4-pro", 1024, 1, Duration.ofMinutes(6))
         );
     }
 }

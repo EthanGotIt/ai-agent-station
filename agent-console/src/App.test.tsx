@@ -255,6 +255,45 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(screen.queryByText("运行轨迹")).toBeNull();
   });
 
+  it("结构化订单 Item 渲染订单卡片和物流时间线，不展示内部归属字段", async () => {
+    const thread = threadRecord("thread-1", "订单结果 Thread");
+    const events = [
+      itemEvent("item-user-order", "thread-1", "turn-1", "USER_MESSAGE", 1,
+        { schemaVersion: 1, kind: "USER_MESSAGE", data: "列出今天最新订单" }),
+      itemEvent("item-order-list", "thread-1", "turn-1", "ORDER_LIST", 2,
+        { schemaVersion: 1, kind: "ORDER_LIST", data: { status: "SUCCESS", orders: [{
+          orderId: "ORDER-TODAY-001", orderStatus: "PAID", createdAt: "2026-08-22T09:00:00Z",
+          logisticsStatus: "待发货", paidAmount: 99, currency: "CNY", itemSummary: "无线耳机", visibility: "ACTIVE",
+          userId: "internal-user-should-not-render"
+        }] } }),
+      itemEvent("item-logistics", "thread-1", "turn-1", "LOGISTICS_TIMELINE", 3,
+        { schemaVersion: 1, kind: "LOGISTICS_TIMELINE", data: { orderId: "ORDER-TODAY-001", events: [{
+          eventId: "log-1", status: "PICKED_UP", location: "杭州转运中心", description: "包裹已揽收", occurredAt: "2026-08-22T10:00:00Z"
+        }] } })
+    ];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") {
+        return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      }
+      if (url.includes("/threads/thread-1/items")) {
+        return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      }
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse(events));
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("无线耳机")).not.toBeNull();
+    expect(screen.getByText("CNY 99.00")).not.toBeNull();
+    expect(screen.getByText("杭州转运中心")).not.toBeNull();
+    expect(screen.getByText("包裹已揽收")).not.toBeNull();
+    expect(screen.queryByText("internal-user-should-not-render")).toBeNull();
+    expect(screen.getByText("已找到 1 个匹配订单")).not.toBeNull();
+  });
+
   it("为耗尽的外部动作显示人工重试并调用稳定 API", async () => {
     const thread = threadRecord("thread-1", "人工重试 Thread");
     const retryEvents = [

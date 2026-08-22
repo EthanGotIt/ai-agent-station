@@ -118,6 +118,32 @@ export type BusinessProgress = {
   sequence: number;
 };
 
+export type OrderCard = {
+  orderId: string;
+  status: string;
+  createdAt: string | null;
+  expectedDeliveryAt: string | null;
+  lastLogisticsAt: string | null;
+  logisticsStatus: string | null;
+  paidAmount: number | null;
+  currency: string | null;
+  itemSummary: string | null;
+  visibility: "ACTIVE" | "HIDDEN" | string;
+};
+
+export type LogisticsEvent = {
+  eventId: string;
+  status: string;
+  location: string;
+  description: string;
+  occurredAt: string;
+};
+
+export type LogisticsTimeline = {
+  orderId: string;
+  events: LogisticsEvent[];
+};
+
 export type ThreadViewTurn = {
   turnId: string;
   userMessage: string;

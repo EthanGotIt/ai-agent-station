@@ -29,6 +29,9 @@ spring:
         model: ${ai-agent.model.name}
         temperature: 0
         max-tokens: ${ai-agent.model.max-output-tokens}
+        thinking:
+          type: enabled
+        reasoning-effort: max
     retry:
       max-attempts: ${ai-agent.model.max-attempts}
       on-client-errors: false
@@ -41,7 +44,7 @@ mybatis-plus:
 
 ai-agent:
   model:
-    name: ${DEEPSEEK_MODEL:deepseek-chat}
+    name: ${DEEPSEEK_MODEL:deepseek-v4-pro}
     max-output-tokens: ${DEEPSEEK_MAX_OUTPUT_TOKENS:1024}
     max-attempts: ${DEEPSEEK_MAX_ATTEMPTS:1}
     http-timeout: ${DEEPSEEK_HTTP_TIMEOUT:PT30S}

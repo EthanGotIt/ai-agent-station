@@ -186,7 +186,8 @@ public final class AgentContextAssembler {
     private boolean modelVisible(AgentItemModel item) {
         return switch (item.type()) {
             case USER_MESSAGE, ASSISTANT_MESSAGE, TOOL_CALL, TOOL_RESULT,
-                    WORKFLOW_STARTED, WORKFLOW_QUESTION, WORKFLOW_RESULT, EXTERNAL_ACTION_STATUS -> true;
+                    WORKFLOW_STARTED, WORKFLOW_QUESTION, WORKFLOW_RESULT, EXTERNAL_ACTION_STATUS,
+                    ORDER_LIST, ORDER_DETAIL, LOGISTICS_TIMELINE -> true;
             case TURN_STATE, WORKFLOW_ANSWER, EXECUTION_EVENT, ERROR -> false;
         };
     }

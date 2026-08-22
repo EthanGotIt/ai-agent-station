@@ -4,10 +4,14 @@ import cn.ethan.core.commerce.order.OrderLookupResultModel;
 import cn.ethan.core.commerce.order.OrderSnapshotModel;
 import cn.ethan.core.commerce.order.OrderStatusEnum;
 import cn.ethan.core.commerce.order.OrderGateway;
+import cn.ethan.core.commerce.order.OrderSearchCriteria;
+import cn.ethan.core.commerce.order.OrderSearchResultModel;
+import cn.ethan.core.commerce.order.OrderSearchStatusEnum;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.core.ParameterizedTypeReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -19,6 +23,8 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
+import java.util.Objects;
 
 /**
  * HTTP 订单网关：用于订单数据由外部服务管理的部署场景。
@@ -89,7 +95,11 @@ public final class HttpOrderGateway implements OrderGateway {
                     response.createdAt(),
                     response.expectedDeliveryAt(),
                     response.lastLogisticsAt(),
-                    response.logisticsStatus()
+                    response.logisticsStatus(),
+                    response.paidAmount(),
+                    response.currency(),
+                    response.itemSummary(),
+                    response.hiddenAt()
             ));
         } catch (HttpClientErrorException.NotFound notFound) {
             return OrderLookupResultModel.notFound();
@@ -102,6 +112,74 @@ public final class HttpOrderGateway implements OrderGateway {
             );
             return OrderLookupResultModel.temporaryFailure();
         }
+    }
+
+    @Override
+    public OrderSearchResultModel searchOrders(OrderSearchCriteria criteria, String userId) {
+        if (criteria == null || userId == null || userId.isBlank()) {
+            return OrderSearchResultModel.success(List.of());
+        }
+        try {
+            List<HttpOrderResponseDto> response = client.get()
+                    .uri(uri -> {
+                        var builder = uri.path("/orders/search");
+                        if (criteria.createdFrom() != null) {
+                            builder.queryParam("createdFrom", criteria.createdFrom());
+                        }
+                        if (criteria.createdTo() != null) {
+                            builder.queryParam("createdTo", criteria.createdTo());
+                        }
+                        if (criteria.minAmount() != null) {
+                            builder.queryParam("minAmount", criteria.minAmount());
+                        }
+                        if (criteria.maxAmount() != null) {
+                            builder.queryParam("maxAmount", criteria.maxAmount());
+                        }
+                        if (!criteria.statuses().isEmpty()) {
+                            builder.queryParam("status", String.join(",",
+                                    criteria.statusList().stream().map(Enum::name).toList()));
+                        }
+                        if (criteria.keyword() != null) {
+                            builder.queryParam("keyword", criteria.keyword());
+                        }
+                        if (criteria.logisticsStalledDays() != null) {
+                            builder.queryParam("logisticsStalledDays", criteria.logisticsStalledDays());
+                        }
+                        builder.queryParam("visibility", criteria.visibility().name());
+                        builder.queryParam("limit", criteria.limit());
+                        return builder.build();
+                    })
+                    .header("X-User-Id", userId.strip())
+                    .accept(MediaType.APPLICATION_JSON)
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<List<HttpOrderResponseDto>>() { });
+            if (response == null) {
+                return OrderSearchResultModel.success(List.of());
+            }
+            List<OrderSnapshotModel> orders = response.stream()
+                    .filter(Objects::nonNull)
+                    .filter(order -> userId.equals(order.userId()))
+                    .filter(order -> order.orderId() != null && order.status() != null
+                            && !order.status().isBlank())
+                    .map(this::toSnapshot)
+                    .limit(criteria.limit())
+                    .toList();
+            return new OrderSearchResultModel(OrderSearchStatusEnum.SUCCESS, orders);
+        } catch (HttpClientErrorException.NotFound | HttpClientErrorException.Forbidden unavailable) {
+            return OrderSearchResultModel.success(List.of());
+        } catch (RuntimeException temporaryFailure) {
+            LOGGER.warn("HTTP 订单搜索降级为临时失败，exception={}",
+                    temporaryFailure.getClass().getSimpleName());
+            return OrderSearchResultModel.temporaryFailure();
+        }
+    }
+
+    private OrderSnapshotModel toSnapshot(HttpOrderResponseDto response) {
+        return new OrderSnapshotModel(
+                response.orderId(), response.userId(), OrderStatusEnum.fromValue(response.status()),
+                response.daysSinceDelivery(), response.createdAt(), response.expectedDeliveryAt(),
+                response.lastLogisticsAt(), response.logisticsStatus(), response.paidAmount(),
+                response.currency(), response.itemSummary(), response.hiddenAt());
     }
 
     private static Duration normalizeTimeout(Duration timeout) {
@@ -143,7 +221,11 @@ public final class HttpOrderGateway implements OrderGateway {
             Instant createdAt,
             Instant expectedDeliveryAt,
             Instant lastLogisticsAt,
-            String logisticsStatus
+            String logisticsStatus,
+            java.math.BigDecimal paidAmount,
+            String currency,
+            String itemSummary,
+            Instant hiddenAt
     ) {
     }
 

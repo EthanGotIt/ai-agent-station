@@ -12,6 +12,9 @@ import type {
   AgentTurnStatus,
   BusinessProgress,
   ExternalActionStatus,
+  LogisticsEvent,
+  LogisticsTimeline,
+  OrderCard,
   QuestionField,
   QuestionCardState,
   QuestionSummaryLine,
@@ -131,6 +134,82 @@ function turnStatusForExternalAction(status: ExternalActionStatus): AgentTurnSta
   return null;
 }
 
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function parseOrderCard(value: unknown): OrderCard | null {
+  const data = recordValue(value);
+  const orderId = stringValue(data?.orderId);
+  const status = stringValue(data?.orderStatus);
+  if (!orderId || !status) return null;
+  return {
+    orderId,
+    status,
+    createdAt: stringValue(data?.createdAt),
+    expectedDeliveryAt: stringValue(data?.expectedDeliveryAt),
+    lastLogisticsAt: stringValue(data?.lastLogisticsAt),
+    logisticsStatus: stringValue(data?.logisticsStatus),
+    paidAmount: numberValue(data?.paidAmount),
+    currency: stringValue(data?.currency),
+    itemSummary: stringValue(data?.itemSummary),
+    visibility: stringValue(data?.visibility) ?? "ACTIVE"
+  };
+}
+
+function buildOrderCards(items: AgentItem[]): OrderCard[] {
+  const orders = new Map<string, OrderCard>();
+  for (const item of items) {
+    if (item.type === "ORDER_LIST") {
+      const data = recordValue(item.payload.data);
+      const values = Array.isArray(data?.orders) ? data.orders : [];
+      for (const value of values) {
+        const order = parseOrderCard(value);
+        if (order) orders.set(order.orderId, order);
+      }
+    }
+    if (item.type === "ORDER_DETAIL") {
+      const order = parseOrderCard(item.payload.data);
+      if (order) orders.set(order.orderId, order);
+    }
+  }
+  return [...orders.values()];
+}
+
+function parseLogisticsEvent(value: unknown): LogisticsEvent | null {
+  const data = recordValue(value);
+  const eventId = stringValue(data?.eventId);
+  const status = stringValue(data?.status);
+  const occurredAt = stringValue(data?.occurredAt);
+  if (!eventId || !status || !occurredAt) return null;
+  return {
+    eventId,
+    status,
+    location: stringValue(data?.location) ?? "",
+    description: stringValue(data?.description) ?? "",
+    occurredAt
+  };
+}
+
+function buildLogisticsTimelines(items: AgentItem[]): LogisticsTimeline[] {
+  const timelines = new Map<string, LogisticsTimeline>();
+  for (const item of items) {
+    if (item.type !== "LOGISTICS_TIMELINE") continue;
+    const data = recordValue(item.payload.data);
+    const orderId = stringValue(data?.orderId);
+    if (!orderId) continue;
+    const events = Array.isArray(data?.events)
+      ? data.events.map(parseLogisticsEvent).filter((event): event is LogisticsEvent => event !== null)
+      : [];
+    timelines.set(orderId, { orderId, events });
+  }
+  return [...timelines.values()];
+}
+
 function buildProgress(items: AgentItem[]): BusinessProgress[] {
   return items
     .map((item): BusinessProgress | null => {
@@ -158,6 +237,17 @@ function buildProgress(items: AgentItem[]): BusinessProgress[] {
       }
       if (item.type === "TOOL_RESULT") {
         return { id: `${item.itemId}-fact`, label: "已核对订单与物流事实", detail: null, status: "DONE", sequence: item.sequence };
+      }
+      if (item.type === "ORDER_LIST") {
+        const orders = recordValue(item.payload.data)?.orders;
+        const count = Array.isArray(orders) ? orders.length : 0;
+        return { id: `${item.itemId}-orders`, label: count > 0 ? `已找到 ${count} 个匹配订单` : "没有找到匹配订单", detail: null, status: "DONE", sequence: item.sequence };
+      }
+      if (item.type === "ORDER_DETAIL") {
+        return { id: `${item.itemId}-order`, label: "已读取订单详情", detail: null, status: "DONE", sequence: item.sequence };
+      }
+      if (item.type === "LOGISTICS_TIMELINE") {
+        return { id: `${item.itemId}-logistics`, label: "已生成物流时间线", detail: null, status: "DONE", sequence: item.sequence };
       }
       if (item.type === "WORKFLOW_STARTED") {
         return { id: `${item.itemId}-workflow`, label: "已启动售后流程", detail: "正在核对订单条件", status: "ACTIVE", sequence: item.sequence };
@@ -257,6 +347,8 @@ export function useThreadWorkspace(userId: string) {
   const [items, setItems] = useState<AgentItem[]>([]);
   const [turns, setTurns] = useState<ThreadViewTurn[]>([]);
   const [progress, setProgress] = useState<BusinessProgress[]>([]);
+  const [orderCards, setOrderCards] = useState<OrderCard[]>([]);
+  const [logisticsTimelines, setLogisticsTimelines] = useState<LogisticsTimeline[]>([]);
   const [question, setQuestion] = useState<QuestionCardState | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -292,6 +384,8 @@ export function useThreadWorkspace(userId: string) {
     });
     setTurns(rebuilt);
     setProgress(buildProgress(next));
+    setOrderCards(buildOrderCards(next));
+    setLogisticsTimelines(buildLogisticsTimelines(next));
     for (const item of incoming) {
       const normalized = normalizeItem(item);
       const action = parseExternalAction(normalized.payload);
@@ -459,6 +553,8 @@ export function useThreadWorkspace(userId: string) {
     setItems([]);
     setTurns([]);
     setProgress([]);
+    setOrderCards([]);
+    setLogisticsTimelines([]);
     setQuestion(null);
     streamingContentRef.current.clear();
     try {
@@ -685,6 +781,8 @@ export function useThreadWorkspace(userId: string) {
     threadId,
     threads,
     progress,
+    orderCards,
+    logisticsTimelines,
     turns
   };
 }

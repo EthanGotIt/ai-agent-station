@@ -11,4 +11,11 @@ public interface OrderGateway {
 
     OrderLookupResultModel findOrder(String orderId, String userId);
 
+    /**
+     * 按结构化条件查询当前用户订单；默认实现让只支持单订单查询的旧适配器安全降级。
+     */
+    default OrderSearchResultModel searchOrders(OrderSearchCriteria criteria, String userId) {
+        return OrderSearchResultModel.temporaryFailure();
+    }
+
 }

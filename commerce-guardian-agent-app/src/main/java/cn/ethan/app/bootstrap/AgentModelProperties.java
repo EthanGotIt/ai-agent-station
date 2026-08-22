@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import java.time.Duration;
 
 /**
- * 类型职责：约束 DeepSeek 模型、输出预算、重试次数和远程 HTTP 超时。
+ * 类型职责：约束 DeepSeek V4 Pro 模型、输出预算、重试次数和远程 HTTP 超时。
  *
  * @author ethan
  * @date 2026-08-21
@@ -19,7 +19,7 @@ public record AgentModelProperties(
         Duration httpTimeout
 ) {
 
-    private static final String DEFAULT_MODEL = "deepseek-chat";
+    private static final String DEFAULT_MODEL = "deepseek-v4-pro";
     private static final int DEFAULT_MAX_OUTPUT_TOKENS = 1024;
     private static final int DEFAULT_MAX_ATTEMPTS = 1;
     private static final Duration DEFAULT_HTTP_TIMEOUT = Duration.ofSeconds(30);
@@ -33,7 +33,7 @@ public record AgentModelProperties(
         httpTimeout = httpTimeout == null ? DEFAULT_HTTP_TIMEOUT : httpTimeout;
 
         if (!DEFAULT_MODEL.equals(name)) {
-            throw new IllegalArgumentException("DeepSeek 模型必须固定为 deepseek-chat，以禁用 thinking");
+            throw new IllegalArgumentException("DeepSeek 模型必须固定为 deepseek-v4-pro，并启用 thinking");
         }
         if (maxOutputTokens < 1 || maxOutputTokens > 8192) {
             throw new IllegalArgumentException("model.maxOutputTokens must be between 1 and 8192");

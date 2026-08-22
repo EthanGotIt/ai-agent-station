@@ -6,6 +6,8 @@ import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowEngine;
 import cn.ethan.core.commerce.order.OrderLookupResultModel;
 import cn.ethan.core.commerce.order.OrderSnapshotModel;
+import cn.ethan.core.commerce.order.OrderGateway;
+import cn.ethan.core.commerce.order.OrderSearchResultModel;
 import cn.ethan.core.commerce.order.OrderStatusEnum;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -138,6 +140,37 @@ class SpringAiAgentToolBoundaryTest {
         assertEquals("ORDER-1", safe.path("orderId").asString());
         assertEquals("PAID", safe.path("orderStatus").asString());
         assertFalse(result.contains("internal-user-1"));
+        assertFalse(invocation.traces().get(1).payload().contains("internal-user-1"));
+    }
+
+    @Test
+    void searchToolReturnsStructuredOrderFactAndPersistsSafeProjection() throws Exception {
+        SpringAiAgentTurnCoordinator.WorkflowInvocation invocation = invocation();
+        OrderGateway orders = new OrderGateway() {
+            @Override
+            public OrderLookupResultModel findOrder(String orderId, String userId) {
+                return OrderLookupResultModel.notFound();
+            }
+
+            @Override
+            public OrderSearchResultModel searchOrders(
+                    cn.ethan.core.commerce.order.OrderSearchCriteria criteria, String userId) {
+                return OrderSearchResultModel.success(List.of(new OrderSnapshotModel(
+                        "ORDER-SEARCH-001", "internal-user-1", OrderStatusEnum.PAID, null,
+                        NOW, null, null, "待发货", new BigDecimal("99.00"), "CNY", "无线耳机", null)));
+            }
+        };
+        SpringAiAgentTurnCoordinator.ReadOnlyTools tools = new SpringAiAgentTurnCoordinator.ReadOnlyTools(
+                "user-1", orders, (orderId, userId) -> List.of(), invocation);
+
+        String result = tools.searchOrders(
+                "2026-08-21", "2026-08-22", "50", "120", "PAID", "耳机", null, "ACTIVE");
+
+        JsonNode safe = new ObjectMapper().readTree(result);
+        assertEquals("SUCCESS", safe.path("status").asString());
+        assertEquals("ORDER-SEARCH-001", safe.path("orders").get(0).path("orderId").asString());
+        assertFalse(result.contains("internal-user-1"));
+        assertEquals("ORDER_LIST", invocation.traces().get(1).type());
         assertFalse(invocation.traces().get(1).payload().contains("internal-user-1"));
     }
 

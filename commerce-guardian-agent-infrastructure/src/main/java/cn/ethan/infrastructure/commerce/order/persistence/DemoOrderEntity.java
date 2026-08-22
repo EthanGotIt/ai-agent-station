@@ -47,6 +47,12 @@ public final class DemoOrderEntity {
     @TableField("CURRENCY")
     private String currency;
 
+    @TableField("ITEM_SUMMARY")
+    private String itemSummary;
+
+    @TableField("HIDDEN_AT")
+    private Instant hiddenAt;
+
     public DemoOrderEntity() {
     }
 
@@ -128,5 +134,21 @@ public final class DemoOrderEntity {
 
     public void setCurrency(String currency) {
         this.currency = currency;
+    }
+
+    public String getItemSummary() {
+        return itemSummary;
+    }
+
+    public void setItemSummary(String itemSummary) {
+        this.itemSummary = itemSummary;
+    }
+
+    public Instant getHiddenAt() {
+        return hiddenAt;
+    }
+
+    public void setHiddenAt(Instant hiddenAt) {
+        this.hiddenAt = hiddenAt;
     }
 }

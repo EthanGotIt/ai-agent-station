@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Bot, CheckCircle2, CircleAlert, GitBranch, ListPlus, PackageSearch, Plus, Send, Square, TerminalSquare, Truck, X } from "lucide-react";
-import type { BusinessProgress, BusinessProgressStatus, QuestionCardState, QuestionField } from "./threadTypes";
+import type { BusinessProgress, BusinessProgressStatus, LogisticsTimeline, OrderCard, QuestionCardState, QuestionField } from "./threadTypes";
 import type { useThreadWorkspace } from "./useThreadWorkspace";
 
 type Props = { workspace: ReturnType<typeof useThreadWorkspace>; userId: string };
@@ -21,6 +21,51 @@ function statusLabel(status: string) {
 
 function time(value: string) {
   return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
+function dateTime(value: string | null) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.valueOf()) ? "—" : new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit"
+  }).format(parsed);
+}
+
+function amount(order: OrderCard) {
+  if (order.paidAmount === null) return "金额未知";
+  return `${order.currency ?? "¥"} ${order.paidAmount.toFixed(2)}`;
+}
+
+function orderStatus(status: string) {
+  return ({
+    PAID: "已支付", SHIPPED: "运输中", DELIVERED: "已送达", CANCELLED: "已取消", REFUNDED: "已退款"
+  } as Record<string, string>)[status] ?? status;
+}
+
+function OrderResults({ orders, timelines }: { orders: OrderCard[]; timelines: LogisticsTimeline[] }) {
+  if (orders.length === 0 && timelines.length === 0) return null;
+  const timelineByOrder = new Map(timelines.map((timeline) => [timeline.orderId, timeline]));
+  const visibleOrderIds = new Set(orders.map((order) => order.orderId));
+  const orphanTimelines = timelines.filter((timeline) => !visibleOrderIds.has(timeline.orderId));
+  return <section className="order-results" aria-label="订单事实">
+    {orders.length > 0 ? <div className="result-heading"><div><span className="eyebrow">ORDER FACTS</span><h2>找到的订单</h2></div><span>{orders.length} 条</span></div> : null}
+    {orders.length > 0 ? <div className="order-card-grid">{orders.map((order) => {
+      const timeline = timelineByOrder.get(order.orderId);
+      return <article className="order-card" key={order.orderId}>
+        <div className="order-card-heading"><div><strong>{order.itemSummary ?? "订单商品"}</strong><span>{order.orderId}</span></div><span className={`status status-${order.status.toLowerCase()}`}>{orderStatus(order.status)}</span></div>
+        <div className="order-card-meta"><span>{amount(order)}</span><span>下单 {dateTime(order.createdAt)}</span><span>{order.visibility === "HIDDEN" ? "已隐藏" : order.logisticsStatus ?? "暂无物流状态"}</span></div>
+        {timeline ? <LogisticsTimelineView timeline={timeline} /> : null}
+      </article>;
+    })}</div> : null}
+    {orphanTimelines.map((timeline) => <article className="order-card" key={timeline.orderId}><div className="order-card-heading"><div><strong>物流时间线</strong><span>{timeline.orderId}</span></div></div><LogisticsTimelineView timeline={timeline} /></article>)}
+  </section>;
+}
+
+function LogisticsTimelineView({ timeline }: { timeline: LogisticsTimeline }) {
+  if (timeline.events.length === 0) return <p className="timeline-empty">暂时没有可展示的物流节点。</p>;
+  return <ol className="logistics-timeline" aria-label={`${timeline.orderId} 物流时间线`}>
+    {timeline.events.map((event) => <li key={event.eventId}><span className="timeline-dot" /><div><div><strong>{event.status}</strong><time>{dateTime(event.occurredAt)}</time></div><span>{event.location || "物流节点"}</span><p>{event.description}</p></div></li>)}
+  </ol>;
 }
 
 function inlineMarkdown(value: string, keyPrefix: string): ReactNode[] {
@@ -220,6 +265,7 @@ export function ThreadWorkspace({ workspace, userId }: Props) {
         <div className="thread-context-bar"><div><span className="eyebrow">CURRENT CONVERSATION</span><strong>{currentThread?.title ?? "加载中…"}</strong></div><div className="thread-context-actions"><label className="rename-field"><span className="sr-only">对话标题</span><input value={title} placeholder="重命名…" onChange={(event) => setTitle(event.target.value)} onBlur={() => { if (title.trim()) { void workspace.rename(title.trim()); setTitle(""); } }} /></label><span className="status status-active">{userId}</span></div></div>
         <div className="quick-start-strip"><span className="eyebrow">可以这样问</span><button type="button" disabled={workspace.busy || Boolean(question)} onClick={() => void workspace.send("查询订单 ORDER-PAID-001 的当前状态")}><PackageSearch aria-hidden="true" />查订单</button><button type="button" disabled={workspace.busy || Boolean(question)} onClick={() => void workspace.send("查询订单 ORDER-SHIPPED-STALLED-001 的物流状态")}><Truck aria-hidden="true" />查物流</button></div>
         <ProgressPanel progress={workspace.progress} error={workspace.error} />
+        <OrderResults orders={workspace.orderCards} timelines={workspace.logisticsTimelines} />
         <div className="thread-records">{workspace.loading ? <div className="conversation-empty"><Bot aria-hidden="true" /><h2>正在恢复对话</h2><p>正在读取订单事实和历史结果。</p></div> : workspace.turns.length === 0 ? <div className="conversation-empty"><TerminalSquare aria-hidden="true" /><h2>从一个售后问题开始</h2><p>例如“列出今天最新订单”“找物流三天没更新的订单”，也可以直接说“我想退款”。</p></div> : workspace.turns.map((turn) => <Turn key={turn.turnId} turn={turn} busy={workspace.busy} retryingRunId={workspace.retryingRunId} onRetry={workspace.retry} />)}{question ? <QuestionCard key={`${question.runId}:${question.questionId}`} value={question} disabled={workspace.busy} onSubmit={(answers) => void workspace.answer(answers)} onCancel={() => void workspace.answer({ decision: "REJECT" })} /> : null}</div>
         {question ? null : <form className="composer" onSubmit={submit}><label htmlFor="thread-message">输入请求</label><textarea id="thread-message" value={message} disabled={workspace.busy || !workspace.threadId} onKeyDown={keyboard} onChange={(event) => setMessage(event.target.value)} placeholder="例如：列出今天最新订单，或找物流三天没更新的订单…" /><div className="composer-actions"><span>Enter 发送 · Shift + Enter 换行</span>{workspace.busy ? <button className="secondary icon-button" type="button" onClick={() => void workspace.cancel()}><Square aria-hidden="true" />取消处理</button> : <button className="icon-button" type="submit" disabled={!message.trim() || !workspace.threadId}><Send aria-hidden="true" />发送</button>}</div></form>}
       </div>
