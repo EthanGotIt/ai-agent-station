@@ -98,15 +98,43 @@ function inlineMarkdown(value: string, keyPrefix: string): ReactNode[] {
   });
 }
 
-/** 只渲染粗体、行内代码和换行；所有其他标记作为普通文本保留。 */
+function tableCells(line: string) {
+  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  return trimmed.split("|").map((cell) => cell.trim());
+}
+
+function isTableSeparator(row: string[]) {
+  return row.length > 0 && row.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function parseTable(value: string) {
+  // DeepSeek 有时会把 Markdown 表格压缩成以 || 分隔的单行文本，先恢复为行再解析。
+  const normalized = value.trim().replace(/\s*\|\|\s*/g, "\n");
+  const lines = normalized.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length < 2 || !lines[0].startsWith("|")) return null;
+  const rows = lines.map(tableCells);
+  if (rows[0].length === 0 || !isTableSeparator(rows[1]) || rows[1].length !== rows[0].length) return null;
+  return { header: rows[0], body: rows.slice(2).filter((row) => row.length > 0) };
+}
+
+/** 只渲染受控的粗体、行内代码、表格和换行；所有其他标记作为普通文本保留。 */
 function RestrictedMarkdown({ value, className }: { value: string; className: string }) {
   return <div className={className}>
-    {value.split(/\n{2,}/).map((block, blockIndex) => <p key={`block-${blockIndex}`}>
-      {block.split("\n").map((line, lineIndex) => <Fragment key={`line-${blockIndex}-${lineIndex}`}>
-        {lineIndex > 0 ? <br /> : null}
-        {inlineMarkdown(line, `line-${blockIndex}-${lineIndex}`)}
-      </Fragment>)}
-    </p>)}
+    {value.split(/\n{2,}/).map((block, blockIndex) => {
+      const table = parseTable(block);
+      if (table) {
+        return <table key={`table-${blockIndex}`} aria-label="订单信息表格">
+          <thead><tr>{table.header.map((cell, cellIndex) => <th key={`header-${cellIndex}`}>{inlineMarkdown(cell, `table-${blockIndex}-header-${cellIndex}`)}</th>)}</tr></thead>
+          <tbody>{table.body.map((row, rowIndex) => <tr key={`row-${rowIndex}`}>{row.map((cell, cellIndex) => <td key={`cell-${rowIndex}-${cellIndex}`}>{inlineMarkdown(cell, `table-${blockIndex}-${rowIndex}-${cellIndex}`)}</td>)}</tr>)}</tbody>
+        </table>;
+      }
+      return <p key={`block-${blockIndex}`}>
+        {block.split("\n").map((line, lineIndex) => <Fragment key={`line-${blockIndex}-${lineIndex}`}>
+          {lineIndex > 0 ? <br /> : null}
+          {inlineMarkdown(line, `line-${blockIndex}-${lineIndex}`)}
+        </Fragment>)}
+      </p>;
+    })}
   </div>;
 }
 
@@ -114,11 +142,9 @@ function isSingleSelect(field: QuestionField) {
   return ["SINGLE_SELECT", "SELECT", "CONFIRM"].includes(field.type.toUpperCase()) && (field.options?.length ?? 0) > 0;
 }
 
-function initialAnswers(fields: QuestionField[]) {
-  return fields.reduce<Record<string, string>>((answers, field) => {
-    if (field.name === "decision" && field.options?.includes("APPROVE")) answers[field.name] = "APPROVE";
-    return answers;
-  }, {});
+function initialAnswers(_fields: QuestionField[]) {
+  // 外部写操作必须由用户主动选择，不能把批准项当作安全默认值。
+  return {};
 }
 
 function QuestionCard({

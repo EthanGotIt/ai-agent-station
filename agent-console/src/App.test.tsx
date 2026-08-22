@@ -130,7 +130,11 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
 
     expect(await screen.findByRole("heading", { name: "退款确认" })).not.toBeNull();
     const decision = screen.getByLabelText("决定") as HTMLSelectElement;
-    expect(decision.value).toBe("APPROVE");
+    expect(decision.value).toBe("");
+    fireEvent.submit(decision.closest("form") as HTMLFormElement);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("请先完成“决定”。");
+    fireEvent.change(decision, { target: { value: "APPROVE" } });
     fireEvent.submit(decision.closest("form") as HTMLFormElement);
 
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) =>
@@ -191,7 +195,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
         checkpointId: "checkpoint-2",
         version: 3,
         title: "确认退款原因",
-        prompt: "请确认 **订单** 的退款原因。",
+        prompt: "请确认 **订单** 的退款原因。\n\n| 信息 | 内容 |\n|---|---|\n| 订单 | ORDER-001 |",
         summary: [{ label: "订单", value: "ORDER-001" }, { label: "金额", value: "¥100" }],
         fields: [{
           name: "reason", label: "退款原因", type: "SINGLE_SELECT", required: true, maxLength: 32,
@@ -219,9 +223,10 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
 
     expect(await screen.findByRole("heading", { name: "确认退款原因" })).not.toBeNull();
     expect(screen.queryByRole("textbox", { name: "输入请求" })).toBeNull();
-    expect(screen.getByText("ORDER-001")).not.toBeNull();
+    expect(screen.getAllByText("ORDER-001").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("¥100")).not.toBeNull();
     expect(screen.queryByText("**订单**")).toBeNull();
+    expect(screen.getByRole("table", { name: "订单信息表格" })).not.toBeNull();
     expect(screen.queryByRole("option", { name: "不应展示" })).toBeNull();
 
     fireEvent.change(screen.getByLabelText("退款原因"), { target: { value: "__OTHER__" } });

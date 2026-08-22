@@ -131,6 +131,10 @@ textarea { min-height: 92px; resize: vertical; line-height: 1.55; }
 .agent-content p { margin: 0; }
 .agent-content strong { color: var(--jade-strong); font-weight: 800; }
 .agent-content code { border-radius: 5px; padding: 2px 5px; color: var(--jade-strong); background: var(--jade-soft); font-size: .9em; }
+.agent-content table, .question-prompt table { width: 100%; border-collapse: collapse; color: var(--ink); font-size: .78rem; text-align: left; }
+.agent-content th, .agent-content td, .question-prompt th, .question-prompt td { border-bottom: 1px solid var(--line); padding: 8px 9px; vertical-align: top; overflow-wrap: anywhere; }
+.agent-content th, .question-prompt th { color: var(--muted); background: var(--surface-muted); font-size: .7rem; font-weight: 800; }
+.agent-content tr:last-child td, .question-prompt tr:last-child td { border-bottom: 0; }
 .turn-route { display: inline-flex; margin: 9px 0 0; border-radius: 999px; padding: 4px 8px; color: var(--jade-strong); background: var(--jade-soft); font-size: .74rem; font-weight: 750; }
 .turn-status, .status { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 8px; font-size: .72rem; font-weight: 800; line-height: 1; white-space: nowrap; }
 .status-active, .status-completed { color: var(--success); background: var(--success-soft); }
