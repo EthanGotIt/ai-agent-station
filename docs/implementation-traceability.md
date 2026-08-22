@@ -10,10 +10,10 @@
 
 | 计划阶段 | 当前结论 | 直接证据 | 未闭合事项 |
 | --- | --- | --- | --- |
-| 1. 数据库与状态基线 | 已验证（保留备份流程风险） | `5532463`；当前配置库与专用校准库实际启动到 Flyway 版本 5，`OPEN_QUESTION_ID`、Turn Workflow 字段、ExternalAction 版本/重试字段、结果表和幂等索引均存在。由已确认的 V4 前备份导入专用克隆库 `COMMERCE_GUARDIAN_AGENT_V5_MIGRATION_20260823`，应用实际从版本 3 执行 V4、V5，保留 9 条订单、6 条物流事件并启动到版本 5 | V5 应用前未单独生成 V5 前备份；原库未重建或覆盖，需在后续生产运维窗口补齐备份流程 |
+| 1. 数据库与状态基线 | 已验证（P2 运维差异已接受） | `5532463`；当前配置库与专用校准库实际启动到 Flyway 版本 5，`OPEN_QUESTION_ID`、Turn Workflow 字段、ExternalAction 版本/重试字段、结果表和幂等索引均存在。早于 V5 的已确认 V4 前备份导入专用克隆库 `COMMERCE_GUARDIAN_AGENT_V5_MIGRATION_20260823`，应用实际从版本 3 执行 V4、V5，保留 9 条订单、6 条物流事件并启动到版本 5；当前库和校准库另有 V5 后恢复快照 | 未单独生成 V5 命名的迁移前备份；已有前置备份覆盖 V5 前状态且克隆迁移/恢复快照已验证，作为 P2 运维差异记录，不影响本地数据完整性 |
 | 2. QuestionCard 与实时交互收口 | 已验证完成 | `b1fc6bc`；动态字段、最多三选项、其他输入、Enter/Shift+Enter/IME、Escape、显式授权空默认值、受限 Markdown 表格、业务进度聚合和 SSE 断线恢复均有测试；真实浏览器刷新后 QuestionCard 恢复，未出现孤立 Waiting 或原始 delta | 无 |
 | 3. 订单发现、物流诊断与 V4 Pro 契约 | 已验证完成 | `13500ba`、`56b631e`、`fcec19d`；真实 DeepSeek V4 Pro 查询“列出今天最新订单”和“查物流三天没更新的订单”均完成并产生结构化 `ORDER_LIST`，浏览器展示订单卡片、物流时间线、业务进度和受限 Markdown 表格；最新 jar 的可选物流停滞参数空值/有值 Tool 回归均完成 | 外部 HTTP 订单服务无凭据，真实远程适配器仍仅有契约测试 |
-| 4. 统一 `ORDER_SERVICE` Workflow | 已验证（外部远程适配待凭据） | `49311ca`、`6d40351`、`7029122`、`22eb4de`；真实浏览器完成退款拒绝、隐藏/恢复、催发货的候选核验和最终授权；当前库命令/结果均为单行 `SUCCEEDED`，真实 MySQL 订单隐藏恢复和 DeepSeek Tool Calling 已验证，显式拒绝未产生退款副作用；HTTP 写操作契约测试确认 ExternalAction 幂等键传递到退款、催发货和隐藏/恢复接口，空/非法键在出网前被拒绝 | 外部 HTTP 订单服务无凭据；V5 前备份流程风险已记录 |
+| 4. 统一 `ORDER_SERVICE` Workflow | 已验证（外部远程适配待凭据） | `49311ca`、`6d40351`、`7029122`、`22eb4de`；真实浏览器完成退款拒绝、隐藏/恢复、催发货的候选核验和最终授权；当前库命令/结果均为单行 `SUCCEEDED`，真实 MySQL 订单隐藏恢复和 DeepSeek Tool Calling 已验证，显式拒绝未产生退款副作用；HTTP 写操作契约测试确认 ExternalAction 幂等键传递到退款、催发货和隐藏/恢复接口，空/非法键在出网前被拒绝 | 外部 HTTP 订单服务无凭据；V5 前置备份差异已按 P2 接受并记录 |
 | 5. 能力集与产品化收尾 | 已验证完成 | `fcec19d`、`b1fc6bc`；真实浏览器完成 Thread 行内重命名 Enter/Escape、ACTIVE/ARCHIVED 恢复、移动端抽屉、订单卡片上下文动作和聚合进度；typecheck、23 项 Vitest、production build 通过 | 无；外部 HTTP 凭据缺口按阶段 4 记录 |
 
 ## 基线结论
@@ -40,17 +40,17 @@
 | Tool Calling 与 Workflow 边界 | 已验证完成 | Coordinator 将只读工具与 Workflow 工具分离，写操作进入确定性 Workflow；`131924a` 为每次 Tool Call/Result 写入稳定的 `invocationId`，按调用 ID 记录耗时和失败结果，并在 Tool wrapper 边界拒绝空订单号/退款原因；`0ed8688` 删除订单 Record 的隐式 `toString()` 输出，采用字段白名单和返回前 2000 字符边界；全量 Maven 116 项通过，真实 DeepSeek `lookup_order` Tool Call/Result 的 invocationId 匹配、结果长度 26，真实 SSE/取消/超时也已验证 | P1 | 纳入最终完整矩阵 |
 | SSE 断线恢复、去重、有序合并 | 已验证完成 | `AgentThreadEventStream` 已实现单连接 buffer → backlog → ordered flush → live、`eventId + sequence` 去重和晚绑定清理，并有并发单元测试；`cef1052` 让前端在 offline 时取消 reader、online 时从当前游标重连，并以无数据超时兜底；真实浏览器在 `afterSequence=13` 连接上切换 offline/online 后，实际恢复断线期间的 14–19 号 Item，网络记录出现两次 `events?afterSequence=13`，页面无重复且控制台无错误 | P0 | 保留专用 MySQL 与真实浏览器证据，纳入最终完整矩阵 |
 | 前端线程切换与 QuestionCard | 已验证完成 | `useThreadWorkspace` 保留 generation、历史 AbortController、旧事件 Thread 过滤和切换期间禁用；QuestionCard 提交 `APPROVE/REJECT`，组件和真实浏览器均覆盖多 Question、刷新恢复、订单动作、归档保护、重命名和移动端抽屉；`91f2afb` 按结构化外部动作状态恢复 Turn 展示并接入人工重试；`9c0ce82` 修正动态“其他”输入断言的异步状态等待，当前 Vitest 23 项通过 | P0 | 无 |
-| API、SQL、配置、文档一致性 | 已验证（保留两项外部/运维风险） | API/Item envelope/身份边界保持不变；增量 migration 已到 V5，增加 Run 步骤/状态、Question 步骤、外部动作索引和旧库兼容字段；本地退款/催发货/隐藏/恢复与 HTTP `/orders/{id}/refund|expedite|visibility` 契约已同步，`7029122` 明确写操作使用 `Idempotency-Key`；`GET /threads?status=ACTIVE|ARCHIVED`、前端列表、订单卡片、显式确认和 `.env`/`.env.example` 的 `deepseek-v4-pro` 契约已同步 | P0 | 外部 HTTP 订单服务无凭据；V5 前备份流程风险已记录 |
+| API、SQL、配置、文档一致性 | 已验证（保留外部远程风险） | API/Item envelope/身份边界保持不变；增量 migration 已到 V5，增加 Run 步骤/状态、Question 步骤、外部动作索引和旧库兼容字段；本地退款/催发货/隐藏/恢复与 HTTP `/orders/{id}/refund|expedite|visibility` 契约已同步，`7029122` 明确写操作使用 `Idempotency-Key`；`GET /threads?status=ACTIVE|ARCHIVED`、前端列表、订单卡片、显式确认和 `.env`/`.env.example` 的 `deepseek-v4-pro` 契约已同步 | P0 | 外部 HTTP 订单服务无凭据；V5 备份差异已按 P2 接受并记录 |
 | Runtime eval / acceptance / live eval | 已验证（外部 HTTP 适配器除外） | 当前 runtime eval 是明确标注的确定性本地替身；`871a155` 将前端 Mock 组件脚本改名为 `test:component`；真实 HTTP acceptance 已在专用 MySQL 上通过 Thread 列表、创建、Item 恢复、Turn 入队、幂等和执行轨迹回放六项检查；`9fc19af` 增加真实 HTTP 网关/执行器协议级幂等回放证据；真实 DeepSeek 和真实浏览器均已取得订单 Workflow、Tool Calling、流式、取消、超时和恢复证据；最终 Python、Maven、npm 矩阵均通过 | P1 | 外部 HTTP 订单服务待专用凭据 |
 | 清理旧实现、兼容层和无效测试 | 已验证完成 | `91f2afb` 已删除旧 SSE 结构化事件兼容集合；`rg` 未发现可达的旧供应商配置或实现，规则检查器中的旧 token 仅作为禁用文本回归规则；`871a155` 已清理误导性的 `test:e2e` 命名；被忽略的 `.env` 已删除旧 Router/ReAct、旧队列和旧 Worker 配置，只保留当前变量。runtime eval 的 Fake 类型、前端历史裸 payload fallback 和规则检查器回归文本均有明确边界，不是可证明应删除的生产旧实现；最终矩阵通过 | P2 | 无 |
 
 ## 当前里程碑边界
 
-本阶段已闭合 `ORDER_SERVICE` Workflow、真实浏览器产品化、V5 旧库兼容、显式授权、可选 Tool 参数和 HTTP 写操作幂等键边界：`49311ca`、`6d40351`、`fcec19d`、`b1fc6bc`、`5532463`、`093076a`、`4c7fcc8`、`7029122`、`22eb4de`、`9c0ce82`、`9fc19af`。真实浏览器、真实 DeepSeek、真实本地 MySQL、迁移专用克隆和本轮完整 Python/Maven/npm 矩阵均已取得直接证据；完整矩阵结果为 Python 规范检查通过、Python 4 项通过、Maven Core 56/Infrastructure 59/App 17、前端 typecheck/Vitest 23 项/build 全部通过。handoff 保持 `active`，原因仍为外部 HTTP 订单服务无凭据和 V5 应用前未单独生成备份两个已记录风险。
+本阶段已闭合 `ORDER_SERVICE` Workflow、真实浏览器产品化、V5 旧库兼容、显式授权、可选 Tool 参数和 HTTP 写操作幂等键边界：`49311ca`、`6d40351`、`fcec19d`、`b1fc6bc`、`5532463`、`093076a`、`4c7fcc8`、`7029122`、`22eb4de`、`9c0ce82`、`9fc19af`。真实浏览器、真实 DeepSeek、真实本地 MySQL、迁移专用克隆和本轮完整 Python/Maven/npm 矩阵均已取得直接证据；完整矩阵结果为 Python 规范检查通过、Python 4 项通过、Maven Core 56/Infrastructure 59/App 17、前端 typecheck/Vitest 23 项/build 全部通过。handoff 保持 `active`，唯一未闭合的外部边界是外部 HTTP 订单服务无凭据；V5 前置备份差异已作为 P2 运维记录接受并保留证据。
 
 ## 外部验证边界
 
-本轮追加校准：当前配置库与专用校准库实际启动到 Flyway 版本 5；专用克隆库 `COMMERCE_GUARDIAN_AGENT_V5_MIGRATION_20260823` 从已确认的迁移前备份导入后由版本 3 增量执行 V4、V5，保留 9 条订单、6 条物流事件并成功启动。真实浏览器已完成订单 Workflow、QuestionCard 刷新、Thread 回收站、移动端抽屉和业务进度验收；当前服务已关闭。外部 HTTP 订单服务无凭据，V5 应用前未单独生成 V5 前备份，这两项风险保持未闭合。
+本轮追加校准：当前配置库与专用校准库实际启动到 Flyway 版本 5；专用克隆库 `COMMERCE_GUARDIAN_AGENT_V5_MIGRATION_20260823` 从已确认的、早于 V5 的迁移前备份导入后由版本 3 增量执行 V4、V5，保留 9 条订单、6 条物流事件并成功启动；当前库和校准库均有 V5 后恢复快照。真实浏览器已完成订单 Workflow、QuestionCard 刷新、Thread 回收站、移动端抽屉和业务进度验收；当前服务已关闭。外部 HTTP 订单服务无凭据仍未验收；V5 未单独生成命名备份的差异已按 P2 运维记录接受，不伪称存在该备份。
 
 本轮追加代码校准：提交 `7029122` 强制所有订单写操作端口接收命令幂等键，HTTP 适配器把该键发送为 `Idempotency-Key` 请求头；四类动作传播测试和 HTTP 请求头契约测试通过。该修复降低远程成功后本地回执提交失败时的重复写入风险，但真实外部订单服务仍需凭据验证其服务端去重实现。
 

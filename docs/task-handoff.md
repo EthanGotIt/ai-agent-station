@@ -7,7 +7,7 @@ updated: 2026-08-23
 
 - 当前目标：执行“订单售后 Workflow 推进计划”。实现、真实浏览器验收和本轮最终矩阵已完成到可验证范围；本轮又修复了 HTTP 订单写操作未传递 ExternalAction 幂等键的问题。handoff 仍保持 `active`，因为外部 HTTP 订单服务没有可用凭据，严格完成条件中的该项不能伪称通过。下一步唯一动作是取得专用凭据和地址并执行真实 HTTP 订单适配器验收。
 - 已修改范围：统一 `ORDER_SERVICE` 的查询、物流、退款、催发货、隐藏/恢复订单历史能力，完成 QuestionCard、业务进度聚合、Thread 回收站/行内重命名、移动端抽屉、V5 增量迁移、显式外部动作确认和受限 Markdown 表格渲染。未触碰工作树中既有的 IDE、部署、Docker、Hook 和脚本改动。
-- 数据库证据：`COMMERCE_GUARDIAN_AGENT` 与 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821` 已由应用实际启动到 Flyway 版本 5；两库均保留演示订单/物流事实，`OPEN_QUESTION_ID`、Turn Workflow 字段、ExternalAction 版本/重试字段、结果表和幂等索引均可读。已确认的 V4 前备份仍保留在 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v4-commerce_guardian_agent-20260823.sql` 与 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v4-commerce_guardian_agent_calibration_20260821-20260823.sql`；另从该备份导入专用克隆库 `COMMERCE_GUARDIAN_AGENT_V5_MIGRATION_20260823`，应用实际从版本 3 增量执行 V4、V5，保留 9 条订单、6 条物流事件并成功启动到版本 5。V5 应用前没有单独生成新的 V5 前备份，已作为剩余流程风险保留记录，未将其表述为完成证据。
+- 数据库证据：`COMMERCE_GUARDIAN_AGENT` 与 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821` 已由应用实际启动到 Flyway 版本 5；两库均保留演示订单/物流事实，`OPEN_QUESTION_ID`、Turn Workflow 字段、ExternalAction 版本/重试字段、结果表和幂等索引均可读。已确认的 V4 前备份仍保留在 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v4-commerce_guardian_agent-20260823.sql` 与 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v4-commerce_guardian_agent_calibration_20260821-20260823.sql`；该备份早于 V5，已导入专用克隆库 `COMMERCE_GUARDIAN_AGENT_V5_MIGRATION_20260823`，应用实际从版本 3 增量执行 V4、V5，保留 9 条订单、6 条物流事件并成功启动到版本 5。没有另外生成 V5 命名的迁移前备份，但已有前置备份覆盖 V5 前状态，克隆迁移和 V5 后恢复快照均已核验；该点作为已接受的 P2 运维记录保留，不表述为不存在的单独 V5 前备份。
 - V5 后恢复快照：已为当前配置库和专用校准库分别生成 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-after-v5-commerce_guardian_agent-20260823.sql`（100160 bytes）与 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-after-v5-commerce_guardian_agent_calibration_20260821-20260823.sql`（335421 bytes）；仅写入临时备份文件，未改动数据库。
 - 当前服务状态：`5173`、`8090`、`8092`、迁移验证临时端口 `8093` 均已关闭；MySQL 保留运行，专用克隆库仅用于迁移证据，未删除或覆盖原配置库。
 - 本轮提交：`9fc19af test: verify remote action idempotency replay`、`22eb4de fix: reject invalid order action idempotency keys`、`9c0ce82 test: await question card state transition`、`7029122 fix: propagate order action idempotency`、`b1fc6bc fix: harden order action confirmation UI`、`5532463 fix: align legacy workflow schema`、`093076a fix: tolerate optional order tool input`、`4c7fcc8 fix: align optional order tool formatting`。每个提交只包含本轮明确路径，未带入用户既有改动；HTTP/本地幂等定向验证 10 项通过，完整验证矩阵通过：Python 规范检查、Python 4 项测试、Maven Core 56/Infrastructure 59/App 17、前端 typecheck、Vitest 23 项和 production build。
@@ -15,7 +15,7 @@ updated: 2026-08-23
 - 真实 Thread 回收站证据：校准库 Thread `1880e1e7-8122-4843-b140-c5bf8ae9341d` 通过真实 API 完成 ACTIVE 列表 → ARCHIVED 列表 → ACTIVE 恢复，归档时列表不再包含、恢复后重新出现；含开放 Question 的 Thread `7ef9ed22-b02f-4b28-bb04-7f186c76698b` 归档返回 409，拒绝 Question 后开放 Question/未完成动作均为 0，随后归档成功。
 - 真实订单动作证据：当前库 `EXTERNAL_ACTION_COMMAND`/`EXTERNAL_ACTION_RESULT` 中 `HIDE_ORDER`、`RESTORE_ORDER`、`EXPEDITE` 均为 `SUCCEEDED` 且各自只产生一个幂等回执；隐藏/恢复后的 `HIDDEN_AT` 最终为 NULL。退款浏览器流程选择拒绝，订单仍保持原状态，证明显式授权前和拒绝路径均没有退款副作用。
 - 真实 Thread/SSE 证据：此前已验证取消、超时、断线按游标恢复和顺序去重；本轮浏览器进一步验证 QuestionCard 刷新、订单动作期间的业务进度和 Thread 切换。SSE 仍保留为流式输出、取消和断线恢复边界，不再作为右侧开发者运行轨迹展示。
-- 当前剩余风险：外部 HTTP 订单服务没有可用凭据，因此只完成契约测试和本地真实适配器验证；V5 应用升级前未单独生成 V5 前备份。两项均不能写成已验收，也不能把 handoff 标记为 `completed`。
+- 当前剩余风险：外部 HTTP 订单服务没有可用凭据，因此只完成契约测试、本地真实适配器和协议级幂等回放验证；真实远程服务端去重仍未验收。V5 前置备份的历史流程差异已按已有 V4 前备份、专用克隆迁移和 V5 后快照证据接受为 P2 运维记录。外部 HTTP 验收未完成前，不能把 handoff 标记为 `completed`。
 
 ## 已完成
 
@@ -141,6 +141,6 @@ updated: 2026-08-23
 
 ## 下一步唯一动作
 
-取得外部专用凭据和地址后，执行真实 HTTP 订单适配器验收，重点验证退款、催发货、隐藏/恢复的 `Idempotency-Key` 服务端去重；不得把契约测试伪称为远程服务验收。V5 应用升级前未单独生成 V5 前备份的历史流程风险继续保留在最终审计中。
+取得外部专用凭据和地址后，执行真实 HTTP 订单适配器验收，重点验证退款、催发货、隐藏/恢复的 `Idempotency-Key` 服务端去重；不得把契约测试伪称为远程服务验收。V5 前置备份差异已作为有证据支撑的 P2 运维记录保留。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。
