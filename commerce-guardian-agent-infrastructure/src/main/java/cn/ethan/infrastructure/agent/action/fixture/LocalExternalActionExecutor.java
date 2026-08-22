@@ -7,6 +7,7 @@ import cn.ethan.core.agent.action.ExternalActionResultStatusEnum;
 import cn.ethan.core.agent.action.ExternalActionResultStore;
 import cn.ethan.core.agent.action.ExternalActionTypeEnum;
 import cn.ethan.core.commerce.order.OrderActionGateway;
+import cn.ethan.core.commerce.order.OrderVisibilityEnum;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -59,6 +60,15 @@ public final class LocalExternalActionExecutor implements ExternalActionExecutor
         this(results, null, clock, new ObjectMapper(), null);
     }
 
+    /** 为动作分支测试提供无 Spring 事务容器的订单网关边界。 */
+    LocalExternalActionExecutor(
+            ExternalActionResultStore results,
+            OrderActionGateway orderActions,
+            Clock clock
+    ) {
+        this(results, orderActions, clock, new ObjectMapper(), null);
+    }
+
     private LocalExternalActionExecutor(
             ExternalActionResultStore results,
             OrderActionGateway orderActions,
@@ -88,19 +98,26 @@ public final class LocalExternalActionExecutor implements ExternalActionExecutor
         if (results.findByIdempotencyKey(command.idempotencyKey()).isPresent()) {
             return new ExternalActionResult(true, false, "IDEMPOTENT_REPLAY", "已复用外部动作结果");
         }
-        if (command.type() != ExternalActionTypeEnum.REFUND || orderActions == null) {
+        if (orderActions == null) {
             return new ExternalActionResult(false, false, "ACTION_NOT_SUPPORTED", "当前本地执行器不支持该动作");
         }
-        RefundPayload payload = parsePayload(command.payloadJson());
+        ActionPayload payload = parsePayload(command.payloadJson());
         if (payload == null) {
             return new ExternalActionResult(false, false, "ACTION_PAYLOAD_INVALID", "外部动作参数无效");
         }
-        OrderActionGateway.OrderActionResult mutation = orderActions.refund(
-                command.userId(), payload.orderId(), payload.reason(), clock.instant());
+        OrderActionGateway.OrderActionResult mutation = switch (command.type()) {
+            case REFUND -> payload.reason().isBlank()
+                    ? OrderActionGateway.OrderActionResult.failed(false,
+                    "ACTION_PAYLOAD_INVALID", "退款原因不能为空")
+                    : orderActions.refund(command.userId(), payload.orderId(), payload.reason(), clock.instant());
+            case EXPEDITE -> orderActions.expedite(command.userId(), payload.orderId(), clock.instant());
+            case HIDE_ORDER -> visibilityMutation(command, payload, OrderVisibilityEnum.HIDDEN);
+            case RESTORE_ORDER -> visibilityMutation(command, payload, OrderVisibilityEnum.ACTIVE);
+        };
         if (!mutation.success()) {
             return new ExternalActionResult(false, mutation.retryable(), mutation.code(), mutation.message());
         }
-        LOGGER.info("演示退款事实已提交，actionType={}, idempotencyKey={}",
+        LOGGER.info("演示订单动作事实已提交，actionType={}, idempotencyKey={}",
                 command.type(), command.idempotencyKey());
         results.createIfAbsent(new ExternalActionResultModel(
                 "result-" + UUID.randomUUID(), command.commandId(), command.idempotencyKey(), command.type(),
@@ -109,12 +126,25 @@ public final class LocalExternalActionExecutor implements ExternalActionExecutor
         return new ExternalActionResult(true, false, mutation.code(), mutation.message());
     }
 
-    private RefundPayload parsePayload(String payloadJson) {
+    private OrderActionGateway.OrderActionResult visibilityMutation(
+            ExternalActionCommandModel command,
+            ActionPayload payload,
+            OrderVisibilityEnum expected
+    ) {
+        if (!payload.visibility().isBlank() && !expected.name().equalsIgnoreCase(payload.visibility())) {
+            return OrderActionGateway.OrderActionResult.failed(false,
+                    "ACTION_PAYLOAD_INVALID", "订单历史操作方向无效");
+        }
+        return orderActions.setVisibility(command.userId(), payload.orderId(), expected, clock.instant());
+    }
+
+    private ActionPayload parsePayload(String payloadJson) {
         try {
             JsonNode root = objectMapper.readTree(payloadJson == null ? "{}" : payloadJson);
             String orderId = root.path("orderId").asString("").trim();
             String reason = root.path("reason").asString("").trim();
-            return orderId.isBlank() || reason.isBlank() ? null : new RefundPayload(orderId, reason);
+            String visibility = root.path("visibility").asString("").trim();
+            return orderId.isBlank() ? null : new ActionPayload(orderId, reason, visibility);
         } catch (RuntimeException failure) {
             return null;
         }
@@ -124,6 +154,6 @@ public final class LocalExternalActionExecutor implements ExternalActionExecutor
         return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    private record RefundPayload(String orderId, String reason) {
+    private record ActionPayload(String orderId, String reason, String visibility) {
     }
 }

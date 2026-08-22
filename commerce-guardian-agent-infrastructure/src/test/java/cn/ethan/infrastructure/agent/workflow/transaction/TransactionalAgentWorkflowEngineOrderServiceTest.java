@@ -118,8 +118,39 @@ class TransactionalAgentWorkflowEngineOrderServiceTest {
         assertEquals("INTENT", fixture.step(started.question()));
         assertEquals(0, fixture.orders.searchCalls);
         JsonNode schema = fixture.mapper.readTree(started.question().fieldsJson());
-        assertEquals(List.of("REFUND", "EXPEDITE"), schema.path("fields").get(0).path("options")
+        assertEquals(List.of("REFUND", "EXPEDITE", "ORDER_HISTORY"), schema.path("fields").get(0).path("options")
                 .valueStream().map(JsonNode::asString).toList());
+    }
+
+    @Test
+    void orderHistoryWorkflowUsesSeparateActionQuestionAndCreatesHideCommand() throws Exception {
+        Fixture fixture = new Fixture();
+        AgentWorkflowEngine.StartResult started = fixture.engine.start(
+                fixture.thread, fixture.owner, "ORDER_SERVICE", Map.of());
+
+        AgentTurnModel intentAnswer = fixture.answer(started.question(), Map.of("intent", "ORDER_HISTORY"));
+        AgentWorkflowEngine.ResumeResult historyAction = fixture.engine.resume(
+                fixture.thread, intentAnswer, Map.of());
+        assertEquals("HISTORY_ACTION", fixture.step(historyAction.question()));
+        assertEquals(4, historyAction.question().stepNo());
+
+        AgentTurnModel actionAnswer = fixture.answer(historyAction.question(), Map.of("historyAction", "HIDE_ORDER"));
+        AgentWorkflowEngine.ResumeResult orderSelection = fixture.engine.resume(
+                fixture.thread, actionAnswer, Map.of());
+        assertEquals("ORDER_SELECT", fixture.step(orderSelection.question()));
+        assertEquals(1, orderSelection.question().stepNo());
+
+        AgentTurnModel selectionAnswer = fixture.answer(orderSelection.question(), Map.of("orderId", "ORDER-001"));
+        AgentWorkflowEngine.ResumeResult confirmation = fixture.engine.resume(
+                fixture.thread, selectionAnswer, Map.of());
+        assertEquals("CONFIRM", fixture.step(confirmation.question()));
+
+        AgentTurnModel approvalAnswer = fixture.answer(confirmation.question(), Map.of("decision", "APPROVE"));
+        AgentWorkflowEngine.ResumeResult approved = fixture.engine.resume(
+                fixture.thread, approvalAnswer, Map.of());
+        assertEquals("HIDE_ORDER", approved.command().type().name());
+        assertEquals("order-service:" + fixture.runs.current.runId() + ":HIDE_ORDER:ORDER-001",
+                approved.command().idempotencyKey());
     }
 
     private static final class Fixture {

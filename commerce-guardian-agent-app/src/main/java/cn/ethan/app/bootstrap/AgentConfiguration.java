@@ -15,6 +15,7 @@ import cn.ethan.core.agent.execution.AgentRuntimeMetrics;
 import cn.ethan.core.agent.action.ExternalActionCommandStore;
 import cn.ethan.core.agent.action.ExternalActionService;
 import cn.ethan.core.agent.thread.AgentThreadService;
+import cn.ethan.core.agent.thread.AgentThreadArchiveGuard;
 import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 import org.mybatis.spring.annotation.MapperScan;
@@ -123,9 +124,10 @@ public class AgentConfiguration {
     public AgentThreadService agentThreadService(
             AgentThreadStore threads,
             AgentItemStore items,
-            Clock clock
+            Clock clock,
+            AgentThreadArchiveGuard archiveGuard
     ) {
-        return new AgentThreadService(threads, items, clock);
+        return new AgentThreadService(threads, items, clock, archiveGuard);
     }
 
     @Bean

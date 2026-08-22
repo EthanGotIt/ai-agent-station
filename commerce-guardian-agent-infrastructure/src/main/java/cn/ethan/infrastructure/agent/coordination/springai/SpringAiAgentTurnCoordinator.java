@@ -510,9 +510,9 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             this.invocation = invocation;
         }
 
-        @Tool(name = "start_order_service_workflow", description = "统一订单售后 Workflow 入口。可按意图、订单号、时间、金额、状态、关键词或物流停滞条件找订单；清晰请求会直接进入核验，订单不明确、原因缺失或涉及外部写操作时由确定性流程展示 QuestionCard，最终授权前不会执行退款或催发货")
+        @Tool(name = "start_order_service_workflow", description = "统一订单售后 Workflow 入口。可按意图、订单号、时间、金额、状态、关键词或物流停滞条件找订单；支持退款、催发货以及订单历史隐藏/恢复。订单不明确、原因缺失或涉及外部写操作时由确定性流程展示 QuestionCard，最终授权前不会执行订单动作")
         public String startOrderService(
-                @ToolParam(description = "可选，售后意图，使用 REFUND 退款或 EXPEDITE 催发货；不确定时留空") String intent,
+                @ToolParam(description = "可选，售后意图，使用 REFUND 退款、EXPEDITE 催发货、HIDE_ORDER 隐藏记录或 RESTORE_ORDER 恢复记录；不确定时留空") String intent,
                 @ToolParam(description = "可选，订单号；不记得时留空并使用筛选条件") String orderId,
                 @ToolParam(description = "可选，创建时间起点，YYYY-MM-DD 或 ISO-8601") String createdFrom,
                 @ToolParam(description = "可选，创建时间终点，YYYY-MM-DD 或 ISO-8601") String createdTo,

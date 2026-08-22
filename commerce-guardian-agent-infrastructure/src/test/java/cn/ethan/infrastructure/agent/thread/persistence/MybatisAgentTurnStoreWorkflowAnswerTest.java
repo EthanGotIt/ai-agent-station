@@ -34,6 +34,7 @@ class MybatisAgentTurnStoreWorkflowAnswerTest {
         AgentThreadEntity thread = new AgentThreadEntity();
         thread.setThreadId("thread-1");
         thread.setUserId("user-1");
+        thread.setStatus("ACTIVE");
         thread.setNextSequence(7L);
         ObjectMapper objectMapper = new ObjectMapper();
         JacksonAgentWorkflowAnswerCodec codec = new JacksonAgentWorkflowAnswerCodec(objectMapper);

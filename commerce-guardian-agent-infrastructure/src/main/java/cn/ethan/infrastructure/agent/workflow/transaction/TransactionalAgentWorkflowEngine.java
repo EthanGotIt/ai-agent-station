@@ -77,10 +77,14 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
     private static final String ORDER_SERVICE = "ORDER_SERVICE";
     private static final String REFUND = "REFUND";
     private static final String EXPEDITE = "EXPEDITE";
+    private static final String ORDER_HISTORY = "ORDER_HISTORY";
+    private static final String HIDE_ORDER = "HIDE_ORDER";
+    private static final String RESTORE_ORDER = "RESTORE_ORDER";
     private static final int STEP_INTENT = 0;
     private static final int STEP_ORDER = 1;
     private static final int STEP_REASON = 2;
     private static final int STEP_CONFIRM = 3;
+    private static final int STEP_HISTORY_ACTION = 4;
     private static final int MAX_REASON_LENGTH = 512;
 
     private final Clock clock;
@@ -163,7 +167,7 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
             Map<String, String> arguments
     ) {
         WorkflowRequest request = WorkflowRequest.from(operation, arguments);
-        ResolvedCandidates candidates = request.intent().isBlank()
+        ResolvedCandidates candidates = request.intent().isBlank() || ORDER_HISTORY.equals(request.intent())
                 ? ResolvedCandidates.empty()
                 : resolveCandidates(request, thread.userId());
         return inTransaction(() -> persistStart(thread, turn, request, candidates));
@@ -243,9 +247,17 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
         WorkflowRequest request = requestFromState(run);
         if ("INTENT".equals(step)) {
             request = request.withIntent(normalizeIntent(validatedAnswers.get("intent")));
-            ResolvedCandidates candidates = resolveCandidates(request, thread.userId());
+            ResolvedCandidates candidates = ORDER_HISTORY.equals(request.intent())
+                    ? ResolvedCandidates.empty() : resolveCandidates(request, thread.userId());
             return new ResumePreparation(question, run, validatedAnswers, step,
                     new CandidatePreparation(request, candidates, null));
+        }
+        if ("HISTORY_ACTION".equals(step)) {
+            String action = normalizeIntent(requiredAnswer(validatedAnswers, "historyAction"));
+            WorkflowRequest actionRequest = request.withIntent(action);
+            ResolvedCandidates candidates = resolveCandidates(actionRequest, thread.userId());
+            return new ResumePreparation(question, run, validatedAnswers, step,
+                    new CandidatePreparation(actionRequest, candidates, null));
         }
         if ("ORDER_SELECT".equals(step)) {
             String selectedId = requiredAnswer(validatedAnswers, "orderId");
@@ -386,6 +398,9 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
         if (!request.reason().isBlank()) {
             payload.put("reason", request.reason());
         }
+        if (HIDE_ORDER.equals(request.intent()) || RESTORE_ORDER.equals(request.intent())) {
+            payload.put("visibility", HIDE_ORDER.equals(request.intent()) ? "HIDDEN" : "ACTIVE");
+        }
         try {
             return createAction(thread, answerTurn, run, actionType,
                     objectMapper.readTree(writeJson(payload)), now,
@@ -434,7 +449,10 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
         if (request.intent().isBlank()) {
             return intentQuestion();
         }
-        if (!REFUND.equals(request.intent()) && !EXPEDITE.equals(request.intent())) {
+        if (ORDER_HISTORY.equals(request.intent())) {
+            return historyActionQuestion();
+        }
+        if (!List.of(REFUND, EXPEDITE, HIDE_ORDER, RESTORE_ORDER).contains(request.intent())) {
             throw new AgentThreadConflictException("WORKFLOW_INTENT_INVALID", "售后操作类型无效");
         }
         if (selected == null) {
@@ -451,12 +469,21 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
     }
 
     private QuestionPlan intentQuestion() {
-        List<String> options = List.of(REFUND, EXPEDITE);
+        List<String> options = List.of(REFUND, EXPEDITE, ORDER_HISTORY);
         return new QuestionPlan(
                 STEP_INTENT, "INTENT", "先确定售后事项",
                 "你希望我处理哪一类订单售后？选择后我会继续查找相关订单。",
                 List.of(field("intent", "售后事项", "SINGLE_SELECT", true, 32, options, false)),
-                List.of(summary("处理范围", "退款或催发货")));
+                List.of(summary("处理范围", "退款、催发货或订单记录管理")));
+    }
+
+    private QuestionPlan historyActionQuestion() {
+        return new QuestionPlan(
+                STEP_HISTORY_ACTION, "HISTORY_ACTION", "选择订单记录操作",
+                "订单记录只影响你的历史列表，不会删除交易或物流审计事实。请选择要执行的操作。",
+                List.of(field("historyAction", "记录操作", "SINGLE_SELECT", true, 32,
+                        List.of(HIDE_ORDER, RESTORE_ORDER), false)),
+                List.of(summary("操作范围", "隐藏或恢复订单历史记录")));
     }
 
     private QuestionPlan orderQuestion(List<OrderSnapshotModel> candidates) {
@@ -480,18 +507,33 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
     }
 
     private QuestionPlan confirmationQuestion(WorkflowRequest request, SelectedOrder selected) {
-        String action = REFUND.equals(request.intent()) ? "退款" : "催发货";
-        String consequence = REFUND.equals(request.intent())
-                ? "确认后会提交退款动作；相同 Workflow 重试只会产生一次退款。"
-                : "确认后会提交催发货动作，不会删除订单或物流记录。";
+        String action = switch (request.intent()) {
+            case REFUND -> "退款";
+            case EXPEDITE -> "催发货";
+            case HIDE_ORDER -> "隐藏订单记录";
+            case RESTORE_ORDER -> "恢复订单记录";
+            default -> "订单操作";
+        };
+        String consequence = switch (request.intent()) {
+            case REFUND -> "确认后会提交退款动作；相同 Workflow 重试只会产生一次退款。";
+            case EXPEDITE -> "确认后会记录催发货请求，不会删除订单或物流记录。";
+            case HIDE_ORDER -> "确认后只会从当前订单历史中隐藏，不会删除交易或物流审计事实。";
+            case RESTORE_ORDER -> "确认后会把订单恢复到当前订单历史列表。";
+            default -> "确认后才会提交订单动作。";
+        };
+        List<Map<String, String>> summaries = new ArrayList<>(List.of(
+                summary("操作", action),
+                summary("订单", orderSummary(selected.order())),
+                summary("物流", logisticsSummary(selected.order(), selected.events()))));
+        if (REFUND.equals(request.intent())) {
+            summaries.add(summary("退款原因", request.reason()));
+        }
         return new QuestionPlan(
                 STEP_CONFIRM, "CONFIRM", "请确认这项订单操作",
                 "请核对订单和物流信息。" + consequence,
                 List.of(field("decision", "是否提交" + action, "SINGLE_SELECT", true, 32,
                         List.of("APPROVE", "REJECT"), false)),
-                List.of(summary("操作", action), summary("订单", orderSummary(selected.order())),
-                        summary("物流", logisticsSummary(selected.order(), selected.events())),
-                        REFUND.equals(request.intent()) ? summary("退款原因", request.reason()) : null));
+                summaries);
     }
 
     private AgentWorkflowQuestionModel question(
@@ -591,6 +633,8 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
         return switch (normalizeIntent(intent)) {
             case REFUND -> ExternalActionTypeEnum.REFUND;
             case EXPEDITE -> ExternalActionTypeEnum.EXPEDITE;
+            case HIDE_ORDER -> ExternalActionTypeEnum.HIDE_ORDER;
+            case RESTORE_ORDER -> ExternalActionTypeEnum.RESTORE_ORDER;
             default -> throw new AgentThreadConflictException("WORKFLOW_INTENT_INVALID", "售后操作类型无效");
         };
     }
@@ -766,6 +810,9 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
         put(state, "intent", request.intent());
         put(state, "orderId", selected == null ? request.orderId() : selected.order().orderId());
         put(state, "reason", reason == null || reason.isBlank() ? request.reason() : reason);
+        if (HIDE_ORDER.equals(request.intent()) || RESTORE_ORDER.equals(request.intent())) {
+            state.put("visibility", HIDE_ORDER.equals(request.intent()) ? "HIDDEN" : "ACTIVE");
+        }
         state.put("criteria", request.criteriaValues());
         state.put("candidateOrderIds", candidates == null ? List.of()
                 : candidates.stream().limit(20).map(OrderSnapshotModel::orderId).toList());
@@ -862,11 +909,11 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
     private String steps(String activeStep) {
         List<Map<String, String>> result = new ArrayList<>();
         result.add(step("PARSE_CONDITIONS", "COMPLETED"));
-        result.add(step("CANDIDATE_ORDERS", List.of("ORDER_SELECT", "INTENT").contains(activeStep)
+        result.add(step("CANDIDATE_ORDERS", List.of("ORDER_SELECT", "INTENT", "HISTORY_ACTION").contains(activeStep)
                 ? "WAITING" : "COMPLETED"));
         result.add(step("ORDER_LOGISTICS_VERIFICATION", List.of("REASON", "CONFIRM", "EXTERNAL_ACTION", "TERMINAL")
                 .contains(activeStep) ? "COMPLETED" : "PENDING"));
-        result.add(step("USER_INPUT", List.of("INTENT", "ORDER_SELECT", "REASON").contains(activeStep)
+        result.add(step("USER_INPUT", List.of("INTENT", "ORDER_SELECT", "REASON", "HISTORY_ACTION").contains(activeStep)
                 ? "WAITING" : "COMPLETED"));
         result.add(step("FINAL_AUTHORIZATION", "CONFIRM".equals(activeStep)
                 ? "WAITING" : List.of("EXTERNAL_ACTION", "TERMINAL").contains(activeStep) ? "COMPLETED" : "PENDING"));
@@ -937,6 +984,9 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
         return switch (value.trim().toUpperCase(Locale.ROOT)) {
             case "REFUND", "退款" -> REFUND;
             case "EXPEDITE", "催发货", "催单" -> EXPEDITE;
+            case "ORDER_HISTORY", "订单记录", "订单历史", "历史" -> ORDER_HISTORY;
+            case "HIDE_ORDER", "HIDE", "隐藏订单", "隐藏" -> HIDE_ORDER;
+            case "RESTORE_ORDER", "RESTORE", "恢复订单", "恢复" -> RESTORE_ORDER;
             default -> value.trim().isBlank() ? "" : value.trim().toUpperCase(Locale.ROOT);
         };
     }
@@ -1002,10 +1052,9 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
             return explicit;
         }
         String normalized = operation == null ? "" : operation.trim();
-        if (REFUND.equalsIgnoreCase(normalized) || EXPEDITE.equalsIgnoreCase(normalized)) {
-            return normalized.toUpperCase(Locale.ROOT);
-        }
-        return "";
+        String intent = normalizeIntent(normalized);
+        return List.of(REFUND, EXPEDITE, ORDER_HISTORY, HIDE_ORDER, RESTORE_ORDER).contains(intent)
+                ? intent : "";
     }
 
     private static Instant parseBoundary(String name, String value, boolean endOfDay) {
@@ -1155,7 +1204,8 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
                     parseBoundary("createdTo", createdTo, true),
                     parseAmount("minAmount", minAmount), parseAmount("maxAmount", maxAmount),
                     parseStatuses(statuses), keyword, stalled.isBlank() ? null : stalledDays,
-                    parseVisibility(criteriaValues.getOrDefault("visibility", "ACTIVE")), 20);
+                    parseVisibility(criteriaValues.getOrDefault("visibility",
+                            RESTORE_ORDER.equals(intent) ? "HIDDEN" : "ACTIVE")), 20);
         }
 
         private WorkflowRequest withIntent(String value) {

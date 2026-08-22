@@ -34,6 +34,12 @@ public interface AgentThreadMapper extends BaseMapper<AgentThreadEntity> {
     @Select("SELECT * FROM AGENT_THREAD WHERE USER_ID = #{userId} ORDER BY UPDATED_AT DESC LIMIT #{limit} OFFSET #{offset}")
     List<AgentThreadEntity> selectPage(String userId, int offset, int limit);
 
+    @Select("SELECT * FROM AGENT_THREAD WHERE USER_ID = #{userId} AND STATUS = #{status} ORDER BY UPDATED_AT DESC LIMIT #{limit} OFFSET #{offset}")
+    List<AgentThreadEntity> selectPageByStatus(String userId, String status, int offset, int limit);
+
     @Select("SELECT COUNT(*) FROM AGENT_THREAD WHERE USER_ID = #{userId}")
     long countByUser(String userId);
+
+    @Select("SELECT COUNT(*) FROM AGENT_THREAD WHERE USER_ID = #{userId} AND STATUS = #{status}")
+    long countByUserAndStatus(String userId, String status);
 }

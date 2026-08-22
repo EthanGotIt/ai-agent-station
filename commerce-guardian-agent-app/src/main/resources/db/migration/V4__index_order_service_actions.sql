@@ -1,0 +1,14 @@
+-- 为 Thread 回收站保护增加外部动作状态索引；只补索引，不改写业务事实。
+SET @cga_schema = DATABASE();
+
+SET @cga_sql = IF(
+        (SELECT COUNT(*)
+         FROM INFORMATION_SCHEMA.STATISTICS
+         WHERE TABLE_SCHEMA = @cga_schema
+           AND TABLE_NAME = 'EXTERNAL_ACTION_COMMAND'
+           AND INDEX_NAME = 'IDX_EXTERNAL_ACTION_THREAD_STATUS') = 0,
+        'ALTER TABLE EXTERNAL_ACTION_COMMAND ADD INDEX IDX_EXTERNAL_ACTION_THREAD_STATUS (THREAD_ID, STATUS, CREATED_AT)',
+        'SELECT 1');
+PREPARE cga_statement FROM @cga_sql;
+EXECUTE cga_statement;
+DEALLOCATE PREPARE cga_statement;

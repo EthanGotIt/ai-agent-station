@@ -179,6 +179,103 @@ public final class LocalOrderGateway implements OrderGateway, OrderActionGateway
         }
     }
 
+    @Override
+    public OrderActionResult expedite(String userId, String orderId, Instant now) {
+        if (userId == null || userId.isBlank() || orderId == null || orderId.isBlank() || now == null) {
+            return OrderActionResult.failed(false, "EXPEDITE_ARGUMENT_INVALID", "催发货参数不完整");
+        }
+        try {
+            String normalizedUserId = userId.strip();
+            String normalizedOrderId = orderId.strip();
+            DemoOrderEntity current = mapper.selectById(normalizedOrderId);
+            if (current == null) {
+                return OrderActionResult.failed(false, "ORDER_NOT_FOUND", "订单不存在");
+            }
+            if (!normalizedUserId.equals(current.getUserId())) {
+                return OrderActionResult.failed(false, "ORDER_NOT_OWNED", "订单不属于当前用户");
+            }
+            if ("EXPEDITE_REQUESTED".equalsIgnoreCase(current.getLogisticsStatus())) {
+                return OrderActionResult.succeeded("ALREADY_EXPEDITED", "已记录催发货请求");
+            }
+            if (!OrderStatusEnum.PAID.name().equalsIgnoreCase(current.getStatus())) {
+                return OrderActionResult.failed(false, "EXPEDITE_ORDER_STATE_INVALID", "仅已支付且待发货订单允许催发货");
+            }
+            int updated = mapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<DemoOrderEntity>()
+                    .eq("ORDER_ID", normalizedOrderId)
+                    .eq("USER_ID", normalizedUserId)
+                    .eq("STATUS", OrderStatusEnum.PAID.name())
+                    .set("LOGISTICS_STATUS", "EXPEDITE_REQUESTED")
+                    .set("UPDATED_AT", now));
+            if (updated == 1) {
+                return OrderActionResult.succeeded("EXPEDITED", "已记录催发货请求");
+            }
+            DemoOrderEntity after = mapper.selectById(normalizedOrderId);
+            if (after != null && "EXPEDITE_REQUESTED".equalsIgnoreCase(after.getLogisticsStatus())) {
+                return OrderActionResult.succeeded("ALREADY_EXPEDITED", "已记录催发货请求");
+            }
+            return OrderActionResult.failed(true, "EXPEDITE_STATE_RACE", "订单状态正在变化，请稍后重试");
+        } catch (RuntimeException failure) {
+            LOGGER.warn("本地催发货更新暂时失败，exception={}", failure.getClass().getSimpleName());
+            return OrderActionResult.failed(true, "ORDER_STORE_TEMPORARY_FAILURE", "订单状态暂时无法更新");
+        }
+    }
+
+    @Override
+    public OrderActionResult setVisibility(
+            String userId,
+            String orderId,
+            OrderVisibilityEnum visibility,
+            Instant now
+    ) {
+        if (userId == null || userId.isBlank() || orderId == null || orderId.isBlank()
+                || visibility == null || visibility == OrderVisibilityEnum.ALL || now == null) {
+            return OrderActionResult.failed(false, "VISIBILITY_ARGUMENT_INVALID", "订单历史操作参数不完整");
+        }
+        try {
+            String normalizedUserId = userId.strip();
+            String normalizedOrderId = orderId.strip();
+            DemoOrderEntity current = mapper.selectById(normalizedOrderId);
+            if (current == null) {
+                return OrderActionResult.failed(false, "ORDER_NOT_FOUND", "订单不存在");
+            }
+            if (!normalizedUserId.equals(current.getUserId())) {
+                return OrderActionResult.failed(false, "ORDER_NOT_OWNED", "订单不属于当前用户");
+            }
+            boolean hidden = current.getHiddenAt() != null;
+            boolean shouldHide = visibility == OrderVisibilityEnum.HIDDEN;
+            if (hidden == shouldHide) {
+                return OrderActionResult.succeeded(
+                        shouldHide ? "ALREADY_HIDDEN" : "ALREADY_VISIBLE",
+                        shouldHide ? "订单已在隐藏记录中" : "订单已恢复到订单记录");
+            }
+            var update = new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<DemoOrderEntity>()
+                    .eq("ORDER_ID", normalizedOrderId)
+                    .eq("USER_ID", normalizedUserId);
+            if (shouldHide) {
+                update.isNull("HIDDEN_AT").set("HIDDEN_AT", now);
+            } else {
+                update.isNotNull("HIDDEN_AT").set("HIDDEN_AT", null);
+            }
+            int updated = mapper.update(null, update.set("UPDATED_AT", now));
+            if (updated == 1) {
+                return OrderActionResult.succeeded(
+                        shouldHide ? "ORDER_HIDDEN" : "ORDER_RESTORED",
+                        shouldHide ? "订单已移入隐藏记录" : "订单已恢复到订单记录");
+            }
+            DemoOrderEntity after = mapper.selectById(normalizedOrderId);
+            boolean afterHidden = after != null && after.getHiddenAt() != null;
+            if (after != null && afterHidden == shouldHide) {
+                return OrderActionResult.succeeded(
+                        shouldHide ? "ALREADY_HIDDEN" : "ALREADY_VISIBLE",
+                        shouldHide ? "订单已在隐藏记录中" : "订单已恢复到订单记录");
+            }
+            return OrderActionResult.failed(true, "VISIBILITY_STATE_RACE", "订单记录正在变化，请稍后重试");
+        } catch (RuntimeException failure) {
+            LOGGER.warn("本地订单历史更新暂时失败，exception={}", failure.getClass().getSimpleName());
+            return OrderActionResult.failed(true, "ORDER_STORE_TEMPORARY_FAILURE", "订单历史暂时无法更新");
+        }
+    }
+
     private OrderSnapshotModel toSnapshot(DemoOrderEntity order) {
         return new OrderSnapshotModel(
                 order.getOrderId(), order.getUserId(), OrderStatusEnum.fromValue(order.getStatus()),

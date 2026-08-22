@@ -27,11 +27,32 @@ public interface AgentThreadStore {
                 .toList();
     }
 
+    /** 按生命周期读取 Thread；旧适配器默认在内存结果上过滤。 */
+    default List<AgentThreadModel> listThreads(
+            String userId,
+            AgentThreadStatusEnum status,
+            int offset,
+            int limit
+    ) {
+        return listThreads(userId).stream()
+                .filter(thread -> status == null || thread.status() == status)
+                .skip(Math.max(0, offset))
+                .limit(Math.max(1, limit))
+                .toList();
+    }
+
     /**
      * 返回用户 Thread 总数，用于构造稳定分页响应。
      */
     default long countThreads(String userId) {
         return listThreads(userId).size();
+    }
+
+    /** 按生命周期统计 Thread；旧适配器默认在内存结果上过滤。 */
+    default long countThreads(String userId, AgentThreadStatusEnum status) {
+        return listThreads(userId).stream()
+                .filter(thread -> status == null || thread.status() == status)
+                .count();
     }
 
     void updateThread(AgentThreadModel thread);

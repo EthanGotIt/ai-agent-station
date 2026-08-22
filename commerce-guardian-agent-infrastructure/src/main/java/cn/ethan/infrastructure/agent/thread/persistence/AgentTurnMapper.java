@@ -24,6 +24,9 @@ public interface AgentTurnMapper extends BaseMapper<AgentTurnEntity> {
     @Select("SELECT * FROM AGENT_TURN WHERE STATUS IN ('QUEUED', 'ACTIVE') ORDER BY CREATED_AT")
     List<AgentTurnEntity> selectRecoverable();
 
+    @Select("SELECT COUNT(*) FROM AGENT_TURN WHERE USER_ID = #{userId} AND THREAD_ID = #{threadId} AND STATUS IN ('QUEUED', 'ACTIVE')")
+    long countActiveByThread(String userId, String threadId);
+
     @Select("""
             SELECT T.*
             FROM AGENT_TURN T

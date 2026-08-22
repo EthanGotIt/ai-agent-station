@@ -4,6 +4,7 @@ import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.thread.AgentItemModel;
+import cn.ethan.core.agent.thread.AgentThreadConflictException;
 import cn.ethan.core.agent.thread.AgentWorkflowAnswerInput;
 import cn.ethan.core.agent.workflow.AgentWorkflowOwnerRecoveryCandidate;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
@@ -67,11 +68,14 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
     @Override
     @Transactional
     public long createTurnWithInitialItem(AgentTurnModel turn, AgentItemModel initialItem) {
-        mapper.insert(toEntity(turn));
         AgentThreadEntity thread = threadMapper.selectForUpdate(turn.threadId());
         if (thread == null) {
             throw new IllegalStateException("Thread 不存在：" + turn.threadId());
         }
+        if (!"ACTIVE".equals(thread.getStatus())) {
+            throw new AgentThreadConflictException("THREAD_ARCHIVED", "回收站中的对话不能继续接收新消息");
+        }
+        mapper.insert(toEntity(turn));
         long sequence = thread.getNextSequence() == null || thread.getNextSequence() < 1
                 ? 1L : thread.getNextSequence();
         AgentItemEntity item = new AgentItemEntity();

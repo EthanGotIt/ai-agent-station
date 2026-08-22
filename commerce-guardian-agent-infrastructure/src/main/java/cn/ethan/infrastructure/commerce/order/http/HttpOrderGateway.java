@@ -8,6 +8,7 @@ import cn.ethan.core.commerce.order.OrderGateway;
 import cn.ethan.core.commerce.order.OrderSearchCriteria;
 import cn.ethan.core.commerce.order.OrderSearchResultModel;
 import cn.ethan.core.commerce.order.OrderSearchStatusEnum;
+import cn.ethan.core.commerce.order.OrderVisibilityEnum;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
@@ -201,6 +202,58 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
             return OrderActionResult.failed(false, "ORDER_NOT_OWNED", "订单不属于当前用户");
         } catch (RuntimeException temporaryFailure) {
             LOGGER.warn("HTTP 退款调用暂时失败，exception={}", temporaryFailure.getClass().getSimpleName());
+            return OrderActionResult.failed(true, "ORDER_ACTION_TEMPORARY_FAILURE", "订单服务暂时不可用");
+        }
+    }
+
+    @Override
+    public OrderActionResult expedite(String userId, String orderId, Instant now) {
+        if (userId == null || userId.isBlank() || orderId == null || orderId.isBlank()) {
+            return OrderActionResult.failed(false, "EXPEDITE_ARGUMENT_INVALID", "催发货参数不完整");
+        }
+        return invokeAction(userId, orderId, "/expedite", Map.of());
+    }
+
+    @Override
+    public OrderActionResult setVisibility(
+            String userId,
+            String orderId,
+            OrderVisibilityEnum visibility,
+            Instant now
+    ) {
+        if (userId == null || userId.isBlank() || orderId == null || orderId.isBlank()
+                || visibility == null || visibility == OrderVisibilityEnum.ALL) {
+            return OrderActionResult.failed(false, "VISIBILITY_ARGUMENT_INVALID", "订单历史操作参数不完整");
+        }
+        return invokeAction(userId, orderId, "/visibility", Map.of("visibility", visibility.name()));
+    }
+
+    private OrderActionResult invokeAction(
+            String userId,
+            String orderId,
+            String actionPath,
+            Map<String, String> body
+    ) {
+        try {
+            HttpOrderActionResponse response = client.post()
+                    .uri(uri -> uri.path("/orders/{id}" + actionPath).build(orderId.strip()))
+                    .header("X-User-Id", userId.strip())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .body(HttpOrderActionResponse.class);
+            if (response == null) {
+                return OrderActionResult.failed(true, "ORDER_ACTION_EMPTY_RESPONSE", "订单服务未返回操作结果");
+            }
+            return new OrderActionResult(Boolean.TRUE.equals(response.success()),
+                    Boolean.TRUE.equals(response.retryable()), response.code(), response.message());
+        } catch (HttpClientErrorException.NotFound notFound) {
+            return OrderActionResult.failed(false, "ORDER_NOT_FOUND", "订单不存在");
+        } catch (HttpClientErrorException.Forbidden forbidden) {
+            return OrderActionResult.failed(false, "ORDER_NOT_OWNED", "订单不属于当前用户");
+        } catch (RuntimeException temporaryFailure) {
+            LOGGER.warn("HTTP 订单操作暂时失败，actionPath={}, exception={}",
+                    actionPath, temporaryFailure.getClass().getSimpleName());
             return OrderActionResult.failed(true, "ORDER_ACTION_TEMPORARY_FAILURE", "订单服务暂时不可用");
         }
     }

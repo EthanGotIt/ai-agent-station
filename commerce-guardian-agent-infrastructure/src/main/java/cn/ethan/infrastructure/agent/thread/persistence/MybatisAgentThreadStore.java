@@ -1,11 +1,14 @@
 package cn.ethan.infrastructure.agent.thread.persistence;
 
+import cn.ethan.core.agent.thread.AgentThreadArchiveGuard;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentThreadStatusEnum;
 import cn.ethan.core.agent.thread.AgentThreadStore;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.stereotype.Repository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -21,9 +24,16 @@ import java.util.Optional;
 public class MybatisAgentThreadStore implements AgentThreadStore {
 
     private final AgentThreadMapper mapper;
+    private final AgentThreadArchiveGuard archiveGuard;
 
     public MybatisAgentThreadStore(AgentThreadMapper mapper) {
+        this(mapper, (userId, threadId) -> { });
+    }
+
+    @Autowired
+    public MybatisAgentThreadStore(AgentThreadMapper mapper, AgentThreadArchiveGuard archiveGuard) {
         this.mapper = mapper;
+        this.archiveGuard = archiveGuard == null ? (userId, threadId) -> { } : archiveGuard;
     }
 
     @Override
@@ -52,13 +62,39 @@ public class MybatisAgentThreadStore implements AgentThreadStore {
     }
 
     @Override
+    public List<AgentThreadModel> listThreads(
+            String userId,
+            AgentThreadStatusEnum status,
+            int offset,
+            int limit
+    ) {
+        return mapper.selectPageByStatus(userId, status.name(), Math.max(0, offset), Math.max(1, limit)).stream()
+                .map(MybatisAgentThreadStore::toModel)
+                .toList();
+    }
+
+    @Override
     public long countThreads(String userId) {
         return mapper.countByUser(userId);
     }
 
     @Override
+    public long countThreads(String userId, AgentThreadStatusEnum status) {
+        return mapper.countByUserAndStatus(userId, status.name());
+    }
+
+    @Override
+    @Transactional
     public void updateThread(AgentThreadModel thread) {
         // 元数据更新不得覆盖 Item Store 在行锁内维护的 NEXT_SEQUENCE
+        if (thread.status() == AgentThreadStatusEnum.ARCHIVED) {
+            // Service 层的预检查负责快速反馈；这里在同一更新事务内再次检查，关闭归档竞态窗口。
+            AgentThreadEntity locked = mapper.selectForUpdate(thread.threadId());
+            if (locked == null || !thread.userId().equals(locked.getUserId())) {
+                throw new IllegalStateException("Thread 不存在或不属于当前用户：" + thread.threadId());
+            }
+            archiveGuard.ensureCanArchive(thread.userId(), thread.threadId());
+        }
         mapper.update(null, new UpdateWrapper<AgentThreadEntity>()
                 .eq("THREAD_ID", thread.threadId())
                 .eq("USER_ID", thread.userId())

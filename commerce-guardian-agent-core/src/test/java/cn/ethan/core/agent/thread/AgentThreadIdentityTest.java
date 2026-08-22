@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
@@ -43,6 +44,22 @@ class AgentThreadIdentityTest {
                 () -> service.listPage("user-1", Integer.MAX_VALUE, 100));
     }
 
+    @Test
+    void filtersLifecycleAndBlocksArchiveWhenGuardFindsActiveWork() {
+        AgentThreadModel active = thread("active-thread", "user-1");
+        AgentThreadModel archived = new AgentThreadModel("archived-thread", "user-1", "old",
+                AgentThreadStatusEnum.ARCHIVED, null, null, 0, Instant.EPOCH, Instant.EPOCH);
+        LifecycleThreadStore store = new LifecycleThreadStore(active, archived);
+        AgentThreadService service = new AgentThreadService(
+                store, new EmptyItemStore(), java.time.Clock.systemUTC(),
+                (userId, threadId) -> { throw new AgentThreadConflictException("THREAD_HAS_ACTIVE_TURN", "busy"); });
+
+        assertEquals(1, service.listPage("user-1", AgentThreadStatusEnum.ACTIVE, 0, 20).total());
+        assertEquals(1, service.listPage("user-1", AgentThreadStatusEnum.ARCHIVED, 0, 20).total());
+        assertThrows(AgentThreadConflictException.class,
+                () -> service.update("user-1", "active-thread", null, true));
+    }
+
     private AgentThreadModel thread(String threadId, String userId) {
         return new AgentThreadModel(threadId, userId, "title", AgentThreadStatusEnum.ACTIVE,
                 null, null, 0, Instant.EPOCH, Instant.EPOCH);
@@ -62,6 +79,27 @@ class AgentThreadIdentityTest {
         @Override public List<AgentItemModel> listItems(String userId, String threadId,
                                                         long afterSequence, int limit) {
             return List.of();
+        }
+    }
+
+    private static final class LifecycleThreadStore implements AgentThreadStore {
+        private final List<AgentThreadModel> values;
+
+        private LifecycleThreadStore(AgentThreadModel... values) {
+            this.values = new java.util.ArrayList<>(List.of(values));
+        }
+
+        @Override public void createThread(AgentThreadModel thread) { values.add(thread); }
+        @Override public Optional<AgentThreadModel> findThread(String userId, String threadId) {
+            return values.stream().filter(value -> value.userId().equals(userId)
+                    && value.threadId().equals(threadId)).findFirst();
+        }
+        @Override public List<AgentThreadModel> listThreads(String userId) {
+            return values.stream().filter(value -> value.userId().equals(userId)).toList();
+        }
+        @Override public void updateThread(AgentThreadModel thread) {
+            values.removeIf(value -> value.threadId().equals(thread.threadId()));
+            values.add(thread);
         }
     }
 }

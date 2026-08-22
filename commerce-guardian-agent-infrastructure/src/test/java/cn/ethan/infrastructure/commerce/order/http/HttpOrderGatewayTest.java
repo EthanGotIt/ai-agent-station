@@ -145,6 +145,25 @@ class HttpOrderGatewayTest {
     }
 
     @Test
+    void sendsExpediteAndVisibilityActionsToOrderServiceContract() {
+        responseBody = """
+                {
+                  "success": true,
+                  "retryable": false,
+                  "code": "OK",
+                  "message": "done"
+                }
+                """;
+        HttpOrderGateway gateway = gateway(Duration.ofSeconds(1));
+
+        assertEquals("OK", gateway.expedite("user-1", "ORDER-001", Instant.now()).code());
+        assertTrue(requestUri.get().contains("/orders/ORDER-001/expedite"));
+        assertEquals("OK", gateway.setVisibility("user-1", "ORDER-001",
+                OrderVisibilityEnum.HIDDEN, Instant.now()).code());
+        assertTrue(requestUri.get().contains("/orders/ORDER-001/visibility"));
+    }
+
+    @Test
     void rejectsMalformedBaseUrls() {
         assertThrows(IllegalArgumentException.class, () -> new HttpOrderGateway(
                 RestClient.builder(), "orders.example.test", Duration.ofSeconds(1)

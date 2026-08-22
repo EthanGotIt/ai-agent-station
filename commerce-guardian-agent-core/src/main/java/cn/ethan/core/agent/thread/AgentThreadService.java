@@ -16,11 +16,24 @@ public final class AgentThreadService {
     private final AgentThreadStore threads;
     private final AgentItemStore items;
     private final Clock clock;
+    private final AgentThreadArchiveGuard archiveGuard;
 
     public AgentThreadService(AgentThreadStore threads, AgentItemStore items, Clock clock) {
+        this(threads, items, clock, (userId, threadId) -> {
+            // 内存测试和纯 Core 使用没有持久化活动表，保留原有创建边界。
+        });
+    }
+
+    public AgentThreadService(
+            AgentThreadStore threads,
+            AgentItemStore items,
+            Clock clock,
+            AgentThreadArchiveGuard archiveGuard
+    ) {
         this.threads = threads;
         this.items = items;
         this.clock = clock;
+        this.archiveGuard = archiveGuard == null ? (userId, threadId) -> { } : archiveGuard;
     }
 
     public AgentThreadModel create(String userId, String title, String contextType, String contextId) {
@@ -35,7 +48,17 @@ public final class AgentThreadService {
     }
 
     public AgentThreadPageModel listPage(String userId, int page, int size) {
+        return listPage(userId, AgentThreadStatusEnum.ACTIVE, page, size);
+    }
+
+    public AgentThreadPageModel listPage(
+            String userId,
+            AgentThreadStatusEnum status,
+            int page,
+            int size
+    ) {
         String normalizedUserId = requireIdentity(userId, "userId", AgentThreadModel.MAX_USER_ID_LENGTH);
+        AgentThreadStatusEnum normalizedStatus = status == null ? AgentThreadStatusEnum.ACTIVE : status;
         int safePage = Math.max(0, page);
         int safeSize = Math.max(1, Math.min(size, 100));
         long offsetValue = (long) safePage * safeSize;
@@ -44,10 +67,10 @@ public final class AgentThreadService {
         }
         int offset = (int) offsetValue;
         return new AgentThreadPageModel(
-                threads.listThreads(normalizedUserId, offset, safeSize),
+                threads.listThreads(normalizedUserId, normalizedStatus, offset, safeSize),
                 safePage,
                 safeSize,
-                threads.countThreads(normalizedUserId)
+                threads.countThreads(normalizedUserId, normalizedStatus)
         );
     }
 
@@ -60,6 +83,9 @@ public final class AgentThreadService {
 
     public AgentThreadModel update(String userId, String threadId, String title, boolean archive) {
         AgentThreadModel current = get(userId, threadId);
+        if (archive && current.status() == AgentThreadStatusEnum.ACTIVE) {
+            archiveGuard.ensureCanArchive(current.userId(), current.threadId());
+        }
         AgentThreadModel updated = new AgentThreadModel(
                 current.threadId(), current.userId(), title == null ? current.title() : title,
                 archive ? AgentThreadStatusEnum.ARCHIVED : AgentThreadStatusEnum.ACTIVE,

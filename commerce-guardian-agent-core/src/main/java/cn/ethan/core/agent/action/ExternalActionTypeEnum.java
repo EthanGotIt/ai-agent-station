@@ -8,5 +8,7 @@ package cn.ethan.core.agent.action;
  */
 public enum ExternalActionTypeEnum {
     REFUND,
-    EXPEDITE
+    EXPEDITE,
+    HIDE_ORDER,
+    RESTORE_ORDER
 }

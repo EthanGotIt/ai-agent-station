@@ -2,6 +2,7 @@ package cn.ethan.app.agent.api;
 
 import cn.ethan.core.agent.execution.AgentTurnRuntimeService;
 import cn.ethan.core.agent.thread.AgentThreadService;
+import cn.ethan.core.agent.thread.AgentThreadStatusEnum;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.http.ResponseEntity;
+
+import java.util.Locale;
 
 /**
  * 类型职责：提供 Thread 元数据和游标化 Item 历史的 HTTP 协议转换。
@@ -54,9 +57,11 @@ public final class AgentThreadController {
     public AgentThreadPageResponseDto list(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "ACTIVE") String status,
             HttpServletRequest request
     ) {
-        var result = threads.listPage(userContext.currentUserId(request), page, size);
+        AgentThreadStatusEnum lifecycle = AgentThreadStatusEnum.valueOf(status.strip().toUpperCase(Locale.ROOT));
+        var result = threads.listPage(userContext.currentUserId(request), lifecycle, page, size);
         return new AgentThreadPageResponseDto(result.items().stream().map(AgentThreadDto::from).toList(),
                 result.page(), result.size(), result.total());
     }
