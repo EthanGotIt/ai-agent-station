@@ -8,7 +8,7 @@ updated: 2026-08-22
 - 当前目标：执行“订单售后 Workflow 推进计划”，本阶段只收口数据库迁移、Workflow owner Turn 启动恢复和历史 Question 状态对账，不扩展前端或订单能力范围。
 - 已修改范围：Flyway 增量迁移、Workflow owner 恢复候选查询、旧版本 owner Turn 的回答字段兼容，以及对应 Core/Infrastructure 测试；未触碰工作树中既有的 IDE、部署、Docker、Hook 和脚本改动。
 - 真实验证：原配置库 `COMMERCE_GUARDIAN_AGENT` 已先生成临时备份 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-original-20260822-v3.sql`，随后应用自身 Flyway 从 baseline v0 增量升级到 v1 并成功启动；专用校准库 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821` 启动恢复后，2 条“Question 已回答但 owner 仍等待输入”的历史记录收敛为 `COMPLETED/REJECTED`，2 条真实开放问题仍保持 `WAITING_USER_INPUT + OPEN + AVAILABLE`。应用已关闭，8090 无监听。
-- 本阶段验证：Core 52 项、Infrastructure 49 项测试通过；应用模块安装成功，专用校准库真实启动与恢复对账成功。提交完成后补记提交号。
+- 本阶段验证：Core 52 项、Infrastructure 49 项、App 16 项测试通过；应用模块安装成功，专用校准库真实启动与恢复对账成功。主提交为 `8093d7a fix: reconcile workflow owner recovery`。
 
 ## 已完成
 
