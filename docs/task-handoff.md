@@ -5,10 +5,10 @@ updated: 2026-08-22
 
 ## 当前执行阶段
 
-- 当前目标：执行“订单售后 Workflow 推进计划”，本阶段只收口数据库迁移、Workflow owner Turn 启动恢复和历史 Question 状态对账，不扩展前端或订单能力范围。
-- 已修改范围：Flyway 增量迁移、Workflow owner 恢复候选查询、旧版本 owner Turn 的回答字段兼容，以及对应 Core/Infrastructure 测试；未触碰工作树中既有的 IDE、部署、Docker、Hook 和脚本改动。
+- 当前目标：执行“订单售后 Workflow 推进计划”，数据库与 owner Turn 恢复基线已完成，本阶段已收口 QuestionCard 动态交互和业务进度展示，下一阶段只处理订单发现、物流诊断与模型契约，不扩展无关产品范围。
+- 已修改范围：QuestionCard 字段契约新增 `allowCustom` 和最多三个选项约束；前端按持久化 Item 聚合业务进度、隐藏原始 delta/Execution Ledger、支持 QuestionCard 接管输入区、Enter/Shift+Enter/IME、Escape 取消、摘要和受限 Markdown；未触碰工作树中既有的 IDE、部署、Docker、Hook 和脚本改动。
 - 真实验证：原配置库 `COMMERCE_GUARDIAN_AGENT` 已先生成临时备份 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-original-20260822-v3.sql`，随后应用自身 Flyway 从 baseline v0 增量升级到 v1 并成功启动；专用校准库 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821` 启动恢复后，2 条“Question 已回答但 owner 仍等待输入”的历史记录收敛为 `COMPLETED/REJECTED`，2 条真实开放问题仍保持 `WAITING_USER_INPUT + OPEN + AVAILABLE`。应用已关闭，8090 无监听。
-- 本阶段验证：Core 52 项、Infrastructure 49 项、App 16 项测试通过；应用模块安装成功，专用校准库真实启动与恢复对账成功。主提交为 `8093d7a fix: reconcile workflow owner recovery`。
+- 本阶段验证：Core 53 项、Infrastructure 49 项、App 16 项测试通过；前端 typecheck、21 项 Vitest 和生产 build 通过；Impeccable 视觉规范检测返回空结果。主提交为 `394b5b2 feat: make question cards drive order conversations`。
 
 ## 已完成
 
@@ -111,8 +111,17 @@ updated: 2026-08-22
 - `87af4e0` 直接证据：App 异常测试 2 项通过；clean Maven 116 项和 dependency analyze 三模块均通过，未把 `spring-core` 测试实现细节扩展为 App 直接依赖。
 - 当前本地配置/契约直接证据：`.env` 与 `.env.example` 均为 30 个当前变量，非敏感值一致，旧变量为 0；真实 DeepSeek key 只存在于被忽略的 `.env`，未进入 Git。
 
+## 订单售后 Workflow 推进计划执行记录
+
+- `394b5b2 feat: make question cards drive order conversations`：QuestionCard 字段模型现在显式携带 `allowCustom`，固定选项最多三个；Core、MyBatis JSON 解析和演示 Workflow schema 保持一致。允许自定义值的字段仍受字段名、必填、长度和未知字段校验约束，未授权字段不能绕过选项校验。
+- 同一提交：前端 QuestionCard 按后端 schema 动态渲染 `SINGLE_SELECT`/`TEXT` 字段、摘要和“其他”自定义输入；QuestionCard 接管 composer，支持 Enter 提交、Shift+Enter 保留换行、中文 IME composing 期间不误提交、Escape/取消按当前拒绝回答协议结束业务确认，并在提交前执行必填和长度约束。
+- 同一提交：删除右侧逐条 Execution Ledger 和可见的 `assistant.delta` 事件轨迹；SSE 只更新当前回复气泡，持久化 Item 被聚合为“已整理请求上下文”“已核对订单与物流事实”“等待你的确认”“业务操作已完成”等有限业务进度。回复和 Question prompt 只渲染受限 Markdown，不执行任意 HTML/Markdown。
+- 直接验证：前端 Vitest 21 项通过，覆盖动态 QuestionCard、“其他”输入、三选项上限、摘要、受限 Markdown、Enter/Shift+Enter/IME、Escape、delta 隐藏和业务进度聚合；`npm --prefix agent-console run typecheck` 与 `npm --prefix agent-console run build` 通过。Maven Core 53、Infrastructure 49、App 16 项通过。
+- 只读审查：`rg` 未发现前端残留 `Execution Ledger`/`execution-inspector`/`itemTrace` 或用于展示原始 Tool/事件 JSON 的代码；Impeccable detector 对本轮前端变更返回 `[]`。SSE 仍保留，原因是它继续承担流式回复、取消和断线重连，而非作为产品信息架构。
+- 本阶段未修改 `.env`、`.env.example` 或用户既有 IDE、部署、Docker、Hook、脚本改动；未进行真实浏览器操作，因为本阶段先完成可重复的交互契约测试，真实浏览器将在订单 Workflow 阶段统一验证。
+
 ## 下一步唯一动作
 
-完成本阶段提交后，进入 QuestionCard 与实时交互收口：先核对回答事务、动态字段契约和 owner Turn 投影，再实现 QuestionCard 接管输入区、Enter/Shift+Enter/IME 规则以及语义进度聚合；不得重新进行已完成的全量调查。
+进入订单发现与物流诊断阶段：先盘点 `OrderGateway`、HTTP `/orders/search`、演示订单和 Tool/模型配置的真实调用路径，设计并验证按时间/金额/状态/关键词/物流停滞/隐藏状态搜索的结构化契约，再切换单一 `deepseek-v4-pro` 思考模式并同步 `.env`/`.env.example`；不得重新进行已完成的全量调查。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。
