@@ -20,7 +20,7 @@
 
 - `scripts.convention_check`：通过；首轮失败的原因是用户既有检查器禁止交接/矩阵中的旧备份文件名，修正文档引用后未修改检查规则并重新通过。
 - `scripts/tests`：4 个测试通过；规则回归覆盖当前供应商和 JSON 依赖边界，未修改用户既有脚本。
-- Maven 阶段 5 后端验证：`mvn clean -DskipTests=false test` 通过 Core 56、Infrastructure 58、App 17；本轮 `22eb4de` 与 `7029122` 合计定向 Infrastructure 幂等键验证 9 项和最新 jar 的两条真实 DeepSeek Tool Calling 查询也通过。
+- Maven 阶段 5 后端验证：`mvn clean -DskipTests=false test` 通过 Core 56、Infrastructure 59、App 17；本轮 `22eb4de`、`7029122`、`9fc19af` 的 HTTP/本地幂等定向验证 10 项和最新 jar 的两条真实 DeepSeek Tool Calling 查询也通过。
 - 前端阶段 5 验证：typecheck、Vitest 23 个测试和 production build 已通过；新增显式授权空默认值与 Markdown 表格渲染测试；组件替身脚本仍明确命名为 `test:component`，未冒充真实浏览器。
 - 以上本地测试已补充专用 MySQL 启动、重启恢复、并发回答 HTTP、ExternalAction Worker 状态矩阵和 Context 长历史快照续接实证；真实浏览器已补充 Thread/QuestionCard/重载恢复和 SSE 游标续传证据；真实 DeepSeek 已补充 Tool Calling、流式 delta、流中取消、超时和敏感信息检查。
 - 当前工作树包含此前任务产生的功能代码和用户既有的 `.idea`、部署、Docker、Hook 等改动；本轮不得覆盖或混入后者。
@@ -29,7 +29,7 @@
 
 | 目标区域 | 当前结论 | 直接证据 | 优先级 | 下一步 |
 | --- | --- | --- | --- | --- |
-| 外部动作命令的 Lease、版本、重试与幂等 | 已验证（本地与 HTTP 契约完成，真实远程待凭据） | `ExternalActionCommandModel`、`MybatisExternalActionCommandStore` 已有版本/CAS、Lease、总尝试和重试周期；`ExternalActionOutcomeManager` 在命令 CAS 成功后于同一本地事务投影 WorkflowRun、Turn 和结构化 Item；专用 MySQL 已验证单 Worker 成功、冲突终态投影回滚后 Lease 接管并复用同一结果、双 Worker 竞争只产生一次执行，以及失败触发器下重试耗尽后人工重试复用原命令/幂等键。`7029122` 强制订单写操作端口接收幂等键，HTTP 适配器以 `Idempotency-Key` 请求头发送；`22eb4de` 进一步让空/非法键在出网前失败，执行器四动作传播、HTTP 请求头和不出网校验共 9 项定向测试通过。另在专用库发现一条手工历史 Thread 的 `NEXT_SEQUENCE` 小于现有 Item 数量；仅修正校准数据为 `MAX(SEQUENCE_NO)+1` 后重启 Worker，命令成功且结果表仍为单行，未修改生产代码或原业务库 | P0 | 取得外部服务凭据后验证远程去重；保留专用库证据，纳入最终完整矩阵 |
+| 外部动作命令的 Lease、版本、重试与幂等 | 已验证（本地与 HTTP 契约完成，真实远程待凭据） | `ExternalActionCommandModel`、`MybatisExternalActionCommandStore` 已有版本/CAS、Lease、总尝试和重试周期；`ExternalActionOutcomeManager` 在命令 CAS 成功后于同一本地事务投影 WorkflowRun、Turn 和结构化 Item；专用 MySQL 已验证单 Worker 成功、冲突终态投影回滚后 Lease 接管并复用同一结果、双 Worker 竞争只产生一次执行，以及失败触发器下重试耗尽后人工重试复用原命令/幂等键。`7029122` 强制订单写操作端口接收幂等键，HTTP 适配器以 `Idempotency-Key` 请求头发送；`22eb4de` 进一步让空/非法键在出网前失败；`9fc19af` 在进程内 HTTP 协议服务中验证本地回执故障后的重复请求只产生一次业务变更，HTTP/本地幂等定向测试共 10 项通过。另在专用库发现一条手工历史 Thread 的 `NEXT_SEQUENCE` 小于现有 Item 数量；仅修正校准数据为 `MAX(SEQUENCE_NO)+1` 后重启 Worker，命令成功且结果表仍为单行，未修改生产代码或原业务库 | P0 | 取得外部服务凭据后验证远程去重；保留专用库证据，纳入最终完整矩阵 |
 | Thread → Turn → Item 事实一致性与恢复 | 已验证完成 | MyBatis 创建 Turn 与首个 Item 已在 Thread 锁事务内；`AgentTurnModel.version` 与 `AGENT_TURN.VERSION_NO` 形成单调 CAS，运行时在竞争失败时停止后续 Item/SSE，终态不可重写；`dd7a5c3` 将 Workflow Item ID 收敛为 UUID，避免真实数据库 64 字符边界溢出；专用 MySQL 已实证 ACTIVE Turn 重启收敛为 `FAILED/RUNTIME_RESTARTED` 并生成 `TURN_STATE`，两个 HTTP Turn 并发写入时生成 12 个唯一连续 Item Sequence；Item 插入故障返回 500 后 Thread/Turn/Item 全部回滚且 `NEXT_SEQUENCE=0` | P0 | 纳入最终完整矩阵 |
 | QuestionCard / Checkpoint / WorkflowRun 状态机 | 已验证完成 | Question admission 已有 `reserve → enqueue → close/release` 的版本 CAS、事务回滚、回答 Turn 幂等和重启对账；`dd7a5c3` 使失败释放与当前版本 Question Item 在同一事务提交，真实浏览器已验证拒绝收敛为 `ANSWERED/CONSUMED/REJECTED` 并在重载后恢复；专用 MySQL 两路 HTTP 并发回答实际得到单个 202/单个 409，最终 Question 为 `ANSWERED（版本3）/CONSUMED`、WorkflowRun 为 `REJECTED(v1)`；回答 Turn 插入故障返回 500 后 Question 保持 `OPEN(v0)/AVAILABLE`、无回答 Turn/Item，Thread 指针和 `NEXT_SEQUENCE=0` 不变 | P0 | 纳入最终完整矩阵 |
 | 外部动作成功/失败/人工重试 | 已验证完成 | `ExternalActionOutcomeManager` 统一写入 `EXTERNAL_ACTION_STATUS`、`TURN_STATE`，命令/Workflow/Turn/Item 在本地事务内收敛；专用 MySQL 已验证成功、失败重试耗尽、投影冲突回滚、Lease 接管、结果表单行幂等、双 Worker CAS，以及人工重试不产生第二条结果；校准库遗留序列计数修正后重启恢复为 `SUCCEEDED(v256)`，同一幂等结果仍只有 1 行，原失败 Turn 未被重写 | P0 | 保留专用库证据，纳入最终完整矩阵 |
@@ -41,12 +41,12 @@
 | SSE 断线恢复、去重、有序合并 | 已验证完成 | `AgentThreadEventStream` 已实现单连接 buffer → backlog → ordered flush → live、`eventId + sequence` 去重和晚绑定清理，并有并发单元测试；`cef1052` 让前端在 offline 时取消 reader、online 时从当前游标重连，并以无数据超时兜底；真实浏览器在 `afterSequence=13` 连接上切换 offline/online 后，实际恢复断线期间的 14–19 号 Item，网络记录出现两次 `events?afterSequence=13`，页面无重复且控制台无错误 | P0 | 保留专用 MySQL 与真实浏览器证据，纳入最终完整矩阵 |
 | 前端线程切换与 QuestionCard | 已验证完成 | `useThreadWorkspace` 保留 generation、历史 AbortController、旧事件 Thread 过滤和切换期间禁用；QuestionCard 提交 `APPROVE/REJECT`，组件和真实浏览器均覆盖多 Question、刷新恢复、订单动作、归档保护、重命名和移动端抽屉；`91f2afb` 按结构化外部动作状态恢复 Turn 展示并接入人工重试；`9c0ce82` 修正动态“其他”输入断言的异步状态等待，当前 Vitest 23 项通过 | P0 | 无 |
 | API、SQL、配置、文档一致性 | 已验证（保留两项外部/运维风险） | API/Item envelope/身份边界保持不变；增量 migration 已到 V5，增加 Run 步骤/状态、Question 步骤、外部动作索引和旧库兼容字段；本地退款/催发货/隐藏/恢复与 HTTP `/orders/{id}/refund|expedite|visibility` 契约已同步，`7029122` 明确写操作使用 `Idempotency-Key`；`GET /threads?status=ACTIVE|ARCHIVED`、前端列表、订单卡片、显式确认和 `.env`/`.env.example` 的 `deepseek-v4-pro` 契约已同步 | P0 | 外部 HTTP 订单服务无凭据；V5 前备份流程风险已记录 |
-| Runtime eval / acceptance / live eval | 已验证（外部 HTTP 适配器除外） | 当前 runtime eval 是明确标注的确定性本地替身；`871a155` 将前端 Mock 组件脚本改名为 `test:component`；真实 HTTP acceptance 已在专用 MySQL 上通过 Thread 列表、创建、Item 恢复、Turn 入队、幂等和执行轨迹回放六项检查；真实 DeepSeek 和真实浏览器均已取得订单 Workflow、Tool Calling、流式、取消、超时和恢复证据；最终 Python、Maven、npm 矩阵均通过 | P1 | 外部 HTTP 订单服务待专用凭据 |
+| Runtime eval / acceptance / live eval | 已验证（外部 HTTP 适配器除外） | 当前 runtime eval 是明确标注的确定性本地替身；`871a155` 将前端 Mock 组件脚本改名为 `test:component`；真实 HTTP acceptance 已在专用 MySQL 上通过 Thread 列表、创建、Item 恢复、Turn 入队、幂等和执行轨迹回放六项检查；`9fc19af` 增加真实 HTTP 网关/执行器协议级幂等回放证据；真实 DeepSeek 和真实浏览器均已取得订单 Workflow、Tool Calling、流式、取消、超时和恢复证据；最终 Python、Maven、npm 矩阵均通过 | P1 | 外部 HTTP 订单服务待专用凭据 |
 | 清理旧实现、兼容层和无效测试 | 已验证完成 | `91f2afb` 已删除旧 SSE 结构化事件兼容集合；`rg` 未发现可达的旧供应商配置或实现，规则检查器中的旧 token 仅作为禁用文本回归规则；`871a155` 已清理误导性的 `test:e2e` 命名；被忽略的 `.env` 已删除旧 Router/ReAct、旧队列和旧 Worker 配置，只保留当前变量。runtime eval 的 Fake 类型、前端历史裸 payload fallback 和规则检查器回归文本均有明确边界，不是可证明应删除的生产旧实现；最终矩阵通过 | P2 | 无 |
 
 ## 当前里程碑边界
 
-本阶段已闭合 `ORDER_SERVICE` Workflow、真实浏览器产品化、V5 旧库兼容、显式授权、可选 Tool 参数和 HTTP 写操作幂等键边界：`49311ca`、`6d40351`、`fcec19d`、`b1fc6bc`、`5532463`、`093076a`、`4c7fcc8`、`7029122`、`22eb4de`、`9c0ce82`。真实浏览器、真实 DeepSeek、真实本地 MySQL、迁移专用克隆和本轮完整 Python/Maven/npm 矩阵均已取得直接证据；完整矩阵结果为 Python 规范检查通过、Python 4 项通过、Maven Core 56/Infrastructure 58/App 17、前端 typecheck/Vitest 23 项/build 全部通过。handoff 保持 `active`，原因仍为外部 HTTP 订单服务无凭据和 V5 应用前未单独生成备份两个已记录风险。
+本阶段已闭合 `ORDER_SERVICE` Workflow、真实浏览器产品化、V5 旧库兼容、显式授权、可选 Tool 参数和 HTTP 写操作幂等键边界：`49311ca`、`6d40351`、`fcec19d`、`b1fc6bc`、`5532463`、`093076a`、`4c7fcc8`、`7029122`、`22eb4de`、`9c0ce82`、`9fc19af`。真实浏览器、真实 DeepSeek、真实本地 MySQL、迁移专用克隆和本轮完整 Python/Maven/npm 矩阵均已取得直接证据；完整矩阵结果为 Python 规范检查通过、Python 4 项通过、Maven Core 56/Infrastructure 59/App 17、前端 typecheck/Vitest 23 项/build 全部通过。handoff 保持 `active`，原因仍为外部 HTTP 订单服务无凭据和 V5 应用前未单独生成备份两个已记录风险。
 
 ## 外部验证边界
 
