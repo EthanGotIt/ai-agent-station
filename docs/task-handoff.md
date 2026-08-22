@@ -5,17 +5,17 @@ updated: 2026-08-23
 
 ## 当前执行阶段
 
-- 当前目标：执行“订单售后 Workflow 推进计划”。第 5 阶段后端子里程碑 `6d40351 feat: extend order service actions and thread archive` 与消费者前端里程碑 `fcec19d feat: productize order service workspace` 均已提交；下一阶段唯一动作是用真实浏览器验证订单售后、QuestionCard 刷新/断线、Thread 回收站和移动端抽屉，再执行最终完整矩阵，不重复调查已完成的数据库、订单搜索、退款和后端动作链路。
-- 已修改范围：在既有 V3 基础上新增 V4 外部动作状态索引、`ORDER_SERVICE` 的催发货/隐藏/恢复动作、订单服务 HTTP 契约、Local/HTTP ExternalAction 幂等执行、Thread ACTIVE/ARCHIVED 列表筛选和归档保护；归档更新与新 Turn 创建均在 Thread 行锁边界内复核状态。未触碰工作树中既有的 IDE、部署、Docker、Hook 和脚本改动。
-- V3 数据库证据：当前配置库 `COMMERCE_GUARDIAN_AGENT` 与专用校准库 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821` 均先完成备份/克隆确认后由 Flyway 从版本 2 增量升级到版本 3；两库均保留 9 条订单、6 条物流事件，Question 外键恢复，唯一键为 `(RUN_ID, STEP_NO)`。备份分别为 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v3-commerce_guardian_agent-20260823.sql` 与 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v3-commerce_guardian_agent_calibration_20260821-20260823.sql`。
-- V4 数据库证据：两个已确认库均先完成备份，再由应用 Flyway 从版本 3 增量升级到版本 4；`IDX_EXTERNAL_ACTION_THREAD_STATUS` 在两个库均存在。备份分别为 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v4-commerce_guardian_agent-20260823.sql` 与 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v4-commerce_guardian_agent_calibration_20260821-20260823.sql`。
-- 本阶段提交：`6d40351 feat: extend order service actions and thread archive`、`fcec19d feat: productize order service workspace`。Maven 在后端子里程碑通过 Core 56、Infrastructure 56、App 17；前端 typecheck、23 项 Vitest 和 production build 均通过。最终 Python/Maven/npm 完整矩阵与真实浏览器仍待执行。
-- 真实退款证据：校准库 Thread `c626d931-4be7-47da-8dad-5ba708108301` 的 Run `workflow-b587983e-9ba6-4448-8f4e-8a93aa040076` 依次产生订单选择、退款原因、最终授权 Question；授权后 owner Turn 进入等待外部动作，单个 `REFUND` 命令成功，`ORDER-TODAY-PAID-001` 变为 `REFUNDED`，命令/结果各 1 条、尝试次数 1；重复回答返回 409。服务停止再启动后 Run 保持 `COMPLETED`、开放 Question 为 0、命令/回执仍各 1 条。
+- 当前目标：执行“订单售后 Workflow 推进计划”。实现、真实浏览器验收和最终矩阵已完成到可验证范围；handoff 仍保持 `active`，因为外部 HTTP 订单服务没有可用凭据，严格完成条件中的该项不能伪称通过。下一步唯一动作是取得该外部服务的专用凭据和地址后，执行真实 HTTP 订单适配器验收并重跑完整矩阵；在此之前不再重复已经闭合的浏览器、MySQL 本地网关和 DeepSeek 调查。
+- 已修改范围：统一 `ORDER_SERVICE` 的查询、物流、退款、催发货、隐藏/恢复订单历史能力，完成 QuestionCard、业务进度聚合、Thread 回收站/行内重命名、移动端抽屉、V5 增量迁移、显式外部动作确认和受限 Markdown 表格渲染。未触碰工作树中既有的 IDE、部署、Docker、Hook 和脚本改动。
+- 数据库证据：`COMMERCE_GUARDIAN_AGENT` 与 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821` 已由应用实际启动到 Flyway 版本 5；两库均保留演示订单/物流事实，`OPEN_QUESTION_ID`、Turn Workflow 字段、ExternalAction 版本/重试字段、结果表和幂等索引均可读。已确认的 V4 前备份仍保留在 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v4-commerce_guardian_agent-20260823.sql` 与 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v4-commerce_guardian_agent_calibration_20260821-20260823.sql`；另从该备份导入专用克隆库 `COMMERCE_GUARDIAN_AGENT_V5_MIGRATION_20260823`，应用实际从版本 3 增量执行 V4、V5，保留 9 条订单、6 条物流事件并成功启动到版本 5。V5 应用前没有单独生成新的 V5 前备份，已作为剩余流程风险保留记录，未将其表述为完成证据。
+- V5 后恢复快照：已为当前配置库和专用校准库分别生成 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-after-v5-commerce_guardian_agent-20260823.sql`（100160 bytes）与 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-after-v5-commerce_guardian_agent_calibration_20260821-20260823.sql`（335421 bytes）；仅写入临时备份文件，未改动数据库。
+- 当前服务状态：`5173`、`8090`、`8092`、迁移验证临时端口 `8093` 均已关闭；MySQL 保留运行，专用克隆库仅用于迁移证据，未删除或覆盖原配置库。
+- 本轮提交：`b1fc6bc fix: harden order action confirmation UI`、`5532463 fix: align legacy workflow schema`、`093076a fix: tolerate optional order tool input`、`4c7fcc8 fix: align optional order tool formatting`。每个提交只包含本轮明确路径，未带入用户既有改动；前端和后端定向验证均通过。
+- 真实浏览器证据：在 `5173 → 8090` 的真实 Vite 代理和真实 DeepSeek V4 Pro 下，验证“列出今天最新订单”、订单卡片查物流、退款原因 QuestionCard、刷新后恢复 QuestionCard、最终授权拒绝无副作用、隐藏后默认查询不再显示、恢复后重新显示、催发货最终授权、Thread Enter 重命名、Escape/失焦取消、ACTIVE→ARCHIVED→ACTIVE、移动端抽屉开关。页面只显示聚合业务进度、订单卡片/物流时间线和受限 Markdown 表格，不显示原始 `assistant.delta`、Tool JSON 或 Thinking。
 - 真实 Thread 回收站证据：校准库 Thread `1880e1e7-8122-4843-b140-c5bf8ae9341d` 通过真实 API 完成 ACTIVE 列表 → ARCHIVED 列表 → ACTIVE 恢复，归档时列表不再包含、恢复后重新出现；含开放 Question 的 Thread `7ef9ed22-b02f-4b28-bb04-7f186c76698b` 归档返回 409，拒绝 Question 后开放 Question/未完成动作均为 0，随后归档成功。
-- 真实隐藏/恢复证据：校准库 Thread `102ea933-6a9d-487b-8a9d-25f7eb7c807e` 通过真实 DeepSeek Tool Calling 启动 `HIDE_ORDER` 与 `RESTORE_ORDER`，`ORDER-PAID-001` 先出现 `HIDDEN_AT`，再恢复为 NULL；`EXTERNAL_ACTION_COMMAND` 中两类命令各 1 条且均为 `SUCCEEDED`，结果表 2 条。重复提交只收到 409，不产生第二命令。
-- 未宣称最终完成：真实浏览器尚未验证本阶段订单卡片动作、QuestionCard 刷新/断线、Thread 回收站和移动端布局；催发货尚未做真实数据库动作回归；当前 `EXTERNAL_ACTION` 仍保留受控业务进度 Item，SSE 仅用于流式回复、取消和断线恢复。
-- 真实 DeepSeek V4 Pro 业务探针：专用校准库中“列出今天最新订单”实际产生 `ORDER_LIST`，成功返回 2 条订单并完成；“查物流三天没更新的订单”实际产生 `ORDER_LIST` 和 2 个 `LOGISTICS_TIMELINE`，成功返回 5 条候选、每条时间线 2 个事件并完成。受检 Item 未包含用户归属字段、API key 或内部 key。
-- 真实 DeepSeek V4 Pro 运行探针：SSE 连接观察到 1 个 `assistant.delta` 后调用取消接口返回 200，Turn 收敛 `CANCELLED`；另一临时进程仅注入 `AI_AGENT_STREAM_TIMEOUT=PT1S`，Turn 收敛 `TIMED_OUT/TURN_TIMEOUT`。本阶段订单 Workflow 使用真实 DeepSeek Tool Calling 启动并完成隐藏/恢复动作，未将 Thinking 或原始 delta 写入 Item、日志或前端；8091/8092 当前仅为本阶段验证临时启动，前端回归结束后关闭。
+- 真实订单动作证据：当前库 `EXTERNAL_ACTION_COMMAND`/`EXTERNAL_ACTION_RESULT` 中 `HIDE_ORDER`、`RESTORE_ORDER`、`EXPEDITE` 均为 `SUCCEEDED` 且各自只产生一个幂等回执；隐藏/恢复后的 `HIDDEN_AT` 最终为 NULL。退款浏览器流程选择拒绝，订单仍保持原状态，证明显式授权前和拒绝路径均没有退款副作用。
+- 真实 Thread/SSE 证据：此前已验证取消、超时、断线按游标恢复和顺序去重；本轮浏览器进一步验证 QuestionCard 刷新、订单动作期间的业务进度和 Thread 切换。SSE 仍保留为流式输出、取消和断线恢复边界，不再作为右侧开发者运行轨迹展示。
+- 当前剩余风险：外部 HTTP 订单服务没有可用凭据，因此只完成契约测试和本地真实适配器验证；不能把该边界写成已验收，也不能把 handoff 标记为 `completed`。
 
 ## 已完成
 
