@@ -344,7 +344,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             String logisticsStalledDays,
             String visibility
     ) {
-            Set<OrderStatusEnum> parsedStatuses = statuses == null || statuses.isBlank()
+        Set<OrderStatusEnum> parsedStatuses = statuses == null || statuses.isBlank()
                 ? Set.of()
                 : Arrays.stream(statuses.split(","))
                 .map(String::trim)
