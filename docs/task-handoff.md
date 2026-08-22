@@ -1,22 +1,22 @@
-status: active
+status: completed
 updated: 2026-08-23
 
 # Commerce Guardian Agent 交接
 
 ## 当前执行阶段
 
-- 当前目标：执行“订单售后 Workflow 推进计划”。实现、真实浏览器验收和本轮最终矩阵已完成到可验证范围；本轮新增独立 HTTP 订单服务夹具并完成 Agent 到独立 SQLite 服务的真实查询、退款和幂等回放，目标已从外部服务阻塞中恢复为 `active`，下一步唯一动作是完成本轮完整验证矩阵并复核 handoff。
+- 当前目标：执行“订单售后 Workflow 推进计划”。实现、真实浏览器验收、独立 HTTP 订单服务现场验收和最终完整矩阵均已完成；目标标记为 `completed`。本轮最终功能提交为 `80c5ca9`，验证交接提交为 `5eb9823`。
 - 已修改范围：统一 `ORDER_SERVICE` 的查询、物流、退款、催发货、隐藏/恢复订单历史能力，完成 QuestionCard、业务进度聚合、Thread 回收站/行内重命名、移动端抽屉、V5 增量迁移、显式外部动作确认和受限 Markdown 表格渲染。未触碰工作树中既有的 IDE、部署、Docker、Hook 和脚本改动。
 - 数据库证据：`COMMERCE_GUARDIAN_AGENT` 与 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821` 已由应用实际启动到 Flyway 版本 5；两库均保留演示订单/物流事实，`OPEN_QUESTION_ID`、Turn Workflow 字段、ExternalAction 版本/重试字段、结果表和幂等索引均可读。已确认的 V4 前备份仍保留在 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v4-commerce_guardian_agent-20260823.sql` 与 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v4-commerce_guardian_agent_calibration_20260821-20260823.sql`；该备份早于 V5，已导入专用克隆库 `COMMERCE_GUARDIAN_AGENT_V5_MIGRATION_20260823`，应用实际从版本 3 增量执行 V4、V5，保留 9 条订单、6 条物流事件并成功启动到版本 5。没有另外生成 V5 命名的迁移前备份，但已有前置备份覆盖 V5 前状态，克隆迁移和 V5 后恢复快照均已核验；该点作为已接受的 P2 运维记录保留，不表述为不存在的单独 V5 前备份。
 - V5 后恢复快照：已为当前配置库和专用校准库分别生成 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-after-v5-commerce_guardian_agent-20260823.sql`（100160 bytes）与 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-after-v5-commerce_guardian_agent_calibration_20260821-20260823.sql`（335421 bytes）；仅写入临时备份文件，未改动数据库。
-- 当前服务状态：本轮验收期间独立订单服务运行在 `127.0.0.1:18080`，Agent 运行在 `8090`；MySQL 保留运行，专用克隆库仅用于迁移证据，未删除或覆盖原配置库。Docker CLI 可用但 Docker Desktop Linux 引擎未启动，因此本轮使用同一台电脑上的独立 Python 进程完成现场 HTTP 验收，Dockerfile/README 已提供可复现容器启动方式。
-- 本轮提交：`80c5ca9 feat: add isolated order service fixture`、`e99dd12 docs: document order adapter boundary`、`9d433ca docs: classify migration backup residual risk`、`9fc19af test: verify remote action idempotency replay`、`22eb4de fix: reject invalid order action idempotency keys`、`9c0ce82 test: await question card state transition`、`7029122 fix: propagate order action idempotency`、`b1fc6bc fix: harden order action confirmation UI`、`5532463 fix: align legacy workflow schema`、`093076a fix: tolerate optional order tool input`、`4c7fcc8 fix: align optional order tool formatting`。本轮新增夹具 4 项测试，完整 Python 测试增至 8 项；每个提交只包含本轮明确路径，未带入用户既有改动。
+- 当前服务状态：本轮验收使用的独立订单服务 `127.0.0.1:18080`、Agent `8090`、前端 `5173` 及临时端口均已关闭；MySQL `127.0.0.1:3306` 保留运行，专用克隆库仅用于迁移证据，未删除或覆盖原配置库。Docker CLI 可用但 Docker Desktop Linux 引擎未启动，因此使用同一台电脑上的独立 Python 进程完成现场 HTTP 验收；Dockerfile/README 已提供可复现容器启动方式。
+- 本轮提交：`80c5ca9 feat: add isolated order service fixture`、`5eb9823 docs: record live order service validation`、`e99dd12 docs: document order adapter boundary`、`9d433ca docs: classify migration backup residual risk`、`9fc19af test: verify remote action idempotency replay`、`22eb4de fix: reject invalid order action idempotency keys`、`9c0ce82 test: await question card state transition`、`7029122 fix: propagate order action idempotency`、`b1fc6bc fix: harden order action confirmation UI`、`5532463 fix: align legacy workflow schema`、`093076a fix: tolerate optional order tool input`、`4c7fcc8 fix: align optional order tool formatting`。本轮新增夹具 4 项测试，完整 Python 测试 8 项；最终 Python、Maven、npm 矩阵均通过。每个提交只包含本轮明确路径，未带入用户既有改动。
 - 真实浏览器证据：在 `5173 → 8090` 的真实 Vite 代理和真实 DeepSeek V4 Pro 下，验证“列出今天最新订单”、订单卡片查物流、退款原因 QuestionCard、刷新后恢复 QuestionCard、最终授权拒绝无副作用、隐藏后默认查询不再显示、恢复后重新显示、催发货最终授权、Thread Enter 重命名、Escape/失焦取消、ACTIVE→ARCHIVED→ACTIVE、移动端抽屉开关。页面只显示聚合业务进度、订单卡片/物流时间线和受限 Markdown 表格，不显示原始 `assistant.delta`、Tool JSON 或 Thinking。
 - 真实 Thread 回收站证据：校准库 Thread `1880e1e7-8122-4843-b140-c5bf8ae9341d` 通过真实 API 完成 ACTIVE 列表 → ARCHIVED 列表 → ACTIVE 恢复，归档时列表不再包含、恢复后重新出现；含开放 Question 的 Thread `7ef9ed22-b02f-4b28-bb04-7f186c76698b` 归档返回 409，拒绝 Question 后开放 Question/未完成动作均为 0，随后归档成功。
 - 真实订单动作证据：当前库 `EXTERNAL_ACTION_COMMAND`/`EXTERNAL_ACTION_RESULT` 中 `HIDE_ORDER`、`RESTORE_ORDER`、`EXPEDITE` 均为 `SUCCEEDED` 且各自只产生一个幂等回执；隐藏/恢复后的 `HIDDEN_AT` 最终为 NULL。退款浏览器流程选择拒绝，订单仍保持原状态，证明显式授权前和拒绝路径均没有退款副作用。
 - 独立 HTTP 订单服务证据：`scripts/acceptance/order_service_fixture` 使用独立 SQLite 数据库和真实 HTTP 线程提供订单搜索、详情、物流、退款、催发货、隐藏/恢复接口；Agent 通过 `http://127.0.0.1:18080` 查询“列出今天最新订单”实际得到 `ORDER-EXT-TODAY-001`，真实 QuestionCard 授权退款将 `ORDER-EXT-STALLED-001` 从 `SHIPPED` 更新为 `REFUNDED`。随后用同一 Workflow 幂等键重放，服务端幂等记录增量为 0、业务变更增量为 0；实际 Java HTTP 适配器对催发货、隐藏、恢复各发送一次并各重复一次，结果为 `EXPEDITED/HIDDEN/RESTORED`，服务端记录与业务变更各仅增加 3 次。该证据是独立本机服务验收，不伪称为第三方生产订单平台验收。
 - 真实 Thread/SSE 证据：此前已验证取消、超时、断线按游标恢复和顺序去重；本轮浏览器进一步验证 QuestionCard 刷新、订单动作期间的业务进度和 Thread 切换。SSE 仍保留为流式输出、取消和断线恢复边界，不再作为右侧开发者运行轨迹展示。
-- 当前剩余风险：独立本机 HTTP 订单服务的查询、物流、写操作和服务端幂等已现场验收；Docker Desktop 引擎未启动，容器镜像尚未现场构建，但同一服务已以独立进程运行并通过 Agent/Java HTTP 适配器验证。若部署到第三方生产订单平台，仍需按其实际鉴权契约另行验收；这不再阻塞本仓库的独立 HTTP 边界验证。V5 前置备份的历史流程差异已按已有 V4 前备份、专用克隆迁移和 V5 后快照证据接受为 P2 运维记录。
+- 当前剩余风险：独立本机 HTTP 订单服务的查询、物流、写操作和服务端幂等已现场验收；Docker Desktop 引擎未启动，容器镜像未现场构建，但同一服务已以独立进程运行并通过 Agent/Java HTTP 适配器验证。若部署到第三方生产订单平台，仍需按其实际鉴权契约另行验收；这属于部署环境风险，不阻塞本仓库目标完成。V5 前置备份的历史流程差异已按已有 V4 前备份、专用克隆迁移和 V5 后快照证据接受为 P2 运维记录。
 
 ## 已完成
 
@@ -55,7 +55,7 @@ updated: 2026-08-23
 ## 最近验证
 
 - `python -m scripts.convention_check`：通过；`e83b9c9` 校准了当前 DeepSeek 供应商契约和 Spring Boot 4/Jackson 3 直接依赖规则，仍保留旧项目/旧版本标记等禁用文本检查。
-- `python -m unittest discover -s scripts/tests -p "test_*.py"`：4 个测试通过，新增规则回归测试覆盖当前供应商和 JSON 依赖边界。
+- `python -m unittest discover -s scripts/tests -p "test_*.py"`：8 个测试通过，新增独立 HTTP 订单服务的查询、物流、幂等写操作和 chunked JSON 回归覆盖当前供应商和 JSON 依赖边界。
 - 历史基线验证：`mvn clean '-DskipTests=false' test` 曾通过 Core 51、Infrastructure 49、App 16，共 116 项测试；后续阶段新增测试，当前最新矩阵以本文件顶部更新记录为准。
 - `mvn -pl commerce-guardian-agent-app -am -DskipTests package`：应用可打包；启动探针实际加载 DeepSeek starter、Tomcat、Hikari 和 MyBatis。
 - `mvn -pl commerce-guardian-agent-core -Dtest=AgentTurnRuntimeServiceTest test`：4 项 Runtime 边界测试通过，包含规范化 `USER_MESSAGE` Item 和唯一键创建竞态恢复。
@@ -83,7 +83,7 @@ updated: 2026-08-23
 
 - 远程回放校准：`9fc19af test: verify remote action idempotency replay` 使用进程内 HTTP 协议服务模拟同一 `Idempotency-Key` 的重复请求，注入第一次本地回执提交失败；两次 HTTP 请求只产生一次业务变更，第三次直接复用本地结果。该测试覆盖真实 HTTP 网关和执行器路径，但仍不等同于外部订单服务验收。
 - 最新边界校准：`22eb4de fix: reject invalid order action idempotency keys` 让 HTTP 订单网关的退款、催发货和隐藏/恢复在远程调用前拒绝空或非法幂等键，防止绕过去重契约；新增测试确认三类请求均不出网。`9c0ce82 test: await question card state transition` 修复 React 19 受控 QuestionCard 测试对异步状态渲染的同步时序假设；前端 23 项测试重新全部通过。
-- 最新幂等校准：提交 `7029122 fix: propagate order action idempotency`，订单写操作端口现在必须接收 ExternalActionCommand 的幂等键；HTTP 订单适配器将其作为 `Idempotency-Key` 请求头传给退款、催发货和隐藏/恢复接口，本地演示适配器继续在同一事务中完成订单事实与本地回执。新增执行器四动作传播测试和 HTTP 请求头契约测试，定向 Infrastructure 测试 8 项通过；真实外部订单服务仍待凭据，不能把本地契约测试写成远程验收。
+- 幂等边界校准：提交 `7029122 fix: propagate order action idempotency` 后，订单写操作端口必须接收 ExternalActionCommand 的幂等键；HTTP 订单适配器将其作为 `Idempotency-Key` 请求头传给退款、催发货和隐藏/恢复接口，本地演示适配器继续在同一事务中完成订单事实与本地回执。随后 `80c5ca9` 已用独立 HTTP 订单服务现场验证服务端重复请求只产生一次业务变更；不将该本机夹具表述为第三方生产平台验收。
 - 已建立 [implementation-traceability.md](implementation-traceability.md)，把原始计划目标、当前实现结论和验证证据分开记录；旧 handoff 的“已完成”描述不再单独作为证据。
 - 提交 `3e5e4a0 fix: make external action projection atomic`：新增 `ExternalActionOutcomeManager`，将命令 CAS、WorkflowRun、Turn 和结构化外部动作/Turn State Item 放入同一事务；事务提交后才发布实时事件。
 - Worker 已区分远程执行异常、本地投影事务失败和提交后的事件发布失败。后两者不会重新执行远程动作；Lease 竞争失败不会产生后续投影。
@@ -142,6 +142,6 @@ updated: 2026-08-23
 
 ## 下一步唯一动作
 
-取得外部专用凭据和地址后，执行真实 HTTP 订单适配器验收，重点验证退款、催发货、隐藏/恢复的 `Idempotency-Key` 服务端去重；不得把契约测试伪称为远程服务验收。V5 前置备份差异已作为有证据支撑的 P2 运维记录保留。
+无。本目标已完成并暂停；若后续接入第三方生产订单平台，再按其实际鉴权、数据权限和幂等契约执行部署验收。V5 前置备份差异已作为有证据支撑的 P2 运维记录保留。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。
