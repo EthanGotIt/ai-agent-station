@@ -195,6 +195,7 @@ public class MybatisAgentWorkflowQuestionStore implements AgentWorkflowQuestionS
         entity.setTurnId(model.turnId());
         entity.setUserId(model.userId());
         entity.setCheckpointId(model.checkpointId());
+        entity.setStepNo(model.stepNo());
         entity.setVersionNo(model.version());
         entity.setAnswerTurnId(model.answerTurnId());
         entity.setAnswerEnqueueStatus(answerStatus(model.answerEnqueueStatus()));
@@ -209,7 +210,8 @@ public class MybatisAgentWorkflowQuestionStore implements AgentWorkflowQuestionS
 
     private AgentWorkflowQuestionModel toModel(AgentWorkflowQuestionEntity entity) {
         return new AgentWorkflowQuestionModel(entity.getRunId(), entity.getThreadId(), entity.getTurnId(), entity.getUserId(),
-                entity.getQuestionId(), entity.getCheckpointId(), value(entity.getVersionNo()), entity.getTitle(),
+                entity.getQuestionId(), entity.getCheckpointId(), entity.getStepNo() == null ? 0 : entity.getStepNo(),
+                value(entity.getVersionNo()), entity.getTitle(),
                 entity.getPrompt(), entity.getFieldsJson(), AgentWorkflowQuestionStatusEnum.valueOf(entity.getStatus()),
                 entity.getCreatedAt(), entity.getAnsweredAt(), entity.getAnswerTurnId(),
                 parseAnswerStatus(entity.getAnswerEnqueueStatus()), parseAnswerFields(entity.getFieldsJson()));

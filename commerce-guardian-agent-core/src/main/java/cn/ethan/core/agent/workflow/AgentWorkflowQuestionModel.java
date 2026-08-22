@@ -20,6 +20,7 @@ public record AgentWorkflowQuestionModel(
         String userId,
         String questionId,
         String checkpointId,
+        int stepNo,
         long version,
         String title,
         String prompt,
@@ -38,7 +39,7 @@ public record AgentWorkflowQuestionModel(
                 || checkpointId == null || checkpointId.isBlank()) {
             throw new IllegalArgumentException("question identity must not be blank");
         }
-        if (version < 0 || createdAt == null) {
+        if (stepNo < 0 || version < 0 || createdAt == null) {
             throw new IllegalArgumentException("question version and createdAt must be valid");
         }
         title = title == null ? "需要确认" : title;
@@ -77,6 +78,29 @@ public record AgentWorkflowQuestionModel(
                 || answerEnqueueStatus != AgentWorkflowQuestionStatusEnum.AnswerEnqueueStatusEnum.CONSUMED)) {
             throw new IllegalArgumentException("已回答 QuestionCard 必须具有消费状态和回答时间");
         }
+    }
+
+    /** 兼容未持久化步骤序号的旧 Question 调用边界。 */
+    public AgentWorkflowQuestionModel(
+            String runId,
+            String threadId,
+            String turnId,
+            String userId,
+            String questionId,
+            String checkpointId,
+            long version,
+            String title,
+            String prompt,
+            String fieldsJson,
+            AgentWorkflowQuestionStatusEnum status,
+            Instant createdAt,
+            Instant answeredAt,
+            String answerTurnId,
+            AgentWorkflowQuestionStatusEnum.AnswerEnqueueStatusEnum answerEnqueueStatus,
+            List<AgentWorkflowQuestionFieldModel> answerFields
+    ) {
+        this(runId, threadId, turnId, userId, questionId, checkpointId, 0, version, title, prompt,
+                fieldsJson, status, createdAt, answeredAt, answerTurnId, answerEnqueueStatus, answerFields);
     }
 
     /** 保留既有持久状态构造边界；新建可回答 QuestionCard 应显式提供 answerFields。 */
@@ -131,7 +155,7 @@ public record AgentWorkflowQuestionModel(
         if (reservedAnswerTurnId == null || reservedAnswerTurnId.isBlank()) {
             throw new IllegalArgumentException("answerTurnId 不能为空");
         }
-        return new AgentWorkflowQuestionModel(runId, threadId, turnId, userId, questionId, checkpointId,
+        return new AgentWorkflowQuestionModel(runId, threadId, turnId, userId, questionId, checkpointId, stepNo,
                 version + 1, title, prompt, fieldsJson, status, createdAt, answeredAt, reservedAnswerTurnId,
                 AgentWorkflowQuestionStatusEnum.AnswerEnqueueStatusEnum.RESERVED, answerFields);
     }
@@ -142,7 +166,7 @@ public record AgentWorkflowQuestionModel(
                 || answerTurnId == null) {
             throw new IllegalStateException("回答 Turn 尚未处于可入队的预留状态");
         }
-        return new AgentWorkflowQuestionModel(runId, threadId, turnId, userId, questionId, checkpointId,
+        return new AgentWorkflowQuestionModel(runId, threadId, turnId, userId, questionId, checkpointId, stepNo,
                 version + 1, title, prompt, fieldsJson, status, createdAt, answeredAt, answerTurnId,
                 AgentWorkflowQuestionStatusEnum.AnswerEnqueueStatusEnum.ENQUEUED, answerFields);
     }
@@ -154,7 +178,7 @@ public record AgentWorkflowQuestionModel(
                 || answerEnqueueStatus == AgentWorkflowQuestionStatusEnum.AnswerEnqueueStatusEnum.CONSUMED) {
             throw new IllegalStateException("QuestionCard 当前没有可释放的回答 Turn");
         }
-        return new AgentWorkflowQuestionModel(runId, threadId, turnId, userId, questionId, checkpointId,
+        return new AgentWorkflowQuestionModel(runId, threadId, turnId, userId, questionId, checkpointId, stepNo,
                 version + 1, title, prompt, fieldsJson, status, createdAt, answeredAt, null,
                 AgentWorkflowQuestionStatusEnum.AnswerEnqueueStatusEnum.AVAILABLE, answerFields);
     }

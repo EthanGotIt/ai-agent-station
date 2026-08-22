@@ -29,8 +29,13 @@ public interface AgentWorkflowEngine {
     record ResumeResult(
             String message,
             String resultStatus,
-            ExternalActionCommandModel command
+            ExternalActionCommandModel command,
+            AgentWorkflowQuestionModel question
     ) {
+        public ResumeResult(String message, String resultStatus, ExternalActionCommandModel command) {
+            this(message, resultStatus, command, null);
+        }
+
         public ResumeResult {
             message = message == null ? "" : message;
             resultStatus = resultStatus == null ? "" : resultStatus;

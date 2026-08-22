@@ -55,7 +55,7 @@ Item 是唯一事实来源。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersio
 
 ## 编排和审批
 
-`SpringAiAgentTurnCoordinator` 是唯一协调 Agent。只读 Tool 查询订单和物流；能力 Tool 只能启动退款或催发货 Workflow，不能直接产生外部副作用。Tool Call/Result 只记录受控参数、状态、截断标志，不记录 Prompt 或 Thinking。Workflow 类型、状态和 QuestionCard 状态使用枚举，并显式执行：
+`SpringAiAgentTurnCoordinator` 是唯一协调 Agent。只读 Tool 查询订单和物流；订单售后能力统一由 `start_order_service_workflow` 启动确定性 Workflow，不能直接产生外部副作用。Tool Call/Result 只记录受控参数、状态、截断标志，不记录 Prompt 或 Thinking。Workflow 类型、状态和 QuestionCard 状态使用枚举，并显式执行：
 
 ```text
 校验 → 持久化 QuestionCard → WAITING_USER_INPUT
@@ -95,4 +95,4 @@ SSE 事件包含完整 envelope：`eventId、threadId、turnId、itemId（可选
 
 ## 数据库
 
-`docs/dev-ops/mysql/commerce-guardian-agent.sql` 是唯一破坏性基线，包含演示订单/物流和 `AGENT_THREAD`、`AGENT_TURN`、`AGENT_ITEM`、`AGENT_CONTEXT_SNAPSHOT`、`AGENT_WORKFLOW_RUN`、`AGENT_WORKFLOW_QUESTION`、`EXTERNAL_ACTION_COMMAND`、`EXTERNAL_ACTION_RESULT`。同一用户的同一来源 Turn 和 Workflow 类型只能有一个 WorkflowRun；没有运行时建表，也没有增量升级脚本。
+`docs/dev-ops/mysql/commerce-guardian-agent.sql` 是新库的破坏性基线；已有库必须先备份并由 `db/migration/V1__align_workflow_question_recovery.sql`、`V2__expand_order_search_fields.sql` 和 `V3__support_multi_step_order_workflow.sql` 逐版本增量升级。基线包含演示订单/物流和 `AGENT_THREAD`、`AGENT_TURN`、`AGENT_ITEM`、`AGENT_CONTEXT_SNAPSHOT`、`AGENT_WORKFLOW_RUN`、`AGENT_WORKFLOW_QUESTION`、`EXTERNAL_ACTION_COMMAND`、`EXTERNAL_ACTION_RESULT`。同一用户的同一来源 Turn 和 Workflow 类型只能有一个 WorkflowRun；迁移不得重建或覆盖已有业务事实。

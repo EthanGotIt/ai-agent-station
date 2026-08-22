@@ -1,6 +1,7 @@
 package cn.ethan.infrastructure.commerce.order.persistence;
 
 import cn.ethan.core.commerce.order.OrderLookupResultModel;
+import cn.ethan.core.commerce.order.OrderActionGateway;
 import cn.ethan.core.commerce.order.OrderSnapshotModel;
 import cn.ethan.core.commerce.order.OrderStatusEnum;
 import cn.ethan.core.commerce.order.OrderGateway;
@@ -31,7 +32,7 @@ import java.util.List;
         havingValue = "local",
         matchIfMissing = true
 )
-public final class LocalOrderGateway implements OrderGateway {
+public final class LocalOrderGateway implements OrderGateway, OrderActionGateway {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LocalOrderGateway.class);
 
@@ -133,6 +134,48 @@ public final class LocalOrderGateway implements OrderGateway {
         } catch (RuntimeException failure) {
             LOGGER.warn("本地订单搜索降级为临时失败，exception={}", failure.getClass().getSimpleName());
             return OrderSearchResultModel.temporaryFailure();
+        }
+    }
+
+    @Override
+    public OrderActionResult refund(String userId, String orderId, String reason, Instant now) {
+        if (userId == null || userId.isBlank() || orderId == null || orderId.isBlank()
+                || reason == null || reason.isBlank() || now == null) {
+            return OrderActionResult.failed(false, "REFUND_ARGUMENT_INVALID", "退款参数不完整");
+        }
+        try {
+            DemoOrderEntity current = mapper.selectById(orderId.strip());
+            if (current == null) {
+                return OrderActionResult.failed(false, "ORDER_NOT_FOUND", "订单不存在");
+            }
+            if (!userId.strip().equals(current.getUserId())) {
+                return OrderActionResult.failed(false, "ORDER_NOT_OWNED", "订单不属于当前用户");
+            }
+            if (OrderStatusEnum.REFUNDED.name().equalsIgnoreCase(current.getStatus())) {
+                return OrderActionResult.succeeded("ALREADY_REFUNDED", "订单已完成退款");
+            }
+            if (!List.of(OrderStatusEnum.PAID.name(), OrderStatusEnum.SHIPPED.name(),
+                    OrderStatusEnum.DELIVERED.name()).contains(current.getStatus())) {
+                return OrderActionResult.failed(false, "REFUND_ORDER_STATE_INVALID", "当前订单状态不允许退款");
+            }
+            int updated = mapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<DemoOrderEntity>()
+                    .eq("ORDER_ID", orderId.strip())
+                    .eq("USER_ID", userId.strip())
+                    .in("STATUS", List.of(OrderStatusEnum.PAID.name(), OrderStatusEnum.SHIPPED.name(),
+                            OrderStatusEnum.DELIVERED.name()))
+                    .set("STATUS", OrderStatusEnum.REFUNDED.name())
+                    .set("UPDATED_AT", now));
+            if (updated == 1) {
+                return OrderActionResult.succeeded("REFUNDED", "订单已完成退款");
+            }
+            DemoOrderEntity after = mapper.selectById(orderId.strip());
+            if (after != null && OrderStatusEnum.REFUNDED.name().equalsIgnoreCase(after.getStatus())) {
+                return OrderActionResult.succeeded("ALREADY_REFUNDED", "订单已完成退款");
+            }
+            return OrderActionResult.failed(true, "REFUND_STATE_RACE", "订单状态正在变化，请稍后重试");
+        } catch (RuntimeException failure) {
+            LOGGER.warn("本地退款更新暂时失败，exception={}", failure.getClass().getSimpleName());
+            return OrderActionResult.failed(true, "ORDER_STORE_TEMPORARY_FAILURE", "订单状态暂时无法更新");
         }
     }
 

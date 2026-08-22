@@ -61,6 +61,8 @@ public class MybatisAgentWorkflowRunStore implements AgentWorkflowRunStore {
         entity.setWorkflowType(run.workflowType().name());
         entity.setStatus(run.status().name());
         entity.setVersionNo(run.version());
+        entity.setStepsJson(run.stepsJson());
+        entity.setStateJson(run.stateJson());
         entity.setCreatedAt(run.createdAt());
         entity.setUpdatedAt(run.updatedAt());
         return entity;
@@ -71,6 +73,7 @@ public class MybatisAgentWorkflowRunStore implements AgentWorkflowRunStore {
                 entity.getUserId(), AgentWorkflowTypeEnum.valueOf(entity.getWorkflowType()),
                 AgentWorkflowStatusEnum.valueOf(entity.getStatus()),
                 entity.getVersionNo() == null ? 0 : entity.getVersionNo(),
+                entity.getStepsJson(), entity.getStateJson(),
                 entity.getCreatedAt(), entity.getUpdatedAt());
     }
 }

@@ -1,5 +1,6 @@
 package cn.ethan.app.agent.api;
 
+import cn.ethan.core.agent.execution.AgentTurnRuntimeService;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.ResponseEntity;
 
 /**
  * 类型职责：提供 Thread 元数据和游标化 Item 历史的 HTTP 协议转换。
@@ -23,10 +25,16 @@ import org.springframework.web.bind.annotation.RestController;
 public final class AgentThreadController {
 
     private final AgentThreadService threads;
+    private final AgentTurnRuntimeService runtime;
     private final AgentUserContext userContext;
 
-    public AgentThreadController(AgentThreadService threads, AgentUserContext userContext) {
+    public AgentThreadController(
+            AgentThreadService threads,
+            AgentTurnRuntimeService runtime,
+            AgentUserContext userContext
+    ) {
         this.threads = threads;
+        this.runtime = runtime;
         this.userContext = userContext;
     }
 
@@ -56,6 +64,18 @@ public final class AgentThreadController {
     @GetMapping("/threads/{threadId}")
     public AgentThreadDto get(@PathVariable String threadId, HttpServletRequest request) {
         return AgentThreadDto.from(threads.get(userContext.currentUserId(request), threadId));
+    }
+
+    @GetMapping("/threads/{threadId}/question")
+    public ResponseEntity<AgentWorkflowQuestionSnapshotDto> question(
+            @PathVariable String threadId,
+            HttpServletRequest request
+    ) {
+        String userId = userContext.currentUserId(request);
+        threads.get(userId, threadId);
+        return runtime.findOpenQuestion(userId, threadId)
+                .map(question -> ResponseEntity.ok(AgentWorkflowQuestionSnapshotDto.from(question)))
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @PatchMapping("/threads/{threadId}")

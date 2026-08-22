@@ -28,6 +28,8 @@ public final class AgentWorkflowQuestionEntity {
     private String userId;
     @TableField("CHECKPOINT_ID")
     private String checkpointId;
+    @TableField("STEP_NO")
+    private Integer stepNo;
     @TableField("VERSION_NO")
     private Long versionNo;
     @TableField("ANSWER_TURN_ID")
@@ -62,6 +64,8 @@ public final class AgentWorkflowQuestionEntity {
     public void setUserId(String userId) { this.userId = userId; }
     public String getCheckpointId() { return checkpointId; }
     public void setCheckpointId(String checkpointId) { this.checkpointId = checkpointId; }
+    public Integer getStepNo() { return stepNo; }
+    public void setStepNo(Integer stepNo) { this.stepNo = stepNo; }
     public Long getVersionNo() { return versionNo; }
     public void setVersionNo(Long versionNo) { this.versionNo = versionNo; }
     public String getAnswerTurnId() { return answerTurnId; }

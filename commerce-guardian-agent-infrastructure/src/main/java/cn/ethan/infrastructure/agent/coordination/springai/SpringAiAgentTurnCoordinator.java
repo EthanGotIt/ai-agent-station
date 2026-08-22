@@ -118,15 +118,11 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         if (executionContext != null) executionContext.checkActive();
         if (answer != null && !answer.isEmpty()) {
             AgentWorkflowEngine.ResumeResult resumed = workflowEngine.resume(thread, turn, answer);
-            String actionPayload = resumed.command() == null
-                    ? resumed.resultStatus()
-                    : resumed.command().commandId();
             return new AgentCoordinatorResult(
                     resumed.message(),
                     List.of(new AgentItemDraft(
-                            resumed.command() == null ? "WORKFLOW_RESULT" : "EXTERNAL_ACTION_STATUS",
-                            actionPayload)),
-                    null, turn.workflowRunId(), false
+                            "WORKFLOW_RESULT", resumed.resultStatus())),
+                    resumed.question(), turn.workflowRunId(), resumed.question() != null
             );
         }
 
@@ -514,38 +510,55 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             this.invocation = invocation;
         }
 
-        @Tool(name = "start_refund_workflow", description = "为指定订单启动退款申请确认 Workflow；仅创建待用户明确授权的确认任务，不会直接执行退款或调用任何外部写操作")
-        public String startRefund(
-                @ToolParam(description = "订单号") String orderId,
-                @ToolParam(description = "退款原因") String reason
+        @Tool(name = "start_order_service_workflow", description = "统一订单售后 Workflow 入口。可按意图、订单号、时间、金额、状态、关键词或物流停滞条件找订单；清晰请求会直接进入核验，订单不明确、原因缺失或涉及外部写操作时由确定性流程展示 QuestionCard，最终授权前不会执行退款或催发货")
+        public String startOrderService(
+                @ToolParam(description = "可选，售后意图，使用 REFUND 退款或 EXPEDITE 催发货；不确定时留空") String intent,
+                @ToolParam(description = "可选，订单号；不记得时留空并使用筛选条件") String orderId,
+                @ToolParam(description = "可选，创建时间起点，YYYY-MM-DD 或 ISO-8601") String createdFrom,
+                @ToolParam(description = "可选，创建时间终点，YYYY-MM-DD 或 ISO-8601") String createdTo,
+                @ToolParam(description = "可选，最低实付金额") String minAmount,
+                @ToolParam(description = "可选，最高实付金额") String maxAmount,
+                @ToolParam(description = "可选，订单状态，多个状态使用逗号分隔") String statuses,
+                @ToolParam(description = "可选，订单号、商品摘要或物流状态关键词") String keyword,
+                @ToolParam(description = "可选，物流连续多少天未更新") String logisticsStalledDays,
+                @ToolParam(description = "可选，订单历史可见性，ACTIVE、HIDDEN 或 ALL") String visibility,
+                @ToolParam(description = "可选，退款原因；缺失时由 QuestionCard 补充") String reason
         ) {
-            return start("REFUND", Map.of("orderId", orderId == null ? "" : orderId, "reason", reason == null ? "" : reason));
+            Map<String, String> arguments = new LinkedHashMap<>();
+            put(arguments, "intent", intent);
+            put(arguments, "orderId", orderId);
+            put(arguments, "createdFrom", createdFrom);
+            put(arguments, "createdTo", createdTo);
+            put(arguments, "minAmount", minAmount);
+            put(arguments, "maxAmount", maxAmount);
+            put(arguments, "statuses", statuses);
+            put(arguments, "keyword", keyword);
+            put(arguments, "logisticsStalledDays", logisticsStalledDays);
+            put(arguments, "visibility", visibility);
+            put(arguments, "reason", reason);
+            return start(arguments);
         }
 
-        @Tool(name = "start_expedite_workflow", description = "启动催发货确认 Workflow，不执行催发货")
-        public String startExpedite(@ToolParam(description = "订单号") String orderId) {
-            return start("EXPEDITE", Map.of("orderId", orderId == null ? "" : orderId));
-        }
-
-        private String start(String operation, Map<String, String> arguments) {
+        private String start(Map<String, String> arguments) {
             invocation.checkActive();
-            String toolName = "start_" + operation.toLowerCase() + "_workflow";
+            String toolName = "start_order_service_workflow";
             String invocationId = invocation.recordCall(toolName, arguments);
             try {
-                Map<String, String> normalized = new LinkedHashMap<>();
-                normalized.put("orderId", requiredArgument("orderId", arguments.get("orderId")));
-                if ("REFUND".equals(operation)) {
-                    normalized.put("reason", requiredArgument("reason", arguments.get("reason")));
-                }
-                invocation.result = engine.start(thread, turn, operation, Map.copyOf(normalized));
+                invocation.result = engine.start(thread, turn, "ORDER_SERVICE", Map.copyOf(arguments));
                 invocation.checkActive();
                 invocation.recordResult(invocationId, toolName, "SUCCESS",
                         invocation.result.runId());
-                return "Workflow 已启动，等待用户在 QuestionCard 中明确授权。";
+                return "订单售后 Workflow 已启动，正在核验候选订单。";
             } catch (RuntimeException failure) {
                 invocation.recordResult(invocationId, toolName, "FAILED",
                         failure.getClass().getSimpleName());
                 throw failure;
+            }
+        }
+
+        private void put(Map<String, String> target, String key, String value) {
+            if (value != null && !value.isBlank()) {
+                target.put(key, value.trim());
             }
         }
     }

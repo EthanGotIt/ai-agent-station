@@ -30,6 +30,10 @@ public final class AgentWorkflowRunEntity {
     private String status;
     @TableField("VERSION_NO")
     private Long versionNo;
+    @TableField("STEPS_JSON")
+    private String stepsJson;
+    @TableField("STATE_JSON")
+    private String stateJson;
     @TableField("CREATED_AT")
     private Instant createdAt;
     @TableField("UPDATED_AT")
@@ -49,6 +53,10 @@ public final class AgentWorkflowRunEntity {
     public void setStatus(String status) { this.status = status; }
     public Long getVersionNo() { return versionNo; }
     public void setVersionNo(Long versionNo) { this.versionNo = versionNo; }
+    public String getStepsJson() { return stepsJson; }
+    public void setStepsJson(String stepsJson) { this.stepsJson = stepsJson; }
+    public String getStateJson() { return stateJson; }
+    public void setStateJson(String stateJson) { this.stateJson = stateJson; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

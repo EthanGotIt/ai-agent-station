@@ -7,6 +7,7 @@ package cn.ethan.core.agent.workflow;
  * @date 2026-08-20
  */
 public enum AgentWorkflowTypeEnum {
+    ORDER_SERVICE,
     REFUND,
     EXPEDITE
 }

@@ -1,6 +1,7 @@
 package cn.ethan.infrastructure.commerce.order.http;
 
 import cn.ethan.core.commerce.order.OrderLookupResultModel;
+import cn.ethan.core.commerce.order.OrderActionGateway;
 import cn.ethan.core.commerce.order.OrderSnapshotModel;
 import cn.ethan.core.commerce.order.OrderStatusEnum;
 import cn.ethan.core.commerce.order.OrderGateway;
@@ -24,6 +25,7 @@ import java.net.URISyntaxException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -34,7 +36,7 @@ import java.util.Objects;
  */
 @Component
 @ConditionalOnProperty(name = "ai-agent.order.gateway", havingValue = "http")
-public final class HttpOrderGateway implements OrderGateway {
+public final class HttpOrderGateway implements OrderGateway, OrderActionGateway {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpOrderGateway.class);
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(5);
@@ -174,6 +176,35 @@ public final class HttpOrderGateway implements OrderGateway {
         }
     }
 
+    @Override
+    public OrderActionResult refund(String userId, String orderId, String reason, Instant now) {
+        if (userId == null || userId.isBlank() || orderId == null || orderId.isBlank()
+                || reason == null || reason.isBlank()) {
+            return OrderActionResult.failed(false, "REFUND_ARGUMENT_INVALID", "退款参数不完整");
+        }
+        try {
+            HttpOrderActionResponse response = client.post()
+                    .uri(uri -> uri.path("/orders/{id}/refund").build(orderId.strip()))
+                    .header("X-User-Id", userId.strip())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("reason", reason.strip()))
+                    .retrieve()
+                    .body(HttpOrderActionResponse.class);
+            if (response == null) {
+                return OrderActionResult.failed(true, "ORDER_ACTION_EMPTY_RESPONSE", "订单服务未返回退款结果");
+            }
+            return new OrderActionResult(Boolean.TRUE.equals(response.success()),
+                    Boolean.TRUE.equals(response.retryable()), response.code(), response.message());
+        } catch (HttpClientErrorException.NotFound notFound) {
+            return OrderActionResult.failed(false, "ORDER_NOT_FOUND", "订单不存在");
+        } catch (HttpClientErrorException.Forbidden forbidden) {
+            return OrderActionResult.failed(false, "ORDER_NOT_OWNED", "订单不属于当前用户");
+        } catch (RuntimeException temporaryFailure) {
+            LOGGER.warn("HTTP 退款调用暂时失败，exception={}", temporaryFailure.getClass().getSimpleName());
+            return OrderActionResult.failed(true, "ORDER_ACTION_TEMPORARY_FAILURE", "订单服务暂时不可用");
+        }
+    }
+
     private OrderSnapshotModel toSnapshot(HttpOrderResponseDto response) {
         return new OrderSnapshotModel(
                 response.orderId(), response.userId(), OrderStatusEnum.fromValue(response.status()),
@@ -226,6 +257,14 @@ public final class HttpOrderGateway implements OrderGateway {
             String currency,
             String itemSummary,
             Instant hiddenAt
+    ) {
+    }
+
+    private record HttpOrderActionResponse(
+            Boolean success,
+            Boolean retryable,
+            String code,
+            String message
     ) {
     }
 

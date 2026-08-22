@@ -123,7 +123,10 @@ public final class ExternalActionOutcomeManager {
             if (isImmutableTerminal(run.status())) {
                 throw new IllegalStateException("WorkflowRun 已处于冲突终态：" + run.runId());
             }
-            workflowRuns.update(run.status(targetWorkflowStatus, now));
+            workflowRuns.update(run.status(targetWorkflowStatus, progressSteps(next.status()),
+                    run.stateJson(), now));
+        } else {
+            workflowRuns.update(run.progress(progressSteps(next.status()), run.stateJson(), now));
         }
 
         List<AgentItemModel> projectedItems = new ArrayList<>();
@@ -199,6 +202,28 @@ public final class ExternalActionOutcomeManager {
             return objectMapper.writeValueAsString(data);
         } catch (Exception failure) {
             throw new IllegalStateException("无法编码外部动作 Item", failure);
+        }
+    }
+
+    private String progressSteps(ExternalActionStatusEnum status) {
+        String actionStatus = status == ExternalActionStatusEnum.RETRY_WAIT ? "WAITING" :
+                status == ExternalActionStatusEnum.SUCCEEDED
+                        || status == ExternalActionStatusEnum.MANUAL_RETRY_REQUIRED ? "COMPLETED" : "ACTIVE";
+        try {
+            return objectMapper.writeValueAsString(List.of(
+                    java.util.Map.of("name", "PARSE_CONDITIONS", "status", "COMPLETED"),
+                    java.util.Map.of("name", "CANDIDATE_ORDERS", "status", "COMPLETED"),
+                    java.util.Map.of("name", "ORDER_LOGISTICS_VERIFICATION", "status", "COMPLETED"),
+                    java.util.Map.of("name", "USER_INPUT", "status", "COMPLETED"),
+                    java.util.Map.of("name", "FINAL_AUTHORIZATION", "status", "COMPLETED"),
+                    java.util.Map.of("name", "EXTERNAL_ACTION", "status", actionStatus),
+                    java.util.Map.of("name", "TERMINAL", "status",
+                            status == ExternalActionStatusEnum.SUCCEEDED
+                                    || status == ExternalActionStatusEnum.MANUAL_RETRY_REQUIRED
+                                    ? "COMPLETED" : "PENDING")
+            ));
+        } catch (Exception failure) {
+            throw new IllegalStateException("无法编码外部动作进度", failure);
         }
     }
 

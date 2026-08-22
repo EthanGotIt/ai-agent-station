@@ -202,6 +202,14 @@ public final class AgentTurnRuntimeService {
         }
     }
 
+    /** 返回当前用户在 Thread 上唯一开放的 QuestionCard，供刷新后恢复输入区。 */
+    public Optional<AgentWorkflowQuestionModel> findOpenQuestion(String userId, String threadId) {
+        if (userId == null || userId.isBlank() || threadId == null || threadId.isBlank()) {
+            return Optional.empty();
+        }
+        return questions.findOpenQuestion(userId.strip(), threadId.strip());
+    }
+
     private void reconcileWorkflowOwner(AgentWorkflowOwnerRecoveryCandidate candidate) {
         AgentTurnModel owner = candidate.turn();
         if (candidate.hasOpenQuestion()
@@ -545,7 +553,13 @@ public final class AgentTurnRuntimeService {
             }
             if (result.question() != null) {
                 executionContext.checkActive();
-                publishWorkflowItems(active);
+                if (execution.workflowAnswer()) {
+                    if (!result.assistantMessage().isBlank()) {
+                        appendItem(active, AgentItemTypeEnum.ASSISTANT_MESSAGE, result.assistantMessage());
+                    }
+                    finish(active, AgentTurnStatusEnum.COMPLETED, null);
+                    return;
+                }
                 AgentTurnModel waiting = active.workflow(result.workflowRunId(), AgentTurnStatusEnum.WAITING_USER_INPUT);
                 if (!updateTurn(active, waiting)) {
                     return;
@@ -555,7 +569,6 @@ public final class AgentTurnRuntimeService {
                 return;
             }
             if (execution.workflowAnswer()) {
-                publishWorkflowItems(active);
                 boolean awaitingExternalAction = result.items().stream()
                         .anyMatch(item -> "EXTERNAL_ACTION_STATUS".equals(item.type()));
                 if (awaitingExternalAction) {
@@ -669,16 +682,6 @@ public final class AgentTurnRuntimeService {
 
     private void publishTurn(AgentTurnModel turn) {
         events.turnUpdated(turn);
-    }
-
-    private void publishWorkflowItems(AgentTurnModel turn) {
-        items.listItems(turn.userId(), turn.threadId(), 0, 500).stream()
-                .filter(item -> turn.turnId().equals(item.turnId()))
-                .filter(item -> item.type() == AgentItemTypeEnum.WORKFLOW_STARTED
-                        || item.type() == AgentItemTypeEnum.WORKFLOW_QUESTION
-                        || item.type() == AgentItemTypeEnum.WORKFLOW_RESULT
-                        || item.type() == AgentItemTypeEnum.EXTERNAL_ACTION_STATUS)
-                .forEach(events::itemCreated);
     }
 
     private String turnStatePayload(AgentTurnStatusEnum status, String errorCode) {

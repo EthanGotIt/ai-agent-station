@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tool 边界测试：验证调用关联和参数拒绝在实际 Tool wrapper 内完成。
@@ -95,7 +96,7 @@ class SpringAiAgentToolBoundaryTest {
     }
 
     @Test
-    void blankRefundReasonIsRejectedBeforeWorkflowEngine() {
+    void blankRefundReasonIsPassedToWorkflowForQuestionCardCompletion() {
         AtomicBoolean engineCalled = new AtomicBoolean();
         SpringAiAgentTurnCoordinator.WorkflowInvocation invocation = invocation();
         AgentWorkflowEngine engine = new AgentWorkflowEngine() {
@@ -104,7 +105,11 @@ class SpringAiAgentToolBoundaryTest {
                     AgentThreadModel thread, AgentTurnModel turn, String operation, Map<String, String> arguments
             ) {
                 engineCalled.set(true);
-                throw new AssertionError("invalid Tool arguments must not reach the Workflow engine");
+                assertEquals("ORDER_SERVICE", operation);
+                assertEquals("REFUND", arguments.get("intent"));
+                assertEquals("ORDER-1", arguments.get("orderId"));
+                assertFalse(arguments.containsKey("reason"));
+                return new StartResult("run-1", null);
             }
 
             @Override
@@ -115,9 +120,10 @@ class SpringAiAgentToolBoundaryTest {
         SpringAiAgentTurnCoordinator.WorkflowTools tools = new SpringAiAgentTurnCoordinator.WorkflowTools(
                 null, null, engine, invocation);
 
-        assertThrows(IllegalArgumentException.class, () -> tools.startRefund("ORDER-1", " "));
+        tools.startOrderService("REFUND", "ORDER-1", null, null, null, null,
+                null, null, null, null, " ");
 
-        assertFalse(engineCalled.get());
+        assertTrue(engineCalled.get());
         assertEquals(2, invocation.traces().size());
     }
 
