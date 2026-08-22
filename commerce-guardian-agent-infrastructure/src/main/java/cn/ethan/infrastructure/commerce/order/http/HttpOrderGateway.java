@@ -189,11 +189,15 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
                 || reason == null || reason.isBlank()) {
             return OrderActionResult.failed(false, "REFUND_ARGUMENT_INVALID", "退款参数不完整");
         }
+        String normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+        if (normalizedIdempotencyKey == null) {
+            return invalidIdempotencyKey();
+        }
         try {
             HttpOrderActionResponse response = withIdempotencyKey(client.post()
                     .uri(uri -> uri.path("/orders/{id}/refund").build(orderId.strip()))
                     .header("X-User-Id", userId.strip())
-                    .contentType(MediaType.APPLICATION_JSON), idempotencyKey)
+                    .contentType(MediaType.APPLICATION_JSON), normalizedIdempotencyKey)
                     .body(Map.of("reason", reason.strip()))
                     .retrieve()
                     .body(HttpOrderActionResponse.class);
@@ -217,7 +221,11 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
         if (userId == null || userId.isBlank() || orderId == null || orderId.isBlank()) {
             return OrderActionResult.failed(false, "EXPEDITE_ARGUMENT_INVALID", "催发货参数不完整");
         }
-        return invokeAction(userId, orderId, "/expedite", Map.of(), idempotencyKey);
+        String normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+        if (normalizedIdempotencyKey == null) {
+            return invalidIdempotencyKey();
+        }
+        return invokeAction(userId, orderId, "/expedite", Map.of(), normalizedIdempotencyKey);
     }
 
     @Override
@@ -232,7 +240,12 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
                 || visibility == null || visibility == OrderVisibilityEnum.ALL) {
             return OrderActionResult.failed(false, "VISIBILITY_ARGUMENT_INVALID", "订单历史操作参数不完整");
         }
-        return invokeAction(userId, orderId, "/visibility", Map.of("visibility", visibility.name()), idempotencyKey);
+        String normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+        if (normalizedIdempotencyKey == null) {
+            return invalidIdempotencyKey();
+        }
+        return invokeAction(userId, orderId, "/visibility", Map.of("visibility", visibility.name()),
+                normalizedIdempotencyKey);
     }
 
     private OrderActionResult invokeAction(
@@ -270,15 +283,27 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
             RestClient.RequestBodySpec request,
             String idempotencyKey
     ) {
+        String normalized = normalizeIdempotencyKey(idempotencyKey);
+        if (normalized == null) {
+            throw new IllegalArgumentException("订单动作幂等键格式无效");
+        }
+        return request.header("Idempotency-Key", normalized);
+    }
+
+    private static OrderActionResult invalidIdempotencyKey() {
+        return OrderActionResult.failed(false, "IDEMPOTENCY_KEY_INVALID", "订单动作幂等键无效");
+    }
+
+    private static String normalizeIdempotencyKey(String idempotencyKey) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
-            return request;
+            return null;
         }
         String normalized = idempotencyKey.strip();
         if (normalized.length() > 200 || normalized.chars().anyMatch(Character::isISOControl)
                 || normalized.chars().anyMatch(Character::isWhitespace)) {
-            throw new IllegalArgumentException("订单动作幂等键格式无效");
+            return null;
         }
-        return request.header("Idempotency-Key", normalized);
+        return normalized;
     }
 
     private OrderSnapshotModel toSnapshot(HttpOrderResponseDto response) {

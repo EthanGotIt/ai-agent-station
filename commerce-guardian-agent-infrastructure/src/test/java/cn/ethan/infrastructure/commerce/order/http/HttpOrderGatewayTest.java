@@ -25,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -168,6 +169,29 @@ class HttpOrderGatewayTest {
                 OrderVisibilityEnum.HIDDEN, "action-hide", Instant.now()).code());
         assertTrue(requestUri.get().contains("/orders/ORDER-001/visibility"));
         assertEquals("action-hide", requestIdempotencyKey.get());
+    }
+
+    @Test
+    void rejectsMissingOrMalformedIdempotencyKeyBeforeCallingOrderService() {
+        responseBody = """
+                {
+                  "success": true,
+                  "retryable": false,
+                  "code": "OK",
+                  "message": "done"
+                }
+                """;
+        HttpOrderGateway gateway = gateway(Duration.ofSeconds(1));
+
+        assertEquals("IDEMPOTENCY_KEY_INVALID",
+                gateway.expedite("user-1", "ORDER-001", " ", Instant.now()).code());
+        assertEquals("IDEMPOTENCY_KEY_INVALID",
+                gateway.refund("user-1", "ORDER-001", "商品不符", "bad key", Instant.now()).code());
+        assertEquals("IDEMPOTENCY_KEY_INVALID",
+                gateway.setVisibility("user-1", "ORDER-001", OrderVisibilityEnum.HIDDEN,
+                        "bad\nkey", Instant.now()).code());
+        assertNull(requestUri.get());
+        assertNull(requestIdempotencyKey.get());
     }
 
     @Test
