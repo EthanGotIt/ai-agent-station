@@ -230,7 +230,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(screen.queryByRole("option", { name: "不应展示" })).toBeNull();
 
     fireEvent.change(screen.getByLabelText("退款原因"), { target: { value: "__OTHER__" } });
-    fireEvent.change(screen.getByLabelText("退款原因自定义内容"), { target: { value: "包装破损" } });
+    fireEvent.change(await screen.findByLabelText("退款原因自定义内容"), { target: { value: "包装破损" } });
     fireEvent.change(screen.getByLabelText("补充说明"), { target: { value: "希望原路退回" } });
     fireEvent.click(screen.getByRole("button", { name: "提交回答" }));
 
