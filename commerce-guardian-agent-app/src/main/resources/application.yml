@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: commerce-guardian-agent
+  flyway:
+    enabled: ${AI_AGENT_DB_MIGRATIONS_ENABLED:true}
+    baseline-on-migrate: ${AI_AGENT_DB_BASELINE_ON_MIGRATE:true}
+    baseline-version: 0
+    locations: classpath:db/migration
   datasource:
     url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3306/COMMERCE_GUARDIAN_AGENT?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
     username: ${MYSQL_USERNAME:root}

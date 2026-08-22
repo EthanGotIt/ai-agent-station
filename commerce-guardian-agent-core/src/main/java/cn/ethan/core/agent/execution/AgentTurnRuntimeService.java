@@ -18,6 +18,8 @@ import cn.ethan.core.agent.thread.AgentWorkflowAnswerInput;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStatusEnum;
+import cn.ethan.core.agent.workflow.AgentWorkflowOwnerRecoveryCandidate;
+import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -147,6 +149,9 @@ public final class AgentTurnRuntimeService {
             reconcileAnswerFailure(candidate, status,
                     candidate.errorCode() == null ? "WORKFLOW_ANSWER_RECONCILIATION" : candidate.errorCode());
         }
+        for (AgentWorkflowOwnerRecoveryCandidate candidate : turns.listWorkflowOwnerRecoveryCandidates()) {
+            reconcileWorkflowOwner(candidate);
+        }
         for (AgentTurnModel persisted : turns.listRecoverableTurns()) {
             AgentThreadModel thread = threadStore.findThread(persisted.userId(), persisted.threadId()).orElse(null);
             if (thread == null) {
@@ -194,6 +199,31 @@ public final class AgentTurnRuntimeService {
                 scheduleQueueTimeout(thread.threadId(), queued);
                 schedule(slot, thread);
             }
+        }
+    }
+
+    private void reconcileWorkflowOwner(AgentWorkflowOwnerRecoveryCandidate candidate) {
+        AgentTurnModel owner = candidate.turn();
+        if (candidate.hasOpenQuestion()
+                && candidate.workflowStatus() == AgentWorkflowStatusEnum.WAITING_USER_INPUT) {
+            return;
+        }
+        switch (candidate.workflowStatus()) {
+            case WAITING_EXTERNAL_ACTION -> {
+                AgentTurnModel waiting = owner.workflow(owner.workflowRunId(),
+                        AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION);
+                if (updateTurn(owner, waiting)) {
+                    appendItem(waiting, AgentItemTypeEnum.TURN_STATE,
+                            turnStatePayload(waiting.status(), "WORKFLOW_RECOVERED"));
+                    publishTurn(waiting);
+                }
+            }
+            case COMPLETED -> finish(owner, AgentTurnStatusEnum.COMPLETED, "WORKFLOW_RECOVERED");
+            case REJECTED -> finish(owner, AgentTurnStatusEnum.COMPLETED, "WORKFLOW_REJECTED");
+            case FAILED -> finish(owner, AgentTurnStatusEnum.FAILED, "WORKFLOW_FAILED");
+            case MANUAL_RETRY_REQUIRED -> finish(
+                    owner, AgentTurnStatusEnum.FAILED, "WORKFLOW_MANUAL_RETRY_REQUIRED");
+            case WAITING_USER_INPUT -> finish(owner, AgentTurnStatusEnum.FAILED, "WORKFLOW_QUESTION_MISSING");
         }
     }
 

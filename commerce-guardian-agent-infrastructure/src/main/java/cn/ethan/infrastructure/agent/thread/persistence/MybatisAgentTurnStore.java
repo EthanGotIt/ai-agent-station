@@ -5,6 +5,8 @@ import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentWorkflowAnswerInput;
+import cn.ethan.core.agent.workflow.AgentWorkflowOwnerRecoveryCandidate;
+import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.stereotype.Repository;
@@ -133,6 +135,18 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
         return mapper.selectWorkflowAnswerReconciliationCandidates().stream().map(this::toModel).toList();
     }
 
+    @Override
+    public List<AgentWorkflowOwnerRecoveryCandidate> listWorkflowOwnerRecoveryCandidates() {
+        return mapper.selectWorkflowOwnerRecoveryCandidates().stream()
+                .map(row -> new AgentWorkflowOwnerRecoveryCandidate(
+                        findTurn(row.getUserId(), row.getTurnId())
+                                .orElseThrow(() -> new IllegalStateException(
+                                        "Workflow owner Turn 在恢复查询后消失：" + row.getTurnId())),
+                        AgentWorkflowStatusEnum.valueOf(row.getWorkflowRunStatus()),
+                        Integer.valueOf(1).equals(row.getOpenQuestion())))
+                .toList();
+    }
+
     private AgentTurnEntity toEntity(AgentTurnModel model) {
         AgentTurnEntity entity = new AgentTurnEntity();
         entity.setTurnId(model.turnId());
@@ -166,8 +180,9 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
     }
 
     private AgentWorkflowAnswerInput toAnswerInput(AgentTurnEntity entity) {
-        if (entity.getWorkflowQuestionId() == null && entity.getWorkflowCheckpointId() == null
-                && entity.getWorkflowQuestionVersion() == null && entity.getWorkflowAnswersJson() == null) {
+        // 旧版本把 owner Turn 的 Workflow 关联字段也写进了回答列，但没有 answers JSON；
+        // owner Turn 不是回答 Turn，恢复时必须保留 owner 语义而不是阻断整个应用启动。
+        if (entity.getWorkflowAnswersJson() == null) {
             return null;
         }
         if (entity.getWorkflowRunId() == null || entity.getWorkflowQuestionId() == null

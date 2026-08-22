@@ -1,7 +1,14 @@
-status: completed
-updated: 2026-08-21
+status: active
+updated: 2026-08-22
 
 # Commerce Guardian Agent 交接
+
+## 当前执行阶段
+
+- 当前目标：执行“订单售后 Workflow 推进计划”，本阶段只收口数据库迁移、Workflow owner Turn 启动恢复和历史 Question 状态对账，不扩展前端或订单能力范围。
+- 已修改范围：Flyway 增量迁移、Workflow owner 恢复候选查询、旧版本 owner Turn 的回答字段兼容，以及对应 Core/Infrastructure 测试；未触碰工作树中既有的 IDE、部署、Docker、Hook 和脚本改动。
+- 真实验证：原配置库 `COMMERCE_GUARDIAN_AGENT` 已先生成临时备份 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-original-20260822-v3.sql`，随后应用自身 Flyway 从 baseline v0 增量升级到 v1 并成功启动；专用校准库 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821` 启动恢复后，2 条“Question 已回答但 owner 仍等待输入”的历史记录收敛为 `COMPLETED/REJECTED`，2 条真实开放问题仍保持 `WAITING_USER_INPUT + OPEN + AVAILABLE`。应用已关闭，8090 无监听。
+- 本阶段验证：Core 52 项、Infrastructure 49 项测试通过；应用模块安装成功，专用校准库真实启动与恢复对账成功。提交完成后补记提交号。
 
 ## 已完成
 
@@ -106,6 +113,6 @@ updated: 2026-08-21
 
 ## 下一步唯一动作
 
-实现校准、真实 MySQL/浏览器/DeepSeek 验证、配置同步、完整本地矩阵和工作树边界均已复核；handoff 已完成。按用户要求，完成后暂停。
+完成本阶段提交后，进入 QuestionCard 与实时交互收口：先核对回答事务、动态字段契约和 owner Turn 投影，再实现 QuestionCard 接管输入区、Enter/Shift+Enter/IME 规则以及语义进度聚合；不得重新进行已完成的全量调查。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。

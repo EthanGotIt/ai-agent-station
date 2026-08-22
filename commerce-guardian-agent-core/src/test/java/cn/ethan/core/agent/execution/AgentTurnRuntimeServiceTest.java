@@ -15,6 +15,8 @@ import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowOwnerRecoveryCandidate;
+import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 
@@ -182,6 +184,41 @@ class AgentTurnRuntimeServiceTest {
         scheduler.shutdownNow();
     }
 
+    @Test
+    void startupRecoveryConvergesAnsweredRejectedWorkflowOwner() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "恢复 Thread", null, null);
+        AgentTurnModel owner = new AgentTurnModel(
+                "owner-turn", thread.threadId(), "user-1", "owner-request", "申请退款",
+                AgentTurnStatusEnum.WAITING_USER_INPUT, 1, "run-1", null, NOW, NOW, null);
+        persistence.createTurn(owner);
+        persistence.ownerRecoveryCandidates = List.of(
+                new AgentWorkflowOwnerRecoveryCandidate(owner, AgentWorkflowStatusEnum.REJECTED, false));
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, persistence,
+                command -> { throw new UnsupportedOperationException("test does not answer a workflow"); },
+                (turn, status, code, finishedAt) -> false,
+                threads,
+                new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
+                (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
+                        "完成", List.of(), null, null, false),
+                new RecordingEvents(), executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256
+        );
+
+        runtime.recoverPersistedTurns();
+
+        AgentTurnModel recovered = persistence.findTurn("user-1", owner.turnId()).orElseThrow();
+        assertEquals(AgentTurnStatusEnum.COMPLETED, recovered.status());
+        assertEquals("WORKFLOW_REJECTED", recovered.errorCode());
+        assertTrue(persistence.items.stream().anyMatch(item -> item.type().name().equals("TURN_STATE")));
+        scheduler.shutdownNow();
+    }
+
     private static final class ManualExecutor implements java.util.concurrent.Executor {
         private final List<Runnable> tasks = new ArrayList<>();
 
@@ -212,6 +249,7 @@ class AgentTurnRuntimeServiceTest {
         private final Map<String, AgentTurnModel> turns = new HashMap<>();
         private final List<AgentItemModel> items = new ArrayList<>();
         private AgentTurnModel raceOnCreation;
+        private List<AgentWorkflowOwnerRecoveryCandidate> ownerRecoveryCandidates = List.of();
 
         @Override
         public void createThread(AgentThreadModel thread) {
@@ -280,6 +318,11 @@ class AgentTurnRuntimeServiceTest {
                     .filter(turn -> turn.status() == AgentTurnStatusEnum.QUEUED
                             || turn.status() == AgentTurnStatusEnum.ACTIVE)
                     .toList();
+        }
+
+        @Override
+        public List<AgentWorkflowOwnerRecoveryCandidate> listWorkflowOwnerRecoveryCandidates() {
+            return ownerRecoveryCandidates;
         }
 
         @Override

@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * 类型职责：验证回答 Turn 的明确列、answers JSON 和首 Item 在 MyBatis 边界完整往返。
@@ -84,6 +85,10 @@ class MybatisAgentTurnStoreWorkflowAnswerTest {
         assertEquals(7L, persistedItem.get().getSequenceNo());
         assertEquals(answerInput, restored.workflowAnswerInput());
         assertEquals(0L, restored.version());
+
+        persistedTurn.get().setWorkflowAnswersJson(null);
+        AgentTurnModel restoredOwner = store.findTurnByRequest("user-1", "request-1").orElseThrow();
+        assertNull(restoredOwner.workflowAnswerInput());
     }
 
     @SuppressWarnings("unchecked")

@@ -34,4 +34,24 @@ public interface AgentTurnMapper extends BaseMapper<AgentTurnEntity> {
             ORDER BY T.CREATED_AT
             """)
     List<AgentTurnEntity> selectWorkflowAnswerReconciliationCandidates();
+
+    @Select("""
+            SELECT T.TURN_ID, T.USER_ID, T.WORKFLOW_RUN_ID,
+                   R.STATUS AS WORKFLOW_RUN_STATUS,
+                   CASE WHEN EXISTS (
+                       SELECT 1
+                       FROM AGENT_WORKFLOW_QUESTION Q
+                       WHERE Q.RUN_ID = R.RUN_ID AND Q.STATUS = 'OPEN'
+                   ) THEN 1 ELSE 0 END AS OPEN_QUESTION
+            FROM AGENT_TURN T
+            JOIN AGENT_WORKFLOW_RUN R ON R.TURN_ID = T.TURN_ID
+            WHERE T.STATUS = 'WAITING_USER_INPUT'
+              AND (R.STATUS <> 'WAITING_USER_INPUT' OR NOT EXISTS (
+                  SELECT 1
+                  FROM AGENT_WORKFLOW_QUESTION Q
+                  WHERE Q.RUN_ID = R.RUN_ID AND Q.STATUS = 'OPEN'
+              ))
+            ORDER BY T.CREATED_AT
+            """)
+    List<AgentWorkflowOwnerRecoveryRow> selectWorkflowOwnerRecoveryCandidates();
 }
