@@ -109,8 +109,10 @@ public final class LocalExternalActionExecutor implements ExternalActionExecutor
             case REFUND -> payload.reason().isBlank()
                     ? OrderActionGateway.OrderActionResult.failed(false,
                     "ACTION_PAYLOAD_INVALID", "退款原因不能为空")
-                    : orderActions.refund(command.userId(), payload.orderId(), payload.reason(), clock.instant());
-            case EXPEDITE -> orderActions.expedite(command.userId(), payload.orderId(), clock.instant());
+                    : orderActions.refund(command.userId(), payload.orderId(), payload.reason(),
+                    command.idempotencyKey(), clock.instant());
+            case EXPEDITE -> orderActions.expedite(command.userId(), payload.orderId(),
+                    command.idempotencyKey(), clock.instant());
             case HIDE_ORDER -> visibilityMutation(command, payload, OrderVisibilityEnum.HIDDEN);
             case RESTORE_ORDER -> visibilityMutation(command, payload, OrderVisibilityEnum.ACTIVE);
         };
@@ -135,7 +137,8 @@ public final class LocalExternalActionExecutor implements ExternalActionExecutor
             return OrderActionGateway.OrderActionResult.failed(false,
                     "ACTION_PAYLOAD_INVALID", "订单历史操作方向无效");
         }
-        return orderActions.setVisibility(command.userId(), payload.orderId(), expected, clock.instant());
+        return orderActions.setVisibility(command.userId(), payload.orderId(), expected,
+                command.idempotencyKey(), clock.instant());
     }
 
     private ActionPayload parsePayload(String payloadJson) {

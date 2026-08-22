@@ -71,12 +71,14 @@ class LocalExternalActionExecutorOrderActionTest {
         private final AtomicInteger restoreCalls = new AtomicInteger();
 
         @Override
-        public OrderActionResult refund(String userId, String orderId, String reason, Instant now) {
+        public OrderActionResult refund(
+                String userId, String orderId, String reason, String idempotencyKey, Instant now) {
             return OrderActionResult.succeeded("REFUNDED", "ok");
         }
 
         @Override
-        public OrderActionResult expedite(String userId, String orderId, Instant now) {
+        public OrderActionResult expedite(
+                String userId, String orderId, String idempotencyKey, Instant now) {
             expediteCalls.incrementAndGet();
             return OrderActionResult.succeeded("EXPEDITED", "ok");
         }
@@ -86,6 +88,7 @@ class LocalExternalActionExecutorOrderActionTest {
                 String userId,
                 String orderId,
                 OrderVisibilityEnum visibility,
+                String idempotencyKey,
                 Instant now
         ) {
             if (visibility == OrderVisibilityEnum.HIDDEN) {

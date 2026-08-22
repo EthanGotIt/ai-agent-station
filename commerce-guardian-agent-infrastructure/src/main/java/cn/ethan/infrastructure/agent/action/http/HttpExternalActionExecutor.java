@@ -58,10 +58,14 @@ public final class HttpExternalActionExecutor implements ExternalActionExecutor 
                 return new ExternalActionResult(false, false, "ACTION_PAYLOAD_INVALID", "外部动作参数无效");
             }
             OrderActionGateway.OrderActionResult mutation = switch (command.type()) {
-                case REFUND -> orderActions.refund(command.userId(), orderId, reason, clock.instant());
-                case EXPEDITE -> orderActions.expedite(command.userId(), orderId, clock.instant());
-                case HIDE_ORDER -> visibilityMutation(command, orderId, visibility, OrderVisibilityEnum.HIDDEN);
-                case RESTORE_ORDER -> visibilityMutation(command, orderId, visibility, OrderVisibilityEnum.ACTIVE);
+                case REFUND -> orderActions.refund(command.userId(), orderId, reason,
+                        command.idempotencyKey(), clock.instant());
+                case EXPEDITE -> orderActions.expedite(command.userId(), orderId,
+                        command.idempotencyKey(), clock.instant());
+                case HIDE_ORDER -> visibilityMutation(
+                        command, orderId, visibility, OrderVisibilityEnum.HIDDEN);
+                case RESTORE_ORDER -> visibilityMutation(
+                        command, orderId, visibility, OrderVisibilityEnum.ACTIVE);
             };
             if (!mutation.success()) {
                 return new ExternalActionResult(false, mutation.retryable(), mutation.code(), mutation.message());
@@ -86,7 +90,8 @@ public final class HttpExternalActionExecutor implements ExternalActionExecutor 
             return OrderActionGateway.OrderActionResult.failed(false,
                     "ACTION_PAYLOAD_INVALID", "订单历史操作方向无效");
         }
-        return orderActions.setVisibility(command.userId(), orderId, expected, clock.instant());
+        return orderActions.setVisibility(command.userId(), orderId, expected,
+                command.idempotencyKey(), clock.instant());
     }
 
     private static String escape(String value) {

@@ -37,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class HttpOrderGatewayTest {
 
     private final AtomicReference<String> requestUserId = new AtomicReference<>();
+    private final AtomicReference<String> requestIdempotencyKey = new AtomicReference<>();
     private final AtomicReference<String> requestUri = new AtomicReference<>();
 
     private HttpServer server;
@@ -156,11 +157,17 @@ class HttpOrderGatewayTest {
                 """;
         HttpOrderGateway gateway = gateway(Duration.ofSeconds(1));
 
-        assertEquals("OK", gateway.expedite("user-1", "ORDER-001", Instant.now()).code());
+        assertEquals("OK", gateway.expedite("user-1", "ORDER-001", "action-expedite", Instant.now()).code());
         assertTrue(requestUri.get().contains("/orders/ORDER-001/expedite"));
+        assertEquals("action-expedite", requestIdempotencyKey.get());
+        assertEquals("OK", gateway.refund("user-1", "ORDER-001", "商品不符",
+                "action-refund", Instant.now()).code());
+        assertTrue(requestUri.get().contains("/orders/ORDER-001/refund"));
+        assertEquals("action-refund", requestIdempotencyKey.get());
         assertEquals("OK", gateway.setVisibility("user-1", "ORDER-001",
-                OrderVisibilityEnum.HIDDEN, Instant.now()).code());
+                OrderVisibilityEnum.HIDDEN, "action-hide", Instant.now()).code());
         assertTrue(requestUri.get().contains("/orders/ORDER-001/visibility"));
+        assertEquals("action-hide", requestIdempotencyKey.get());
     }
 
     @Test
@@ -187,6 +194,7 @@ class HttpOrderGatewayTest {
     private void respond(HttpExchange exchange) throws IOException {
         try (exchange) {
             requestUserId.set(exchange.getRequestHeaders().getFirst("X-User-Id"));
+            requestIdempotencyKey.set(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
             requestUri.set(exchange.getRequestURI().toString());
             if (holdResponse) {
                 try {

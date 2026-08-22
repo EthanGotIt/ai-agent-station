@@ -138,7 +138,13 @@ public final class LocalOrderGateway implements OrderGateway, OrderActionGateway
     }
 
     @Override
-    public OrderActionResult refund(String userId, String orderId, String reason, Instant now) {
+    public OrderActionResult refund(
+            String userId,
+            String orderId,
+            String reason,
+            String idempotencyKey,
+            Instant now
+    ) {
         if (userId == null || userId.isBlank() || orderId == null || orderId.isBlank()
                 || reason == null || reason.isBlank() || now == null) {
             return OrderActionResult.failed(false, "REFUND_ARGUMENT_INVALID", "退款参数不完整");
@@ -180,7 +186,12 @@ public final class LocalOrderGateway implements OrderGateway, OrderActionGateway
     }
 
     @Override
-    public OrderActionResult expedite(String userId, String orderId, Instant now) {
+    public OrderActionResult expedite(
+            String userId,
+            String orderId,
+            String idempotencyKey,
+            Instant now
+    ) {
         if (userId == null || userId.isBlank() || orderId == null || orderId.isBlank() || now == null) {
             return OrderActionResult.failed(false, "EXPEDITE_ARGUMENT_INVALID", "催发货参数不完整");
         }
@@ -225,6 +236,7 @@ public final class LocalOrderGateway implements OrderGateway, OrderActionGateway
             String userId,
             String orderId,
             OrderVisibilityEnum visibility,
+            String idempotencyKey,
             Instant now
     ) {
         if (userId == null || userId.isBlank() || orderId == null || orderId.isBlank()
