@@ -5,7 +5,7 @@ updated: 2026-08-23
 
 ## 当前执行阶段
 
-- 当前目标：执行“订单售后 Workflow 推进计划”。实现、真实浏览器验收、独立 HTTP 订单服务现场验收和最终完整矩阵均已完成；目标标记为 `completed`。本轮最终功能提交为 `80c5ca9`，验证交接提交为 `5eb9823`。
+- 当前目标：执行“订单售后 Workflow 推进计划”。实现、真实浏览器验收、独立 HTTP 订单服务现场验收和最终完整矩阵均已完成；目标标记为 `completed`。本轮最终功能提交为 `80c5ca9`，现场验证交接为 `5eb9823`，完成状态交接为 `ed455a6`。
 - 已修改范围：统一 `ORDER_SERVICE` 的查询、物流、退款、催发货、隐藏/恢复订单历史能力，完成 QuestionCard、业务进度聚合、Thread 回收站/行内重命名、移动端抽屉、V5 增量迁移、显式外部动作确认和受限 Markdown 表格渲染。未触碰工作树中既有的 IDE、部署、Docker、Hook 和脚本改动。
 - 数据库证据：`COMMERCE_GUARDIAN_AGENT` 与 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821` 已由应用实际启动到 Flyway 版本 5；两库均保留演示订单/物流事实，`OPEN_QUESTION_ID`、Turn Workflow 字段、ExternalAction 版本/重试字段、结果表和幂等索引均可读。已确认的 V4 前备份仍保留在 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v4-commerce_guardian_agent-20260823.sql` 与 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v4-commerce_guardian_agent_calibration_20260821-20260823.sql`；该备份早于 V5，已导入专用克隆库 `COMMERCE_GUARDIAN_AGENT_V5_MIGRATION_20260823`，应用实际从版本 3 增量执行 V4、V5，保留 9 条订单、6 条物流事件并成功启动到版本 5。没有另外生成 V5 命名的迁移前备份，但已有前置备份覆盖 V5 前状态，克隆迁移和 V5 后恢复快照均已核验；该点作为已接受的 P2 运维记录保留，不表述为不存在的单独 V5 前备份。
 - V5 后恢复快照：已为当前配置库和专用校准库分别生成 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-after-v5-commerce_guardian_agent-20260823.sql`（100160 bytes）与 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-after-v5-commerce_guardian_agent_calibration_20260821-20260823.sql`（335421 bytes）；仅写入临时备份文件，未改动数据库。
