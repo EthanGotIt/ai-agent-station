@@ -18,7 +18,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "从一次清晰的请求开始" })).not.toBeNull();
+    expect(await screen.findByRole("heading", { name: "从一个售后问题开始" })).not.toBeNull();
     expect(fetchMock.mock.calls.every(([input]) => String(input).startsWith("/api/agent/"))).toBe(true);
     expect(fetchMock.mock.calls.every(([input]) => !String(input).includes("legacy"))).toBe(true);
   });
@@ -83,6 +83,176 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     const answerCall = fetchMock.mock.calls.find(([input]) =>
       String(input).includes("/workflow-runs/run-1/questions/question-1/answers"));
     expect(JSON.parse(String(answerCall?.[1]?.body)).answers).toEqual({ decision: "APPROVE" });
+  });
+
+  it("composer 使用 Enter 发送、Shift+Enter 换行并保护中文输入法组合态", async () => {
+    const thread = threadRecord("thread-1", "键盘交互 Thread");
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") {
+        return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      }
+      if (url.includes("/threads/thread-1/items")) {
+        return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      }
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse([]));
+      if (url.includes("/threads/thread-1/turns")) {
+        return Promise.resolve(json({ turnId: "turn-keyboard-1" }));
+      }
+      throw new Error(`unexpected request: ${url} ${String(init?.body ?? "")}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const composer = await screen.findByRole("textbox", { name: "输入请求" }) as HTMLTextAreaElement;
+    fireEvent.change(composer, { target: { value: "第一行" } });
+    fireEvent.keyDown(composer, { key: "Enter", shiftKey: true });
+    expect(composer.value).toBe("第一行");
+    fireEvent.change(composer, { target: { value: "第一行\n第二行" } });
+    fireEvent.keyDown(composer, { key: "Enter", shiftKey: true });
+    expect(composer.value).toBe("第一行\n第二行");
+
+    fireEvent.change(composer, { target: { value: "中文输入" } });
+    fireEvent.compositionStart(composer);
+    fireEvent.keyDown(composer, { key: "Enter", isComposing: true });
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/turns"))).toBe(false);
+    fireEvent.compositionEnd(composer);
+    fireEvent.keyDown(composer, { key: "Enter" });
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/turns"))).toBe(true));
+    const turnCall = fetchMock.mock.calls.find(([input]) => String(input).includes("/turns"));
+    expect(JSON.parse(String(turnCall?.[1]?.body)).message).toBe("中文输入");
+  });
+
+  it("动态 QuestionCard 接管输入区，支持三选项、其他自定义值、摘要和受限 Markdown", async () => {
+    const thread = threadRecord("thread-1", "退款确认 Thread");
+    const questionEvent = itemEvent("item-question-2", "thread-1", "turn-1", "WORKFLOW_QUESTION", 1, {
+      schemaVersion: 1,
+      kind: "WORKFLOW_QUESTION",
+      data: {
+        runId: "run-2",
+        questionId: "question-2",
+        checkpointId: "checkpoint-2",
+        version: 3,
+        title: "确认退款原因",
+        prompt: "请确认 **订单** 的退款原因。",
+        summary: [{ label: "订单", value: "ORDER-001" }, { label: "金额", value: "¥100" }],
+        fields: [{
+          name: "reason", label: "退款原因", type: "SINGLE_SELECT", required: true, maxLength: 32,
+          options: ["商品不符", "物流停滞", "价格变化", "不应展示"], allowCustom: true
+        }, { name: "note", label: "补充说明", type: "TEXT", required: true, maxLength: 80 }]
+      }
+    });
+    const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") {
+        return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      }
+      if (url.includes("/threads/thread-1/items")) {
+        return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      }
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse([questionEvent]));
+      if (url.includes("/workflow-runs/run-2/questions/question-2/answers")) {
+        return Promise.resolve(json({ turnId: "answer-turn-2" }));
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "确认退款原因" })).not.toBeNull();
+    expect(screen.queryByRole("textbox", { name: "输入请求" })).toBeNull();
+    expect(screen.getByText("ORDER-001")).not.toBeNull();
+    expect(screen.getByText("¥100")).not.toBeNull();
+    expect(screen.queryByText("**订单**")).toBeNull();
+    expect(screen.queryByRole("option", { name: "不应展示" })).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("退款原因"), { target: { value: "__OTHER__" } });
+    fireEvent.change(screen.getByLabelText("退款原因自定义内容"), { target: { value: "包装破损" } });
+    fireEvent.change(screen.getByLabelText("补充说明"), { target: { value: "希望原路退回" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交回答" }));
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) =>
+      String(input).includes("/workflow-runs/run-2/questions/question-2/answers"))).toBe(true));
+    const answerCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes("/workflow-runs/run-2/questions/question-2/answers"));
+    expect(JSON.parse(String(answerCall?.[1]?.body)).answers).toEqual({ reason: "包装破损", note: "希望原路退回" });
+  });
+
+  it("QuestionCard 的 Escape 使用结构化拒绝回答取消当前业务操作", async () => {
+    const thread = threadRecord("thread-1", "取消确认 Thread");
+    const questionEvent = itemEvent("item-question-3", "thread-1", "turn-1", "WORKFLOW_QUESTION", 1, {
+      schemaVersion: 1,
+      kind: "WORKFLOW_QUESTION",
+      data: {
+        runId: "run-3", questionId: "question-3", checkpointId: "checkpoint-3", version: 1,
+        title: "退款确认", prompt: "是否继续退款？",
+        fields: [{ name: "decision", label: "决定", type: "CONFIRM", required: true, options: ["APPROVE", "REJECT"] }]
+      }
+    });
+    const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") {
+        return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      }
+      if (url.includes("/threads/thread-1/items")) {
+        return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      }
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse([questionEvent]));
+      if (url.includes("/workflow-runs/run-3/questions/question-3/answers")) {
+        return Promise.resolve(json({ turnId: "answer-turn-3" }));
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const form = (await screen.findByRole("heading", { name: "退款确认" })).closest("form");
+    expect(form).not.toBeNull();
+    fireEvent.keyDown(form as HTMLFormElement, { key: "Escape" });
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) =>
+      String(input).includes("/workflow-runs/run-3/questions/question-3/answers"))).toBe(true));
+    const answerCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes("/workflow-runs/run-3/questions/question-3/answers"));
+    expect(JSON.parse(String(answerCall?.[1]?.body)).answers).toEqual({ decision: "REJECT" });
+  });
+
+  it("SSE delta 只更新回复气泡，界面展示持久 Item 聚合的业务进度", async () => {
+    const thread = threadRecord("thread-1", "业务进度 Thread");
+    const deltaEvent = `event: assistant.delta\ndata: ${JSON.stringify({
+      eventId: "delta-1", threadId: "thread-1", turnId: "turn-1", itemId: null,
+      type: "assistant.delta", payload: "**内部原始增量**", sequence: -1, timestamp: thread.createdAt
+    })}\n\n`;
+    const events = [
+      itemEvent("item-user-progress", "thread-1", "turn-1", "USER_MESSAGE", 1,
+        { schemaVersion: 1, kind: "USER_MESSAGE", data: "查订单" }),
+      itemEvent("item-context-progress", "thread-1", "turn-1", "EXECUTION_EVENT", 2,
+        { schemaVersion: 1, kind: "EXECUTION_EVENT", data: "解析请求" }),
+      deltaEvent
+    ];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") {
+        return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      }
+      if (url.includes("/threads/thread-1/items")) {
+        return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      }
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse(events));
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("已整理请求上下文")).not.toBeNull();
+    expect(screen.queryByText("assistant.delta")).toBeNull();
+    expect(screen.queryByText("**内部原始增量**")).toBeNull();
+    expect(screen.queryByText("运行轨迹")).toBeNull();
   });
 
   it("为耗尽的外部动作显示人工重试并调用稳定 API", async () => {
@@ -213,7 +383,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
 
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /Thread 2/ }));
-    expect(await screen.findByRole("heading", { name: "从一次清晰的请求开始" })).not.toBeNull();
+    expect(await screen.findByRole("heading", { name: "从一个售后问题开始" })).not.toBeNull();
 
     delayedHistory.resolve(json({ items: [staleItem], afterSequence: 0, nextAfterSequence: 1, hasMore: false }));
     await new Promise((resolve) => window.setTimeout(resolve, 0));

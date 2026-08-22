@@ -1,35 +1,164 @@
-import { useState, type FormEvent, type KeyboardEvent } from "react";
-import { Archive, Bot, CheckCircle2, CircleAlert, GitBranch, ListPlus, PackageSearch, Plus, Send, Square, TerminalSquare, Truck, X } from "lucide-react";
-import type { QuestionCardState } from "./threadTypes";
+import { Fragment, useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { Bot, CheckCircle2, CircleAlert, GitBranch, ListPlus, PackageSearch, Plus, Send, Square, TerminalSquare, Truck, X } from "lucide-react";
+import type { BusinessProgress, BusinessProgressStatus, QuestionCardState, QuestionField } from "./threadTypes";
 import type { useThreadWorkspace } from "./useThreadWorkspace";
 
 type Props = { workspace: ReturnType<typeof useThreadWorkspace>; userId: string };
 
 function statusLabel(status: string) {
-  return ({ QUEUED: "排队中", ACTIVE: "执行中", WAITING_USER_INPUT: "等待确认", WAITING_EXTERNAL_ACTION: "等待外部动作", COMPLETED: "已完成", CANCELLED: "已取消", TIMED_OUT: "已超时", FAILED: "失败", MANUAL_RETRY_REQUIRED: "需要人工重试" } as Record<string, string>)[status] ?? status;
+  return ({
+    QUEUED: "排队中",
+    ACTIVE: "处理中",
+    WAITING_USER_INPUT: "等待确认",
+    WAITING_EXTERNAL_ACTION: "处理中",
+    COMPLETED: "已完成",
+    CANCELLED: "已取消",
+    TIMED_OUT: "已超时",
+    FAILED: "失败",
+    MANUAL_RETRY_REQUIRED: "需要重试"
+  } as Record<string, string>)[status] ?? status;
 }
 
-function time(value: string) { return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(new Date(value)); }
+function time(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
 
-function eventPayloadText(payload: string) {
-  try {
-    const parsed = JSON.parse(payload) as { data?: unknown };
-    if (parsed && typeof parsed === "object" && "data" in parsed) {
-      return typeof parsed.data === "string" ? parsed.data : JSON.stringify(parsed.data);
+function inlineMarkdown(value: string, keyPrefix: string): ReactNode[] {
+  return value.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={`${keyPrefix}-strong-${index}`}>{part.slice(2, -2)}</strong>;
     }
-    return JSON.stringify(parsed);
-  } catch {
-    return payload;
-  }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return <code key={`${keyPrefix}-code-${index}`}>{part.slice(1, -1)}</code>;
+    }
+    return <Fragment key={`${keyPrefix}-text-${index}`}>{part}</Fragment>;
+  });
 }
 
-function QuestionCard({ value, disabled, onSubmit }: { value: QuestionCardState; disabled: boolean; onSubmit: (answers: Record<string, string>) => void }) {
-  const [decision, setDecision] = useState("APPROVE");
-  return <form className="decision-card question-card" onSubmit={(event) => { event.preventDefault(); onSubmit({ decision }); }}>
-    <div className="decision-heading"><CheckCircle2 aria-hidden="true" /><div><h2>{value.title}</h2><p>持久化检查点 · 版本 {value.version}</p></div></div>
-    <p>{value.prompt}</p>
-    <label>决定<select value={decision} disabled={disabled} onChange={(event) => setDecision(event.target.value)}><option value="APPROVE">确认执行</option><option value="REJECT">拒绝执行</option></select></label>
-    <div className="actions"><button type="submit" disabled={disabled}><CheckCircle2 aria-hidden="true" />提交决定</button><button className="secondary" type="button" disabled={disabled} onClick={() => onSubmit({ decision: "REJECT" })}><X aria-hidden="true" />取消动作</button></div>
+/** 只渲染粗体、行内代码和换行；所有其他标记作为普通文本保留。 */
+function RestrictedMarkdown({ value, className }: { value: string; className: string }) {
+  return <div className={className}>
+    {value.split(/\n{2,}/).map((block, blockIndex) => <p key={`block-${blockIndex}`}>
+      {block.split("\n").map((line, lineIndex) => <Fragment key={`line-${blockIndex}-${lineIndex}`}>
+        {lineIndex > 0 ? <br /> : null}
+        {inlineMarkdown(line, `line-${blockIndex}-${lineIndex}`)}
+      </Fragment>)}
+    </p>)}
+  </div>;
+}
+
+function isSingleSelect(field: QuestionField) {
+  return ["SINGLE_SELECT", "SELECT", "CONFIRM"].includes(field.type.toUpperCase()) && (field.options?.length ?? 0) > 0;
+}
+
+function initialAnswers(fields: QuestionField[]) {
+  return fields.reduce<Record<string, string>>((answers, field) => {
+    if (field.name === "decision" && field.options?.includes("APPROVE")) answers[field.name] = "APPROVE";
+    return answers;
+  }, {});
+}
+
+function QuestionCard({
+  value,
+  disabled,
+  onSubmit,
+  onCancel
+}: {
+  value: QuestionCardState;
+  disabled: boolean;
+  onSubmit: (answers: Record<string, string>) => void;
+  onCancel: () => void;
+}) {
+  const [answers, setAnswers] = useState<Record<string, string>>(() => initialAnswers(value.fields));
+  const [customValues, setCustomValues] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAnswers(initialAnswers(value.fields));
+    setCustomValues({});
+    setFormError(null);
+  }, [value.questionId, value.version, value.fields]);
+
+  const submit = () => {
+    const next: Record<string, string> = {};
+    for (const field of value.fields) {
+      const raw = answers[field.name] === "__OTHER__" ? customValues[field.name] ?? "" : answers[field.name] ?? "";
+      const normalized = raw.trim();
+      if (field.required && !normalized) {
+        setFormError(`请先完成“${field.label}”。`);
+        return;
+      }
+      if (normalized) next[field.name] = normalized.slice(0, field.maxLength ?? 4_000);
+    }
+    setFormError(null);
+    onSubmit(next);
+  };
+
+  const keyboard = (event: KeyboardEvent<HTMLFormElement>) => {
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.currentTarget.requestSubmit();
+    }
+  };
+
+  return <form className="decision-card question-card" onSubmit={(event) => { event.preventDefault(); submit(); }} onKeyDown={keyboard}>
+    <div className="decision-heading">
+      <CheckCircle2 aria-hidden="true" />
+      <div><h2>{value.title}</h2><p>请确认后继续 · 检查点版本 {value.version}</p></div>
+    </div>
+    <RestrictedMarkdown value={value.prompt} className="question-prompt" />
+    {value.summary && value.summary.length > 0 ? <dl className="question-summary">
+      {value.summary.map((line) => <div key={`${line.label}-${line.value}`}><dt>{line.label}</dt><dd>{line.value}</dd></div>)}
+    </dl> : null}
+    <div className="question-fields">
+      {value.fields.map((field, index) => {
+        const fieldValue = answers[field.name] ?? "";
+        const otherSelected = fieldValue === "__OTHER__";
+        return <label className="question-field" key={field.name}>
+          <span>{field.label}{field.required ? <em aria-hidden="true">必填</em> : null}</span>
+          {isSingleSelect(field) ? <select
+            autoFocus={index === 0}
+            aria-label={field.label}
+            disabled={disabled}
+            value={fieldValue}
+            onChange={(event) => setAnswers((current) => ({ ...current, [field.name]: event.target.value }))}
+          >
+            <option value="">请选择</option>
+            {(field.options ?? []).slice(0, 3).map((option) => <option value={option} key={option}>{option}</option>)}
+            {field.allowCustom ? <option value="__OTHER__">其他</option> : null}
+          </select> : <input
+            autoFocus={index === 0}
+            aria-label={field.label}
+            disabled={disabled}
+            maxLength={field.maxLength ?? 4_000}
+            value={fieldValue}
+            onChange={(event) => setAnswers((current) => ({ ...current, [field.name]: event.target.value }))}
+            placeholder="请填写"
+          />}
+          {otherSelected ? <input
+            aria-label={`${field.label}自定义内容`}
+            autoFocus
+            disabled={disabled}
+            maxLength={field.maxLength ?? 4_000}
+            value={customValues[field.name] ?? ""}
+            onChange={(event) => setCustomValues((current) => ({ ...current, [field.name]: event.target.value }))}
+            placeholder="请补充具体内容"
+          /> : null}
+        </label>;
+      })}
+    </div>
+    {formError ? <p className="question-form-error" role="alert"><CircleAlert aria-hidden="true" />{formError}</p> : null}
+    <div className="actions question-actions">
+      <button type="submit" disabled={disabled}><CheckCircle2 aria-hidden="true" />提交回答</button>
+      <button className="secondary" type="button" disabled={disabled} onClick={onCancel}><X aria-hidden="true" />取消操作</button>
+      <span className="question-key-help">Enter 提交 · Shift + Enter 换行 · Esc 取消</span>
+    </div>
   </form>;
 }
 
@@ -41,24 +170,59 @@ function Turn({ turn, busy, retryingRunId, onRetry }: {
 }) {
   const retryable = turn.externalActionStatus === "MANUAL_RETRY_REQUIRED" && turn.workflowRunId;
   return <article className={`conversation-turn thread-turn turn-${turn.status.toLowerCase()}`}>
-    <div className="turn-request"><span className="turn-avatar user-avatar">你</span><div><div className="turn-meta"><strong>Turn 输入</strong><time>{time(turn.startedAt)}</time><span className={`turn-status status-${turn.status.toLowerCase()}`}>{statusLabel(turn.status)}</span></div><p>{turn.userMessage}</p></div></div>
-    <div className="turn-response"><span className="turn-avatar agent-avatar"><Bot aria-label="Agent" /></span><div><div className="turn-meta"><strong>Agent</strong><span className="turn-route">Thread Runtime</span></div>{turn.content ? <p className="agent-content">{turn.content}</p> : turn.status === "ACTIVE" || turn.status === "QUEUED" ? <p className="agent-content loading-copy">正在构造上下文并执行工具…</p> : null}{turn.error ? <p className="turn-error" role="alert"><CircleAlert aria-hidden="true" />{turn.error}</p> : null}{retryable ? <div className="actions turn-actions"><button className="secondary" type="button" disabled={busy || retryingRunId === turn.workflowRunId} onClick={() => onRetry(turn.workflowRunId as string)}>{retryingRunId === turn.workflowRunId ? "重试已排队" : "人工重试"}</button></div> : null}</div></div>
+    <div className="turn-request"><span className="turn-avatar user-avatar">你</span><div><div className="turn-meta"><strong>你的请求</strong><time>{time(turn.startedAt)}</time><span className={`turn-status status-${turn.status.toLowerCase()}`}>{statusLabel(turn.status)}</span></div><p>{turn.userMessage}</p></div></div>
+    <div className="turn-response"><span className="turn-avatar agent-avatar"><Bot aria-label="Agent" /></span><div><div className="turn-meta"><strong>售后助手</strong><span className="turn-route">订单服务</span></div>{turn.content ? <RestrictedMarkdown value={turn.content} className="agent-content" /> : turn.status === "ACTIVE" || turn.status === "QUEUED" ? <p className="agent-content loading-copy">正在分析你的请求…</p> : null}{turn.error ? <p className="turn-error" role="alert"><CircleAlert aria-hidden="true" />{turn.error}</p> : null}{retryable ? <div className="actions turn-actions"><button className="secondary" type="button" disabled={busy || retryingRunId === turn.workflowRunId} onClick={() => onRetry(turn.workflowRunId as string)}>{retryingRunId === turn.workflowRunId ? "重试已排队" : "人工重试"}</button></div> : null}</div></div>
   </article>;
+}
+
+function progressIcon(status: BusinessProgressStatus) {
+  return status === "ERROR" ? <CircleAlert aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />;
+}
+
+function ProgressPanel({ progress, error }: { progress: BusinessProgress[]; error: string | null }) {
+  if (progress.length === 0 && !error) return null;
+  return <section className="business-progress" aria-label="处理进度">
+    <div className="progress-heading"><div><span className="eyebrow">ORDER SERVICE</span><h2>这次请求的处理进度</h2></div><span className="progress-live">实时更新</span></div>
+    {error ? <p className="turn-error" role="alert"><CircleAlert aria-hidden="true" />{error}</p> : null}
+    <ol className="progress-list">
+      {progress.map((step) => <li className={`progress-step progress-${step.status.toLowerCase()}`} key={step.id}>
+        <span className="progress-icon">{progressIcon(step.status)}</span>
+        <div><strong>{step.label}</strong>{step.detail ? <span>{step.detail}</span> : null}</div>
+      </li>)}
+    </ol>
+  </section>;
 }
 
 export function ThreadWorkspace({ workspace, userId }: Props) {
   const [message, setMessage] = useState("");
   const [title, setTitle] = useState("");
-  const [traceOpen, setTraceOpen] = useState(true);
   const currentThread = workspace.threads.find((item) => item.threadId === workspace.threadId);
-  const submit = (event: FormEvent) => { event.preventDefault(); const next = message.trim(); if (!next) return; void workspace.send(next); setMessage(""); };
-  const keyboard = (event: KeyboardEvent<HTMLTextAreaElement>) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } };
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const next = message.trim();
+    if (!next) return;
+    void workspace.send(next);
+    setMessage("");
+  };
+  const keyboard = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
+  };
+  const question = workspace.question;
   return <section className="thread-workspace" aria-labelledby="thread-workspace-heading">
-    <div className="workspace-heading"><div><p className="eyebrow">COMMERCE GUARDIAN AGENT</p><h1 id="thread-workspace-heading">一个 Thread，完整记录一次 Agent 工作</h1><p>消息、工具、Workflow 和用户确认都落为可恢复 Item。业务上下文只是可选的辅助信息。</p></div><button className="icon-button" type="button" onClick={() => void workspace.createThread()}><Plus aria-hidden="true" />新建 Thread</button></div>
+    <div className="workspace-heading"><div><p className="eyebrow">订单售后助手</p><h1 id="thread-workspace-heading">把订单售后说清楚，剩下的交给助手</h1><p>查询订单、诊断物流、申请退款或催发货。只有需要你决定的关键一步，才会停下来询问。</p></div><button className="icon-button" type="button" onClick={() => void workspace.createThread()}><Plus aria-hidden="true" />新建对话</button></div>
     <div className="thread-layout">
-      <aside className="thread-sidebar" aria-label="Thread 列表"><div className="sidebar-heading"><div><span className="eyebrow">THREADS</span><h2>工作上下文</h2></div><button className="secondary compact-icon" type="button" onClick={() => void workspace.createThread()} aria-label="新建 Thread"><ListPlus aria-hidden="true" /></button></div><div className="thread-list">{workspace.threads.map((item) => <button type="button" key={item.threadId} className={`thread-row ${item.threadId === workspace.threadId ? "selected" : ""}`} onClick={() => void workspace.selectThread(item.threadId)}><span><strong>{item.title}</strong><small>{item.contextId ?? "无业务上下文"}</small></span><span className={`status status-${item.status.toLowerCase()}`}>{item.status === "ACTIVE" ? "进行中" : "已归档"}</span></button>)}</div><div className="thread-sidebar-note"><GitBranch aria-hidden="true" /><p>暂不引入 Thread Fork；先把单 Thread 的恢复、预算和轨迹做深。</p></div></aside>
-      <div className="thread-main"><div className="thread-context-bar"><div><span className="eyebrow">CURRENT THREAD</span><strong>{currentThread?.title ?? "加载中…"}</strong></div><div className="thread-context-actions"><label className="rename-field"><span className="sr-only">Thread 标题</span><input value={title} placeholder="重命名…" onChange={(event) => setTitle(event.target.value)} onBlur={() => { if (title.trim()) { void workspace.rename(title.trim()); setTitle(""); } }} /></label><span className="status status-active">{userId}</span></div></div><div className="quick-start-strip"><span className="eyebrow">QUICK START</span><button type="button" disabled={workspace.busy} onClick={() => void workspace.send("查询订单 ORDER-PAID-001 的当前状态") }><PackageSearch aria-hidden="true" />查询订单</button><button type="button" disabled={workspace.busy} onClick={() => void workspace.send("查询订单 ORDER-SHIPPED-STALLED-001 的物流状态") }><Truck aria-hidden="true" />查询物流</button></div><div className="thread-records">{workspace.loading ? <div className="conversation-empty"><Bot aria-hidden="true" /><h2>正在恢复 Thread</h2><p>从 Items 和上下文快照读取历史。</p></div> : workspace.turns.length === 0 ? <div className="conversation-empty"><TerminalSquare aria-hidden="true" /><h2>从一次清晰的请求开始</h2><p>你可以查询订单或物流，也可以请求退款、催发货，观察 Agent 如何把高风险写入转为 Workflow 确认。</p></div> : workspace.turns.map((turn) => <Turn key={turn.turnId} turn={turn} busy={workspace.busy} retryingRunId={workspace.retryingRunId} onRetry={workspace.retry} />)}{workspace.question ? <QuestionCard key={`${workspace.question.runId}:${workspace.question.questionId}`} value={workspace.question} disabled={workspace.busy} onSubmit={(answers) => void workspace.answer(answers)} /> : null}</div><form className="composer" onSubmit={submit}><label htmlFor="thread-message">输入请求</label><textarea id="thread-message" value={message} disabled={workspace.busy || !workspace.threadId} onKeyDown={keyboard} onChange={(event) => setMessage(event.target.value)} placeholder="例如：查询订单 ORDER-SHIPPED-STALLED-001 的物流状态，或发起退款…" /><div className="composer-actions"><span>Ctrl / ⌘ + Enter 发送</span>{workspace.busy ? <button className="secondary icon-button" type="button" onClick={() => void workspace.cancel()}><Square aria-hidden="true" />取消当前 Turn</button> : <button className="icon-button" type="submit" disabled={!message.trim() || !workspace.threadId}><Send aria-hidden="true" />提交 Turn</button>}</div></form></div>
-      <aside className={`execution-inspector trace-inspector${traceOpen ? "" : " is-collapsed"}`}><div className="inspector-heading"><div><span className="eyebrow">EXECUTION LEDGER</span><h2>运行轨迹</h2><p>Item 是事实，SSE 是实时投影。</p></div><button className="secondary compact-icon" type="button" onClick={() => setTraceOpen((open) => !open)} aria-expanded={traceOpen} aria-label={traceOpen ? "折叠运行轨迹" : "展开运行轨迹"}><Archive aria-hidden="true" /></button></div>{traceOpen ? <>{workspace.error ? <p className="turn-error" role="alert"><CircleAlert aria-hidden="true" />{workspace.error}</p> : null}<ol className="trace-list">{workspace.trace.length === 0 ? <li className="trace-empty"><TerminalSquare aria-hidden="true" /><p>提交 Turn 后，这里会出现队列、工具、Workflow 和终态事件。</p></li> : workspace.trace.slice(-32).map((event) => <li className="trace-event" key={`${event.eventId}-${event.timestamp}`}><span className="trace-icon"><CheckCircle2 aria-hidden="true" /></span><div><div className="trace-meta"><strong>{event.type}</strong><time>{time(event.timestamp)}</time></div><p>{eventPayloadText(event.payload)}</p></div></li>)}</ol></> : null}</aside>
+      <aside className="thread-sidebar" aria-label="对话列表"><div className="sidebar-heading"><div><span className="eyebrow">CONVERSATIONS</span><h2>我的对话</h2></div><button className="secondary compact-icon" type="button" onClick={() => void workspace.createThread()} aria-label="新建对话"><ListPlus aria-hidden="true" /></button></div><div className="thread-list">{workspace.threads.map((item) => <button type="button" key={item.threadId} className={`thread-row ${item.threadId === workspace.threadId ? "selected" : ""}`} onClick={() => void workspace.selectThread(item.threadId)}><span><strong>{item.title}</strong><small>{item.contextId ?? "订单售后"}</small></span><span className={`status status-${item.status.toLowerCase()}`}>{item.status === "ACTIVE" ? "进行中" : "已归档"}</span></button>)}</div><div className="thread-sidebar-note"><GitBranch aria-hidden="true" /><p>每次对话都会保留订单事实、确认记录和最终结果，刷新后也能继续。</p></div></aside>
+      <div className="thread-main">
+        <div className="thread-context-bar"><div><span className="eyebrow">CURRENT CONVERSATION</span><strong>{currentThread?.title ?? "加载中…"}</strong></div><div className="thread-context-actions"><label className="rename-field"><span className="sr-only">对话标题</span><input value={title} placeholder="重命名…" onChange={(event) => setTitle(event.target.value)} onBlur={() => { if (title.trim()) { void workspace.rename(title.trim()); setTitle(""); } }} /></label><span className="status status-active">{userId}</span></div></div>
+        <div className="quick-start-strip"><span className="eyebrow">可以这样问</span><button type="button" disabled={workspace.busy || Boolean(question)} onClick={() => void workspace.send("查询订单 ORDER-PAID-001 的当前状态")}><PackageSearch aria-hidden="true" />查订单</button><button type="button" disabled={workspace.busy || Boolean(question)} onClick={() => void workspace.send("查询订单 ORDER-SHIPPED-STALLED-001 的物流状态")}><Truck aria-hidden="true" />查物流</button></div>
+        <ProgressPanel progress={workspace.progress} error={workspace.error} />
+        <div className="thread-records">{workspace.loading ? <div className="conversation-empty"><Bot aria-hidden="true" /><h2>正在恢复对话</h2><p>正在读取订单事实和历史结果。</p></div> : workspace.turns.length === 0 ? <div className="conversation-empty"><TerminalSquare aria-hidden="true" /><h2>从一个售后问题开始</h2><p>例如“列出今天最新订单”“找物流三天没更新的订单”，也可以直接说“我想退款”。</p></div> : workspace.turns.map((turn) => <Turn key={turn.turnId} turn={turn} busy={workspace.busy} retryingRunId={workspace.retryingRunId} onRetry={workspace.retry} />)}{question ? <QuestionCard key={`${question.runId}:${question.questionId}`} value={question} disabled={workspace.busy} onSubmit={(answers) => void workspace.answer(answers)} onCancel={() => void workspace.answer({ decision: "REJECT" })} /> : null}</div>
+        {question ? null : <form className="composer" onSubmit={submit}><label htmlFor="thread-message">输入请求</label><textarea id="thread-message" value={message} disabled={workspace.busy || !workspace.threadId} onKeyDown={keyboard} onChange={(event) => setMessage(event.target.value)} placeholder="例如：列出今天最新订单，或找物流三天没更新的订单…" /><div className="composer-actions"><span>Enter 发送 · Shift + Enter 换行</span>{workspace.busy ? <button className="secondary icon-button" type="button" onClick={() => void workspace.cancel()}><Square aria-hidden="true" />取消处理</button> : <button className="icon-button" type="submit" disabled={!message.trim() || !workspace.threadId}><Send aria-hidden="true" />发送</button>}</div></form>}
+      </div>
     </div>
   </section>;
 }

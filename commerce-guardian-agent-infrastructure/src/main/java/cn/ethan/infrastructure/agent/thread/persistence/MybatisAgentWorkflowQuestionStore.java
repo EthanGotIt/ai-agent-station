@@ -232,7 +232,8 @@ public class MybatisAgentWorkflowQuestionStore implements AgentWorkflowQuestionS
                         field.path("name").asString(""),
                         field.path("required").asBoolean(false),
                         field.path("maxLength").asInt(256),
-                        options));
+                        options,
+                        field.path("allowCustom").asBoolean(false)));
             }
             return List.copyOf(result);
         } catch (Exception failure) {

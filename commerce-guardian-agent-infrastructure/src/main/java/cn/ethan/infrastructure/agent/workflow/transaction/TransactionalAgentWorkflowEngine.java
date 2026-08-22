@@ -137,7 +137,7 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
                     "arguments", arguments == null ? Map.of() : arguments,
                     "fields", List.of(Map.of(
                             "name", "decision", "label", "决定", "type", "CONFIRM",
-                            "required", true, "maxLength", 32,
+                            "required", true, "maxLength", 32, "allowCustom", false,
                             "options", List.of("APPROVE", "REJECT")
                     ))
             ));

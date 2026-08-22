@@ -10,8 +10,11 @@ import type {
   AgentThreadEvent,
   AgentThreadPage,
   AgentTurnStatus,
+  BusinessProgress,
   ExternalActionStatus,
+  QuestionField,
   QuestionCardState,
+  QuestionSummaryLine,
   ThreadViewTurn
 } from "./threadTypes";
 
@@ -39,6 +42,16 @@ function parseQuestion(payload: AgentItemPayload): QuestionCardState | null {
     : value.fields && typeof value.fields === "object" && "fields" in value.fields
       ? (value.fields as { fields?: unknown }).fields
       : [];
+  const normalizedFields = Array.isArray(fields)
+    ? fields.map((field, index) => normalizeQuestionField(field, index)).filter((field): field is QuestionField => field !== null)
+    : [];
+  const summary = Array.isArray(value.summary)
+    ? value.summary.map((line) => {
+      const summaryLine = recordValue(line);
+      if (!summaryLine || typeof summaryLine.label !== "string" || typeof summaryLine.value !== "string") return null;
+      return { label: summaryLine.label, value: summaryLine.value } satisfies QuestionSummaryLine;
+    }).filter((line): line is QuestionSummaryLine => line !== null)
+    : undefined;
   return {
     runId: value.runId,
     questionId: value.questionId,
@@ -46,7 +59,27 @@ function parseQuestion(payload: AgentItemPayload): QuestionCardState | null {
     version: Number(value.version ?? 0),
     title: value.title ?? "需要确认",
     prompt: value.prompt ?? "请确认是否继续。",
-    fields: Array.isArray(fields) ? fields as QuestionCardState["fields"] : []
+    fields: normalizedFields,
+    summary
+  };
+}
+
+function normalizeQuestionField(raw: unknown, index: number): QuestionField | null {
+  const value = recordValue(raw);
+  if (!value || typeof value.name !== "string" || value.name.trim() === "") return null;
+  const rawType = typeof value.type === "string" ? value.type.toUpperCase() : "TEXT";
+  const type = rawType === "CONFIRM" || rawType === "SELECT" ? "SINGLE_SELECT" : rawType;
+  const options = Array.isArray(value.options)
+    ? value.options.filter((option): option is string => typeof option === "string" && option.trim() !== "").slice(0, 3)
+    : [];
+  return {
+    name: value.name,
+    label: typeof value.label === "string" && value.label.trim() ? value.label : `回答 ${index + 1}`,
+    type,
+    required: value.required !== false,
+    maxLength: typeof value.maxLength === "number" && value.maxLength > 0 ? value.maxLength : 4_000,
+    options,
+    allowCustom: value.allowCustom === true
   };
 }
 
@@ -98,17 +131,69 @@ function turnStatusForExternalAction(status: ExternalActionStatus): AgentTurnSta
   return null;
 }
 
-function itemTrace(item: AgentItem, threadId: string): AgentThreadEvent {
-  return {
-    eventId: item.itemId,
-    threadId,
-    turnId: item.turnId,
-    itemId: item.itemId,
-    type: `item.${item.type.toLowerCase()}`,
-    payload: JSON.stringify(item.payload),
-    sequence: item.sequence,
-    timestamp: item.createdAt
-  };
+function buildProgress(items: AgentItem[]): BusinessProgress[] {
+  return items
+    .map((item): BusinessProgress | null => {
+      const data = recordValue(item.payload.data);
+      if (item.type === "TURN_STATE" && typeof data?.status === "string") {
+        const status = data.status;
+        const state = status === "WAITING_USER_INPUT" || status === "WAITING_EXTERNAL_ACTION"
+          ? "WAITING"
+          : status === "COMPLETED" ? "DONE"
+            : ["FAILED", "CANCELLED", "TIMED_OUT"].includes(status) ? "ERROR" : "ACTIVE";
+        const label = ({
+          QUEUED: "请求已排队",
+          ACTIVE: "正在分析请求",
+          WAITING_USER_INPUT: "等待你的确认",
+          WAITING_EXTERNAL_ACTION: "正在处理业务操作",
+          COMPLETED: "请求已完成",
+          CANCELLED: "请求已取消",
+          TIMED_OUT: "请求处理超时",
+          FAILED: "请求未能完成"
+        } as Record<string, string>)[status] ?? "正在处理请求";
+        return { id: `${item.itemId}-state`, label, detail: null, status: state, sequence: item.sequence };
+      }
+      if (item.type === "EXECUTION_EVENT") {
+        return { id: `${item.itemId}-context`, label: "已整理请求上下文", detail: null, status: "DONE", sequence: item.sequence };
+      }
+      if (item.type === "TOOL_RESULT") {
+        return { id: `${item.itemId}-fact`, label: "已核对订单与物流事实", detail: null, status: "DONE", sequence: item.sequence };
+      }
+      if (item.type === "WORKFLOW_STARTED") {
+        return { id: `${item.itemId}-workflow`, label: "已启动售后流程", detail: "正在核对订单条件", status: "ACTIVE", sequence: item.sequence };
+      }
+      if (item.type === "WORKFLOW_QUESTION") {
+        const question = parseQuestion(item.payload);
+        return { id: `${item.itemId}-question`, label: "需要你确认下一步", detail: question?.title ?? null, status: "WAITING", sequence: item.sequence };
+      }
+      if (item.type === "WORKFLOW_ANSWER") {
+        return { id: `${item.itemId}-answer`, label: "已收到你的选择", detail: null, status: "DONE", sequence: item.sequence };
+      }
+      if (item.type === "WORKFLOW_RESULT") {
+        const resultStatus = typeof data?.status === "string" ? data.status : typeof item.payload.data === "string" ? item.payload.data : "COMPLETED";
+        const rejected = resultStatus === "REJECTED";
+        return { id: `${item.itemId}-result`, label: rejected ? "已取消业务操作" : "售后流程已完成", detail: null, status: rejected ? "DONE" : "DONE", sequence: item.sequence };
+      }
+      if (item.type === "EXTERNAL_ACTION_STATUS" && typeof data?.status === "string") {
+        const status = data.status;
+        const entry = {
+          PENDING: ["已创建业务操作", "等待执行"],
+          PROCESSING: ["正在提交业务操作", null],
+          RETRY_WAIT: ["外部系统暂未完成", "系统会自动重试"],
+          MANUAL_RETRY_REQUIRED: ["需要人工重试业务操作", null],
+          SUCCEEDED: ["业务操作已完成", null]
+        } as Record<string, [string, string | null]>;
+        const [label, detail] = entry[status] ?? ["正在处理业务操作", null];
+        return { id: `${item.itemId}-action`, label, detail, status: status === "SUCCEEDED" ? "DONE" : status === "MANUAL_RETRY_REQUIRED" ? "ERROR" : "ACTIVE", sequence: item.sequence };
+      }
+      if (item.type === "ERROR") {
+        return { id: `${item.itemId}-error`, label: "执行遇到问题", detail: "可以检查结果后重试", status: "ERROR", sequence: item.sequence };
+      }
+      return null;
+    })
+    .filter((entry): entry is BusinessProgress => entry !== null)
+    .filter((entry, index, entries) => index === 0 || entry.label !== entries[index - 1].label || entry.status !== entries[index - 1].status)
+    .slice(-8);
 }
 
 function rebuildTurns(items: AgentItem[]): ThreadViewTurn[] {
@@ -171,7 +256,7 @@ export function useThreadWorkspace(userId: string) {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [items, setItems] = useState<AgentItem[]>([]);
   const [turns, setTurns] = useState<ThreadViewTurn[]>([]);
-  const [trace, setTrace] = useState<AgentThreadEvent[]>([]);
+  const [progress, setProgress] = useState<BusinessProgress[]>([]);
   const [question, setQuestion] = useState<QuestionCardState | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -185,27 +270,28 @@ export function useThreadWorkspace(userId: string) {
   const threadIdRef = useRef<string | null>(null);
   const generationRef = useRef(0);
   const retryingRunRef = useRef<string | null>(null);
+  const streamingContentRef = useRef(new Map<string, string>());
   const [retryingRunId, setRetryingRunId] = useState<string | null>(null);
 
-  const applyItems = useCallback((incoming: Array<AgentItem | AgentItemWire>, sourceThreadId = threadIdRef.current ?? "") => {
+  const applyItems = useCallback((incoming: Array<AgentItem | AgentItemWire>) => {
     const byId = new Map(itemsRef.current.map((item) => [item.itemId, item]));
     for (const wire of incoming) {
       const item = normalizeItem(wire);
       byId.set(item.itemId, item);
       cursorRef.current = Math.max(cursorRef.current, item.sequence);
+      if (item.type === "ASSISTANT_MESSAGE" && item.turnId) {
+        streamingContentRef.current.delete(item.turnId);
+      }
     }
     const next = [...byId.values()].sort((left, right) => left.sequence - right.sequence);
     itemsRef.current = next;
     setItems(next);
-    setTurns(rebuildTurns(next));
-    setTrace((current) => {
-      const byEventId = new Map(current.map((event) => [event.eventId, event]));
-      for (const item of next) byEventId.set(item.itemId, itemTrace(item, sourceThreadId));
-      return [...byEventId.values()]
-        .sort((left, right) => (left.sequence < 0 ? Number.MAX_SAFE_INTEGER : left.sequence)
-          - (right.sequence < 0 ? Number.MAX_SAFE_INTEGER : right.sequence))
-        .slice(-100);
+    const rebuilt = rebuildTurns(next).map((turn) => {
+      const streamed = streamingContentRef.current.get(turn.turnId);
+      return streamed && !turn.content ? { ...turn, content: streamed } : turn;
     });
+    setTurns(rebuilt);
+    setProgress(buildProgress(next));
     for (const item of incoming) {
       const normalized = normalizeItem(item);
       const action = parseExternalAction(normalized.payload);
@@ -233,9 +319,6 @@ export function useThreadWorkspace(userId: string) {
         createdAt: event.timestamp
       };
       applyItems([item]);
-      setTrace((current) => current.some((value) => value.eventId === event.eventId)
-        ? current
-        : [...current.slice(-99), event]);
       return;
     }
     if (event.type.startsWith("turn.")) {
@@ -245,18 +328,14 @@ export function useThreadWorkspace(userId: string) {
         : turn));
       if (status === "WAITING_USER_INPUT") setBusy(false);
       if (terminal(status)) setBusy(false);
-      setTrace((current) => current.some((value) => value.eventId === event.eventId)
-        ? current
-        : [...current.slice(-99), event]);
       return;
     }
     if (event.type === "assistant.delta" && event.turnId) {
+      const streamed = `${streamingContentRef.current.get(event.turnId) ?? ""}${event.payload}`;
+      streamingContentRef.current.set(event.turnId, streamed);
       setTurns((current) => current.map((turn) => turn.turnId === event.turnId
-        ? { ...turn, content: `${turn.content}${event.payload}` }
+        ? { ...turn, content: streamed }
         : turn));
-      setTrace((current) => current.some((value) => value.eventId === event.eventId)
-        ? current
-        : [...current.slice(-99), event]);
     }
   }, [applyItems]);
 
@@ -379,8 +458,9 @@ export function useThreadWorkspace(userId: string) {
     cursorRef.current = 0;
     setItems([]);
     setTurns([]);
-    setTrace([]);
+    setProgress([]);
     setQuestion(null);
+    streamingContentRef.current.clear();
     try {
       const recovered: AgentItemWire[] = [];
       let afterSequence = 0;
@@ -398,7 +478,7 @@ export function useThreadWorkspace(userId: string) {
       }
       if (controller.signal.aborted || generationRef.current !== generation
         || threadIdRef.current !== nextThreadId) return;
-      applyItems(recovered, nextThreadId);
+      applyItems(recovered);
       setThreadId(nextThreadId);
       setLoading(false);
       void connect(nextThreadId, afterSequence, generation);
@@ -422,6 +502,7 @@ export function useThreadWorkspace(userId: string) {
     threadIdRef.current = nextThreadId;
     activeTurnRef.current = null;
     retryingRunRef.current = null;
+    streamingContentRef.current.clear();
     setRetryingRunId(null);
     setThreadId(null);
     setBusy(false);
@@ -603,7 +684,7 @@ export function useThreadWorkspace(userId: string) {
     send,
     threadId,
     threads,
-    trace,
+    progress,
     turns
   };
 }

@@ -19,7 +19,8 @@ export type AgentTurnStatus =
   | "COMPLETED"
   | "CANCELLED"
   | "TIMED_OUT"
-  | "FAILED";
+  | "FAILED"
+  | "MANUAL_RETRY_REQUIRED";
 
 export type ExternalActionStatus =
   | "PENDING"
@@ -86,7 +87,14 @@ export type QuestionField = {
   label: string;
   type: string;
   required: boolean;
+  maxLength?: number;
   options?: string[];
+  allowCustom?: boolean;
+};
+
+export type QuestionSummaryLine = {
+  label: string;
+  value: string;
 };
 
 export type QuestionCardState = {
@@ -97,6 +105,17 @@ export type QuestionCardState = {
   title: string;
   prompt: string;
   fields: QuestionField[];
+  summary?: QuestionSummaryLine[];
+};
+
+export type BusinessProgressStatus = "ACTIVE" | "WAITING" | "DONE" | "ERROR";
+
+export type BusinessProgress = {
+  id: string;
+  label: string;
+  detail: string | null;
+  status: BusinessProgressStatus;
+  sequence: number;
 };
 
 export type ThreadViewTurn = {

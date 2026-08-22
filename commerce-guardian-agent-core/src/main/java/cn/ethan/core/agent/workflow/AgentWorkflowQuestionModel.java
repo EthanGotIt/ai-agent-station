@@ -190,7 +190,9 @@ public record AgentWorkflowQuestionModel(
             if (normalized.length() > field.maxLength()) {
                 throw new IllegalArgumentException("QuestionCard 回答字段过长：" + field.name());
             }
-            if (!field.options().isEmpty() && !field.options().contains(normalized)) {
+            if (!field.options().isEmpty()
+                    && !field.options().contains(normalized)
+                    && !field.allowCustom()) {
                 throw new IllegalArgumentException("QuestionCard 回答选项不合法：" + field.name());
             }
             validated.put(field.name(), normalized);

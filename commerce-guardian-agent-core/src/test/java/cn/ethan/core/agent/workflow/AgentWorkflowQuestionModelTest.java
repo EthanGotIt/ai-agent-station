@@ -93,6 +93,18 @@ class AgentWorkflowQuestionModelTest {
                 () -> question.validateAnswers(Map.of("decision", "APPROVE", "note", "x".repeat(17))));
     }
 
+    @Test
+    void allowsCustomValueOnlyWhenQuestionFieldExplicitlyPermitsIt() {
+        AgentWorkflowQuestionModel question = new AgentWorkflowQuestionModel(
+                "run-1", "thread-1", "turn-1", "user-1", "question-1", "checkpoint-1", 0,
+                "选择原因", "请选择或填写其他原因", "[]", AgentWorkflowQuestionStatusEnum.OPEN, NOW, null,
+                null, AgentWorkflowQuestionStatusEnum.AnswerEnqueueStatusEnum.AVAILABLE,
+                List.of(new AgentWorkflowQuestionFieldModel(
+                        "reason", true, 32, List.of("商品不符", "物流停滞"), true)));
+
+        assertEquals(Map.of("reason", "包装破损"), question.validateAnswers(Map.of("reason", "包装破损")));
+    }
+
     private AgentWorkflowQuestionModel question() {
         return new AgentWorkflowQuestionModel(
                 "run-1", "thread-1", "turn-1", "user-1", "question-1", "checkpoint-1", 0,
