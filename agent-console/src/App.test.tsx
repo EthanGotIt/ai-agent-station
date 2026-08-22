@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -28,6 +28,61 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     render(<App />);
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("网络连接暂时不可用"));
     expect(screen.queryByText(/已选择 .* 路径/)).toBeNull();
+  });
+
+  it("Thread 列表支持行内重命名、归档、回收站恢复和状态筛选", async () => {
+    const threadOne = threadRecord("thread-1", "售后咨询");
+    const threadTwo = threadRecord("thread-2", "待处理订单");
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") {
+        return Promise.resolve(json({ items: [threadOne, threadTwo], page: 0, size: 100, total: 2 }));
+      }
+      if (url === "/api/agent/threads?status=ARCHIVED&page=0&size=100") {
+        return Promise.resolve(json({ items: [{ ...threadTwo, status: "ARCHIVED" }], page: 0, size: 100, total: 1 }));
+      }
+      if (url.includes("/threads/thread-1/items") || url.includes("/threads/thread-2/items")) {
+        return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      }
+      if (url.includes("/threads/thread-1/events") || url.includes("/threads/thread-2/events")) return Promise.resolve(streamResponse([]));
+      if (url.endsWith("/threads/thread-1") || url.endsWith("/threads/thread-2")) {
+        const body = JSON.parse(String(init?.body));
+        const source = url.endsWith("/threads/thread-1") ? threadOne : threadTwo;
+        return Promise.resolve(json({ ...source, title: body.title, status: body.archive ? "ARCHIVED" : "ACTIVE" }));
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    const threadRow = (await screen.findByText("待处理订单")).closest(".thread-row");
+    expect(threadRow).not.toBeNull();
+    fireEvent.click(within(threadRow as HTMLElement).getByRole("button", { name: "归档对话" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) =>
+      String(input).endsWith("/threads/thread-2") && JSON.parse(String(init?.body)).archive === true)).toBe(true));
+
+    fireEvent.click(screen.getByRole("tab", { name: /回收站/ }));
+    expect(await screen.findByText("待处理订单")).not.toBeNull();
+    const archivedRow = screen.getByText("待处理订单").closest(".thread-row");
+    fireEvent.click(within(archivedRow as HTMLElement).getByRole("button", { name: "恢复对话" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) =>
+      String(input).endsWith("/threads/thread-2") && JSON.parse(String(init?.body)).archive === false)).toBe(true));
+
+    const activeRow = screen.getByText("售后咨询").closest(".thread-row");
+    const renameButton = within(activeRow as HTMLElement).getByRole("button", { name: "重命名对话" });
+    fireEvent.click(renameButton);
+    const titleInput = screen.getByRole("textbox", { name: "重命名 售后咨询" });
+    fireEvent.change(titleInput, { target: { value: "退款进度" } });
+    fireEvent.keyDown(titleInput, { key: "Enter" });
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) =>
+      String(input).endsWith("/threads/thread-1") && JSON.parse(String(init?.body)).title === "退款进度")).toBe(true));
+
+    fireEvent.click(within(screen.getByText("退款进度").closest(".thread-row") as HTMLElement).getByRole("button", { name: "重命名对话" }));
+    const cancelInput = screen.getByRole("textbox", { name: "重命名 退款进度" });
+    fireEvent.change(cancelInput, { target: { value: "不应保存" } });
+    fireEvent.blur(cancelInput);
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "重命名 退款进度" })).toBeNull());
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/threads/thread-1")).length).toBe(1);
   });
 
   it("QuestionCard 使用后端接受的 APPROVE 决定并提交结构化答案", async () => {
@@ -271,8 +326,9 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
           eventId: "log-1", status: "PICKED_UP", location: "杭州转运中心", description: "包裹已揽收", occurredAt: "2026-08-22T10:00:00Z"
         }] } })
     ];
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      void init;
       if (url === "/api/agent/threads?page=0&size=100") {
         return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
       }
@@ -280,6 +336,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
         return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
       }
       if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse(events));
+      if (url.includes("/threads/thread-1/turns")) return Promise.resolve(json({ turnId: "turn-order-action" }));
       throw new Error(`unexpected request: ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -292,6 +349,11 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(screen.getByText("包裹已揽收")).not.toBeNull();
     expect(screen.queryByText("internal-user-should-not-render")).toBeNull();
     expect(screen.getByText("已找到 1 个匹配订单")).not.toBeNull();
+    const orderCard = screen.getByText("无线耳机").closest(".order-card");
+    fireEvent.click(within(orderCard as HTMLElement).getByRole("button", { name: "申请退款" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/threads/thread-1/turns"))).toBe(true));
+    const actionCall = fetchMock.mock.calls.find(([input]) => String(input).includes("/threads/thread-1/turns"));
+    expect(JSON.parse(String(actionCall?.[1]?.body)).message).toContain("ORDER-TODAY-001");
   });
 
   it("为耗尽的外部动作显示人工重试并调用稳定 API", async () => {
