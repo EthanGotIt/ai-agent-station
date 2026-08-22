@@ -1,7 +1,7 @@
 # Commerce Guardian Agent 实现追踪矩阵
 
 > 状态：`active`
-> 更新日期：2026-08-22
+> 更新日期：2026-08-23
 > 目标来源：任务 `01a01f3f-2a0e-7e52-b70e-4137e4ff3496` 的最新计划、当前工作树、Git 历史、架构文档、SQL、测试和实际运行结果。
 
 本矩阵只把代码、测试和运行结果作为证据。原计划或 `docs/task-handoff.md` 中的“已完成”描述不能单独作为完成证据。
@@ -10,17 +10,17 @@
 
 | 计划阶段 | 当前结论 | 直接证据 | 未闭合事项 |
 | --- | --- | --- | --- |
-| 1. 数据库与状态基线 | 已验证完成 | `8093d7a`；V1 恢复对账；V2 在专用校准库和当前配置库均完成增量迁移，未重建原表；当前库已备份至 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v2-20260822.sql` | 最终矩阵仍需在后续阶段重跑 |
-| 2. QuestionCard 与实时交互收口 | 已验证完成 | `394b5b2`、`fab72a3`；动态字段、最多三选项、其他输入、Enter/Shift+Enter/IME、Escape、受限 Markdown、业务进度聚合和 SSE 断线恢复均有测试 | 订单 Workflow 的真实浏览器回归尚未执行 |
-| 3. 订单发现、物流诊断与 V4 Pro 契约 | 部分实现 | `13500ba`；`OrderSearchCriteria`、本地/HTTP `/orders/search`、结构化订单/物流 Item、V2 展示字段和 `deepseek-v4-pro` thinking 配置已实现；校准库与当前库真实启动、V2 migration、Thread API 已通过；Convention Check、脚本 4 项、Maven 122 项、前端 22 项和 build/typecheck 均通过；真实 V4 Pro 已完成订单搜索、物流时间线、SSE delta/取消、超时和敏感字段检查 | 真实浏览器订单卡片/物流时间线的 QuestionCard、断线、刷新和 Thread 切换回归尚未验证；统一 `ORDER_SERVICE` 尚未实现 |
-| 4. 统一 `ORDER_SERVICE` Workflow | 未开始 | 当前代码仍保留旧退款/催单 Workflow 入口，尚无本阶段证据 | 多候选、原因/授权 Question、退款幂等执行和重启/并发/取消验证 |
+| 1. 数据库与状态基线 | 已验证完成 | `8093d7a`；V1/V2 恢复与订单字段迁移已完成；`49311ca` 新增 V3 步骤/状态快照和 `(RUN_ID, STEP_NO)` 唯一约束。当前库与专用校准库均由 Flyway 从版本 2 增量到 3，备份分别为 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v3-commerce_guardian_agent-20260823.sql`、`C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v3-commerce_guardian_agent_calibration_20260821-20260823.sql`；9 条订单、6 条物流事件保持不变 | 最终矩阵仍需在第 5 阶段重跑 |
+| 2. QuestionCard 与实时交互收口 | 已验证完成 | `394b5b2`、`fab72a3`、`49311ca`；动态字段、最多三选项、其他输入、Enter/Shift+Enter/IME、Escape、受限 Markdown、业务进度聚合、`stepNo` 快照和 SSE 断线恢复均有测试；开放 Question 快照接口无开放问题返回 204 | 订单 Workflow 的真实浏览器回归尚未执行 |
+| 3. 订单发现、物流诊断与 V4 Pro 契约 | 部分实现 | `13500ba`、`56b631e`；`OrderSearchCriteria`、本地/HTTP `/orders/search`、结构化订单/物流 Item、V2 展示字段和 `deepseek-v4-pro` thinking 配置已实现；真实 V4 Pro 已完成订单搜索、物流时间线、SSE delta/取消、超时和敏感字段检查 | 真实浏览器订单卡片/物流时间线的 QuestionCard、断线、刷新和 Thread 切换回归尚未验证 |
+| 4. 统一 `ORDER_SERVICE` Workflow | 已验证完成（阶段性） | `49311ca`；确定性候选/核验/多 Question/最终授权/owner Turn/退款幂等命令、本地事务更新和 HTTP 远程适配已实现；Infrastructure 53 项、App 快照 1 项通过；校准库真实退款完成，订单变为 `REFUNDED`，命令/结果各 1 行，重复回答 409，重启后无开放 Question/重复回执 | 催发货尚未支持；真实浏览器端到端和最终完整矩阵待第 5 阶段 |
 | 5. 能力集与产品化收尾 | 未开始 | Thread 回收站、催发货、隐藏/恢复订单和最终两栏产品体验尚未完成 | API、前端、浏览器和完整验证矩阵 |
 
 ## 基线结论
 
 - `scripts.convention_check`：通过；`e83b9c9` 校准了当前 DeepSeek 供应商契约和 Spring Boot 4/Jackson 3 直接依赖规则，仍保留旧项目/旧版本标记等禁用文本检查。
 - `scripts/tests`：4 个测试通过，新增规则回归测试覆盖当前供应商和 JSON 依赖边界。
-- Maven clean test：116 个测试通过（core 51、infrastructure 49、app 16）。
+- Maven 阶段 4 验证：全量 `mvn -DskipTests=false test` 通过 Core 55、Infrastructure 53、App 16；新增开放 Question 快照聚焦测试再通过 1 项。最终 clean 矩阵仍待第 5 阶段重跑。
 - 前端 typecheck：通过；Vitest：17 个测试通过；组件替身测试：7 个测试通过；生产构建：通过。
 - 以上本地测试已补充专用 MySQL 启动、重启恢复、并发回答 HTTP、ExternalAction Worker 状态矩阵和 Context 长历史快照续接实证；真实浏览器已补充 Thread/QuestionCard/重载恢复和 SSE 游标续传证据；真实 DeepSeek 已补充 Tool Calling、流式 delta、流中取消、超时和敏感信息检查。
 - 当前工作树包含此前任务产生的功能代码和用户既有的 `.idea`、部署、Docker、Hook 等改动；本轮不得覆盖或混入后者。
@@ -40,15 +40,15 @@
 | Tool Calling 与 Workflow 边界 | 已验证完成 | Coordinator 将只读工具与 Workflow 工具分离，写操作进入确定性 Workflow；`131924a` 为每次 Tool Call/Result 写入稳定的 `invocationId`，按调用 ID 记录耗时和失败结果，并在 Tool wrapper 边界拒绝空订单号/退款原因；`0ed8688` 删除订单 Record 的隐式 `toString()` 输出，采用字段白名单和返回前 2000 字符边界；全量 Maven 116 项通过，真实 DeepSeek `lookup_order` Tool Call/Result 的 invocationId 匹配、结果长度 26，真实 SSE/取消/超时也已验证 | P1 | 纳入最终完整矩阵 |
 | SSE 断线恢复、去重、有序合并 | 已验证完成 | `AgentThreadEventStream` 已实现单连接 buffer → backlog → ordered flush → live、`eventId + sequence` 去重和晚绑定清理，并有并发单元测试；`cef1052` 让前端在 offline 时取消 reader、online 时从当前游标重连，并以无数据超时兜底；真实浏览器在 `afterSequence=13` 连接上切换 offline/online 后，实际恢复断线期间的 14–19 号 Item，网络记录出现两次 `events?afterSequence=13`，页面无重复且控制台无错误 | P0 | 保留专用 MySQL 与真实浏览器证据，纳入最终完整矩阵 |
 | 前端线程切换与 QuestionCard | 已验证完成 | `useThreadWorkspace` 已有 generation、历史 AbortController、旧事件 Thread 过滤和切换期间禁用；QuestionCard 已提交 `APPROVE/REJECT`，组件测试覆盖迟到历史和答案体；`91f2afb` 按结构化外部动作状态恢复 Turn 展示并接入人工重试；真实浏览器已验证创建、重命名、切换、QuestionCard 拒绝、失败 Turn、人工重试和重载恢复，重试后最终成功 Action Item 不会覆盖失败 Turn 事实终态 | P0 | 保留真实浏览器与 17 项前端测试证据，纳入最终完整矩阵 |
-| API、SQL、配置、文档一致性 | 部分实现 | API/Item envelope/身份边界保持不变；V2 增量 migration 增加订单摘要、隐藏时间和索引，并为当前/校准库补充演示订单与物流事件；本地和 HTTP `/orders/search` 参数、模型字段、前端订单卡片契约已同步；`.env` 与 `.env.example` 的 `DEEPSEEK_MODEL` 均为 `deepseek-v4-pro` | P0 | 后续统一 Workflow 的动作 API、SQL 和产品文档尚未对齐 |
+| API、SQL、配置、文档一致性 | 部分实现 | API/Item envelope/身份边界保持不变；V3 增量 migration 增加 Run 步骤/状态、Question 步骤和开放 Question 快照接口；本地退款与 HTTP `/orders/{id}/refund` 契约已同步；本地和 HTTP `/orders/search` 参数、模型字段、前端订单卡片契约已同步；`.env` 与 `.env.example` 的 `DEEPSEEK_MODEL` 均为 `deepseek-v4-pro` | P0 | 催发货、隐藏/恢复、Thread status 列表和最终产品文档尚未对齐 |
 | Runtime eval / acceptance / live eval | 已验证完成 | 当前 runtime eval 是明确标注的确定性本地替身；`871a155` 将前端 Mock 组件脚本改名为 `test:component`；真实 HTTP acceptance 已在专用 MySQL 上通过 Thread 列表、创建、Item 恢复、Turn 入队、幂等和执行轨迹回放六项检查；真实 DeepSeek 已完成 Tool Calling、71 个 SSE delta、流中取消、短时限超时和 live 敏感信息检查，真实浏览器另取得本地模型失败和 QuestionCard 重载恢复证据 | P1 | 纳入最终完整矩阵 |
 | 清理旧实现、兼容层和无效测试 | 已验证完成 | `91f2afb` 已删除 `sse.ts` 中不符合当前 `ready/heartbeat/item.* /turn.*` 契约的旧结构化事件兼容集合；`rg` 未发现可达的旧供应商配置或实现，规则检查器中的旧 token 仅作为禁用文本回归规则；`871a155` 已清理误导性的 `test:e2e` 命名；被忽略的 `.env` 已删除旧 `AI_AGENT_MODEL_*`、Router/ReAct、旧队列和旧 Worker 配置，只保留当前 30 个变量。runtime eval 的 Fake 类型、前端历史裸 payload fallback 和规则检查器回归文本均有明确边界，不是可证明应删除的生产旧实现 | P2 | 纳入最终完整矩阵 |
 
 ## 当前里程碑边界
 
-本轮已完成外部动作本地投影事务收口（`3e5e4a0`）、SSE 单连接回放/实时合并收口（`c927ca0`）、Turn 版本 CAS 与终态保护（`0c836c1`）、QuestionCard/WorkflowRun 状态机收口（`04a4c1c`）、Runtime/DeepSeek/Boot 兼容与超时分类收口（`c5ca160`）、Workflow 回答失败重试投影与 Item ID 边界收口（`dd7a5c3`）、SSE 异步连接结束边界收口（`821733c`）、外部动作结果实体映射收口（`9dba42b`）、前端外部动作状态与人工重试契约收口（`91f2afb`）、前端 SSE 断线续传收口（`cef1052`）、规则检查器与运行时依赖契约校准（`e83b9c9`）、直接依赖收口（`d09ca23`）、Tool 调用关联/参数边界收口（`131924a`）、Context 最新历史/严格预算收口（`401e856`）、Tool 结果字段隔离收口（`0ed8688`）、输入身份/API 边界收口（`d6d22ab`）、前端测试命名收口（`871a155`）、真实长历史 Context/快照恢复与 HTTP acceptance 证据校准以及普通 Turn 输入事实一致性收口（`5c6f1f5`）、分页/错误持久化边界收口（`94a786c`、`7380257`）、App 测试依赖边界收口（`9215ed8`、`87af4e0`）、本地模型环境契约收口（`9c073ef`）。此前校准基线的完整矩阵已通过；订单售后计划当前进入第三阶段，尚未宣称最终完成。
+本轮已完成外部动作本地投影事务收口（`3e5e4a0`）、SSE 单连接回放/实时合并收口（`c927ca0`）、Turn 版本 CAS 与终态保护（`0c836c1`）、QuestionCard/WorkflowRun 状态机收口（`04a4c1c`）、Runtime/DeepSeek/Boot 兼容与超时分类收口（`c5ca160`）、Workflow 回答失败重试投影与 Item ID 边界收口（`dd7a5c3`）、SSE 异步连接结束边界收口（`821733c`）、外部动作结果实体映射收口（`9dba42b`）、前端外部动作状态与人工重试契约收口（`91f2afb`）、前端 SSE 断线续传收口（`cef1052`）、规则检查器与运行时依赖契约校准（`e83b9c9`）、直接依赖收口（`d09ca23`）、Tool 调用关联/参数边界收口（`131924a`）、Context 最新历史/严格预算收口（`401e856`）、Tool 结果字段隔离收口（`0ed8688`）、输入身份/API 边界收口（`d6d22ab`）、前端测试命名收口（`871a155`）、真实长历史 Context/快照恢复与 HTTP acceptance 证据校准以及普通 Turn 输入事实一致性收口（`5c6f1f5`）、分页/错误持久化边界收口（`94a786c`、`7380257`）、App 测试依赖边界收口（`9215ed8`、`87af4e0`）、本地模型环境契约收口（`9c073ef`）、统一 `ORDER_SERVICE` Workflow 与 V3 迁移（`49311ca`）。此前校准基线的完整矩阵已通过；订单售后计划当前进入第 5 阶段，尚未宣称最终完成。
 
 ## 外部验证边界
 
 已确认专用校准边界为本机 `127.0.0.1:3306/COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821`，当前只在该库导入基线；原 `COMMERCE_GUARDIAN_AGENT` 未重建。数据库日志和命令输出均未打印密码；本轮 Thread/QuestionCard 故障触发器只存在于专用库，验证后已移除。Context 长历史探针未删除业务事实，使用独立校准 Thread 并记录 246 个 Item、8 个快照和重启后上下文事件；另对一条手工遗留校准 Thread 的错误 `NEXT_SEQUENCE` 做了仅限该专用库的计数修正，重启后确认 Worker 复用单一幂等结果且未修改生产代码。真实浏览器已执行 Thread/QuestionCard/重载恢复、offline/online 游标续传和当前构建失败收敛流程；真实 DeepSeek 已在同一专用库完成 Tool Calling、71 个 SSE delta、流中取消、短时限超时和敏感信息检查。复核被 Git 忽略的 App `.env` 后删除了旧 `AI_AGENT_MODEL_*`、Router/ReAct、旧队列和旧 Worker 变量，并使其与 `.env.example` 的变量集合和非敏感默认值一致；Spring Boot 不自动加载该文件，必须显式注入进程，且真实 key 只保留在 `.env`。最终矩阵中的 P0/P1 已关闭，不能以本地替身替代真实模型证据。
-本阶段新增数据库证据：当前配置库和专用校准库均在确认备份/克隆边界后由 Flyway 从版本 1 增量执行版本 2，`DEMO_ORDER` 新增 `ITEM_SUMMARY`、`HIDDEN_AT` 和可见性索引；两个库均保留 9 条订单、6 条物流事件，应用实际启动并响应 `/actuator/health` 与 Thread 列表 API 后已关闭 8090/8091。V2 启动验证不包含真实模型调用，V4 Pro 的供应商行为仍待本阶段单独实测。
+本阶段新增数据库证据：当前配置库和专用校准库均在确认备份/克隆边界后由 Flyway 从版本 2 增量执行版本 3，`STEPS_JSON`、`STATE_JSON` 为非空，Question 外键恢复且唯一键为 `(RUN_ID, STEP_NO)`；两个库均保留 9 条订单、6 条物流事件，应用实际启动并响应 Thread/Question API 后已关闭 8091/8092。V3 退款验证使用专用校准库和真实 DeepSeek Tool Calling，未将密钥或 Thinking 写入数据库。
