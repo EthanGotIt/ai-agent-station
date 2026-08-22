@@ -5,14 +5,17 @@ updated: 2026-08-23
 
 ## 当前执行阶段
 
-- 当前目标：执行“订单售后 Workflow 推进计划”。第 4 阶段统一 `ORDER_SERVICE` 已完成并提交；下一阶段唯一动作是补齐催发货、订单隐藏/恢复、Thread 回收站和最终消费者界面，不重复调查已完成的数据库、QuestionCard、订单搜索和退款链路。
-- 已修改范围：新增 V3 增量迁移、步骤/状态快照、开放 Question 快照接口、统一订单售后 Workflow、owner Turn 投影、订单/物流核验、退款原因与最终授权 Question、幂等 ExternalActionCommand、本地退款事实更新和 HTTP 订单动作适配；未触碰工作树中既有的 IDE、部署、Docker、Hook 和脚本改动。
+- 当前目标：执行“订单售后 Workflow 推进计划”。第 5 阶段后端子里程碑 `6d40351 feat: extend order service actions and thread archive` 与消费者前端里程碑 `fcec19d feat: productize order service workspace` 均已提交；下一阶段唯一动作是用真实浏览器验证订单售后、QuestionCard 刷新/断线、Thread 回收站和移动端抽屉，再执行最终完整矩阵，不重复调查已完成的数据库、订单搜索、退款和后端动作链路。
+- 已修改范围：在既有 V3 基础上新增 V4 外部动作状态索引、`ORDER_SERVICE` 的催发货/隐藏/恢复动作、订单服务 HTTP 契约、Local/HTTP ExternalAction 幂等执行、Thread ACTIVE/ARCHIVED 列表筛选和归档保护；归档更新与新 Turn 创建均在 Thread 行锁边界内复核状态。未触碰工作树中既有的 IDE、部署、Docker、Hook 和脚本改动。
 - V3 数据库证据：当前配置库 `COMMERCE_GUARDIAN_AGENT` 与专用校准库 `COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821` 均先完成备份/克隆确认后由 Flyway 从版本 2 增量升级到版本 3；两库均保留 9 条订单、6 条物流事件，Question 外键恢复，唯一键为 `(RUN_ID, STEP_NO)`。备份分别为 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v3-commerce_guardian_agent-20260823.sql` 与 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v3-commerce_guardian_agent_calibration_20260821-20260823.sql`。
-- 本阶段提交：`49311ca feat: unify order service workflow`。Maven 全量基线 Core 55、Infrastructure 53、App 16 通过，开放 Question 快照测试另通过 1 项；此前前端 typecheck、Vitest、build 和规则脚本验证仍有效，最终矩阵将在第 5 阶段重跑。
+- V4 数据库证据：两个已确认库均先完成备份，再由应用 Flyway 从版本 3 增量升级到版本 4；`IDX_EXTERNAL_ACTION_THREAD_STATUS` 在两个库均存在。备份分别为 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v4-commerce_guardian_agent-20260823.sql` 与 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v4-commerce_guardian_agent_calibration_20260821-20260823.sql`。
+- 本阶段提交：`6d40351 feat: extend order service actions and thread archive`、`fcec19d feat: productize order service workspace`。Maven 在后端子里程碑通过 Core 56、Infrastructure 56、App 17；前端 typecheck、23 项 Vitest 和 production build 均通过。最终 Python/Maven/npm 完整矩阵与真实浏览器仍待执行。
 - 真实退款证据：校准库 Thread `c626d931-4be7-47da-8dad-5ba708108301` 的 Run `workflow-b587983e-9ba6-4448-8f4e-8a93aa040076` 依次产生订单选择、退款原因、最终授权 Question；授权后 owner Turn 进入等待外部动作，单个 `REFUND` 命令成功，`ORDER-TODAY-PAID-001` 变为 `REFUNDED`，命令/结果各 1 条、尝试次数 1；重复回答返回 409。服务停止再启动后 Run 保持 `COMPLETED`、开放 Question 为 0、命令/回执仍各 1 条。
-- 未宣称最终完成：真实浏览器尚未验证本阶段订单卡片/QuestionCard/刷新/断线与 Thread 回收站；催发货和隐藏/恢复尚未实现；当前 `EXTERNAL_ACTION` 仍保留受控业务进度 Item，SSE 仅用于流式回复、取消和断线恢复。
+- 真实 Thread 回收站证据：校准库 Thread `1880e1e7-8122-4843-b140-c5bf8ae9341d` 通过真实 API 完成 ACTIVE 列表 → ARCHIVED 列表 → ACTIVE 恢复，归档时列表不再包含、恢复后重新出现；含开放 Question 的 Thread `7ef9ed22-b02f-4b28-bb04-7f186c76698b` 归档返回 409，拒绝 Question 后开放 Question/未完成动作均为 0，随后归档成功。
+- 真实隐藏/恢复证据：校准库 Thread `102ea933-6a9d-487b-8a9d-25f7eb7c807e` 通过真实 DeepSeek Tool Calling 启动 `HIDE_ORDER` 与 `RESTORE_ORDER`，`ORDER-PAID-001` 先出现 `HIDDEN_AT`，再恢复为 NULL；`EXTERNAL_ACTION_COMMAND` 中两类命令各 1 条且均为 `SUCCEEDED`，结果表 2 条。重复提交只收到 409，不产生第二命令。
+- 未宣称最终完成：真实浏览器尚未验证本阶段订单卡片动作、QuestionCard 刷新/断线、Thread 回收站和移动端布局；催发货尚未做真实数据库动作回归；当前 `EXTERNAL_ACTION` 仍保留受控业务进度 Item，SSE 仅用于流式回复、取消和断线恢复。
 - 真实 DeepSeek V4 Pro 业务探针：专用校准库中“列出今天最新订单”实际产生 `ORDER_LIST`，成功返回 2 条订单并完成；“查物流三天没更新的订单”实际产生 `ORDER_LIST` 和 2 个 `LOGISTICS_TIMELINE`，成功返回 5 条候选、每条时间线 2 个事件并完成。受检 Item 未包含用户归属字段、API key 或内部 key。
-- 真实 DeepSeek V4 Pro 运行探针：SSE 连接观察到 1 个 `assistant.delta` 后调用取消接口返回 200，Turn 收敛 `CANCELLED`；另一临时进程仅注入 `AI_AGENT_STREAM_TIMEOUT=PT1S`，Turn 收敛 `TIMED_OUT/TURN_TIMEOUT`。本阶段订单 Workflow 使用真实 DeepSeek Tool Calling 启动，未将 Thinking 或原始 delta 写入 Item、日志或前端；所有测试服务已关闭，8091/8092 无监听。
+- 真实 DeepSeek V4 Pro 运行探针：SSE 连接观察到 1 个 `assistant.delta` 后调用取消接口返回 200，Turn 收敛 `CANCELLED`；另一临时进程仅注入 `AI_AGENT_STREAM_TIMEOUT=PT1S`，Turn 收敛 `TIMED_OUT/TURN_TIMEOUT`。本阶段订单 Workflow 使用真实 DeepSeek Tool Calling 启动并完成隐藏/恢复动作，未将 Thinking 或原始 delta 写入 Item、日志或前端；8091/8092 当前仅为本阶段验证临时启动，前端回归结束后关闭。
 
 ## 已完成
 
@@ -131,10 +134,10 @@ updated: 2026-08-23
 - 同一提交：本地退款执行器在一个本地事务中完成订单状态 CAS 更新和幂等结果写入；HTTP 订单适配器把远程退款调用放在本地事务外，再以幂等回执收口。V3 migration 增加 `STEPS_JSON`、`STATE_JSON`、`STEP_NO` 和 `(RUN_ID, STEP_NO)` 唯一约束，开放 Question 快照无数据时返回 204。
 - 直接验证：统一 Workflow 测试覆盖候选筛选、结构化答案校验、瞬时答案篡改隔离、三张 Question 顺序、owner Turn、命令幂等键和过期回答拒绝；Maven Infrastructure 53 项、App Question 快照聚焦测试 1 项通过。
 - 真实校准库证据：模糊退款在 Thread `c626d931-4be7-47da-8dad-5ba708108301` 完成三步 Question 后，唯一退款命令成功，`ORDER-TODAY-PAID-001` 更新为 `REFUNDED`；命令和结果各 1 行、attempt=1；重复回答 409；停止再启动后 Run 完成且没有开放 Question 或重复回执。
-- 本阶段仍未闭合：催发货动作、订单隐藏/恢复、Thread 回收站与最终消费者界面；真实浏览器订单 Workflow 的 QuestionCard、刷新、断线、Thread 切换和隐藏/恢复回归待第 5 阶段完成。SSE 保留为回复流式输出、取消和断线恢复通道，不作为业务进度主界面。
+- 本阶段后端与前端实现已闭合：催发货、订单隐藏/恢复、Thread 回收站、行内重命名、订单卡片动作和移动端抽屉均已纳入 `6d40351`/`fcec19d`；真实浏览器订单 Workflow 的 QuestionCard、刷新、断线、Thread 切换、外部动作和移动端回归，以及最终完整矩阵仍待执行。SSE 保留为回复流式输出、取消和断线恢复通道，不作为业务进度主界面。
 
 ## 下一步唯一动作
 
-进入能力集与产品化收尾阶段：在同一 `ORDER_SERVICE` 中补齐催发货、订单隐藏/恢复和 Thread 回收站的确定性动作、CAS/幂等与前端行内交互；随后执行真实浏览器回归和 Python/Maven/npm 完整矩阵，保留外部凭据无法验证的风险，不得伪称最终完成。
+进入真实浏览器验收：启动当前构建，验证订单卡片动作、模糊退款 QuestionCard、多 Question、刷新/断线/Thread 切换、催发货、隐藏/恢复、归档保护、行内重命名和移动端抽屉；随后执行 Python/Maven/npm 完整矩阵，保留外部凭据无法验证的风险，不得伪称最终完成。
 
 用户已有的前端目录/SQL 基线重命名、Hook、部署和 IDE 改动保持在工作区，未混入本次阶段提交。
