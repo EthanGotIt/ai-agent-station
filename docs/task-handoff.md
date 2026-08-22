@@ -9,6 +9,8 @@ updated: 2026-08-22
 - 已修改范围：在现有 Thread → Turn → Item 契约上增加按时间、金额、状态、关键词、物流停滞和隐藏状态搜索；本地与 HTTP `/orders/search` 适配器同步；新增订单列表/详情和物流时间线 Item 及前端订单卡片；V2 只增量补齐订单摘要、隐藏时间、索引和演示事实；模型配置统一为 `deepseek-v4-pro` thinking；未触碰工作树中既有的 IDE、部署、Docker、Hook 和脚本改动。
 - 真实验证：已确认当前配置库与专用校准库分别在备份/克隆边界内由 Flyway 从版本 1 增量升级到版本 2，两个库均保留 9 条订单、6 条物流事件；应用实际启动并响应 `/actuator/health` 与 Thread 列表 API，随后关闭，8090/8091 均无监听。当前库 V2 前备份为 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-before-v2-20260822.sql`，未打印密码或 API key。
 - 本阶段验证：脚本 Convention Check 与 4 项脚本测试通过；Maven 全量 Core 55、Infrastructure 51、App 16，共 122 项通过；前端 typecheck、22 项 Vitest 和生产 build 通过；Impeccable detector 返回 `[]`。主提交为 `13500ba feat: add structured order discovery`。
+- 真实 DeepSeek V4 Pro 业务探针：专用校准库中“列出今天最新订单”实际产生 `ORDER_LIST`，成功返回 2 条订单并完成；“查物流三天没更新的订单”实际产生 `ORDER_LIST` 和 2 个 `LOGISTICS_TIMELINE`，成功返回 5 条候选、每条时间线 2 个事件并完成。受检 Item 未包含用户归属字段、API key 或内部 key。
+- 真实 DeepSeek V4 Pro 运行探针：SSE 连接观察到 1 个 `assistant.delta` 后调用取消接口返回 200，Turn 收敛 `CANCELLED`；另一临时进程仅注入 `AI_AGENT_STREAM_TIMEOUT=PT1S`，Turn 收敛 `TIMED_OUT/TURN_TIMEOUT`。两个探针进程均已关闭，8091/8092 无监听；未保存或展示 delta 内容和 Thinking。
 
 ## 已完成
 
@@ -123,7 +125,8 @@ updated: 2026-08-22
 - 同一提交：V2 Flyway migration 只新增 `ITEM_SUMMARY`、`HIDDEN_AT`、可见性索引和不存在的演示订单/物流事件，使用 `INSERT IGNORE` 不覆盖既有交易事实；基线 SQL 与 migration 字段保持一致。专用校准库先验证迁移，再对当前配置库备份并执行同一增量迁移。
 - 同一提交：模型配置与被忽略 `.env`、`.env.example` 同步为 `deepseek-v4-pro`，`application.yml` 开启 thinking 并设置 `reasoning-effort=max`；本阶段没有把 thinking 写入 Item、SSE、日志或摘要。真实 V4 Pro 调用仍未在本阶段重复验证，不能用历史旧模型证据替代。
 - 本阶段只读审查发现并修复两个真实问题：`renderOrderSnapshot`/物流事件 JSON 的前导逗号会生成无效结构，已改为确定性对象构造；`LocalOrderGateway` 的测试兼容双构造器缺少 Spring 注入选择，已用明确的两参数构造器注解修复并通过真实应用启动探针。
-- 本阶段仍未闭合：真实 DeepSeek V4 Pro 多轮 Tool Calling、流式响应、取消、超时和敏感信息检查；真实浏览器订单卡片/物流时间线在 QuestionCard、断线、刷新和 Thread 切换下的回归。下一阶段必须补齐这些证据，不得把本阶段标记为最终完成。
+- 本阶段仍未闭合：真实浏览器订单卡片/物流时间线在 QuestionCard、断线、刷新和 Thread 切换下的回归，以及后续统一 `ORDER_SERVICE` Workflow 的动作状态与幂等证据。下一阶段必须补齐这些证据，不得把本阶段标记为最终完成。
+- 上述 V4 Pro Tool Calling、订单/物流结构化 Item、流式取消、超时和敏感信息检查现已取得真实证据；仍未闭合的是订单卡片/物流时间线的真实浏览器回归，以及后续统一 `ORDER_SERVICE` Workflow 的动作状态与幂等证据。
 
 ## 下一步唯一动作
 
