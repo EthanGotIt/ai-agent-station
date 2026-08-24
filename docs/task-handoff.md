@@ -5,9 +5,10 @@ updated: 2026-08-24
 
 ## 当前执行阶段
 
-- 当前目标：执行“交互与后端健壮性打磨计划”第二轮；已完成服务关闭和上一轮前端、Item Runtime 基线提交，当前已落地 QuestionCard 的显式 `SUBMIT/CANCEL` 协议。取消在必填字段为空时跳过业务校验、订单查询和外部动作，按持久化 Workflow 事实收敛为 `REJECTED`；前端 Escape/取消按钮发送 `action=CANCEL` 和空答案。第二轮待提交后进入确定性订单动作 Turn。
-- 第二轮验证：Core/Infrastructure 定向 Workflow 测试 10 项、前端类型检查和 Vitest 25 项通过；取消路径新增必填字段为空、跳过远程订单查询、Action 持久化和旧答案 JSON 兼容覆盖。
-- 下一步唯一动作：显式提交第二轮取消协议改动，然后实现 `/api/agent/threads/{threadId}/order-actions`、`ORDER_ACTION_REQUEST` Item 和可恢复的 `ORDER_ACTION` Turn 输入。
+- 当前目标：执行“交互与后端健壮性打磨计划”第三轮；服务已关闭，MySQL 保持运行。第一、二轮已分别提交为 `a079c06`、`ce642f0`、`21dbad8`、`4059449`。
+- 第三轮已落地：新增 `POST /api/agent/threads/{threadId}/order-actions`；订单动作以 `ORDER_ACTION` 输入和 `ORDER_ACTION_REQUEST` Item 持久化，支持来源 Turn/订单事实归属校验、请求 ID 幂等冲突保护、重启恢复；查询动作不调用模型并产出结构化订单/物流 Item，写动作只启动现有 `ORDER_SERVICE` Workflow，最终确认前不创建外部命令。V6 migration 增加 `INPUT_KIND`、`ORDER_ACTION_JSON`，历史回答安全回填。
+- 第三轮验证：Core Runtime 6 项、Infrastructure 确定性动作 2 项、MyBatis 回归 1 项定向测试通过；Core/Infrastructure/App 编译通过。尚未提交第三轮代码。
+- 下一步唯一动作：提交第三轮确定性订单动作改动，然后开始前端卡片直达与 QuestionCard 比例重构。
 
 - 当前目标：已完成在“订单调度清单”四轮实现之上向首选高保真稿 `.impeccable/mocks/decision/dispatch-ledger-primary.png` 的工作台视觉收敛。未执行 Git 暂存或提交。
 - 当前事实源：SSE 对外仅保留 `ready`、`heartbeat` 和 `item.*`；模型 delta、Turn 瞬时事件、全局八步进度、全局订单区、固定快捷问和 Markdown 表格渲染已从产品路径移除。前端以持久化 Items 纯函数投影 Turn，运行详情在右侧 Item 检查器按需打开。

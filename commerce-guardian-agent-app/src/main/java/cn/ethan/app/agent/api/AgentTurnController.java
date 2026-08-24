@@ -40,6 +40,18 @@ public final class AgentTurnController {
         ));
     }
 
+    @PostMapping("/threads/{threadId}/order-actions")
+    public ResponseEntity<AgentTurnAcceptedResponseDto> orderAction(
+            @PathVariable String threadId,
+            @Valid @RequestBody AgentOrderActionRequestDto body,
+            HttpServletRequest request
+    ) {
+        return ResponseEntity.accepted().body(AgentTurnAcceptedResponseDto.from(
+                runtime.submitOrderAction(userContext.currentUserId(request), threadId,
+                        body.clientRequestId(), body.sourceTurnId(), body.orderId(), body.actionType())
+        ));
+    }
+
     @PostMapping("/turns/{turnId}/cancel")
     public ResponseEntity<AgentTurnCancelResponseDto> cancel(
             @PathVariable String turnId,

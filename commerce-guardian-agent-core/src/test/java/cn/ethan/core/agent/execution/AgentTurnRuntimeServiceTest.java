@@ -4,6 +4,7 @@ import cn.ethan.core.agent.context.AgentContextAssembler;
 import cn.ethan.core.agent.context.AgentContextSnapshotModel;
 import cn.ethan.core.agent.context.AgentContextSnapshotStore;
 import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
+import cn.ethan.core.agent.coordination.AgentOrderActionTypeEnum;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemStore;
@@ -34,6 +35,7 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Runtime 测试：验证同一 Thread 的 FIFO、排队取消和完成事实持久化。
@@ -216,6 +218,57 @@ class AgentTurnRuntimeServiceTest {
         assertEquals(AgentTurnStatusEnum.COMPLETED, recovered.status());
         assertEquals("WORKFLOW_REJECTED", recovered.errorCode());
         assertTrue(persistence.items.stream().anyMatch(item -> item.type().name().equals("TURN_STATE")));
+        scheduler.shutdownNow();
+    }
+
+    @Test
+    void deterministicOrderActionIsQueuedIdempotentlyWithoutModelCall() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "订单动作 Thread", null, null);
+        AgentTurnModel source = new AgentTurnModel(
+                "source-turn", thread.threadId(), "user-1", "source-request", "查询订单",
+                AgentTurnStatusEnum.COMPLETED, 1, null, null, NOW, NOW, NOW);
+        persistence.createTurn(source);
+        persistence.appendItem(new AgentItemModel("source-order-item", thread.threadId(), source.turnId(), 0,
+                cn.ethan.core.agent.thread.AgentItemTypeEnum.ORDER_DETAIL,
+                "{\"orderId\":\"order-1\"}", NOW));
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, persistence,
+                command -> { throw new UnsupportedOperationException("test does not answer a workflow"); },
+                (turn, status, code, finishedAt) -> false,
+                threads,
+                new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
+                (current, turn, history, answer) -> {
+                    throw new AssertionError("deterministic order action must not invoke model coordinator");
+                },
+                new RecordingEvents(), executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256,
+                AgentRuntimeMetrics.noop(),
+                (current, turn, history, input, executionContext) ->
+                        new AgentTurnCoordinator.AgentCoordinatorResult("", List.of(
+                                new AgentTurnCoordinator.AgentItemDraft(
+                                        "ORDER_DETAIL", "{\"orderId\":\"order-1\"}")),
+                                null, null, false));
+
+        AgentTurnModel action = runtime.submitOrderAction("user-1", thread.threadId(), "action-request",
+                source.turnId(), "order-1", AgentOrderActionTypeEnum.REFRESH_ORDER);
+        AgentTurnModel duplicate = runtime.submitOrderAction("user-1", thread.threadId(), "action-request",
+                source.turnId(), "order-1", AgentOrderActionTypeEnum.REFRESH_ORDER);
+
+        assertEquals(action.turnId(), duplicate.turnId());
+        assertEquals(cn.ethan.core.agent.thread.AgentTurnInputKindEnum.ORDER_ACTION, action.inputKind());
+        assertThrows(cn.ethan.core.agent.thread.AgentThreadConflictException.class,
+                () -> runtime.submitOrderAction("user-1", thread.threadId(), "action-request",
+                        source.turnId(), "order-1", AgentOrderActionTypeEnum.QUERY_LOGISTICS));
+        executor.runAll();
+        assertEquals(AgentTurnStatusEnum.COMPLETED,
+                persistence.findTurn("user-1", action.turnId()).orElseThrow().status());
+        assertTrue(persistence.items.stream().anyMatch(item -> item.type()
+                == cn.ethan.core.agent.thread.AgentItemTypeEnum.ORDER_ACTION_REQUEST));
         scheduler.shutdownNow();
     }
 

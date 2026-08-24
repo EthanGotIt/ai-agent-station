@@ -17,6 +17,7 @@ import cn.ethan.core.agent.action.ExternalActionService;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import cn.ethan.core.agent.thread.AgentThreadArchiveGuard;
 import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
+import cn.ethan.core.agent.coordination.AgentOrderActionCoordinator;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.ai.chat.client.ChatClient;
@@ -171,6 +172,7 @@ public class AgentConfiguration {
             AgentThreadService threads,
             AgentContextAssembler contextAssembler,
             AgentTurnCoordinator coordinator,
+            AgentOrderActionCoordinator orderActionCoordinator,
             AgentThreadEventGateway events,
             ThreadPoolTaskExecutor agentTaskExecutor,
             ScheduledExecutorService agentQueueTimeoutScheduler,
@@ -187,7 +189,7 @@ public class AgentConfiguration {
                 runtimeProperties.queue().maxPendingGlobal(),
                 runtimeProperties.queue().waitTimeout(),
                 threadProperties.turnTimeout(),
-                threadProperties.toolResultMaxCharacters(), metrics);
+                threadProperties.toolResultMaxCharacters(), metrics, orderActionCoordinator);
         runtime.recoverPersistedTurns();
         return runtime;
     }

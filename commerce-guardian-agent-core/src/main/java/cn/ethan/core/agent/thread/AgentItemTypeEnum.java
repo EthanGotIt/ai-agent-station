@@ -20,6 +20,7 @@ public enum AgentItemTypeEnum {
     ORDER_LIST,
     ORDER_DETAIL,
     LOGISTICS_TIMELINE,
+    ORDER_ACTION_REQUEST,
     EXECUTION_EVENT,
     ERROR
 }

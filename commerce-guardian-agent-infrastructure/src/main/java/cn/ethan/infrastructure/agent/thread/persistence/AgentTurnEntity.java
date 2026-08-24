@@ -26,6 +26,10 @@ public final class AgentTurnEntity {
     private String clientRequestId;
     @TableField("INPUT_TEXT")
     private String inputText;
+    @TableField("INPUT_KIND")
+    private String inputKind;
+    @TableField("ORDER_ACTION_JSON")
+    private String orderActionJson;
     @TableField("STATUS")
     private String status;
     @TableField("QUEUE_POSITION")
@@ -64,6 +68,10 @@ public final class AgentTurnEntity {
     public void setClientRequestId(String clientRequestId) { this.clientRequestId = clientRequestId; }
     public String getInputText() { return inputText; }
     public void setInputText(String inputText) { this.inputText = inputText; }
+    public String getInputKind() { return inputKind; }
+    public void setInputKind(String inputKind) { this.inputKind = inputKind; }
+    public String getOrderActionJson() { return orderActionJson; }
+    public void setOrderActionJson(String orderActionJson) { this.orderActionJson = orderActionJson; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public Integer getQueuePosition() { return queuePosition; }

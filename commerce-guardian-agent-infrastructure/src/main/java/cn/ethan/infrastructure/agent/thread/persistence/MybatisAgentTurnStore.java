@@ -6,6 +6,8 @@ import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentThreadConflictException;
 import cn.ethan.core.agent.thread.AgentWorkflowAnswerInput;
+import cn.ethan.core.agent.thread.AgentTurnInputKindEnum;
+import cn.ethan.core.agent.coordination.AgentOrderActionInput;
 import cn.ethan.core.agent.workflow.AgentWorkflowOwnerRecoveryCandidate;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -30,6 +32,7 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
     private final AgentItemMapper itemMapper;
     private final AgentThreadMapper threadMapper;
     private final JacksonAgentWorkflowAnswerCodec answerCodec;
+    private final JacksonAgentOrderActionCodec orderActionCodec;
 
     public MybatisAgentTurnStore(
             AgentTurnMapper mapper,
@@ -37,10 +40,22 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
             AgentThreadMapper threadMapper,
             JacksonAgentWorkflowAnswerCodec answerCodec
     ) {
+        this(mapper, itemMapper, threadMapper, answerCodec,
+                new JacksonAgentOrderActionCodec(new tools.jackson.databind.ObjectMapper()));
+    }
+
+    public MybatisAgentTurnStore(
+            AgentTurnMapper mapper,
+            AgentItemMapper itemMapper,
+            AgentThreadMapper threadMapper,
+            JacksonAgentWorkflowAnswerCodec answerCodec,
+            JacksonAgentOrderActionCodec orderActionCodec
+    ) {
         this.mapper = mapper;
         this.itemMapper = itemMapper;
         this.threadMapper = threadMapper;
         this.answerCodec = answerCodec;
+        this.orderActionCodec = orderActionCodec;
     }
 
     @Override
@@ -105,6 +120,7 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
             return false;
         }
         AgentWorkflowAnswerInput answer = next.workflowAnswerInput();
+        AgentOrderActionInput orderAction = next.orderActionInput();
         int updated = mapper.update(null, new UpdateWrapper<AgentTurnEntity>()
                 .eq("TURN_ID", next.turnId())
                 .eq("USER_ID", next.userId())
@@ -116,6 +132,8 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
                 .set("WORKFLOW_CHECKPOINT_ID", answer == null ? null : answer.checkpointId())
                 .set("WORKFLOW_QUESTION_VERSION", answer == null ? null : answer.enqueuedQuestionVersion())
                 .set("WORKFLOW_ANSWERS_JSON", answer == null ? null : answerCodec.encodeAnswers(answer))
+                .set("INPUT_KIND", next.inputKind().name())
+                .set("ORDER_ACTION_JSON", orderActionCodec.encode(orderAction))
                 .set("ERROR_CODE", next.errorCode())
                 .set("STARTED_AT", next.startedAt())
                 .set("FINISHED_AT", next.finishedAt())
@@ -158,6 +176,8 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
         entity.setUserId(model.userId());
         entity.setClientRequestId(model.clientRequestId());
         entity.setInputText(model.input());
+        entity.setInputKind(model.inputKind().name());
+        entity.setOrderActionJson(orderActionCodec.encode(model.orderActionInput()));
         entity.setStatus(model.status().name());
         entity.setQueuePosition(model.queuePosition());
         entity.setWorkflowRunId(model.workflowRunId());
@@ -177,10 +197,31 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
     }
 
     private AgentTurnModel toModel(AgentTurnEntity entity) {
+        AgentTurnInputKindEnum inputKind = inputKind(entity.getInputKind(), entity.getWorkflowAnswersJson(),
+                entity.getOrderActionJson());
+        AgentOrderActionInput orderAction = orderActionCodec.decode(entity.getOrderActionJson());
         return new AgentTurnModel(entity.getTurnId(), entity.getThreadId(), entity.getUserId(),
                 entity.getClientRequestId(), entity.getInputText(), AgentTurnStatusEnum.valueOf(entity.getStatus()),
                 value(entity.getQueuePosition()), entity.getWorkflowRunId(), entity.getErrorCode(), entity.getCreatedAt(),
-                entity.getStartedAt(), entity.getFinishedAt(), toAnswerInput(entity), value(entity.getVersionNo()));
+                entity.getStartedAt(), entity.getFinishedAt(), toAnswerInput(entity), value(entity.getVersionNo()),
+                inputKind, orderAction);
+    }
+
+    private AgentTurnInputKindEnum inputKind(
+            String persisted,
+            String workflowAnswersJson,
+        String orderActionJson
+    ) {
+        if (orderActionJson != null && !orderActionJson.isBlank()) {
+            return AgentTurnInputKindEnum.ORDER_ACTION;
+        }
+        if (persisted != null && !persisted.isBlank()
+                && !(AgentTurnInputKindEnum.WORKFLOW_ANSWER.name().equals(persisted)
+                && (workflowAnswersJson == null || workflowAnswersJson.isBlank()))) {
+            return AgentTurnInputKindEnum.valueOf(persisted);
+        }
+        return workflowAnswersJson == null
+                ? AgentTurnInputKindEnum.MESSAGE : AgentTurnInputKindEnum.WORKFLOW_ANSWER;
     }
 
     private AgentWorkflowAnswerInput toAnswerInput(AgentTurnEntity entity) {

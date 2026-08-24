@@ -8,9 +8,13 @@ import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
+import cn.ethan.core.agent.thread.AgentTurnInputKindEnum;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import cn.ethan.core.agent.context.AgentContextAssembler;
 import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
+import cn.ethan.core.agent.coordination.AgentOrderActionCoordinator;
+import cn.ethan.core.agent.coordination.AgentOrderActionInput;
+import cn.ethan.core.agent.coordination.AgentOrderActionTypeEnum;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.thread.AgentThreadStore;
 import cn.ethan.core.agent.thread.AgentTurnStore;
@@ -61,6 +65,7 @@ public final class AgentTurnRuntimeService {
     private final AgentThreadService threads;
     private final AgentContextAssembler contextAssembler;
     private final AgentTurnCoordinator coordinator;
+    private final AgentOrderActionCoordinator orderActionCoordinator;
     private final AgentThreadEventGateway events;
     private final Executor executor;
     private final ScheduledExecutorService scheduler;
@@ -98,7 +103,7 @@ public final class AgentTurnRuntimeService {
         this(threadStore, turns, items, questions, answerAdmission, failureReconciler,
                 threads, contextAssembler, coordinator,
                 events, executor, scheduler, clock, maxPendingPerThread, maxPendingGlobal, waitTimeout, turnTimeout,
-                toolResultMaxCharacters, AgentRuntimeMetrics.noop());
+                toolResultMaxCharacters, AgentRuntimeMetrics.noop(), null);
     }
 
     public AgentTurnRuntimeService(
@@ -122,6 +127,34 @@ public final class AgentTurnRuntimeService {
             int toolResultMaxCharacters,
             AgentRuntimeMetrics metrics
     ) {
+        this(threadStore, turns, items, questions, answerAdmission, failureReconciler,
+                threads, contextAssembler, coordinator, events, executor, scheduler, clock,
+                maxPendingPerThread, maxPendingGlobal, waitTimeout, turnTimeout,
+                toolResultMaxCharacters, metrics, null);
+    }
+
+    public AgentTurnRuntimeService(
+            AgentThreadStore threadStore,
+            AgentTurnStore turns,
+            AgentItemStore items,
+            AgentWorkflowQuestionStore questions,
+            AgentWorkflowAnswerAdmission answerAdmission,
+            AgentWorkflowAnswerFailureReconciler failureReconciler,
+            AgentThreadService threads,
+            AgentContextAssembler contextAssembler,
+            AgentTurnCoordinator coordinator,
+            AgentThreadEventGateway events,
+            Executor executor,
+            ScheduledExecutorService scheduler,
+            Clock clock,
+            int maxPendingPerThread,
+            int maxPendingGlobal,
+            Duration waitTimeout,
+            Duration turnTimeout,
+            int toolResultMaxCharacters,
+            AgentRuntimeMetrics metrics,
+            AgentOrderActionCoordinator orderActionCoordinator
+    ) {
         this.threadStore = threadStore;
         this.turns = turns;
         this.items = items;
@@ -131,6 +164,7 @@ public final class AgentTurnRuntimeService {
         this.threads = threads;
         this.contextAssembler = contextAssembler;
         this.coordinator = coordinator;
+        this.orderActionCoordinator = orderActionCoordinator;
         this.events = events;
         this.executor = executor;
         this.scheduler = scheduler;
@@ -291,6 +325,87 @@ public final class AgentTurnRuntimeService {
             schedule(slot, thread);
         }
         return queued.turn;
+    }
+
+    /**
+     * 将订单卡片动作作为结构化 Turn 入队；不生成自然语言消息，也不经过模型。
+     */
+    public AgentTurnModel submitOrderAction(
+            String userId,
+            String threadId,
+            String requestId,
+            String sourceTurnId,
+            String orderId,
+            AgentOrderActionTypeEnum actionType
+    ) {
+        AgentThreadModel thread = ownedThread(userId, threadId);
+        String ownerId = thread.userId();
+        String ownerThreadId = thread.threadId();
+        if (thread.status() == AgentThreadStatusEnum.ARCHIVED) {
+            throw new AgentThreadConflictException("THREAD_ARCHIVED", "归档 Thread 不接受订单动作");
+        }
+        String normalizedRequestId = requireClientRequestId(requestId);
+        AgentOrderActionInput action = new AgentOrderActionInput(sourceTurnId, orderId, actionType);
+        Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(ownerId, normalizedRequestId);
+        if (duplicate.isPresent()) {
+            return requireMatchingOrderActionDuplicate(duplicate.get(), ownerId, ownerThreadId, action);
+        }
+        AgentTurnModel source = turns.findTurn(ownerId, action.sourceTurnId())
+                .filter(candidate -> candidate.threadId().equals(ownerThreadId))
+                .orElseThrow(() -> new AgentThreadConflictException(
+                        "SOURCE_TURN_NOT_FOUND", "订单动作来源 Turn 不属于当前 Thread"));
+        if (!sourceContainsOrderFact(source, action.orderId())) {
+            throw new AgentThreadConflictException("ORDER_FACT_NOT_FOUND", "来源 Turn 中没有可验证的订单事实");
+        }
+        if (questions.findOpenQuestion(ownerId, ownerThreadId).isPresent()) {
+            throw new AgentThreadConflictException("THREAD_AWAITING_ANSWER", "当前 Thread 正在等待 QuestionCard 回答");
+        }
+        ThreadSlot slot = slots.computeIfAbsent(ownerThreadId, ignored -> new ThreadSlot());
+        synchronized (slot) {
+            Optional<AgentTurnModel> duplicateAfterLock = turns.findTurnByRequest(ownerId, normalizedRequestId);
+            if (duplicateAfterLock.isPresent()) {
+                return requireMatchingOrderActionDuplicate(
+                        duplicateAfterLock.get(), ownerId, ownerThreadId, action);
+            }
+            if (slot.queue.size() >= maxPendingPerThread) {
+                throw new AgentThreadConflictException("THREAD_QUEUE_FULL", "当前 Thread 排队请求已满");
+            }
+            if (pendingGlobal.get() >= maxPendingGlobal) {
+                throw new AgentThreadConflictException("AGENT_QUEUE_FULL", "Agent 全局排队请求已满");
+            }
+            String input = "订单动作 " + action.actionType().name() + " · " + action.orderId();
+            AgentTurnModel turn = new AgentTurnModel(
+                    UUID.randomUUID().toString(), ownerThreadId, ownerId, normalizedRequestId, input,
+                    AgentTurnStatusEnum.QUEUED, slot.queue.size() + 1, null, null,
+                    clock.instant(), null, null, null, 0L,
+                    AgentTurnInputKindEnum.ORDER_ACTION, action);
+            AgentItemModel initialItem = new AgentItemModel(
+                    UUID.randomUUID().toString(), turn.threadId(), turn.turnId(), 0,
+                    AgentItemTypeEnum.ORDER_ACTION_REQUEST, orderActionPayload(action), turn.createdAt());
+            long initialSequence;
+            try {
+                initialSequence = turns.createTurnWithInitialItem(turn, initialItem);
+            } catch (RuntimeException creationFailure) {
+                Optional<AgentTurnModel> raced = turns.findTurnByRequest(ownerId, normalizedRequestId);
+                if (raced.isPresent()) {
+                    return requireMatchingOrderActionDuplicate(raced.get(), ownerId, ownerThreadId, action);
+                }
+                throw creationFailure;
+            }
+            if (initialSequence <= 0) {
+                appendItem(initialItem);
+            } else {
+                events.itemCreated(withSequence(initialItem, initialSequence));
+            }
+            appendItem(turn, AgentItemTypeEnum.TURN_STATE, turnStatePayload(turn.status(), null));
+            QueuedTurn queued = new QueuedTurn(turn, null, new AtomicBoolean(false),
+                    new AtomicBoolean(false), new AtomicReference<>());
+            slot.queue.addLast(queued);
+            pendingGlobal.incrementAndGet();
+            scheduleQueueTimeout(ownerThreadId, queued);
+            schedule(slot, thread);
+            return turn;
+        }
     }
 
     public AgentTurnModel answerQuestion(
@@ -553,14 +668,21 @@ public final class AgentTurnRuntimeService {
             return;
         }
         try {
-            var assembly = contextAssembler.assembleWithReport(thread, active.turnId(), active.input());
-            executionContext.checkActive();
-            metrics.observeContext(assembly.report().estimatedTokens(), assembly.report().compressed(),
-                    assembly.report().degraded());
-            appendItem(active, AgentItemTypeEnum.EXECUTION_EVENT, contextPayload(assembly.report()));
-            List<AgentItemModel> context = assembly.items();
-            AgentTurnCoordinator.AgentCoordinatorResult result = coordinator.run(
-                    thread, active, context, execution.answers(), executionContext);
+            AgentTurnCoordinator.AgentCoordinatorResult result;
+            if (execution.orderAction()) {
+                if (orderActionCoordinator == null) {
+                    throw new IllegalStateException("订单动作协调器未装配");
+                }
+                result = orderActionCoordinator.run(
+                        thread, active, List.of(), active.orderActionInput(), executionContext);
+            } else {
+                var assembly = contextAssembler.assembleWithReport(thread, active.turnId(), active.input());
+                executionContext.checkActive();
+                metrics.observeContext(assembly.report().estimatedTokens(), assembly.report().compressed(),
+                        assembly.report().degraded());
+                appendItem(active, AgentItemTypeEnum.EXECUTION_EVENT, contextPayload(assembly.report()));
+                result = coordinator.run(thread, active, assembly.items(), execution.answers(), executionContext);
+            }
             if (execution.cancelled.get() || executionContext.cancelled()) {
                 finish(active, execution.timedOut.get() ? AgentTurnStatusEnum.TIMED_OUT : AgentTurnStatusEnum.CANCELLED,
                         execution.timedOut.get() ? "TURN_TIMEOUT" : "CLIENT_CANCELLED");
@@ -570,6 +692,7 @@ public final class AgentTurnRuntimeService {
                 executionContext.checkActive();
                 AgentItemTypeEnum draftType = parseType(draft.type());
                 if (!execution.workflowAnswer()
+                        && !execution.orderAction()
                         && draftType != AgentItemTypeEnum.WORKFLOW_STARTED
                         && draftType != AgentItemTypeEnum.WORKFLOW_QUESTION) {
                     appendItem(active, draftType, draft.payload());
@@ -680,6 +803,21 @@ public final class AgentTurnRuntimeService {
                 bounded.type(), bounded.payload(), bounded.createdAt()));
     }
 
+    private boolean sourceContainsOrderFact(AgentTurnModel source, String orderId) {
+        String marker = "\"orderId\":\"" + escape(orderId) + "\"";
+        return items.listItems(source.userId(), source.threadId(), 0L, 501).stream()
+                .filter(item -> source.turnId().equals(item.turnId()))
+                .filter(item -> item.type() == AgentItemTypeEnum.ORDER_DETAIL
+                        || item.type() == AgentItemTypeEnum.ORDER_LIST)
+                .anyMatch(item -> item.payloadJson().contains(marker));
+    }
+
+    private String orderActionPayload(AgentOrderActionInput action) {
+        return "{\"sourceTurnId\":\"" + escape(action.sourceTurnId())
+                + "\",\"orderId\":\"" + escape(action.orderId())
+                + "\",\"actionType\":\"" + action.actionType().name() + "\"}";
+    }
+
     private AgentItemModel withSequence(AgentItemModel item, long sequence) {
         return new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), sequence,
                 item.type(), item.payload(), item.createdAt());
@@ -742,6 +880,23 @@ public final class AgentTurnRuntimeService {
         if (!matches) {
             throw new AgentThreadConflictException(
                     "CLIENT_REQUEST_CONFLICT", "clientRequestId 已用于不同的 Workflow 回答");
+        }
+        return existing;
+    }
+
+    private AgentTurnModel requireMatchingOrderActionDuplicate(
+            AgentTurnModel existing,
+            String userId,
+            String threadId,
+            AgentOrderActionInput action
+    ) {
+        boolean matches = existing.userId().equals(userId)
+                && existing.threadId().equals(threadId)
+                && existing.inputKind() == AgentTurnInputKindEnum.ORDER_ACTION
+                && action.equals(existing.orderActionInput());
+        if (!matches) {
+            throw new AgentThreadConflictException(
+                    "CLIENT_REQUEST_CONFLICT", "clientRequestId 已用于不同的订单动作");
         }
         return existing;
     }
@@ -978,6 +1133,11 @@ public final class AgentTurnRuntimeService {
     ) {
         private boolean workflowAnswer() {
             return answerInput != null;
+        }
+
+        private boolean orderAction() {
+            return turn.inputKind() == AgentTurnInputKindEnum.ORDER_ACTION
+                    && turn.orderActionInput() != null;
         }
 
         private Map<String, String> answers() {
