@@ -688,7 +688,6 @@ public final class AgentTurnRuntimeService {
                 executionContext.checkActive();
                 AgentItemTypeEnum draftType = parseType(draft.type());
                 if (!execution.workflowAnswer()
-                        && !execution.orderAction()
                         && draftType != AgentItemTypeEnum.WORKFLOW_STARTED
                         && draftType != AgentItemTypeEnum.WORKFLOW_QUESTION) {
                     appendItem(active, draftType, draft.payload());

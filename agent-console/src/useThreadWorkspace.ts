@@ -828,7 +828,18 @@ export function useThreadWorkspace(userId: string) {
     actionType: OrderActionType
   ) => {
     const currentThread = threads.find((thread) => thread.threadId === threadId);
-    if (!threadId || !currentThread || currentThread.status !== "ACTIVE" || busy || question) return;
+    if (!threadId || !currentThread || currentThread.status !== "ACTIVE") {
+      setError("当前对话不可执行订单动作。");
+      return;
+    }
+    if (busy) {
+      setError("当前操作正在处理中，请稍候。");
+      return;
+    }
+    if (question) {
+      setError("请先结束当前确认操作，再查询或处理其他订单。");
+      return;
+    }
     const requestThreadId = threadId;
     const generation = generationRef.current;
     setBusy(true);

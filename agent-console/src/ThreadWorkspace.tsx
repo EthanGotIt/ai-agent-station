@@ -3,6 +3,7 @@ import {
   Archive,
   ArchiveRestore,
   Bot,
+  Check,
   CheckCircle2,
   CircleAlert,
   Clock3,
@@ -99,10 +100,10 @@ function OrderResults({ turn, disabled, onAction }: { turn: ThreadViewTurn; disa
         <div className="order-card-meta"><span>{amount(order)}</span><span>下单 {dateTime(order.createdAt)}</span><span>{order.visibility === "HIDDEN" ? "已隐藏" : order.logisticsStatus ?? "暂无物流状态"}</span></div>
         {timeline ? <LogisticsTimelineView timeline={timeline} /> : null}
         <div className="order-card-actions" aria-label={`${order.orderId} 可用操作`}>
-          <button type="button" className="secondary" disabled={disabled} onClick={() => onAction(turn.turnId, order.orderId, "QUERY_LOGISTICS")}><Truck aria-hidden="true" />查物流</button>
-          {order.status !== "REFUNDED" && order.status !== "CANCELLED" ? <button type="button" className="secondary" disabled={disabled} onClick={() => onAction(turn.turnId, order.orderId, "REFUND")}><Undo2 aria-hidden="true" />申请退款</button> : null}
-          {order.status === "PAID" ? <button type="button" className="secondary" disabled={disabled} onClick={() => onAction(turn.turnId, order.orderId, "EXPEDITE")}><PackageSearchIcon />催发货</button> : null}
-          {order.visibility === "HIDDEN" ? <button type="button" className="secondary" disabled={disabled} onClick={() => onAction(turn.turnId, order.orderId, "RESTORE_ORDER")}><ArchiveRestore aria-hidden="true" />恢复记录</button> : <button type="button" className="secondary" disabled={disabled} onClick={() => onAction(turn.turnId, order.orderId, "HIDE_ORDER")}><Archive aria-hidden="true" />隐藏记录</button>}
+          <button type="button" className="secondary" disabled={disabled} aria-busy={disabled} onClick={() => onAction(turn.turnId, order.orderId, "QUERY_LOGISTICS")}><Truck aria-hidden="true" />查物流</button>
+          {order.status !== "REFUNDED" && order.status !== "CANCELLED" ? <button type="button" className="secondary" disabled={disabled} aria-busy={disabled} onClick={() => onAction(turn.turnId, order.orderId, "REFUND")}><Undo2 aria-hidden="true" />申请退款</button> : null}
+          {order.status === "PAID" ? <button type="button" className="secondary" disabled={disabled} aria-busy={disabled} onClick={() => onAction(turn.turnId, order.orderId, "EXPEDITE")}><PackageSearchIcon />催发货</button> : null}
+          {order.visibility === "HIDDEN" ? <button type="button" className="secondary" disabled={disabled} aria-busy={disabled} onClick={() => onAction(turn.turnId, order.orderId, "RESTORE_ORDER")}><ArchiveRestore aria-hidden="true" />恢复记录</button> : <button type="button" className="secondary" disabled={disabled} aria-busy={disabled} onClick={() => onAction(turn.turnId, order.orderId, "HIDE_ORDER")}><Archive aria-hidden="true" />隐藏记录</button>}
         </div>
       </article>;
     })}</div> : null}
@@ -142,20 +143,20 @@ function QuestionCard({ value, disabled, onSubmit, onCancel }: { value: Question
   const finalConfirmation = value.step === "CONFIRM";
   const stageLabel = ({ INTENT: "选择售后事项", ORDER_SELECT: "选择订单", REASON: "补充退款原因", CONFIRM: "最终确认", HISTORY_ACTION: "选择记录操作" } as Record<string, string>)[value.step ?? ""] ?? value.step ?? "等待输入";
   return <form className="decision-card question-card" onSubmit={(event) => { event.preventDefault(); submit(); }} onKeyDown={keyboard}>
-    <div className="decision-heading"><CheckCircle2 aria-hidden="true" /><div><span className="eyebrow">需要确认</span><h2>{value.title}</h2><p>业务阶段：{stageLabel}{value.stepNo !== undefined ? ` · 第 ${value.stepNo} 步` : ""} · 检查点版本 {value.version}</p></div></div>
-    {value.operation ? <span className="question-operation">{value.operation}</span> : null}
+    <div className="decision-heading"><span className="question-heading-icon"><CheckCircle2 aria-hidden="true" /></span><div className="question-heading-copy"><span className="question-status">需要确认</span><h2>{value.title}</h2><div className="question-meta"><span>业务阶段：{stageLabel}</span>{value.stepNo !== undefined ? <span>第 {value.stepNo} 步</span> : null}<span>检查点 v{value.version}</span></div></div></div>
+    {value.operation ? <span className="question-operation"><span className="question-operation-dot" aria-hidden="true" />{value.operation}</span> : null}
     <RestrictedMarkdown value={value.prompt} className="question-prompt" />
     {value.summary && value.summary.length > 0 ? <dl className="question-summary">{value.summary.map((line) => <div key={`${line.label}-${line.value}`}><dt>{line.label}</dt><dd>{line.value}</dd></div>)}</dl> : null}
     <div className="question-fields">{value.fields.map((field, index) => {
       const fieldValue = answers[field.name] ?? ""; const otherSelected = fieldValue === "__OTHER__";
       const controlProps = { autoFocus: index === 0, "aria-label": field.label, "aria-invalid": invalidField === field.name, disabled, maxLength: field.maxLength ?? 4_000, value: fieldValue, onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setAnswers((current) => ({ ...current, [field.name]: event.target.value })) };
-      return <label className="question-field" key={field.name}><span>{field.label}{field.required ? <em aria-hidden="true">必填</em> : null}</span>
-        {isSingleSelect(field) ? <select {...controlProps}><option value="">请选择</option>{(field.options ?? []).slice(0, 3).map((option) => <option value={option} key={option}>{option}</option>)}{field.allowCustom ? <option value="__OTHER__">其他</option> : null}</select> : field.name.toLowerCase().includes("reason") ? <textarea {...controlProps} rows={4} placeholder="请说明退款原因" /> : <input {...controlProps} placeholder="请填写" />}
+      return <label className="question-field" key={field.name}><span className="question-field-label">{field.label}{field.required ? <em aria-hidden="true">必填</em> : null}</span>
+        {isSingleSelect(field) ? <select {...controlProps}><option value="">请选择</option>{(field.options ?? []).slice(0, 3).map((option) => <option value={option} key={option}>{option}</option>)}{field.allowCustom ? <option value="__OTHER__">其他</option> : null}</select> : field.name.toLowerCase().includes("reason") ? <textarea {...controlProps} rows={3} placeholder="请说明退款原因" /> : <input {...controlProps} placeholder="请填写" />}
         {otherSelected ? <input aria-label={`${field.label}自定义内容`} autoFocus disabled={disabled} aria-invalid={invalidField === field.name} maxLength={field.maxLength ?? 4_000} value={customValues[field.name] ?? ""} onChange={(event) => setCustomValues((current) => ({ ...current, [field.name]: event.target.value }))} placeholder="请补充具体内容" /> : null}
       </label>;
     })}</div>
     {formError ? <p className="question-form-error" role="alert"><CircleAlert aria-hidden="true" />{formError}</p> : null}
-    <div className="actions question-actions"><button type="submit" disabled={disabled}><CheckCircle2 aria-hidden="true" />{disabled ? "处理中…" : finalConfirmation ? "确认并执行" : "继续"}</button><button className="secondary" type="button" disabled={disabled} onClick={onCancel}><X aria-hidden="true" />结束本次操作</button><span className="question-key-help">Enter 提交 · Shift + Enter 换行 · Esc 结束</span></div>
+    <div className="actions question-actions"><button type="submit" disabled={disabled}><span className="question-action-icon"><Check aria-hidden="true" /></span>{disabled ? "处理中…" : finalConfirmation ? "确认并执行" : "继续"}</button><button className="secondary" type="button" disabled={disabled} onClick={onCancel}><span className="question-action-icon question-action-icon-secondary"><X aria-hidden="true" /></span>结束本次操作</button><span className="question-key-help">Enter 提交 · Shift + Enter 换行 · Esc 结束</span></div>
   </form>;
 }
 

@@ -438,6 +438,37 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/threads/thread-1/turns"))).toBe(false);
   });
 
+  it("确认卡片打开时点击查物流会说明阻塞原因，而不是静默无响应", async () => {
+    const thread = threadRecord("thread-1", "确认中的订单 Thread");
+    const events = [
+      itemEvent("item-user-guard", "thread-1", "turn-1", "USER_MESSAGE", 1,
+        { schemaVersion: 1, kind: "USER_MESSAGE", data: "查一下订单" }),
+      itemEvent("item-order-guard", "thread-1", "turn-1", "ORDER_DETAIL", 2,
+        { schemaVersion: 1, kind: "ORDER_DETAIL", data: { orderId: "ORDER-001", orderStatus: "SHIPPED", itemSummary: "保温杯", visibility: "ACTIVE" } }),
+      itemEvent("item-question-guard", "thread-1", "turn-1", "WORKFLOW_QUESTION", 3,
+        { schemaVersion: 1, kind: "WORKFLOW_QUESTION", data: {
+          runId: "run-guard", questionId: "question-guard", checkpointId: "checkpoint-guard", version: 1,
+          title: "补充退款原因", prompt: "请说明原因。", step: "REASON", stepNo: 2,
+          fields: [{ name: "reason", label: "退款原因", type: "TEXT", required: true }]
+        } })
+    ];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      if (url.includes("/threads/thread-1/items")) return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse(events));
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const orderCard = (await screen.findByText("保温杯")).closest(".order-card");
+    fireEvent.click(within(orderCard as HTMLElement).getByRole("button", { name: "查物流" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("请先结束当前确认操作");
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/order-actions"))).toBe(false);
+  });
+
   it("订单动作 Turn 折叠回来源卡片，不生成可见模拟问答", async () => {
     const thread = threadRecord("thread-1", "动作折叠 Thread");
     const events = [

@@ -269,6 +269,9 @@ class AgentTurnRuntimeServiceTest {
                 persistence.findTurn("user-1", action.turnId()).orElseThrow().status());
         assertTrue(persistence.items.stream().anyMatch(item -> item.type()
                 == cn.ethan.core.agent.thread.AgentItemTypeEnum.ORDER_ACTION_REQUEST));
+        assertTrue(persistence.items.stream().anyMatch(item -> item.turnId().equals(action.turnId())
+                && item.type() == cn.ethan.core.agent.thread.AgentItemTypeEnum.ORDER_DETAIL),
+                "deterministic order facts must be persisted on the action Turn");
         scheduler.shutdownNow();
     }
 
