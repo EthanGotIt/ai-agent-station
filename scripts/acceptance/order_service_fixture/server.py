@@ -69,9 +69,15 @@ class OrderService:
         self,
         database_path: str,
         clock: Callable[[], datetime] | None = None,
+        expedite_transient_failures: int | None = None,
     ) -> None:
         self.database_path = database_path
         self.clock = clock or utc_now
+        self.expedite_transient_failures = self._non_negative_int(
+            expedite_transient_failures
+            if expedite_transient_failures is not None
+            else os.getenv("ORDER_SERVICE_FIXTURE_EXPEDITE_TRANSIENT_FAILURES", "0")
+        )
         database_directory = os.path.dirname(database_path)
         if database_directory:
             os.makedirs(database_directory, exist_ok=True)
@@ -133,6 +139,13 @@ class OrderService:
                     MUTATED INTEGER NOT NULL,
                     CREATED_AT TEXT NOT NULL,
                     PRIMARY KEY (USER_ID, IDEMPOTENCY_KEY)
+                );
+                CREATE TABLE IF NOT EXISTS FIXTURE_FAULT_ATTEMPTS (
+                    USER_ID TEXT NOT NULL,
+                    ACTION TEXT NOT NULL,
+                    ORDER_ID TEXT NOT NULL,
+                    ATTEMPTS INTEGER NOT NULL,
+                    PRIMARY KEY (USER_ID, ACTION, ORDER_ID)
                 );
                 """
             )
@@ -421,6 +434,12 @@ class OrderService:
                 "SELECT * FROM ORDERS WHERE ORDER_ID = ?",
                 (order_id,),
             ).fetchone()
+            injected = self._maybe_inject_expedite_failure(
+                connection, row, user_id, order_id, action_name
+            )
+            if injected is not None:
+                connection.commit()
+                return 200, injected
             response_status, response, mutated = self._apply_action(
                 connection,
                 row,
@@ -543,6 +562,47 @@ class OrderService:
             return self._with_mutation(self._succeeded(code, message), True)
         return self._with_mutation(self._failed("ACTION_UNSUPPORTED", "不支持的订单操作"), False)
 
+    def _maybe_inject_expedite_failure(
+        self,
+        connection: sqlite3.Connection,
+        row: sqlite3.Row | None,
+        user_id: str,
+        order_id: str,
+        action_name: str,
+    ) -> dict[str, object] | None:
+        """在有效催发货订单上注入可重试失败，且不写入幂等记录或业务事实。"""
+
+        if (
+            action_name != "expedite"
+            or self.expedite_transient_failures <= 0
+            or row is None
+            or row["USER_ID"] != user_id
+            or row["STATUS"] != "PAID"
+            or row["LOGISTICS_STATUS"] == "EXPEDITE_REQUESTED"
+        ):
+            return None
+        fault = connection.execute(
+            "SELECT ATTEMPTS FROM FIXTURE_FAULT_ATTEMPTS "
+            "WHERE USER_ID = ? AND ACTION = ? AND ORDER_ID = ?",
+            (user_id, action_name, order_id),
+        ).fetchone()
+        attempts = int(fault["ATTEMPTS"]) if fault is not None else 0
+        if attempts >= self.expedite_transient_failures:
+            return None
+        next_attempts = attempts + 1
+        connection.execute(
+            "INSERT INTO FIXTURE_FAULT_ATTEMPTS (USER_ID, ACTION, ORDER_ID, ATTEMPTS) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(USER_ID, ACTION, ORDER_ID) DO UPDATE SET ATTEMPTS = excluded.ATTEMPTS",
+            (user_id, action_name, order_id, next_attempts),
+        )
+        return {
+            "success": False,
+            "retryable": True,
+            "code": "FIXTURE_TRANSIENT_FAILURE",
+            "message": f"验收夹具注入临时失败（第 {next_attempts} 次）",
+        }
+
     @staticmethod
     def _with_mutation(
         result: tuple[int, dict[str, object]],
@@ -565,7 +625,15 @@ class OrderService:
                 "SELECT COUNT(*) AS TOTAL, COALESCE(SUM(MUTATED), 0) AS MUTATIONS "
                 "FROM IDEMPOTENCY_RECORDS"
             ).fetchone()
-        return {"idempotencyRecords": row["TOTAL"], "businessMutations": row["MUTATIONS"]}
+            fault = connection.execute(
+                "SELECT COALESCE(SUM(ATTEMPTS), 0) AS INJECTED "
+                "FROM FIXTURE_FAULT_ATTEMPTS"
+            ).fetchone()
+        return {
+            "idempotencyRecords": row["TOTAL"],
+            "businessMutations": row["MUTATIONS"],
+            "injectedFailures": fault["INJECTED"],
+        }
 
     @staticmethod
     def _first(query: dict[str, list[str]], name: str, default: str) -> str:
@@ -578,6 +646,13 @@ class OrderService:
             return int(value) if value.strip() else None
         except ValueError:
             return None
+
+    @staticmethod
+    def _non_negative_int(value: object) -> int:
+        try:
+            return max(0, int(str(value).strip()))
+        except (TypeError, ValueError):
+            return 0
 
     @staticmethod
     def _decimal(value: str) -> Decimal | None:

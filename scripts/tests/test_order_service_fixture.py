@@ -103,6 +103,57 @@ class OrderServiceFixtureTest(unittest.TestCase):
         self.assertEqual(200, status)
         self.assertEqual(["ORDER-EXT-TODAY-001"], [order["orderId"] for order in hidden])
 
+    def test_expedite_transient_failures_do_not_create_idempotency_or_mutate(self):
+        service = OrderService(
+            str(Path(self.temp_dir.name) / "retryable-order-service.db"),
+            clock=self.service.clock,
+            expedite_transient_failures=2,
+        )
+        key = "fixture-expedite-retry"
+        for attempt in range(2):
+            status, response = service.action(
+                "demo-user-1",
+                "ORDER-EXT-TODAY-001",
+                "expedite",
+                key,
+                {},
+            )
+            self.assertEqual(200, status)
+            self.assertFalse(response["success"])
+            self.assertTrue(response["retryable"])
+            self.assertEqual("FIXTURE_TRANSIENT_FAILURE", response["code"])
+            self.assertIn(str(attempt + 1), response["message"])
+            self.assertEqual(
+                {
+                    "idempotencyRecords": 0,
+                    "businessMutations": 0,
+                    "injectedFailures": attempt + 1,
+                },
+                service.stats(),
+            )
+
+        status, response = service.action(
+            "demo-user-1",
+            "ORDER-EXT-TODAY-001",
+            "expedite",
+            key,
+            {},
+        )
+        self.assertEqual(200, status)
+        self.assertEqual("EXPEDITED", response["code"])
+        self.assertEqual(
+            {
+                "idempotencyRecords": 1,
+                "businessMutations": 1,
+                "injectedFailures": 2,
+            },
+            service.stats(),
+        )
+        self.assertEqual(
+            "EXPEDITE_REQUESTED",
+            service.find_order("demo-user-1", "ORDER-EXT-TODAY-001")[1]["logisticsStatus"],
+        )
+
     def test_accepts_chunked_json_body_from_java_http_client(self):
         connection = HTTPConnection("127.0.0.1", self.server.server_port, timeout=2)
         body = json.dumps({"reason": "商品不符"}, ensure_ascii=False).encode("utf-8")

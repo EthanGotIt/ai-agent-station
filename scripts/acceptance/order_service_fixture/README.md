@@ -11,7 +11,10 @@
 - `POST /orders/{orderId}/expedite`
 - `POST /orders/{orderId}/visibility`
 
-查询和写操作都要求 `X-User-Id`。写操作还要求 `Idempotency-Key`；服务端将 `(userId, idempotencyKey)`、请求摘要、响应和业务变更标记持久化在 SQLite 中，重复请求返回原响应，不重复修改订单。`/_fixture/stats` 仅用于本机验收，查看幂等记录和实际业务变更次数。
+查询和写操作都要求 `X-User-Id`。写操作还要求 `Idempotency-Key`；服务端将 `(userId, idempotencyKey)`、请求摘要、响应和业务变更标记持久化在 SQLite 中，重复请求返回原响应，不重复修改订单。`/_fixture/stats` 仅用于本机验收，查看幂等记录、实际业务变更次数和注入的临时失败次数。
+
+为验证自动重试耗尽和人工重试，可在启动夹具前设置
+`ORDER_SERVICE_FIXTURE_EXPEDITE_TRANSIENT_FAILURES=3`。该值只对有效的待发货催发货订单生效：前 3 次使用同一幂等键返回 `retryable=true`，不创建幂等记录、不改变订单；后续请求才执行一次真实变更。默认值为 `0`，不注入故障。
 
 ## Docker Desktop 启动
 
