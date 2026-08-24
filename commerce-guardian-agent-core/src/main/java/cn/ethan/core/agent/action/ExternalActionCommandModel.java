@@ -104,11 +104,6 @@ public record ExternalActionCommandModel(
         return attemptCount;
     }
 
-    /** 当前人工重试周期内已领取的尝试次数；人工重试时重置为零。 */
-    public int currentRetryCycleAttemptCount() {
-        return retryCycleAttemptCount;
-    }
-
     public ExternalActionCommandModel claimed(String workerId, Instant leaseUntil, Instant now) {
         if (workerId == null || workerId.isBlank() || leaseUntil == null || now == null
                 || !leaseUntil.isAfter(now)) {
