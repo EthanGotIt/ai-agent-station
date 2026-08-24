@@ -36,6 +36,8 @@ export type ExternalActionReceipt = {
   message?: string;
   attemptCount?: number;
   retryCycleAttemptCount?: number;
+  maxAttempts?: number;
+  nextAttemptAt?: string;
   verificationStatus?: string;
   verificationMessage?: string;
   verifiedAt?: string;

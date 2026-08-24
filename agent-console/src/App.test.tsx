@@ -434,7 +434,8 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     fireEvent.click(within(orderCard as HTMLElement).getByRole("button", { name: "申请退款" }));
     const composer = screen.getByRole("textbox", { name: "输入请求" }) as HTMLTextAreaElement;
     expect(composer.value).toBe("");
-    expect(screen.getByRole("status", { name: "申请退款 执行提示" })).not.toBeNull();
+    expect(screen.getByRole("status", { name: "申请退款 执行状态" })).not.toBeNull();
+    expect(screen.getByText("已提交，正在排队")).not.toBeNull();
     const actionCall = fetchMock.mock.calls.find(([input]) => String(input).includes("/threads/thread-1/order-actions"));
     expect(JSON.parse(String(actionCall?.[1]?.body))).toMatchObject({
       sourceTurnId: "turn-1", orderId: "ORDER-TODAY-001", actionType: "REFUND"
@@ -580,7 +581,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     fireEvent.click(await screen.findByRole("button", { name: "人工重试" }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) =>
       String(input).includes("/workflow-runs/run-retry/retry"))).toBe(true));
-    expect((await screen.findByRole("button", { name: "重试已排队" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((await screen.findByRole("button", { name: "重试中…" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("外部动作成功后不覆盖已经失败的不可变 Turn", async () => {

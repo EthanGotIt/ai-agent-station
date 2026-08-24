@@ -21,15 +21,15 @@
 - Turn 只展示一行由真实 Item 聚合出的阶段摘要、状态和耗时；订单列表、订单详情与物流时间线在同一 Turn 内以内联结构化卡片呈现。
 - 订单卡片操作走确定性 `order-actions` Turn：查询直接读取订单/物流事实，退款、催发货、隐藏和恢复进入现有 Workflow；不会经过模型，也不会生成可见的模拟问答。外部写操作仍由 QuestionCard 做最终授权。
 - 订单动作 Turn 和 Workflow 回答 Turn 按 `sourceTurnId`、`runId`、`orderId` 折回来源 Turn；刷新后仍由持久化 `ORDER_ACTION_REQUEST`、`WORKFLOW_ANSWER` 和结构化订单 Item 恢复同一张卡片。运行详情仍可查看完整技术 Item。
-- 执行类订单动作在来源 Turn 内保留右对齐的消息式状态气泡，并在用户触发时显示页面中央、避开底部 Composer 的可关闭动作弹窗；弹窗带动作名称、订单号和处理中/等待确认/已完成/失败状态，结构化订单事实仍保留在原订单卡片内。
+- 执行类订单动作在来源 Turn 的对应订单卡片内显示单一状态回执：排队、处理中、等待确认、失败/人工重试和完成均绑定真实动作 Item；查询和刷新完成后直接更新同一张结构化卡片。页面不再显示重复的执行消息气泡或独立动作弹窗。
 - QuestionCard 的普通步骤按钮为“继续”，最终授权为“确认并执行”，次按钮为“结束本次操作”。取消动作不会触发必填字段校验，并以 `CANCEL` 回答关闭 Workflow、保留取消事实且不创建外部动作。
-- 活跃 QuestionCard 不再嵌入历史 Turn，而是作为页面中央、避开底部 Composer 的模态浮层；它带遮罩、关闭按钮、Esc 取消、焦点收束和独立滚动，底部输入框保留但在确认期间禁用，历史 Turn 只保留阶段摘要与执行状态气泡。
+- 活跃 QuestionCard 不再嵌入历史 Turn，而是作为页面中央、避开底部 Composer 的模态浮层；它带遮罩、关闭按钮、Esc 取消、焦点收束和独立滚动，底部输入框保留但在确认期间禁用，历史 Turn 只保留阶段摘要与卡内动作回执。
 - `运行详情`显示浅色账本式真实 sequence、时间、Item 类型和受控 JSON；敏感键会被遮蔽，不展示 Thinking。Escape、关闭按钮和遮罩均可退出，抽屉打开时锁定页面滚动并将焦点移至关闭按钮。
 - 终态 Turn 首次打开检查器时按需读取并缓存只读执行回放；回放失败时保留已由 Items/SSE 恢复的事实，并在检查器内给出降级提示。
 - QuestionCard 使用后端提供的 `operation`、`step`、`stepNo`；外部动作回执区分已核验与“操作已受理、最新状态暂未核验”，后者提供可编辑的重新查询入口。
 
 ## 验收记录
 
-- `npm.cmd run typecheck`、`npm.cmd test -- --run`、`npm.cmd run build` 已通过；当前 Vitest 为 28 项，覆盖多 Turn/Item 聚合、旧 SSE 增量忽略、快捷问消失、完整 Item 检查器、回放失败降级、结构化订单卡片直达动作、执行消息式状态和居中 QuestionCard 模态浮层、取消后 QuestionCard 收敛。
+- `npm.cmd run typecheck`、`npm.cmd test -- --run`、`npm.cmd run build` 已通过；当前 Vitest 为 28 项，覆盖多 Turn/Item 聚合、旧 SSE 增量忽略、快捷问消失、完整 Item 检查器、回放失败降级、结构化订单卡片直达动作、卡内动作状态回执、居中 QuestionCard 模态浮层和取消后 QuestionCard 收敛。
 - Impeccable detector 扫描 `agent-console/src` 返回空问题集。
 - 已使用真实后端数据复核 1920×900、1440×900、1024×768、390×844：桌面三栏、1024 右侧抽屉与移动端全屏检查器均可用；关闭检查器后移动端主业务流保持可操作。正文基准为 14px，页面/Turn 标题为 16px，卡片标题为 15px，技术元数据使用 11–12px 等宽字体。最近的现场截图由本地开发服务器生成。

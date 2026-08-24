@@ -12,7 +12,6 @@ import {
   Menu,
   PanelRight,
   Pencil,
-  RotateCcw,
   Search,
   Send,
   ShieldCheck,
@@ -33,6 +32,8 @@ import type {
   ThreadViewTurn
 } from "./threadTypes";
 import type { useThreadWorkspace } from "./useThreadWorkspace";
+import { OrderActionStatus } from "./OrderActionStatus";
+import { findOrderAction, projectOrderAction, type OrderActionRequest } from "./orderActionProjection";
 
 type Props = { workspace: ReturnType<typeof useThreadWorkspace>; userId: string };
 
@@ -85,7 +86,9 @@ function LogisticsTimelineView({ timeline }: { timeline: LogisticsTimeline }) {
   </li>)}</ol>;
 }
 
-function OrderResults({ turn, disabled, onAction }: { turn: ThreadViewTurn; disabled: boolean; onAction: (sourceTurnId: string, orderId: string, actionType: OrderActionType) => void }) {
+type PendingOrderAction = Omit<OrderActionRequest, "turnId">;
+
+function OrderResults({ turn, disabled, pendingAction, retryingRunId, onRetry, onAction }: { turn: ThreadViewTurn; disabled: boolean; pendingAction: PendingOrderAction | null; retryingRunId: string | null; onRetry: (runId: string) => void; onAction: (sourceTurnId: string, orderId: string, actionType: OrderActionType) => void }) {
   const { orderCards: orders, logisticsTimelines: timelines } = turn;
   if (orders.length === 0 && timelines.length === 0) return null;
   const timelineByOrder = new Map(timelines.map((timeline) => [timeline.orderId, timeline]));
@@ -95,9 +98,13 @@ function OrderResults({ turn, disabled, onAction }: { turn: ThreadViewTurn; disa
     <div className="result-heading"><div><span className="eyebrow">STRUCTURED FACTS</span><h3>{orders.length > 0 ? `找到 ${orders.length} 个匹配订单` : "物流时间线"}</h3></div><span className="sequence-caption">来自本 Turn</span></div>
     {orders.length > 0 ? <div className="order-card-grid">{orders.map((order) => {
       const timeline = timelineByOrder.get(order.orderId);
+      const action = findOrderAction(turn, order.orderId);
+      const pending = pendingAction?.sourceTurnId === turn.turnId && pendingAction.orderId === order.orderId ? { ...pendingAction, turnId: "__pending__" } : null;
+      const actionView = action ? projectOrderAction(turn, action) : pending ? projectOrderAction(turn, pending) : null;
       return <article className="order-card" key={order.orderId}>
         <div className="order-card-heading"><div><strong>{order.itemSummary ?? "订单商品"}</strong><span>{order.orderId}</span></div><span className={`status status-${order.status.toLowerCase()}`}>{orderStatus(order.status)}</span></div>
         <div className="order-card-meta"><span>{amount(order)}</span><span>下单 {dateTime(order.createdAt)}</span><span>{order.visibility === "HIDDEN" ? "已隐藏" : order.logisticsStatus ?? "暂无物流状态"}</span></div>
+        {actionView ? <OrderActionStatus view={actionView} disabled={disabled} retrying={retryingRunId === actionView.runId} onRetry={onRetry} onRefresh={(nextOrderId) => onAction(turn.turnId, nextOrderId, "REFRESH_ORDER")} /> : null}
         {timeline ? <LogisticsTimelineView timeline={timeline} /> : null}
         <div className="order-card-actions" aria-label={`${order.orderId} 可用操作`}>
           <button type="button" className="secondary" disabled={disabled} aria-busy={disabled} onClick={() => onAction(turn.turnId, order.orderId, "QUERY_LOGISTICS")}><Truck aria-hidden="true" />查物流</button>
@@ -107,7 +114,12 @@ function OrderResults({ turn, disabled, onAction }: { turn: ThreadViewTurn; disa
         </div>
       </article>;
     })}</div> : null}
-    {orphanTimelines.map((timeline) => <article className="order-card" key={timeline.orderId}><div className="order-card-heading"><div><strong>物流时间线</strong><span>{timeline.orderId}</span></div></div><LogisticsTimelineView timeline={timeline} /></article>)}
+    {orphanTimelines.map((timeline) => {
+      const action = findOrderAction(turn, timeline.orderId);
+      const pending = pendingAction?.sourceTurnId === turn.turnId && pendingAction.orderId === timeline.orderId ? { ...pendingAction, turnId: "__pending__" } : null;
+      const actionView = action ? projectOrderAction(turn, action) : pending ? projectOrderAction(turn, pending) : null;
+      return <article className="order-card" key={timeline.orderId}><div className="order-card-heading"><div><strong>物流时间线</strong><span>{timeline.orderId}</span></div></div>{actionView ? <OrderActionStatus view={actionView} disabled={disabled} retrying={retryingRunId === actionView.runId} onRetry={onRetry} onRefresh={(nextOrderId) => onAction(turn.turnId, nextOrderId, "REFRESH_ORDER")} /> : null}<LogisticsTimelineView timeline={timeline} /></article>;
+    })}
   </section>;
 }
 
@@ -221,73 +233,23 @@ function duration(turn: ThreadViewTurn) {
   return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
 }
 
-const ACTION_LABELS: Record<OrderActionType, string> = {
-  QUERY_LOGISTICS: "查物流",
-  REFRESH_ORDER: "刷新订单",
-  REFUND: "申请退款",
-  EXPEDITE: "催发货",
-  HIDE_ORDER: "隐藏记录",
-  RESTORE_ORDER: "恢复记录"
-};
-
-function isOrderActionType(value: unknown): value is OrderActionType {
-  return typeof value === "string" && Object.prototype.hasOwnProperty.call(ACTION_LABELS, value);
+function ActionFallbackReceipt({ turn, disabled, pendingAction, retryingRunId, onRetry, onAction }: { turn: ThreadViewTurn; disabled: boolean; pendingAction: PendingOrderAction | null; retryingRunId: string | null; onRetry: (runId: string) => void; onAction: (sourceTurnId: string, orderId: string, actionType: OrderActionType) => void }) {
+  const action = findOrderAction(turn);
+  const pending = pendingAction?.sourceTurnId === turn.turnId ? { ...pendingAction, turnId: "__pending__" } : null;
+  const view = action ? projectOrderAction(turn, action) : pending ? projectOrderAction(turn, pending) : null;
+  if (!view) return null;
+  return <div className="action-fallback-receipt"><OrderActionStatus view={view} disabled={disabled} retrying={retryingRunId === view.runId} onRetry={onRetry} onRefresh={(orderId) => onAction(turn.turnId, orderId, "REFRESH_ORDER")} /></div>;
 }
 
-function orderActionFromTurn(turn: ThreadViewTurn) {
-  const item = [...turn.items].reverse().find((candidate) => candidate.type === "ORDER_ACTION_REQUEST");
-  if (!item || !item.payload.data || typeof item.payload.data !== "object") return null;
-  const data = item.payload.data as { sourceTurnId?: unknown; orderId?: unknown; actionType?: unknown };
-  if (typeof data.sourceTurnId !== "string" || typeof data.orderId !== "string" || !isOrderActionType(data.actionType)) return null;
-  return { sourceTurnId: data.sourceTurnId, orderId: data.orderId, actionType: data.actionType };
-}
-
-function executionMessageState(turn: ThreadViewTurn) {
-  if (turn.error || turn.status === "FAILED" || turn.status === "TIMED_OUT" || turn.status === "CANCELLED" || turn.externalActionStatus === "MANUAL_RETRY_REQUIRED") return "error";
-  if (turn.question || turn.status === "WAITING_USER_INPUT") return "waiting";
-  if (turn.status === "QUEUED" || turn.status === "ACTIVE" || turn.status === "WAITING_EXTERNAL_ACTION" || ["PENDING", "PROCESSING", "RETRY_WAIT"].includes(turn.externalActionStatus ?? "")) return "active";
-  return "done";
-}
-
-function executionMessage({ turn }: { turn: ThreadViewTurn }) {
-  const action = orderActionFromTurn(turn);
-  if (!action) return null;
-  const state = executionMessageState(turn);
-  const copy = state === "waiting" ? "等待你确认" : state === "error" ? "操作未完成" : state === "active" ? "正在处理" : "已完成";
-  const Icon = state === "waiting" || state === "active" ? Clock3 : state === "error" ? CircleAlert : CheckCircle2;
-  return <div className={`execution-message execution-message-${state}`} role="status" aria-label={`${ACTION_LABELS[action.actionType]} 执行状态`} aria-live="polite">
-    <span className="execution-message-icon"><Icon aria-hidden="true" /></span>
-    <div className="execution-message-copy"><strong>{ACTION_LABELS[action.actionType]}</strong><span>{copy}</span></div>
-    <code>{action.orderId}</code>
-  </div>;
-}
-
-function ExecutionPopup({ action, turn, onClose }: { action: { orderId: string; actionType: OrderActionType }; turn: ThreadViewTurn | null; onClose: () => void }) {
-  const state = turn ? executionMessageState(turn) : "active";
-  const copy = state === "waiting" ? "已启动确认流程，请在底部完成当前问题。" : state === "error" ? "操作未完成，可关闭提示后检查运行详情。" : state === "active" ? "正在提交业务操作，请稍候。" : "业务操作已完成，结果已写入当前对话。";
-  const Icon = state === "waiting" || state === "active" ? Clock3 : state === "error" ? CircleAlert : CheckCircle2;
-  return <div className={`execution-popup-layer ${state === "waiting" ? "execution-popup-layer-question" : ""}`}>
-    <section className={`execution-popup execution-popup-${state}`} role="status" aria-label={`${ACTION_LABELS[action.actionType]} 执行提示`} aria-live="polite">
-      <div className="execution-popup-heading"><span className="execution-message-icon"><Icon aria-hidden="true" /></span><div><span className="eyebrow">ORDER ACTION</span><h2>{ACTION_LABELS[action.actionType]}</h2></div><button className="secondary compact-icon" type="button" aria-label="关闭动作弹窗" onClick={onClose}><X aria-hidden="true" /></button></div>
-      <p>{copy}</p>
-      <div className="execution-popup-order"><span>订单</span><code>{action.orderId}</code></div>
-    </section>
-  </div>;
-}
-
-function Turn({ turn, busy, retryingRunId, onRetry, onInspect, onAction }: { turn: ThreadViewTurn; busy: boolean; retryingRunId: string | null; onRetry: (runId: string) => void; onInspect: (turnId: string) => void; onAction: (sourceTurnId: string, orderId: string, actionType: OrderActionType) => void }) {
-  const retryable = turn.externalActionStatus === "MANUAL_RETRY_REQUIRED" && turn.workflowRunId;
+function Turn({ turn, busy, pendingAction, retryingRunId, onRetry, onInspect, onAction }: { turn: ThreadViewTurn; busy: boolean; pendingAction: PendingOrderAction | null; retryingRunId: string | null; onRetry: (runId: string) => void; onInspect: (turnId: string) => void; onAction: (sourceTurnId: string, orderId: string, actionType: OrderActionType) => void }) {
   const hasStructuredFacts = turn.orderCards.length > 0 || turn.logisticsTimelines.length > 0;
   return <article className={`conversation-turn thread-turn turn-${turn.status.toLowerCase()}`}>
     <div className="turn-request"><span className="turn-avatar user-avatar">你</span><div><div className="turn-meta"><strong>你的请求</strong><time>{time(turn.startedAt)}</time><span className={`turn-status status-${turn.status.toLowerCase()}`}>{statusLabel(turn.status)}</span></div><p>{turn.userMessage}</p></div></div>
     <div className="turn-response"><span className="turn-avatar agent-avatar"><Bot aria-label="Agent" /></span><div className="turn-response-body"><div className="turn-meta turn-response-meta"><strong>售后助手</strong><span className="turn-route">业务流</span><button className="detail-trigger" type="button" onClick={() => onInspect(turn.turnId)}><PanelRight aria-hidden="true" />运行详情 <span>{turn.items.length}</span></button></div>
       <div className={`turn-summary summary-${turn.activities.at(-1)?.status?.toLowerCase() ?? "active"}`}><span className="summary-icon">{activityIcon(turn.activities.at(-1)?.status ?? "ACTIVE")}</span><strong>{turnSummary(turn)}</strong>{duration(turn) ? <time>{duration(turn)}</time> : null}</div>
-      {executionMessage({ turn })}
-      {hasStructuredFacts ? <OrderResults turn={turn} disabled={busy} onAction={onAction} /> : turn.content ? <RestrictedMarkdown value={turn.content} className="agent-content" /> : turn.status === "ACTIVE" || turn.status === "QUEUED" ? <p className="agent-content loading-copy">正在分析你的请求…</p> : null}
-      {turn.externalActionReceipt?.verificationStatus === "PENDING" ? <div className="action-receipt action-receipt-pending"><div><strong>操作已受理、最新状态暂未核验</strong><span>{turn.externalActionReceipt.verificationMessage ?? "可以重新查询该订单的最新事实。"}</span></div>{turn.externalActionReceipt.orderId ? <button className="secondary" type="button" disabled={busy} onClick={() => onAction(turn.turnId, turn.externalActionReceipt?.orderId as string, "REFRESH_ORDER")}>重新查询最新状态</button> : null}</div> : null}
-      {turn.externalActionReceipt?.verificationStatus === "VERIFIED" ? <p className="action-receipt action-receipt-verified"><CheckCircle2 aria-hidden="true" />{turn.externalActionReceipt.verificationMessage ?? "最新订单状态已核验"}</p> : null}
+      {hasStructuredFacts ? <OrderResults turn={turn} disabled={busy} pendingAction={pendingAction} retryingRunId={retryingRunId} onRetry={onRetry} onAction={onAction} /> : turn.content ? <RestrictedMarkdown value={turn.content} className="agent-content" /> : turn.status === "ACTIVE" || turn.status === "QUEUED" ? <p className="agent-content loading-copy">正在分析你的请求…</p> : null}
+      {!hasStructuredFacts ? <ActionFallbackReceipt turn={turn} disabled={busy} pendingAction={pendingAction} retryingRunId={retryingRunId} onRetry={onRetry} onAction={onAction} /> : null}
       {turn.error ? <p className="turn-error" role="alert"><CircleAlert aria-hidden="true" />{turn.error}</p> : null}
-      {retryable ? <div className="actions turn-actions"><button className="secondary" type="button" disabled={busy || retryingRunId === turn.workflowRunId} onClick={() => onRetry(turn.workflowRunId as string)}><RotateCcw aria-hidden="true" />{retryingRunId === turn.workflowRunId ? "重试已排队" : "人工重试"}</button></div> : null}
     </div></div>
   </article>;
 }
@@ -331,7 +293,7 @@ export function ThreadWorkspace({ workspace, userId }: Props) {
   const [threadQuery, setThreadQuery] = useState("");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [inspectedTurnId, setInspectedTurnId] = useState<string | null>(null);
-  const [actionPopup, setActionPopup] = useState<{ sourceTurnId: string; orderId: string; actionType: OrderActionType } | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingOrderAction | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const allThreads = [...workspace.threads, ...workspace.archivedThreads];
   const currentThread = allThreads.find((item) => item.threadId === workspace.threadId);
@@ -342,17 +304,12 @@ export function ThreadWorkspace({ workspace, userId }: Props) {
   const readOnly = currentThread?.status === "ARCHIVED";
   const inputDisabled = workspace.busy || Boolean(question) || readOnly || !workspace.threadId;
   const inspectedTurn = workspace.turns.find((turn) => turn.turnId === inspectedTurnId) ?? null;
-  const actionPopupTurn = actionPopup ? workspace.turns.find((turn) => {
-    const action = orderActionFromTurn(turn);
-    return action?.sourceTurnId === actionPopup.sourceTurnId && action.orderId === actionPopup.orderId && action.actionType === actionPopup.actionType;
-  }) ?? null : null;
+  useEffect(() => {
+    if (!workspace.busy) setPendingAction(null);
+  }, [workspace.busy]);
   const inspect = (turnId: string) => { setInspectedTurnId(turnId); void workspace.loadExecution(turnId); };
   const executeOrderAction = (sourceTurnId: string, orderId: string, actionType: OrderActionType) => {
-    if (workspace.busy || workspace.question || readOnly || !workspace.threadId) {
-      void workspace.orderAction(sourceTurnId, orderId, actionType);
-      return;
-    }
-    setActionPopup({ sourceTurnId, orderId, actionType });
+    setPendingAction({ sourceTurnId, orderId, actionType });
     void workspace.orderAction(sourceTurnId, orderId, actionType);
   };
   const submit = (event: FormEvent) => { event.preventDefault(); const next = message.trim(); if (!next) return; void workspace.send(next); setMessage(""); };
@@ -381,11 +338,10 @@ export function ThreadWorkspace({ workspace, userId }: Props) {
       <main className="thread-main">
         <div className="thread-context-bar"><div><span className="eyebrow">CURRENT THREAD</span><strong>{currentThread?.title ?? "加载中…"}</strong><span className="thread-context-summary">{currentThread?.contextId ?? "订单售后"} · {workspace.turns.length} 个请求</span></div><div className="thread-context-actions"><button className="secondary icon-button mobile-thread-toggle" type="button" onClick={() => setMobileSidebarOpen(true)}><Menu aria-hidden="true" />对话列表</button><span className={`status status-${currentThread?.status?.toLowerCase() ?? "active"}`}>{readOnly ? "已归档" : "进行中"}</span>{readOnly && currentThread ? <button className="secondary compact-action" type="button" onClick={() => void restore(currentThread.threadId)}><ArchiveRestore aria-hidden="true" />恢复对话</button> : <span className="account-chip">{userId}</span>}</div></div>
         {workspace.error ? <p className="workspace-alert" role="alert"><CircleAlert aria-hidden="true" />{workspace.error}</p> : null}
-        <div className="thread-records">{workspace.loading ? <div className="conversation-empty"><Bot aria-hidden="true" /><h2>正在恢复对话</h2><p>正在读取订单事实和历史结果。</p></div> : workspace.turns.length === 0 ? <div className="conversation-empty"><ShieldCheck aria-hidden="true" /><h2>直接输入请求</h2><p>可以直接输入订单号、物流问题或售后诉求。</p></div> : <>{workspace.turns.map((turn) => <Turn key={turn.turnId} turn={turn} busy={workspace.busy} retryingRunId={workspace.retryingRunId} onRetry={workspace.retry} onInspect={inspect} onAction={executeOrderAction} />)}</>}</div>
+        <div className="thread-records">{workspace.loading ? <div className="conversation-empty"><Bot aria-hidden="true" /><h2>正在恢复对话</h2><p>正在读取订单事实和历史结果。</p></div> : workspace.turns.length === 0 ? <div className="conversation-empty"><ShieldCheck aria-hidden="true" /><h2>直接输入请求</h2><p>可以直接输入订单号、物流问题或售后诉求。</p></div> : <>{workspace.turns.map((turn) => <Turn key={turn.turnId} turn={turn} busy={workspace.busy} pendingAction={pendingAction} retryingRunId={workspace.retryingRunId} onRetry={workspace.retry} onInspect={inspect} onAction={executeOrderAction} />)}</>}</div>
         {readOnly && currentThread ? <div className="composer composer-readonly"><ArchiveRestore aria-hidden="true" /><div><strong>这段对话已归档</strong><span>恢复后才能继续查询订单或发起售后操作。</span></div><button className="secondary" type="button" onClick={() => void restore(currentThread.threadId)}>恢复对话</button></div> : <form className="composer" onSubmit={submit}><label htmlFor="thread-message">输入请求</label><textarea ref={composerRef} id="thread-message" value={message} disabled={inputDisabled} onKeyDown={keyboard} onChange={(event) => setMessage(event.target.value)} placeholder="输入订单号、物流问题或售后诉求…" /><div className="composer-actions"><span>Enter 发送 · Shift + Enter 换行</span>{workspace.busy ? <button className="secondary icon-button" type="button" onClick={() => void workspace.cancel()}><Square aria-hidden="true" />取消处理</button> : <button className="icon-button" type="submit" disabled={!message.trim() || inputDisabled}><Send aria-hidden="true" />发送</button>}</div></form>}
       </main>
       {question ? <QuestionModal value={question} disabled={workspace.busy} onSubmit={(answers) => void workspace.answer(answers)} onCancel={() => void workspace.answer({}, "CANCEL")} /> : null}
-      {actionPopup && !question ? <ExecutionPopup action={actionPopup} turn={actionPopupTurn} onClose={() => setActionPopup(null)} /> : null}
       <ItemInspector turn={inspectedTurn} replayStatus={inspectedTurnId ? workspace.executionReplayStates[inspectedTurnId] ?? "idle" : "idle"} onClose={() => setInspectedTurnId(null)} />
     </div>
   </section>;

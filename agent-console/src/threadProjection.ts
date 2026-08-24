@@ -122,6 +122,8 @@ function parseExternalAction(payload: AgentItemPayload): { runId: string | null;
       message: stringValue(data?.message) ?? undefined,
       attemptCount: numberValue(data?.attemptCount) ?? undefined,
       retryCycleAttemptCount: numberValue(data?.retryCycleAttemptCount) ?? undefined,
+      maxAttempts: numberValue(data?.maxAttempts) ?? undefined,
+      nextAttemptAt: stringValue(data?.nextAttemptAt) ?? undefined,
       verificationStatus: stringValue(data?.verificationStatus) ?? undefined,
       verificationMessage: stringValue(data?.verificationMessage) ?? undefined,
       verifiedAt: stringValue(data?.verifiedAt) ?? undefined
