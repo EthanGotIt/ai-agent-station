@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -24,6 +24,7 @@ import type {
   AgentItem,
   BusinessProgressStatus,
   LogisticsTimeline,
+  OrderActionType,
   OrderCard,
   QuestionCardState,
   QuestionField,
@@ -83,7 +84,7 @@ function LogisticsTimelineView({ timeline }: { timeline: LogisticsTimeline }) {
   </li>)}</ol>;
 }
 
-function OrderResults({ turn, disabled, onFillAction }: { turn: ThreadViewTurn; disabled: boolean; onFillAction: (message: string) => void }) {
+function OrderResults({ turn, disabled, onAction }: { turn: ThreadViewTurn; disabled: boolean; onAction: (sourceTurnId: string, orderId: string, actionType: OrderActionType) => void }) {
   const { orderCards: orders, logisticsTimelines: timelines } = turn;
   if (orders.length === 0 && timelines.length === 0) return null;
   const timelineByOrder = new Map(timelines.map((timeline) => [timeline.orderId, timeline]));
@@ -98,10 +99,10 @@ function OrderResults({ turn, disabled, onFillAction }: { turn: ThreadViewTurn; 
         <div className="order-card-meta"><span>{amount(order)}</span><span>下单 {dateTime(order.createdAt)}</span><span>{order.visibility === "HIDDEN" ? "已隐藏" : order.logisticsStatus ?? "暂无物流状态"}</span></div>
         {timeline ? <LogisticsTimelineView timeline={timeline} /> : null}
         <div className="order-card-actions" aria-label={`${order.orderId} 可用操作`}>
-          <button type="button" className="secondary" disabled={disabled} onClick={() => onFillAction(`查询订单 ${order.orderId} 的物流状态`)}><Truck aria-hidden="true" />查物流</button>
-          {order.status !== "REFUNDED" && order.status !== "CANCELLED" ? <button type="button" className="secondary" disabled={disabled} onClick={() => onFillAction(`我想申请退款，订单是 ${order.orderId}`)}><Undo2 aria-hidden="true" />申请退款</button> : null}
-          {order.status === "PAID" ? <button type="button" className="secondary" disabled={disabled} onClick={() => onFillAction(`请催发货，订单是 ${order.orderId}`)}><PackageSearchIcon />催发货</button> : null}
-          {order.visibility === "HIDDEN" ? <button type="button" className="secondary" disabled={disabled} onClick={() => onFillAction(`请恢复订单 ${order.orderId} 到订单历史记录`)}><ArchiveRestore aria-hidden="true" />恢复记录</button> : <button type="button" className="secondary" disabled={disabled} onClick={() => onFillAction(`请把订单 ${order.orderId} 隐藏到订单历史记录`)}><Archive aria-hidden="true" />隐藏记录</button>}
+          <button type="button" className="secondary" disabled={disabled} onClick={() => onAction(turn.turnId, order.orderId, "QUERY_LOGISTICS")}><Truck aria-hidden="true" />查物流</button>
+          {order.status !== "REFUNDED" && order.status !== "CANCELLED" ? <button type="button" className="secondary" disabled={disabled} onClick={() => onAction(turn.turnId, order.orderId, "REFUND")}><Undo2 aria-hidden="true" />申请退款</button> : null}
+          {order.status === "PAID" ? <button type="button" className="secondary" disabled={disabled} onClick={() => onAction(turn.turnId, order.orderId, "EXPEDITE")}><PackageSearchIcon />催发货</button> : null}
+          {order.visibility === "HIDDEN" ? <button type="button" className="secondary" disabled={disabled} onClick={() => onAction(turn.turnId, order.orderId, "RESTORE_ORDER")}><ArchiveRestore aria-hidden="true" />恢复记录</button> : <button type="button" className="secondary" disabled={disabled} onClick={() => onAction(turn.turnId, order.orderId, "HIDE_ORDER")}><Archive aria-hidden="true" />隐藏记录</button>}
         </div>
       </article>;
     })}</div> : null}
@@ -121,36 +122,40 @@ function QuestionCard({ value, disabled, onSubmit, onCancel }: { value: Question
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [customValues, setCustomValues] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
-  useEffect(() => { setAnswers({}); setCustomValues({}); setFormError(null); }, [value.questionId, value.version, value.fields]);
+  const [invalidField, setInvalidField] = useState<string | null>(null);
+  useEffect(() => { setAnswers({}); setCustomValues({}); setFormError(null); setInvalidField(null); }, [value.questionId, value.version, value.fields]);
   const submit = () => {
     const next: Record<string, string> = {};
     for (const field of value.fields) {
       const raw = answers[field.name] === "__OTHER__" ? customValues[field.name] ?? "" : answers[field.name] ?? "";
       const normalized = raw.trim();
-      if (field.required && !normalized) { setFormError(`请先完成“${field.label}”。`); return; }
+      if (field.required && !normalized) { setInvalidField(field.name); setFormError(`请先完成“${field.label}”。`); return; }
       if (normalized) next[field.name] = normalized.slice(0, field.maxLength ?? 4_000);
     }
-    setFormError(null); onSubmit(next);
+    setInvalidField(null); setFormError(null); onSubmit(next);
   };
   const keyboard = (event: KeyboardEvent<HTMLFormElement>) => {
     if (event.nativeEvent.isComposing) return;
     if (event.key === "Escape") { event.preventDefault(); onCancel(); }
     else if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.requestSubmit(); }
   };
+  const finalConfirmation = value.step === "CONFIRM";
+  const stageLabel = ({ INTENT: "选择售后事项", ORDER_SELECT: "选择订单", REASON: "补充退款原因", CONFIRM: "最终确认", HISTORY_ACTION: "选择记录操作" } as Record<string, string>)[value.step ?? ""] ?? value.step ?? "等待输入";
   return <form className="decision-card question-card" onSubmit={(event) => { event.preventDefault(); submit(); }} onKeyDown={keyboard}>
-    <div className="decision-heading"><CheckCircle2 aria-hidden="true" /><div><span className="eyebrow">需要确认</span><h2>{value.title}</h2><p>{value.step ? `业务阶段：${value.step}` : "请确认后继续"}{value.stepNo ? ` · 第 ${value.stepNo} 阶段` : ""} · 检查点版本 {value.version}</p></div></div>
+    <div className="decision-heading"><CheckCircle2 aria-hidden="true" /><div><span className="eyebrow">需要确认</span><h2>{value.title}</h2><p>业务阶段：{stageLabel}{value.stepNo !== undefined ? ` · 第 ${value.stepNo} 步` : ""} · 检查点版本 {value.version}</p></div></div>
     {value.operation ? <span className="question-operation">{value.operation}</span> : null}
     <RestrictedMarkdown value={value.prompt} className="question-prompt" />
     {value.summary && value.summary.length > 0 ? <dl className="question-summary">{value.summary.map((line) => <div key={`${line.label}-${line.value}`}><dt>{line.label}</dt><dd>{line.value}</dd></div>)}</dl> : null}
     <div className="question-fields">{value.fields.map((field, index) => {
       const fieldValue = answers[field.name] ?? ""; const otherSelected = fieldValue === "__OTHER__";
+      const controlProps = { autoFocus: index === 0, "aria-label": field.label, "aria-invalid": invalidField === field.name, disabled, maxLength: field.maxLength ?? 4_000, value: fieldValue, onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setAnswers((current) => ({ ...current, [field.name]: event.target.value })) };
       return <label className="question-field" key={field.name}><span>{field.label}{field.required ? <em aria-hidden="true">必填</em> : null}</span>
-        {isSingleSelect(field) ? <select autoFocus={index === 0} aria-label={field.label} disabled={disabled} value={fieldValue} onChange={(event) => setAnswers((current) => ({ ...current, [field.name]: event.target.value }))}><option value="">请选择</option>{(field.options ?? []).slice(0, 3).map((option) => <option value={option} key={option}>{option}</option>)}{field.allowCustom ? <option value="__OTHER__">其他</option> : null}</select> : <input autoFocus={index === 0} aria-label={field.label} disabled={disabled} maxLength={field.maxLength ?? 4_000} value={fieldValue} onChange={(event) => setAnswers((current) => ({ ...current, [field.name]: event.target.value }))} placeholder="请填写" />}
-        {otherSelected ? <input aria-label={`${field.label}自定义内容`} autoFocus disabled={disabled} maxLength={field.maxLength ?? 4_000} value={customValues[field.name] ?? ""} onChange={(event) => setCustomValues((current) => ({ ...current, [field.name]: event.target.value }))} placeholder="请补充具体内容" /> : null}
+        {isSingleSelect(field) ? <select {...controlProps}><option value="">请选择</option>{(field.options ?? []).slice(0, 3).map((option) => <option value={option} key={option}>{option}</option>)}{field.allowCustom ? <option value="__OTHER__">其他</option> : null}</select> : field.name.toLowerCase().includes("reason") ? <textarea {...controlProps} rows={4} placeholder="请说明退款原因" /> : <input {...controlProps} placeholder="请填写" />}
+        {otherSelected ? <input aria-label={`${field.label}自定义内容`} autoFocus disabled={disabled} aria-invalid={invalidField === field.name} maxLength={field.maxLength ?? 4_000} value={customValues[field.name] ?? ""} onChange={(event) => setCustomValues((current) => ({ ...current, [field.name]: event.target.value }))} placeholder="请补充具体内容" /> : null}
       </label>;
     })}</div>
     {formError ? <p className="question-form-error" role="alert"><CircleAlert aria-hidden="true" />{formError}</p> : null}
-    <div className="actions question-actions"><button type="submit" disabled={disabled}><CheckCircle2 aria-hidden="true" />提交回答</button><button className="secondary" type="button" disabled={disabled} onClick={onCancel}><X aria-hidden="true" />取消操作</button><span className="question-key-help">Enter 提交 · Shift + Enter 换行 · Esc 取消</span></div>
+    <div className="actions question-actions"><button type="submit" disabled={disabled}><CheckCircle2 aria-hidden="true" />{disabled ? "处理中…" : finalConfirmation ? "确认并执行" : "继续"}</button><button className="secondary" type="button" disabled={disabled} onClick={onCancel}><X aria-hidden="true" />结束本次操作</button><span className="question-key-help">Enter 提交 · Shift + Enter 换行 · Esc 结束</span></div>
   </form>;
 }
 
@@ -173,15 +178,16 @@ function duration(turn: ThreadViewTurn) {
   return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
 }
 
-function Turn({ turn, busy, retryingRunId, onRetry, onInspect, onFillAction }: { turn: ThreadViewTurn; busy: boolean; retryingRunId: string | null; onRetry: (runId: string) => void; onInspect: (turnId: string) => void; onFillAction: (message: string) => void }) {
+function Turn({ turn, busy, retryingRunId, onRetry, onInspect, onAction, onAnswer, onCancel }: { turn: ThreadViewTurn; busy: boolean; retryingRunId: string | null; onRetry: (runId: string) => void; onInspect: (turnId: string) => void; onAction: (sourceTurnId: string, orderId: string, actionType: OrderActionType) => void; onAnswer: (answers: Record<string, string>) => void; onCancel: () => void }) {
   const retryable = turn.externalActionStatus === "MANUAL_RETRY_REQUIRED" && turn.workflowRunId;
   const hasStructuredFacts = turn.orderCards.length > 0 || turn.logisticsTimelines.length > 0;
   return <article className={`conversation-turn thread-turn turn-${turn.status.toLowerCase()}`}>
     <div className="turn-request"><span className="turn-avatar user-avatar">你</span><div><div className="turn-meta"><strong>你的请求</strong><time>{time(turn.startedAt)}</time><span className={`turn-status status-${turn.status.toLowerCase()}`}>{statusLabel(turn.status)}</span></div><p>{turn.userMessage}</p></div></div>
     <div className="turn-response"><span className="turn-avatar agent-avatar"><Bot aria-label="Agent" /></span><div className="turn-response-body"><div className="turn-meta turn-response-meta"><strong>售后助手</strong><span className="turn-route">业务流</span><button className="detail-trigger" type="button" onClick={() => onInspect(turn.turnId)}><PanelRight aria-hidden="true" />运行详情 <span>{turn.items.length}</span></button></div>
       <div className={`turn-summary summary-${turn.activities.at(-1)?.status?.toLowerCase() ?? "active"}`}><span className="summary-icon">{activityIcon(turn.activities.at(-1)?.status ?? "ACTIVE")}</span><strong>{turnSummary(turn)}</strong>{duration(turn) ? <time>{duration(turn)}</time> : null}</div>
-      {hasStructuredFacts ? <OrderResults turn={turn} disabled={busy} onFillAction={onFillAction} /> : turn.content ? <RestrictedMarkdown value={turn.content} className="agent-content" /> : turn.status === "ACTIVE" || turn.status === "QUEUED" ? <p className="agent-content loading-copy">正在分析你的请求…</p> : null}
-      {turn.externalActionReceipt?.verificationStatus === "PENDING" ? <div className="action-receipt action-receipt-pending"><div><strong>操作已受理、最新状态暂未核验</strong><span>{turn.externalActionReceipt.verificationMessage ?? "可以重新查询该订单的最新事实。"}</span></div>{turn.externalActionReceipt.orderId ? <button className="secondary" type="button" disabled={busy} onClick={() => onFillAction(`查询订单 ${turn.externalActionReceipt?.orderId} 的最新状态`)}>重新查询最新状态</button> : null}</div> : null}
+      {hasStructuredFacts ? <OrderResults turn={turn} disabled={busy} onAction={onAction} /> : turn.content ? <RestrictedMarkdown value={turn.content} className="agent-content" /> : turn.status === "ACTIVE" || turn.status === "QUEUED" ? <p className="agent-content loading-copy">正在分析你的请求…</p> : null}
+      {turn.question ? <QuestionCard key={`${turn.question.runId}:${turn.question.questionId}`} value={turn.question} disabled={busy} onSubmit={onAnswer} onCancel={onCancel} /> : null}
+      {turn.externalActionReceipt?.verificationStatus === "PENDING" ? <div className="action-receipt action-receipt-pending"><div><strong>操作已受理、最新状态暂未核验</strong><span>{turn.externalActionReceipt.verificationMessage ?? "可以重新查询该订单的最新事实。"}</span></div>{turn.externalActionReceipt.orderId ? <button className="secondary" type="button" disabled={busy} onClick={() => onAction(turn.turnId, turn.externalActionReceipt?.orderId as string, "REFRESH_ORDER")}>重新查询最新状态</button> : null}</div> : null}
       {turn.externalActionReceipt?.verificationStatus === "VERIFIED" ? <p className="action-receipt action-receipt-verified"><CheckCircle2 aria-hidden="true" />{turn.externalActionReceipt.verificationMessage ?? "最新订单状态已核验"}</p> : null}
       {turn.error ? <p className="turn-error" role="alert"><CircleAlert aria-hidden="true" />{turn.error}</p> : null}
       {retryable ? <div className="actions turn-actions"><button className="secondary" type="button" disabled={busy || retryingRunId === turn.workflowRunId} onClick={() => onRetry(turn.workflowRunId as string)}><RotateCcw aria-hidden="true" />{retryingRunId === turn.workflowRunId ? "重试已排队" : "人工重试"}</button></div> : null}
@@ -189,7 +195,7 @@ function Turn({ turn, busy, retryingRunId, onRetry, onInspect, onFillAction }: {
   </article>;
 }
 
-const ITEM_LABELS: Record<string, string> = { USER_MESSAGE: "用户请求", TURN_STATE: "Turn 状态", ASSISTANT_MESSAGE: "助手回复", TOOL_CALL: "工具调用", TOOL_RESULT: "工具结果", WORKFLOW_STARTED: "Workflow 启动", WORKFLOW_QUESTION: "确认卡片", WORKFLOW_ANSWER: "确认回答", WORKFLOW_RESULT: "Workflow 回执", EXTERNAL_ACTION_STATUS: "外部动作", ORDER_LIST: "订单列表", ORDER_DETAIL: "订单详情", LOGISTICS_TIMELINE: "物流时间线", EXECUTION_EVENT: "执行记录", ERROR: "错误" };
+const ITEM_LABELS: Record<string, string> = { USER_MESSAGE: "用户请求", TURN_STATE: "Turn 状态", ASSISTANT_MESSAGE: "助手回复", TOOL_CALL: "工具调用", TOOL_RESULT: "工具结果", WORKFLOW_STARTED: "Workflow 启动", WORKFLOW_QUESTION: "确认卡片", WORKFLOW_ANSWER: "确认回答", WORKFLOW_RESULT: "Workflow 回执", EXTERNAL_ACTION_STATUS: "外部动作", ORDER_LIST: "订单列表", ORDER_DETAIL: "订单详情", LOGISTICS_TIMELINE: "物流时间线", ORDER_ACTION_REQUEST: "订单动作", EXECUTION_EVENT: "执行记录", ERROR: "错误" };
 
 function safeJsonPreview(item: AgentItem) {
   const redact = (value: unknown): unknown => {
@@ -239,7 +245,6 @@ export function ThreadWorkspace({ workspace, userId }: Props) {
   const inputDisabled = workspace.busy || Boolean(question) || readOnly || !workspace.threadId;
   const inspectedTurn = workspace.turns.find((turn) => turn.turnId === inspectedTurnId) ?? null;
   const inspect = (turnId: string) => { setInspectedTurnId(turnId); void workspace.loadExecution(turnId); };
-  const fillComposer = (nextMessage: string) => { setMessage(nextMessage); window.requestAnimationFrame(() => composerRef.current?.focus()); };
   const submit = (event: FormEvent) => { event.preventDefault(); const next = message.trim(); if (!next) return; void workspace.send(next); setMessage(""); };
   const keyboard = (event: KeyboardEvent<HTMLTextAreaElement>) => { if (event.nativeEvent.isComposing) return; if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } };
   const chooseView = (nextView: ThreadStatus) => { setThreadView(nextView); setEditingThreadId(null); if (nextView === "ARCHIVED") void workspace.loadArchivedThreads(); };
@@ -266,7 +271,7 @@ export function ThreadWorkspace({ workspace, userId }: Props) {
       <main className="thread-main">
         <div className="thread-context-bar"><div><span className="eyebrow">CURRENT THREAD</span><strong>{currentThread?.title ?? "加载中…"}</strong><span className="thread-context-summary">{currentThread?.contextId ?? "订单售后"} · {workspace.turns.length} 个请求</span></div><div className="thread-context-actions"><button className="secondary icon-button mobile-thread-toggle" type="button" onClick={() => setMobileSidebarOpen(true)}><Menu aria-hidden="true" />对话列表</button><span className={`status status-${currentThread?.status?.toLowerCase() ?? "active"}`}>{readOnly ? "已归档" : "进行中"}</span>{readOnly && currentThread ? <button className="secondary compact-action" type="button" onClick={() => void restore(currentThread.threadId)}><ArchiveRestore aria-hidden="true" />恢复对话</button> : <span className="account-chip">{userId}</span>}</div></div>
         {workspace.error ? <p className="workspace-alert" role="alert"><CircleAlert aria-hidden="true" />{workspace.error}</p> : null}
-        <div className="thread-records">{workspace.loading ? <div className="conversation-empty"><Bot aria-hidden="true" /><h2>正在恢复对话</h2><p>正在读取订单事实和历史结果。</p></div> : workspace.turns.length === 0 ? <div className="conversation-empty"><ShieldCheck aria-hidden="true" /><h2>直接输入请求</h2><p>可以输入订单号、物流问题或售后诉求。</p></div> : workspace.turns.map((turn) => <Turn key={turn.turnId} turn={turn} busy={workspace.busy} retryingRunId={workspace.retryingRunId} onRetry={workspace.retry} onInspect={inspect} onFillAction={fillComposer} />)}{question ? <QuestionCard key={`${question.runId}:${question.questionId}`} value={question} disabled={workspace.busy} onSubmit={(answers) => void workspace.answer(answers)} onCancel={() => void workspace.answer({}, "CANCEL")} /> : null}</div>
+        <div className="thread-records">{workspace.loading ? <div className="conversation-empty"><Bot aria-hidden="true" /><h2>正在恢复对话</h2><p>正在读取订单事实和历史结果。</p></div> : workspace.turns.length === 0 ? <div className="conversation-empty"><ShieldCheck aria-hidden="true" /><h2>直接输入请求</h2><p>可以直接输入订单号、物流问题或售后诉求。</p></div> : workspace.turns.map((turn) => <Turn key={turn.turnId} turn={turn} busy={workspace.busy} retryingRunId={workspace.retryingRunId} onRetry={workspace.retry} onInspect={inspect} onAction={(sourceTurnId, orderId, actionType) => void workspace.orderAction(sourceTurnId, orderId, actionType)} onAnswer={(answers) => void workspace.answer(answers)} onCancel={() => void workspace.answer({}, "CANCEL")} />)}</div>
         {readOnly && currentThread ? <div className="composer composer-readonly"><ArchiveRestore aria-hidden="true" /><div><strong>这段对话已归档</strong><span>恢复后才能继续查询订单或发起售后操作。</span></div><button className="secondary" type="button" onClick={() => void restore(currentThread.threadId)}>恢复对话</button></div> : question ? null : <form className="composer" onSubmit={submit}><label htmlFor="thread-message">输入请求</label><textarea ref={composerRef} id="thread-message" value={message} disabled={inputDisabled} onKeyDown={keyboard} onChange={(event) => setMessage(event.target.value)} placeholder="输入订单号、物流问题或售后诉求…" /><div className="composer-actions"><span>Enter 发送 · Shift + Enter 换行</span>{workspace.busy ? <button className="secondary icon-button" type="button" onClick={() => void workspace.cancel()}><Square aria-hidden="true" />取消处理</button> : <button className="icon-button" type="submit" disabled={!message.trim() || inputDisabled}><Send aria-hidden="true" />发送</button>}</div></form>}
       </main>
       <ItemInspector turn={inspectedTurn} replayStatus={inspectedTurnId ? workspace.executionReplayStates[inspectedTurnId] ?? "idle" : "idle"} onClose={() => setInspectedTurnId(null)} />

@@ -52,6 +52,7 @@ export type AgentItemType =
   | "WORKFLOW_ANSWER"
   | "WORKFLOW_RESULT"
   | "EXTERNAL_ACTION_STATUS"
+  | "ORDER_ACTION_REQUEST"
   | "EXECUTION_EVENT"
   | "ERROR"
   | string;
@@ -61,6 +62,7 @@ export type AgentItemPayload =
   | { schemaVersion: 1; kind: "ASSISTANT_MESSAGE"; data: string }
   | { schemaVersion: 1; kind: "TURN_STATE"; data: { status: AgentTurnStatus; errorCode?: string | null } }
   | { schemaVersion: 1; kind: "WORKFLOW_QUESTION"; data: QuestionCardState }
+  | { schemaVersion: 1; kind: "ORDER_ACTION_REQUEST"; data: { sourceTurnId: string; orderId: string; actionType: OrderActionType } }
   | { schemaVersion: 1; kind: AgentItemType; data: unknown };
 
 export type AgentItemWire = {
@@ -125,6 +127,14 @@ export type QuestionCardState = {
 
 export type WorkflowAnswerAction = "SUBMIT" | "CANCEL";
 
+export type OrderActionType =
+  | "QUERY_LOGISTICS"
+  | "REFRESH_ORDER"
+  | "REFUND"
+  | "EXPEDITE"
+  | "HIDE_ORDER"
+  | "RESTORE_ORDER";
+
 export type BusinessProgressStatus = "ACTIVE" | "WAITING" | "DONE" | "ERROR";
 
 export type BusinessProgress = {
@@ -176,6 +186,9 @@ export type ThreadViewTurn = {
   activities: BusinessProgress[];
   orderCards: OrderCard[];
   logisticsTimelines: LogisticsTimeline[];
+  question: QuestionCardState | null;
+  sourceTurnId: string | null;
+  inputKind: "MESSAGE" | "WORKFLOW_ANSWER" | "ORDER_ACTION";
 };
 
 export type AgentThreadPage = {

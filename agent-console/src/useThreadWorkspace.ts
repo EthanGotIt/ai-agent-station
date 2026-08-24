@@ -16,6 +16,7 @@ import type {
   LogisticsEvent,
   LogisticsTimeline,
   OrderCard,
+  OrderActionType,
   QuestionField,
   QuestionCardState,
   WorkflowAnswerAction,
@@ -227,6 +228,25 @@ function buildLogisticsTimelines(items: AgentItem[]): LogisticsTimeline[] {
   return [...timelines.values()];
 }
 
+function parseOrderAction(item: AgentItem): { sourceTurnId: string; orderId: string; actionType: OrderActionType } | null {
+  if (item.type !== "ORDER_ACTION_REQUEST") return null;
+  const data = recordValue(item.payload.data);
+  const sourceTurnId = stringValue(data?.sourceTurnId);
+  const orderId = stringValue(data?.orderId);
+  const actionType = stringValue(data?.actionType);
+  if (!sourceTurnId || !orderId || !actionType
+    || !["QUERY_LOGISTICS", "REFRESH_ORDER", "REFUND", "EXPEDITE", "HIDE_ORDER", "RESTORE_ORDER"].includes(actionType)) {
+    return null;
+  }
+  return { sourceTurnId, orderId, actionType: actionType as OrderActionType };
+}
+
+function workflowRunFromItem(item: AgentItem): string | null {
+  if (item.type !== "WORKFLOW_ANSWER" && item.type !== "WORKFLOW_RESULT") return null;
+  const data = recordValue(item.payload.data);
+  return stringValue(data?.runId);
+}
+
 function buildActivities(items: AgentItem[]): BusinessProgress[] {
   return items
     .map((item): BusinessProgress | null => {
@@ -302,29 +322,38 @@ function buildActivities(items: AgentItem[]): BusinessProgress[] {
     .filter((entry, index, entries) => index === 0 || entry.label !== entries[index - 1].label || entry.status !== entries[index - 1].status);
 }
 
-function rebuildTurns(items: AgentItem[]): ThreadViewTurn[] {
-  const grouped = new Map<string, ThreadViewTurn>();
-  for (const item of items) {
-    if (!item.turnId) continue;
-    const current = grouped.get(item.turnId) ?? {
-      turnId: item.turnId,
-      userMessage: "",
-      content: "",
-      status: "ACTIVE" as AgentTurnStatus,
-      error: null,
-      startedAt: item.createdAt,
-      finishedAt: null,
-      workflowRunId: null,
-      externalActionStatus: null,
-      externalActionReceipt: null,
-      items: [],
-      activities: [],
-      orderCards: [],
-      logisticsTimelines: []
-    };
-    current.items.push(item);
+function buildTurn(turnId: string, sourceItems: AgentItem[]): ThreadViewTurn {
+  const orderedItems = [...sourceItems].sort((left, right) => left.sequence - right.sequence);
+  const current: ThreadViewTurn = {
+    turnId,
+    userMessage: "",
+    content: "",
+    status: "ACTIVE",
+    error: null,
+    startedAt: orderedItems[0]?.createdAt ?? new Date(0).toISOString(),
+    finishedAt: null,
+    workflowRunId: null,
+    externalActionStatus: null,
+    externalActionReceipt: null,
+    items: orderedItems,
+    activities: [],
+    orderCards: [],
+    logisticsTimelines: [],
+    question: null,
+    sourceTurnId: null,
+    inputKind: "MESSAGE"
+  };
+  for (const item of orderedItems) {
     if (item.type === "USER_MESSAGE") current.userMessage = payloadText(item.payload);
     if (item.type === "ASSISTANT_MESSAGE") current.content = `${current.content}${current.content ? "\n" : ""}${payloadText(item.payload)}`;
+    if (item.type === "ORDER_ACTION_REQUEST") {
+      const action = parseOrderAction(item);
+      if (action) {
+        current.sourceTurnId = action.sourceTurnId;
+        current.inputKind = "ORDER_ACTION";
+      }
+    }
+    if (item.type === "WORKFLOW_ANSWER") current.inputKind = "WORKFLOW_ANSWER";
     if (item.type === "ERROR") {
       current.error = payloadText(item.payload);
       current.status = "FAILED";
@@ -340,9 +369,14 @@ function rebuildTurns(items: AgentItem[]): ThreadViewTurn[] {
     }
     if (item.type === "WORKFLOW_QUESTION") {
       const question = parseQuestion(item.payload);
-      if (question) current.workflowRunId = question.runId;
+      if (question) {
+        current.workflowRunId = question.runId;
+        current.question = question;
+      }
       if (!terminal(current.status)) current.status = "WAITING_USER_INPUT";
     }
+    const itemRunId = workflowRunFromItem(item);
+    if (itemRunId) current.workflowRunId = itemRunId;
     if (item.type === "EXTERNAL_ACTION_STATUS") {
       const action = parseExternalAction(item.payload);
       if (action) {
@@ -354,18 +388,51 @@ function rebuildTurns(items: AgentItem[]): ThreadViewTurn[] {
       }
     }
     if (item.type === "WORKFLOW_RESULT" && !terminal(current.status)) current.status = "COMPLETED";
+  }
+  return {
+    ...current,
+    activities: buildActivities(orderedItems),
+    orderCards: buildOrderCards(orderedItems),
+    logisticsTimelines: buildLogisticsTimelines(orderedItems)
+  };
+}
+
+function rebuildTurns(items: AgentItem[]): ThreadViewTurn[] {
+  const grouped = new Map<string, AgentItem[]>();
+  for (const item of items) {
+    if (!item.turnId) continue;
+    const current = grouped.get(item.turnId) ?? [];
+    current.push(item);
     grouped.set(item.turnId, current);
   }
-  return [...grouped.values()].map((turn) => {
-    const orderedItems = [...turn.items].sort((left, right) => left.sequence - right.sequence);
-    return {
-      ...turn,
-      items: orderedItems,
-      activities: buildActivities(orderedItems),
-      orderCards: buildOrderCards(orderedItems),
-      logisticsTimelines: buildLogisticsTimelines(orderedItems)
-    };
-  });
+  const physical = new Map([...grouped.entries()].map(([turnId, turnItems]) => [turnId, buildTurn(turnId, turnItems)]));
+  const runOwners = new Map<string, string>();
+  for (const turn of physical.values()) {
+    if (turn.workflowRunId) runOwners.set(turn.workflowRunId, turn.turnId);
+  }
+  const resolveTarget = (turn: ThreadViewTurn): string | null => {
+    let target = turn.sourceTurnId
+      ?? (turn.inputKind === "WORKFLOW_ANSWER" && turn.workflowRunId ? runOwners.get(turn.workflowRunId) ?? null : null);
+    const visited = new Set<string>();
+    while (target && physical.get(target)?.sourceTurnId && !visited.has(target)) {
+      visited.add(target);
+      target = physical.get(target)?.sourceTurnId ?? target;
+    }
+    return target && target !== turn.turnId && physical.has(target) ? target : null;
+  };
+  const mergedItems = new Map<string, AgentItem[]>();
+  for (const turn of physical.values()) mergedItems.set(turn.turnId, [...turn.items]);
+  const folded = new Set<string>();
+  for (const turn of physical.values()) {
+    const target = resolveTarget(turn);
+    if (!target) continue;
+    mergedItems.get(target)?.push(...turn.items);
+    folded.add(turn.turnId);
+  }
+  return [...mergedItems.entries()]
+    .filter(([turnId]) => !folded.has(turnId))
+    .map(([turnId, turnItems]) => buildTurn(turnId, turnItems))
+    .sort((left, right) => left.items[0]?.sequence - right.items[0]?.sequence);
 }
 
 function terminal(status: AgentTurnStatus) {
@@ -750,6 +817,37 @@ export function useThreadWorkspace(userId: string) {
     }
   }, [busy, question, threadId, threads, userId]);
 
+  const orderAction = useCallback(async (
+    sourceTurnId: string,
+    orderId: string,
+    actionType: OrderActionType
+  ) => {
+    const currentThread = threads.find((thread) => thread.threadId === threadId);
+    if (!threadId || !currentThread || currentThread.status !== "ACTIVE" || busy || question) return;
+    const requestThreadId = threadId;
+    const generation = generationRef.current;
+    setBusy(true);
+    setError(null);
+    try {
+      const accepted = await requestJson<{ turnId: string }>(
+        `${API}/threads/${encodeURIComponent(requestThreadId)}/order-actions`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-User-Id": userId },
+          body: JSON.stringify({ clientRequestId: id("order-action"), sourceTurnId, orderId, actionType })
+        }
+      );
+      if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
+        activeTurnRef.current = accepted.turnId;
+      }
+    } catch (failure) {
+      if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
+        setBusy(false);
+        setError(failure instanceof Error ? failure.message : "订单动作提交失败");
+      }
+    }
+  }, [busy, question, threadId, threads, userId]);
+
   const answer = useCallback(async (
     answers: Record<string, string>,
     action: WorkflowAnswerAction = "SUBMIT"
@@ -881,6 +979,7 @@ export function useThreadWorkspace(userId: string) {
     items,
     loadArchivedThreads,
     loading,
+    orderAction,
     question,
     rename,
     restoreThread,

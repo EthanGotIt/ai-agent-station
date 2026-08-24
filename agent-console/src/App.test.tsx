@@ -232,7 +232,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     fireEvent.change(screen.getByLabelText("退款原因"), { target: { value: "__OTHER__" } });
     fireEvent.change(await screen.findByLabelText("退款原因自定义内容"), { target: { value: "包装破损" } });
     fireEvent.change(screen.getByLabelText("补充说明"), { target: { value: "希望原路退回" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交回答" }));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
 
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) =>
       String(input).includes("/workflow-runs/run-2/questions/question-2/answers"))).toBe(true));
@@ -414,7 +414,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
         return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
       }
       if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse(events));
-      if (url.includes("/threads/thread-1/turns")) return Promise.resolve(json({ turnId: "turn-order-action" }));
+      if (url.includes("/threads/thread-1/order-actions")) return Promise.resolve(json({ turnId: "turn-order-action" }));
       throw new Error(`unexpected request: ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -430,8 +430,47 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     const orderCard = screen.getByText("无线耳机").closest(".order-card");
     fireEvent.click(within(orderCard as HTMLElement).getByRole("button", { name: "申请退款" }));
     const composer = screen.getByRole("textbox", { name: "输入请求" }) as HTMLTextAreaElement;
-    expect(composer.value).toContain("ORDER-TODAY-001");
+    expect(composer.value).toBe("");
+    const actionCall = fetchMock.mock.calls.find(([input]) => String(input).includes("/threads/thread-1/order-actions"));
+    expect(JSON.parse(String(actionCall?.[1]?.body))).toMatchObject({
+      sourceTurnId: "turn-1", orderId: "ORDER-TODAY-001", actionType: "REFUND"
+    });
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/threads/thread-1/turns"))).toBe(false);
+  });
+
+  it("订单动作 Turn 折叠回来源卡片，不生成可见模拟问答", async () => {
+    const thread = threadRecord("thread-1", "动作折叠 Thread");
+    const events = [
+      itemEvent("item-source-user", "thread-1", "turn-1", "USER_MESSAGE", 1,
+        { schemaVersion: 1, kind: "USER_MESSAGE", data: "查一下订单" }),
+      itemEvent("item-source-order", "thread-1", "turn-1", "ORDER_DETAIL", 2,
+        { schemaVersion: 1, kind: "ORDER_DETAIL", data: { orderId: "ORDER-001", orderStatus: "SHIPPED", itemSummary: "保温杯", visibility: "ACTIVE" } }),
+      itemEvent("item-source-state", "thread-1", "turn-1", "TURN_STATE", 3,
+        { schemaVersion: 1, kind: "TURN_STATE", data: { status: "COMPLETED" } }),
+      itemEvent("item-action-request", "thread-1", "turn-action", "ORDER_ACTION_REQUEST", 4,
+        { schemaVersion: 1, kind: "ORDER_ACTION_REQUEST", data: { sourceTurnId: "turn-1", orderId: "ORDER-001", actionType: "REFUND" } }),
+      itemEvent("item-action-question", "thread-1", "turn-action", "WORKFLOW_QUESTION", 5,
+        { schemaVersion: 1, kind: "WORKFLOW_QUESTION", data: {
+          runId: "run-action", questionId: "question-action", checkpointId: "checkpoint-action", version: 1,
+          title: "补充退款原因", prompt: "请说明原因。", step: "REASON", stepNo: 2,
+          fields: [{ name: "reason", label: "退款原因", type: "TEXT", required: true }]
+        } })
+    ];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      if (url.includes("/threads/thread-1/items")) return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse(events));
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("补充退款原因")).not.toBeNull();
+    expect(document.querySelectorAll(".conversation-turn")).toHaveLength(1);
+    expect(screen.queryByText("订单动作")).toBeNull();
+    expect(screen.getByText("ORDER-001")).not.toBeNull();
   });
 
   it("为耗尽的外部动作显示人工重试并调用稳定 API", async () => {
