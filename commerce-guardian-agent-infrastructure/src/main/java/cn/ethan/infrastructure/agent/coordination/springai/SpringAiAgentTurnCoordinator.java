@@ -116,7 +116,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             AgentExecutionContext executionContext
     ) {
         if (executionContext != null) executionContext.checkActive();
-        if (answer != null && !answer.isEmpty()) {
+        // 回答 Turn 即使是 CANCEL 也必须恢复 Workflow；不能因为答案为空而重新进入模型。
+        if (turn.workflowAnswerInput() != null) {
             AgentWorkflowEngine.ResumeResult resumed = workflowEngine.resume(thread, turn, answer);
             return new AgentCoordinatorResult(
                     resumed.message(),

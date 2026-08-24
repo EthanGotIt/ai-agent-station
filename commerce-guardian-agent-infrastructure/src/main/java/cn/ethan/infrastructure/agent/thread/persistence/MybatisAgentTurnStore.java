@@ -13,6 +13,7 @@ import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.stereotype.Repository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -44,6 +45,7 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
                 new JacksonAgentOrderActionCodec(new tools.jackson.databind.ObjectMapper()));
     }
 
+    @Autowired
     public MybatisAgentTurnStore(
             AgentTurnMapper mapper,
             AgentItemMapper itemMapper,

@@ -21,4 +21,14 @@ public record AgentWorkflowQuestionAnswerRequestDto(
         @NotNull Map<String, String> answers,
         AgentWorkflowAnswerActionEnum action
 ) {
+    /** 保留历史客户端构造方式，缺省按正常提交处理。 */
+    public AgentWorkflowQuestionAnswerRequestDto(
+            String clientRequestId,
+            String checkpointId,
+            Long expectedVersion,
+            Map<String, String> answers
+    ) {
+        this(clientRequestId, checkpointId, expectedVersion, answers,
+                AgentWorkflowAnswerActionEnum.SUBMIT);
+    }
 }

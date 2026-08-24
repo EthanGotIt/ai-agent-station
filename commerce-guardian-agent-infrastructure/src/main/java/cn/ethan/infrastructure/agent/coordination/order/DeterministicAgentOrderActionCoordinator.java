@@ -97,7 +97,6 @@ public final class DeterministicAgentOrderActionCoordinator implements AgentOrde
     private String orderPayload(OrderSnapshotModel order) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("orderId", order.orderId());
-        payload.put("userId", order.userId());
         payload.put("orderStatus", order.status().name());
         payload.put("daysSinceDelivery", order.daysSinceDelivery());
         payload.put("createdAt", string(order.createdAt()));

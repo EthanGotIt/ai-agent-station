@@ -13,6 +13,8 @@ import cn.ethan.core.agent.thread.AgentThreadStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowEngine;
+import cn.ethan.core.agent.workflow.AgentWorkflowAnswerActionEnum;
+import cn.ethan.core.agent.thread.AgentWorkflowAnswerInput;
 import cn.ethan.core.commerce.order.LogisticsGateway;
 import cn.ethan.core.commerce.order.OrderGateway;
 import org.junit.jupiter.api.Test;
@@ -30,6 +32,8 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -113,7 +117,53 @@ class SpringAiAgentTurnCoordinatorTest {
         assertEquals(List.of(), events.published);
     }
 
+    @Test
+    void cancellationAnswerResumesWorkflowEvenWhenAnswersAreEmpty() {
+        CapturingEvents events = new CapturingEvents();
+        AtomicReference<Map<String, String>> received = new AtomicReference<>();
+        AgentWorkflowEngine workflow = new AgentWorkflowEngine() {
+            @Override
+            public StartResult start(AgentThreadModel thread, AgentTurnModel turn,
+                                     String operation, Map<String, String> arguments) {
+                throw new AssertionError("workflow start must not be called");
+            }
+
+            @Override
+            public ResumeResult resume(AgentThreadModel thread, AgentTurnModel turn,
+                                       Map<String, String> answers) {
+                received.set(answers);
+                return new ResumeResult("本次操作已结束", "REJECTED", null);
+            }
+        };
+        SpringAiAgentTurnCoordinator coordinator = coordinator(
+                new StreamingModel(Flux.error(new AssertionError("model must not be called")), false),
+                events, workflow);
+
+        AgentTurnCoordinator.AgentCoordinatorResult result = coordinator.run(
+                thread(), cancellationTurn(), List.of(), Map.of());
+
+        assertEquals("本次操作已结束", result.assistantMessage());
+        assertEquals(Map.of(), received.get());
+    }
+
     private SpringAiAgentTurnCoordinator coordinator(ChatModel model, CapturingEvents events) {
+        return coordinator(model, events, new AgentWorkflowEngine() {
+            @Override
+            public StartResult start(AgentThreadModel thread, AgentTurnModel turn,
+                                     String operation, java.util.Map<String, String> arguments) {
+                throw new AssertionError("workflow tool should not be called");
+            }
+
+            @Override
+            public ResumeResult resume(AgentThreadModel thread, AgentTurnModel turn,
+                                       java.util.Map<String, String> answers) {
+                throw new AssertionError("workflow resume should not be called");
+            }
+        });
+    }
+
+    private SpringAiAgentTurnCoordinator coordinator(
+            ChatModel model, CapturingEvents events, AgentWorkflowEngine workflowEngine) {
         AgentItemStore items = new AgentItemStore() {
             @Override
             public long appendItem(AgentItemModel item) {
@@ -129,19 +179,7 @@ class SpringAiAgentTurnCoordinatorTest {
                 ChatClient.builder(model).build(),
                 (orderId, userId) -> null,
                 (orderId, userId) -> List.of(),
-                new AgentWorkflowEngine() {
-                    @Override
-                    public StartResult start(AgentThreadModel thread, AgentTurnModel turn,
-                                             String operation, java.util.Map<String, String> arguments) {
-                        throw new AssertionError("workflow tool should not be called");
-                    }
-
-                    @Override
-                    public ResumeResult resume(AgentThreadModel thread, AgentTurnModel turn,
-                                               java.util.Map<String, String> answers) {
-                        throw new AssertionError("workflow resume should not be called");
-                    }
-                },
+                workflowEngine,
                 items,
                 events,
                 Clock.fixed(NOW, ZoneOffset.UTC),
@@ -159,6 +197,15 @@ class SpringAiAgentTurnCoordinatorTest {
         return new AgentTurnModel(
                 "turn-1", "thread-1", "user-1", "request-1", "查询订单",
                 AgentTurnStatusEnum.ACTIVE, 0, null, null, NOW, NOW, null);
+    }
+
+    private AgentTurnModel cancellationTurn() {
+        AgentWorkflowAnswerInput answer = new AgentWorkflowAnswerInput(
+                "run-1", "question-1", "checkpoint-1", 2L, Map.of(),
+                AgentWorkflowAnswerActionEnum.CANCEL);
+        return new AgentTurnModel(
+                "turn-1", "thread-1", "user-1", "request-1", "结束本次操作",
+                AgentTurnStatusEnum.ACTIVE, 0, "run-1", null, NOW, NOW, null, answer, 0L);
     }
 
     private ChatResponse response(String content) {
