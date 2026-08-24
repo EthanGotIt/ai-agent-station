@@ -353,7 +353,11 @@ function buildTurn(turnId: string, sourceItems: AgentItem[]): ThreadViewTurn {
         current.inputKind = "ORDER_ACTION";
       }
     }
-    if (item.type === "WORKFLOW_ANSWER") current.inputKind = "WORKFLOW_ANSWER";
+    if (item.type === "WORKFLOW_ANSWER") {
+      current.inputKind = "WORKFLOW_ANSWER";
+      // 回答子 Turn 折回来源 Turn 后，旧问题不再是当前待处理事实。
+      current.question = null;
+    }
     if (item.type === "ERROR") {
       current.error = payloadText(item.payload);
       current.status = "FAILED";
@@ -408,7 +412,8 @@ function rebuildTurns(items: AgentItem[]): ThreadViewTurn[] {
   const physical = new Map([...grouped.entries()].map(([turnId, turnItems]) => [turnId, buildTurn(turnId, turnItems)]));
   const runOwners = new Map<string, string>();
   for (const turn of physical.values()) {
-    if (turn.workflowRunId) runOwners.set(turn.workflowRunId, turn.turnId);
+    // 回答子 Turn 也会携带 runId，但它不是 Workflow 的归属 Turn；否则会覆盖来源 Turn，无法折回已结束的问题。
+    if (turn.workflowRunId && turn.inputKind !== "WORKFLOW_ANSWER") runOwners.set(turn.workflowRunId, turn.turnId);
   }
   const resolveTarget = (turn: ThreadViewTurn): string | null => {
     let target = turn.sourceTurnId

@@ -473,6 +473,42 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(screen.getByText("ORDER-001")).not.toBeNull();
   });
 
+  it("回答子 Turn 折回来源后清除已经结束的 QuestionCard", async () => {
+    const thread = threadRecord("thread-1", "取消后收敛 Thread");
+    const events = [
+      itemEvent("item-source-user", "thread-1", "turn-1", "USER_MESSAGE", 1,
+        { schemaVersion: 1, kind: "USER_MESSAGE", data: "申请退款" }),
+      itemEvent("item-source-state", "thread-1", "turn-1", "TURN_STATE", 2,
+        { schemaVersion: 1, kind: "TURN_STATE", data: { status: "WAITING_USER_INPUT" } }),
+      itemEvent("item-source-question", "thread-1", "turn-1", "WORKFLOW_QUESTION", 3,
+        { schemaVersion: 1, kind: "WORKFLOW_QUESTION", data: {
+          runId: "run-cancel", questionId: "question-cancel", checkpointId: "checkpoint-cancel", version: 1,
+          title: "补充退款原因", prompt: "请说明退款原因。", step: "REASON", stepNo: 2,
+          fields: [{ name: "reason", label: "退款原因", type: "TEXT", required: true }]
+        } }),
+      itemEvent("item-answer-request", "thread-1", "turn-answer", "WORKFLOW_ANSWER", 4,
+        { schemaVersion: 1, kind: "WORKFLOW_ANSWER", data: {
+          runId: "run-cancel", questionId: "question-cancel", action: "CANCEL", answers: {}
+        } }),
+      itemEvent("item-answer-state", "thread-1", "turn-answer", "TURN_STATE", 5,
+        { schemaVersion: 1, kind: "TURN_STATE", data: { status: "COMPLETED" } })
+    ];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      if (url.includes("/threads/thread-1/items")) return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse(events));
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("申请退款")).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "补充退款原因" })).toBeNull();
+    expect(document.querySelectorAll(".conversation-turn")).toHaveLength(1);
+  });
+
   it("为耗尽的外部动作显示人工重试并调用稳定 API", async () => {
     const thread = threadRecord("thread-1", "人工重试 Thread");
     const retryEvents = [
