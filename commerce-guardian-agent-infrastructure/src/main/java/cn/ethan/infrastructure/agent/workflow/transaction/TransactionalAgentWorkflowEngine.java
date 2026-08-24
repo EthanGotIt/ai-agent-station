@@ -712,7 +712,6 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
         }
         appendItem(thread, next, AgentItemTypeEnum.TURN_STATE,
                 writeJson(Map.of("status", target.name())), now);
-        emitAfterCommit(next);
     }
 
     private void appendAnswerResult(AgentTurnModel answerTurn, String status, String runId, Instant now) {
@@ -751,13 +750,6 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
             return;
         }
         afterCommit(() -> events.itemCreated(item));
-    }
-
-    private void emitAfterCommit(AgentTurnModel turn) {
-        if (events == null) {
-            return;
-        }
-        afterCommit(() -> events.turnUpdated(turn));
     }
 
     private void afterCommit(Runnable callback) {

@@ -15,6 +15,8 @@ import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
+import cn.ethan.core.commerce.order.LogisticsEventModel;
+import cn.ethan.core.commerce.order.OrderSnapshotModel;
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -112,11 +114,51 @@ class ExternalActionWorkerTest {
         assertEquals(AgentWorkflowStatusEnum.COMPLETED, workflowRuns.updated.status());
         assertEquals(cn.ethan.core.agent.thread.AgentTurnStatusEnum.COMPLETED, turns.updated.status());
         assertEquals(2, items.appended.size());
-        assertEquals(3, eventCount.get());
+        assertEquals(2, eventCount.get());
         items.appended.forEach(item -> {
             assertTrue(item.payloadJson().contains("\"schemaVersion\":1"));
             assertFalse(item.payloadJson().contains("command-1|"));
         });
+    }
+
+    @Test
+    void successfulActionVerifiesLatestFactsAndProjectsThemIntoTheSameTurn() {
+        ExternalActionCommandModel claimed = claimed("{\"orderId\":\"order-1\"}");
+        AcceptingCommandStore commands = new AcceptingCommandStore(claimed);
+        CountingItemStore items = new CountingItemStore();
+        AgentTurnModel waitingTurn = new AgentTurnModel(
+                "turn-1", "thread-1", "user-1", "request-1", "refund",
+                cn.ethan.core.agent.thread.AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION, 0,
+                "run-1", null, NOW.minusSeconds(10), NOW.minusSeconds(5), null);
+        CountingTurnStore turns = new CountingTurnStore(waitingTurn);
+        AgentWorkflowRunModel waitingRun = new AgentWorkflowRunModel(
+                "run-1", "thread-1", "turn-1", "user-1", AgentWorkflowTypeEnum.REFUND,
+                AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, 0, NOW.minusSeconds(10), NOW.minusSeconds(5));
+        CountingWorkflowRunStore workflowRuns = new CountingWorkflowRunStore(waitingRun);
+        AtomicInteger eventCount = new AtomicInteger();
+        OrderSnapshotModel order = new OrderSnapshotModel("order-1", "user-1", "REFUNDED", 0);
+        LogisticsEventModel logisticsEvent = new LogisticsEventModel(
+                "log-1", "order-1", "REFUNDED", "仓库", "退款完成", NOW);
+        ExternalActionWorker worker = new ExternalActionWorker(
+                commands, command -> new ExternalActionExecutor.ExternalActionResult(
+                        true, false, "ORDER_REFUNDED", "订单已退款"), items, turns,
+                event -> eventCount.incrementAndGet(), Clock.fixed(NOW, ZoneOffset.UTC), workflowRuns,
+                Duration.ofSeconds(30), Duration.ofSeconds(5), Duration.ofSeconds(5), AgentRuntimeMetrics.noop(),
+                (orderId, userId) -> new cn.ethan.core.commerce.order.OrderLookupResultModel(
+                        cn.ethan.core.commerce.order.OrderLookupStatusEnum.FOUND, order),
+                (orderId, userId) -> List.of(logisticsEvent));
+
+        try {
+            assertEquals(1, worker.runOnce(1, Duration.ofSeconds(30)));
+        } finally {
+            worker.destroy();
+        }
+
+        assertEquals(4, items.appended.size());
+        assertEquals(4, eventCount.get());
+        assertTrue(items.appended.get(0).payloadJson().contains("\"verificationStatus\":\"VERIFIED\""));
+        assertTrue(items.appended.stream().anyMatch(item -> item.type().name().equals("ORDER_DETAIL")));
+        assertTrue(items.appended.stream().anyMatch(item -> item.type().name().equals("LOGISTICS_TIMELINE")));
     }
 
     @Test
@@ -179,9 +221,13 @@ class ExternalActionWorkerTest {
     }
 
     private ExternalActionCommandModel claimed() {
+        return claimed("{}");
+    }
+
+    private ExternalActionCommandModel claimed(String payload) {
         return new ExternalActionCommandModel(
                 "command-1", "run-1", "thread-1", "turn-1", "user-1", ExternalActionTypeEnum.REFUND,
-                "idem-1", "{}", ExternalActionStatusEnum.PROCESSING, 1, 3, null,
+                "idem-1", payload, ExternalActionStatusEnum.PROCESSING, 1, 3, null,
                 "worker-stale", NOW.plusSeconds(30), null, null, NOW.minusSeconds(10), NOW, null, 1, 1);
     }
 

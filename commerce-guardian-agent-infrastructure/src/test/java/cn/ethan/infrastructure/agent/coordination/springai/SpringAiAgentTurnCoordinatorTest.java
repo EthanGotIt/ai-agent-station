@@ -35,7 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * 类型职责：验证协调器使用 DeepSeek 兼容的流式 ChatClient 路径并逐段发布事件。
+ * 类型职责：验证协调器使用 DeepSeek 兼容的流式 ChatClient 路径，并将完整回复交给持久化 Item 层。
  *
  * @author ethan
  * @date 2026-08-21
@@ -45,7 +45,7 @@ class SpringAiAgentTurnCoordinatorTest {
     private static final Instant NOW = Instant.parse("2026-08-21T00:00:00Z");
 
     @Test
-    void streamsEveryContentDeltaAndUsesFullMessageForRuntime() {
+    void consumesEveryContentDeltaButDoesNotPublishTransientEvents() {
         List<String> deltas = List.of("你", "好", "！");
         CapturingEvents events = new CapturingEvents();
         SpringAiAgentTurnCoordinator coordinator = coordinator(new StreamingModel(
@@ -55,11 +55,7 @@ class SpringAiAgentTurnCoordinatorTest {
                 thread(), turn(), List.of(), null);
 
         assertEquals("你好！", result.assistantMessage());
-        assertEquals(deltas, events.published.stream()
-                .filter(event -> "assistant.delta".equals(event.type()))
-                .map(AgentThreadEventGateway.AgentThreadEvent::payload)
-                .toList());
-        assertEquals(3, events.published.size());
+        assertEquals(List.of(), events.published);
     }
 
     @Test

@@ -9,6 +9,10 @@ import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
+import cn.ethan.core.commerce.order.LogisticsGateway;
+import cn.ethan.core.commerce.order.OrderGateway;
+import cn.ethan.core.commerce.order.OrderLookupResultModel;
+import cn.ethan.core.commerce.order.OrderLookupStatusEnum;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
@@ -49,6 +53,9 @@ public final class ExternalActionWorker implements DisposableBean {
     private final Duration retryBaseDelay;
     private final Duration actionTimeout;
     private final AgentRuntimeMetrics metrics;
+    private final OrderGateway orders;
+    private final LogisticsGateway logistics;
+    private final ObjectMapper objectMapper;
     private final ExecutorService actionExecutor = Executors.newCachedThreadPool(runnable -> {
         Thread thread = new Thread(runnable, "agent-external-action");
         thread.setDaemon(true);
@@ -65,7 +72,10 @@ public final class ExternalActionWorker implements DisposableBean {
             @Value("${ai-agent.worker.retry-base-delay:PT5S}") Duration retryBaseDelay,
             @Value("${ai-agent.worker.action-timeout:PT30S}") Duration actionTimeout,
             AgentRuntimeMetrics metrics,
-            ExternalActionOutcomeManager outcomes
+            ExternalActionOutcomeManager outcomes,
+            OrderGateway orders,
+            LogisticsGateway logistics,
+            ObjectMapper objectMapper
     ) {
         this.commands = commands;
         this.executor = executor;
@@ -76,6 +86,9 @@ public final class ExternalActionWorker implements DisposableBean {
         this.retryBaseDelay = positive(retryBaseDelay, Duration.ofSeconds(5));
         this.actionTimeout = positive(actionTimeout, Duration.ofSeconds(30));
         this.metrics = metrics == null ? AgentRuntimeMetrics.noop() : metrics;
+        this.orders = orders;
+        this.logistics = logistics;
+        this.objectMapper = objectMapper == null ? new ObjectMapper() : objectMapper;
     }
 
     /**
@@ -96,7 +109,28 @@ public final class ExternalActionWorker implements DisposableBean {
     ) {
         this(commands, executor, events, clock, leaseDuration, retryBaseDelay, actionTimeout, metrics,
                 new ExternalActionOutcomeManager(commands, items, turns, workflowRuns,
-                        new ObjectMapper()));
+                        new ObjectMapper()), null, null, new ObjectMapper());
+    }
+
+    /** 为后置订单事实核验提供可控的内存测试构造边界。 */
+    public ExternalActionWorker(
+            ExternalActionCommandStore commands,
+            ExternalActionExecutor executor,
+            AgentItemStore items,
+            AgentTurnStore turns,
+            AgentThreadEventGateway events,
+            Clock clock,
+            AgentWorkflowRunStore workflowRuns,
+            Duration leaseDuration,
+            Duration retryBaseDelay,
+            Duration actionTimeout,
+            AgentRuntimeMetrics metrics,
+            OrderGateway orders,
+            LogisticsGateway logistics
+    ) {
+        this(commands, executor, events, clock, leaseDuration, retryBaseDelay, actionTimeout, metrics,
+                new ExternalActionOutcomeManager(commands, items, turns, workflowRuns,
+                        new ObjectMapper()), orders, logistics, new ObjectMapper());
     }
 
     public int runOnce(int limit, Duration leaseDuration) {
@@ -152,8 +186,11 @@ public final class ExternalActionWorker implements DisposableBean {
             metrics.observeWorkerRetry();
         }
         try {
+            ExternalActionOutcomeManager.Verification verification = result.success()
+                    ? verifyAfterSuccess(claimed)
+                    : null;
             ExternalActionOutcomeManager.Projection projection = outcomes.transition(
-                    claimed, updated, result.code(), result.message(), clock);
+                    claimed, updated, result.code(), result.message(), clock, verification);
             if (projection == null) {
                 LOGGER.info("外部动作 Lease 已失效，停止投影，commandId={}, version={}",
                         claimed.commandId(), claimed.version());
@@ -190,13 +227,45 @@ public final class ExternalActionWorker implements DisposableBean {
         }
     }
 
+    /** 外部动作成功后在本地事务外核验最新订单事实；失败只形成可见回执，不重放动作。 */
+    private ExternalActionOutcomeManager.Verification verifyAfterSuccess(ExternalActionCommandModel command) {
+        Instant verifiedAt = clock.instant();
+        String orderId = orderId(command.payloadJson());
+        if (orders == null || orderId == null) {
+            return ExternalActionOutcomeManager.Verification.unavailable(
+                    "操作已受理、最新状态暂未核验", verifiedAt);
+        }
+        try {
+            OrderLookupResultModel lookup = orders.findOrder(orderId, command.userId());
+            if (lookup == null || lookup.status() != OrderLookupStatusEnum.FOUND || lookup.order() == null) {
+                return ExternalActionOutcomeManager.Verification.unavailable(
+                        "操作已受理、最新状态暂未核验", verifiedAt);
+            }
+            var trace = logistics == null ? List.<cn.ethan.core.commerce.order.LogisticsEventModel>of()
+                    : logistics.findTrace(orderId, command.userId());
+            return ExternalActionOutcomeManager.Verification.found(lookup.order(), trace, verifiedAt);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("外部动作成功但后置订单核验失败，commandId={}, errorType={}",
+                    command.commandId(), failure.getClass().getSimpleName());
+            return ExternalActionOutcomeManager.Verification.unavailable(
+                    "操作已受理、最新状态暂未核验", verifiedAt);
+        }
+    }
+
+    private String orderId(String payloadJson) {
+        try {
+            String value = objectMapper.readTree(payloadJson == null ? "{}" : payloadJson)
+                    .path("orderId").asString("").strip();
+            return value.isBlank() ? null : value;
+        } catch (RuntimeException failure) {
+            return null;
+        }
+    }
+
     private void publishSafely(ExternalActionOutcomeManager.Projection projection) {
         try {
             for (AgentItemModel item : projection.items()) {
                 events.itemCreated(item);
-            }
-            if (projection.turn() != null) {
-                events.turnUpdated(projection.turn());
             }
         } catch (RuntimeException failure) {
             // Item 已经持久化；SSE 断线可从游标回放，不能因发布失败再次执行外部动作。

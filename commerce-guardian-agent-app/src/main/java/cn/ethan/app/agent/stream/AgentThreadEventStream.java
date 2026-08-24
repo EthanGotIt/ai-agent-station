@@ -51,7 +51,8 @@ public final class AgentThreadEventStream implements AutoCloseable {
      * 接收事件总线事件；回放期间只入缓冲，不直接触碰 SseEmitter。
      */
     public void accept(AgentThreadEventGateway.AgentThreadEvent event) {
-        if (event == null || !threadId.equals(event.threadId())) {
+        if (event == null || event.sequence() < 0 || event.type() == null || !event.type().startsWith("item.")
+                || !threadId.equals(event.threadId())) {
             return;
         }
         synchronized (monitor) {

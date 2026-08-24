@@ -126,7 +126,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             );
         }
 
-        WorkflowInvocation invocation = new WorkflowInvocation(executionContext, clock, metrics);
+        WorkflowInvocation invocation = new WorkflowInvocation(
+                executionContext, clock, metrics, thread, turn, items, events);
         try {
             StringBuilder content = new StringBuilder();
             Flux<String> contentStream = chatClient.prompt()
@@ -136,6 +137,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                             只读订单和物流问题必须调用只读 Tool 获取事实；记不清订单号时，使用 search_orders 按时间、金额、状态、关键词或物流停滞条件搜索。
                             退款、催发货等外部写操作只能调用 Workflow Tool 启动确定性流程，不能声称已完成。
                             回复简洁、可验证，只引用 Tool 返回的订单事实，不输出原始思考过程。
+                            订单与物流结构化事实由界面卡片展示；不要重复字段，不要输出 Markdown 表格。
                             """.formatted(clock.instant()))
                     .user(renderContext(context, turn.input()))
                     .tools(
@@ -155,11 +157,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                     executionContext.checkActive();
                 }
                 content.append(delta);
-                events.publish(new AgentThreadEventGateway.AgentThreadEvent(
-                        "delta-" + UUID.randomUUID(), thread.threadId(), turn.turnId(),
-                        "assistant.delta", delta, -1, clock.instant()));
             }).blockLast();
-            invocation.flush(thread, turn, items, events, clock);
             if (invocation.result != null) {
                 AgentWorkflowEngine.StartResult result = invocation.result;
                 return new AgentCoordinatorResult(
@@ -174,7 +172,6 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             String message = content.toString().trim();
             return new AgentCoordinatorResult(message, List.of(), null, null, false);
         } catch (RuntimeException failure) {
-            invocation.flush(thread, turn, items, events, clock);
             if (causedByTimeout(failure)) {
                 LOGGER.warn("Agent 模型流式调用超时，threadId={}, turnId={}", thread.threadId(), turn.turnId());
                 throw new AgentExecutionTimeoutException("Agent 模型流式调用超过 Turn 截止时间", failure);
@@ -578,17 +575,36 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         private final AgentExecutionContext executionContext;
         private final Clock clock;
         private final AgentRuntimeMetrics metrics;
+        private final AgentThreadModel thread;
+        private final AgentTurnModel turn;
+        private final AgentItemStore items;
+        private final AgentThreadEventGateway events;
         private final Map<String, Instant> toolStartedAt = new LinkedHashMap<>();
-        private boolean flushed;
 
         WorkflowInvocation(
                 AgentExecutionContext executionContext,
                 Clock clock,
                 AgentRuntimeMetrics metrics
         ) {
+            this(executionContext, clock, metrics, null, null, null, null);
+        }
+
+        WorkflowInvocation(
+                AgentExecutionContext executionContext,
+                Clock clock,
+                AgentRuntimeMetrics metrics,
+                AgentThreadModel thread,
+                AgentTurnModel turn,
+                AgentItemStore items,
+                AgentThreadEventGateway events
+        ) {
             this.executionContext = executionContext;
             this.clock = clock;
             this.metrics = metrics;
+            this.thread = thread;
+            this.turn = turn;
+            this.items = items;
+            this.events = events;
         }
 
         private void checkActive() {
@@ -598,7 +614,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         private synchronized String recordCall(String tool, Map<String, String> arguments) {
             String invocationId = UUID.randomUUID().toString();
             toolStartedAt.put(invocationId, clock.instant());
-            traces.add(new AgentItemDraft("TOOL_CALL", json(tool, invocationId, arguments, null, null)));
+            recordImmediate(new AgentItemDraft("TOOL_CALL", json(tool, invocationId, arguments, null, null)));
             return invocationId;
         }
 
@@ -607,7 +623,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         ) {
             boolean truncated = value != null && value.length() > 2000;
             String bounded = truncated ? value.substring(0, 2000) : value;
-            traces.add(new AgentItemDraft(
+            recordImmediate(new AgentItemDraft(
                     "TOOL_RESULT", json(tool, invocationId, Map.of(), status, bounded, truncated)));
             Instant started = toolStartedAt.remove(invocationId);
             if (started != null) {
@@ -620,26 +636,20 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         }
 
         private synchronized void recordStructured(String type, String payload) {
-            traces.add(new AgentItemDraft(type, payload));
+            recordImmediate(new AgentItemDraft(type, payload));
         }
 
-        private void flush(
-                AgentThreadModel thread,
-                AgentTurnModel turn,
-                AgentItemStore items,
-                AgentThreadEventGateway events,
-                Clock clock
-        ) {
-            if (flushed) return;
-            flushed = true;
-            for (AgentItemDraft draft : traces) {
-                AgentItemTypeEnum type = AgentItemTypeEnum.valueOf(draft.type());
-                AgentItemModel item = new AgentItemModel(UUID.randomUUID().toString(), thread.threadId(),
-                        turn.turnId(), 0, type, draft.payload(), clock.instant());
-                long sequence = items.appendItem(item);
-                events.itemCreated(new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), sequence,
-                        item.type(), item.payload(), item.createdAt()));
+        private void recordImmediate(AgentItemDraft draft) {
+            traces.add(draft);
+            if (items == null || thread == null || turn == null || events == null) {
+                return;
             }
+            AgentItemTypeEnum type = AgentItemTypeEnum.valueOf(draft.type());
+            AgentItemModel item = new AgentItemModel(UUID.randomUUID().toString(), thread.threadId(),
+                    turn.turnId(), 0, type, draft.payload(), clock.instant());
+            long sequence = items.appendItem(item);
+            events.itemCreated(new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), sequence,
+                    item.type(), item.payload(), item.createdAt()));
         }
 
         private static String json(

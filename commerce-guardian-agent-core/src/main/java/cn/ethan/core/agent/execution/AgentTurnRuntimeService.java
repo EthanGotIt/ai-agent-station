@@ -195,7 +195,6 @@ public final class AgentTurnRuntimeService {
                         new AtomicBoolean(false), new AtomicReference<>());
                 slot.queue.addLast(queued);
                 pendingGlobal.incrementAndGet();
-                publishTurn(persisted);
                 scheduleQueueTimeout(thread.threadId(), queued);
                 schedule(slot, thread);
             }
@@ -223,7 +222,6 @@ public final class AgentTurnRuntimeService {
                 if (updateTurn(owner, waiting)) {
                     appendItem(waiting, AgentItemTypeEnum.TURN_STATE,
                             turnStatePayload(waiting.status(), "WORKFLOW_RECOVERED"));
-                    publishTurn(waiting);
                 }
             }
             case COMPLETED -> finish(owner, AgentTurnStatusEnum.COMPLETED, "WORKFLOW_RECOVERED");
@@ -288,7 +286,6 @@ public final class AgentTurnRuntimeService {
                     new AtomicBoolean(false), new AtomicReference<>());
             slot.queue.addLast(queued);
             pendingGlobal.incrementAndGet();
-            publishTurn(turn);
             scheduleQueueTimeout(ownerThreadId, queued);
             schedule(slot, thread);
         }
@@ -353,7 +350,6 @@ public final class AgentTurnRuntimeService {
                 slot.queue.addLast(queued);
                 added = true;
                 pendingGlobal.incrementAndGet();
-                publishTurn(turn);
                 scheduleQueueTimeout(ownerThreadId, queued);
                 schedule(slot, thread);
                 return turn;
@@ -507,7 +503,6 @@ public final class AgentTurnRuntimeService {
                 return;
             }
             appendItem(active, AgentItemTypeEnum.TURN_STATE, turnStatePayload(active.status(), null));
-            publishTurn(active);
             executionContext = new AgentExecutionContext(clock, started.plus(turnTimeout));
             execution.executionContext.set(executionContext);
             if (execution.cancelled.get()) {
@@ -565,7 +560,6 @@ public final class AgentTurnRuntimeService {
                     return;
                 }
                 appendItem(waiting, AgentItemTypeEnum.TURN_STATE, turnStatePayload(waiting.status(), null));
-                publishTurn(waiting);
                 return;
             }
             if (execution.workflowAnswer()) {
@@ -579,7 +573,6 @@ public final class AgentTurnRuntimeService {
                     }
                     appendItem(waiting, AgentItemTypeEnum.TURN_STATE,
                             turnStatePayload(waiting.status(), null));
-                    publishTurn(waiting);
                     return;
                 }
             }
@@ -627,7 +620,6 @@ public final class AgentTurnRuntimeService {
             metrics.observeTurn(Duration.between(terminal.startedAt(), terminal.finishedAt()), status.name());
         }
         appendItem(terminal, AgentItemTypeEnum.TURN_STATE, turnStatePayload(status, code));
-        publishTurn(terminal);
     }
 
     private boolean updateTurn(AgentTurnModel expected, AgentTurnModel next) {
@@ -678,10 +670,6 @@ public final class AgentTurnRuntimeService {
             pendingGlobal.decrementAndGet();
         }
         finish(target.turn, AgentTurnStatusEnum.TIMED_OUT, "QUEUE_WAIT_TIMEOUT");
-    }
-
-    private void publishTurn(AgentTurnModel turn) {
-        events.turnUpdated(turn);
     }
 
     private String turnStatePayload(AgentTurnStatusEnum status, String errorCode) {
@@ -836,7 +824,6 @@ public final class AgentTurnRuntimeService {
         }
         try {
             appendItem(terminal, AgentItemTypeEnum.TURN_STATE, turnStatePayload(status, code));
-            publishTurn(terminal);
         } catch (RuntimeException eventFailure) {
             metrics.observeFailure("WORKFLOW_ANSWER_TERMINAL_EVENT_FAILED");
         }

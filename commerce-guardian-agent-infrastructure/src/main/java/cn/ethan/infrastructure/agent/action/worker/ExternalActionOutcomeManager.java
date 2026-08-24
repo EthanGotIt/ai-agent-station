@@ -14,6 +14,8 @@ import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
+import cn.ethan.core.commerce.order.LogisticsEventModel;
+import cn.ethan.core.commerce.order.OrderSnapshotModel;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -98,11 +100,25 @@ public final class ExternalActionOutcomeManager {
             String resultMessage,
             Clock clock
     ) {
+        return transition(expected, next, resultCode, resultMessage, clock, null);
+    }
+
+    /**
+     * 在外部动作完成后的本地收敛阶段追加可选的最新业务事实；verification 的远程查询必须在调用方事务外完成。
+     */
+    public Projection transition(
+            ExternalActionCommandModel expected,
+            ExternalActionCommandModel next,
+            String resultCode,
+            String resultMessage,
+            Clock clock,
+            Verification verification
+    ) {
         Instant now = clock.instant();
         if (transactionTemplate == null) {
-            return project(expected, next, resultCode, resultMessage, now);
+            return project(expected, next, resultCode, resultMessage, now, verification);
         }
-        return transactionTemplate.execute(status -> project(expected, next, resultCode, resultMessage, now));
+        return transactionTemplate.execute(status -> project(expected, next, resultCode, resultMessage, now, verification));
     }
 
     private Projection project(
@@ -110,7 +126,8 @@ public final class ExternalActionOutcomeManager {
             ExternalActionCommandModel next,
             String resultCode,
             String resultMessage,
-            Instant now
+            Instant now,
+            Verification verification
     ) {
         if (!commands.update(expected, next)) {
             return null;
@@ -130,7 +147,13 @@ public final class ExternalActionOutcomeManager {
         }
 
         List<AgentItemModel> projectedItems = new ArrayList<>();
-        projectedItems.add(appendStatus(next, resultCode, resultMessage, now));
+        projectedItems.add(appendStatus(next, resultCode, resultMessage, now, verification));
+        if (verification != null && verification.order() != null) {
+            projectedItems.add(appendOrderDetail(next, verification.order(), now));
+            if (verification.logistics() != null) {
+                projectedItems.add(appendLogistics(next, verification.order().orderId(), verification.logistics(), now));
+            }
+        }
 
         AgentTurnModel projectedTurn = projectTurn(next, now);
         if (projectedTurn != null) {
@@ -166,7 +189,8 @@ public final class ExternalActionOutcomeManager {
             ExternalActionCommandModel command,
             String resultCode,
             String resultMessage,
-            Instant now
+            Instant now,
+            Verification verification
     ) {
         ObjectNode data = objectMapper.createObjectNode();
         data.put("commandId", command.commandId());
@@ -174,14 +198,82 @@ public final class ExternalActionOutcomeManager {
         data.put("status", command.status().name());
         data.put("attemptCount", command.attemptCount());
         data.put("retryCycleAttemptCount", command.retryCycleAttemptCount());
+        data.put("actionType", command.type().name());
+        String orderId = orderId(command.payloadJson());
+        if (orderId != null) {
+            data.put("orderId", orderId);
+        }
         if (resultCode != null && !resultCode.isBlank()) {
             data.put("code", resultCode);
         }
         if (resultMessage != null && !resultMessage.isBlank()) {
             data.put("message", resultMessage);
         }
+        if (verification != null) {
+            data.put("verificationStatus", verification.verified() ? "VERIFIED" : "PENDING");
+            if (verification.message() != null && !verification.message().isBlank()) {
+                data.put("verificationMessage", verification.message());
+            }
+            if (verification.verifiedAt() != null) {
+                data.put("verifiedAt", verification.verifiedAt().toString());
+            }
+        }
         return append(new AgentItemModel(UUID.randomUUID().toString(), command.threadId(), command.turnId(), 0,
                 AgentItemTypeEnum.EXTERNAL_ACTION_STATUS, writeJson(data), now));
+    }
+
+    private AgentItemModel appendOrderDetail(
+            ExternalActionCommandModel command,
+            OrderSnapshotModel order,
+            Instant now
+    ) {
+        return append(new AgentItemModel(UUID.randomUUID().toString(), command.threadId(), command.turnId(), 0,
+                AgentItemTypeEnum.ORDER_DETAIL, writeJson(safeOrder(order)), now));
+    }
+
+    private AgentItemModel appendLogistics(
+            ExternalActionCommandModel command,
+            String orderId,
+            List<LogisticsEventModel> events,
+            Instant now
+    ) {
+        ObjectNode data = objectMapper.createObjectNode();
+        data.put("orderId", orderId);
+        var array = data.putArray("events");
+        for (LogisticsEventModel event : events) {
+            ObjectNode node = array.addObject();
+            node.put("eventId", event.eventId());
+            node.put("status", event.status());
+            node.put("location", event.location());
+            node.put("description", event.description());
+            node.put("occurredAt", event.occurredAt().toString());
+        }
+        return append(new AgentItemModel(UUID.randomUUID().toString(), command.threadId(), command.turnId(), 0,
+                AgentItemTypeEnum.LOGISTICS_TIMELINE, writeJson(data), now));
+    }
+
+    private ObjectNode safeOrder(OrderSnapshotModel order) {
+        ObjectNode data = objectMapper.createObjectNode();
+        data.put("orderId", order.orderId());
+        data.put("orderStatus", order.status().name());
+        if (order.createdAt() != null) data.put("createdAt", order.createdAt().toString());
+        if (order.expectedDeliveryAt() != null) data.put("expectedDeliveryAt", order.expectedDeliveryAt().toString());
+        if (order.lastLogisticsAt() != null) data.put("lastLogisticsAt", order.lastLogisticsAt().toString());
+        if (order.logisticsStatus() != null) data.put("logisticsStatus", order.logisticsStatus());
+        if (order.paidAmount() != null) data.put("paidAmount", order.paidAmount());
+        if (order.currency() != null) data.put("currency", order.currency());
+        if (order.itemSummary() != null) data.put("itemSummary", order.itemSummary());
+        data.put("visibility", order.hiddenAt() == null ? "ACTIVE" : "HIDDEN");
+        return data;
+    }
+
+    private String orderId(String payloadJson) {
+        try {
+            String value = objectMapper.readTree(payloadJson == null ? "{}" : payloadJson).path("orderId").asString("").strip();
+            return value.isBlank() ? null : value;
+        } catch (RuntimeException failure) {
+            return null;
+        }
     }
 
     private AgentItemModel appendTurnState(AgentTurnModel turn, Instant now) {
@@ -265,6 +357,27 @@ public final class ExternalActionOutcomeManager {
     ) {
         public Projection {
             items = List.copyOf(items);
+        }
+    }
+
+    /** 外部动作已完成后的只读核验结果；不承载敏感身份信息。 */
+    public record Verification(
+            boolean verified,
+            String message,
+            Instant verifiedAt,
+            OrderSnapshotModel order,
+            List<LogisticsEventModel> logistics
+    ) {
+        public Verification {
+            logistics = logistics == null ? List.of() : List.copyOf(logistics);
+        }
+
+        public static Verification unavailable(String message, Instant at) {
+            return new Verification(false, message, at, null, List.of());
+        }
+
+        public static Verification found(OrderSnapshotModel order, List<LogisticsEventModel> logistics, Instant at) {
+            return new Verification(true, "最新订单状态已核验", at, order, logistics);
         }
     }
 }

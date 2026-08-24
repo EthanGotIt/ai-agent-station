@@ -1,10 +1,9 @@
 package cn.ethan.core.agent.event;
 
 import cn.ethan.core.agent.thread.AgentItemModel;
-import cn.ethan.core.agent.thread.AgentTurnModel;
 
 /**
- * 类型职责：发布 Thread 执行状态和持久化 Item 的实时事件。
+ * 类型职责：发布持久化 Item 的实时事件。
  *
  * @author ethan
  * @date 2026-08-19
@@ -22,7 +21,7 @@ public interface AgentThreadEventGateway {
             long sequence,
             java.time.Instant at
     ) {
-        /** Item 事件的 eventId 与持久化 itemId 相同，Turn 状态事件没有 itemId。 */
+        /** Item 事件的 eventId 与持久化 itemId 相同。 */
         public String itemId() {
             return sequence >= 0 ? eventId : null;
         }
@@ -39,11 +38,4 @@ public interface AgentThreadEventGateway {
         ));
     }
 
-    default void turnUpdated(AgentTurnModel turn) {
-        publish(new AgentThreadEvent(
-                turn.turnId() + ":" + turn.status(), turn.threadId(), turn.turnId(),
-                "turn." + turn.status().name().toLowerCase(), turn.status().name(), -1,
-                turn.finishedAt() == null ? turn.createdAt() : turn.finishedAt()
-        ));
-    }
 }
