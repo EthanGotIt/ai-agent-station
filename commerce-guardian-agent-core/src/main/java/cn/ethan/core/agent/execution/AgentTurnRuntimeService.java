@@ -254,7 +254,7 @@ public final class AgentTurnRuntimeService {
                         AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION);
                 if (updateTurn(owner, waiting)) {
                     appendItem(waiting, AgentItemTypeEnum.TURN_STATE,
-                            turnStatePayload(waiting.status(), "WORKFLOW_RECOVERED"));
+                            AgentTurnItemPayloads.turnState(waiting.status(), "WORKFLOW_RECOVERED"));
                 }
             }
             case COMPLETED -> finish(owner, AgentTurnStatusEnum.COMPLETED, "WORKFLOW_RECOVERED");
@@ -273,8 +273,8 @@ public final class AgentTurnRuntimeService {
         if (thread.status() == AgentThreadStatusEnum.ARCHIVED) {
             throw new AgentThreadConflictException("THREAD_ARCHIVED", "归档 Thread 不接受新消息");
         }
-        String normalizedRequestId = requireClientRequestId(requestId);
-        String normalizedMessage = requireText(message, "message");
+        String normalizedRequestId = AgentTurnInputValidator.requireClientRequestId(requestId);
+        String normalizedMessage = AgentTurnInputValidator.requireText(message, "message");
         Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(ownerId, normalizedRequestId);
         if (duplicate.isPresent()) return duplicate.get();
         if (questions.findOpenQuestion(ownerId, ownerThreadId).isPresent()) {
@@ -312,9 +312,9 @@ public final class AgentTurnRuntimeService {
             if (initialSequence <= 0) {
                 appendItem(initialItem);
             } else {
-                events.itemCreated(withSequence(initialItem, initialSequence));
+                events.itemCreated(AgentTurnItemPayloads.withSequence(initialItem, initialSequence));
             }
-            appendItem(turn, AgentItemTypeEnum.TURN_STATE, turnStatePayload(turn.status(), null));
+            appendItem(turn, AgentItemTypeEnum.TURN_STATE, AgentTurnItemPayloads.turnState(turn.status(), null));
             queued = new QueuedTurn(turn, null, new AtomicBoolean(false),
                     new AtomicBoolean(false), new AtomicReference<>());
             slot.queue.addLast(queued);
@@ -342,7 +342,7 @@ public final class AgentTurnRuntimeService {
         if (thread.status() == AgentThreadStatusEnum.ARCHIVED) {
             throw new AgentThreadConflictException("THREAD_ARCHIVED", "归档 Thread 不接受订单动作");
         }
-        String normalizedRequestId = requireClientRequestId(requestId);
+        String normalizedRequestId = AgentTurnInputValidator.requireClientRequestId(requestId);
         AgentOrderActionInput action = new AgentOrderActionInput(sourceTurnId, orderId, actionType);
         Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(ownerId, normalizedRequestId);
         if (duplicate.isPresent()) {
@@ -379,7 +379,7 @@ public final class AgentTurnRuntimeService {
                     AgentTurnInputKindEnum.ORDER_ACTION, action);
             AgentItemModel initialItem = new AgentItemModel(
                     UUID.randomUUID().toString(), turn.threadId(), turn.turnId(), 0,
-                    AgentItemTypeEnum.ORDER_ACTION_REQUEST, orderActionPayload(action), turn.createdAt());
+                    AgentItemTypeEnum.ORDER_ACTION_REQUEST, AgentTurnItemPayloads.orderAction(action), turn.createdAt());
             long initialSequence;
             try {
                 initialSequence = turns.createTurnWithInitialItem(turn, initialItem);
@@ -393,9 +393,9 @@ public final class AgentTurnRuntimeService {
             if (initialSequence <= 0) {
                 appendItem(initialItem);
             } else {
-                events.itemCreated(withSequence(initialItem, initialSequence));
+                events.itemCreated(AgentTurnItemPayloads.withSequence(initialItem, initialSequence));
             }
-            appendItem(turn, AgentItemTypeEnum.TURN_STATE, turnStatePayload(turn.status(), null));
+            appendItem(turn, AgentItemTypeEnum.TURN_STATE, AgentTurnItemPayloads.turnState(turn.status(), null));
             QueuedTurn queued = new QueuedTurn(turn, null, new AtomicBoolean(false),
                     new AtomicBoolean(false), new AtomicReference<>());
             slot.queue.addLast(queued);
@@ -434,10 +434,10 @@ public final class AgentTurnRuntimeService {
         AgentThreadModel thread = ownedThread(userId, threadId);
         String ownerId = thread.userId();
         String ownerThreadId = thread.threadId();
-        String normalizedRequestId = requireClientRequestId(requestId);
+        String normalizedRequestId = AgentTurnInputValidator.requireClientRequestId(requestId);
         AgentWorkflowAnswerActionEnum normalizedAction = action == null
                 ? AgentWorkflowAnswerActionEnum.SUBMIT : action;
-        Map<String, String> persistedAnswers = normalizeAnswers(normalizedAction, answers);
+        Map<String, String> persistedAnswers = AgentTurnInputValidator.normalizeAnswers(normalizedAction, answers);
         Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(ownerId, normalizedRequestId);
         if (duplicate.isPresent()) {
             return requireMatchingAnswerDuplicate(duplicate.get(), ownerId, ownerThreadId, runId,
@@ -474,7 +474,7 @@ public final class AgentTurnRuntimeService {
             boolean added = false;
             try {
                 events.itemCreated(admission.initialItem());
-                appendItem(turn, AgentItemTypeEnum.TURN_STATE, turnStatePayload(turn.status(), null));
+                appendItem(turn, AgentItemTypeEnum.TURN_STATE, AgentTurnItemPayloads.turnState(turn.status(), null));
                 slot.queue.addLast(queued);
                 added = true;
                 pendingGlobal.incrementAndGet();
@@ -517,11 +517,11 @@ public final class AgentTurnRuntimeService {
             AgentWorkflowAnswerActionEnum action,
             Map<String, String> answers
     ) {
-        String normalizedUserId = normalizeUserId(userId);
-        String normalizedRequestId = requireClientRequestId(requestId);
+        String normalizedUserId = AgentTurnInputValidator.normalizeUserId(userId);
+        String normalizedRequestId = AgentTurnInputValidator.requireClientRequestId(requestId);
         AgentWorkflowAnswerActionEnum normalizedAction = action == null
                 ? AgentWorkflowAnswerActionEnum.SUBMIT : action;
-        Map<String, String> persistedAnswers = normalizeAnswers(normalizedAction, answers);
+        Map<String, String> persistedAnswers = AgentTurnInputValidator.normalizeAnswers(normalizedAction, answers);
         Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(normalizedUserId, normalizedRequestId);
         if (duplicate.isPresent()) {
             return requireMatchingAnswerDuplicate(duplicate.get(), normalizedUserId, duplicate.get().threadId(), runId,
@@ -644,7 +644,7 @@ public final class AgentTurnRuntimeService {
             if (!updateTurn(turn, active)) {
                 return;
             }
-            appendItem(active, AgentItemTypeEnum.TURN_STATE, turnStatePayload(active.status(), null));
+            appendItem(active, AgentItemTypeEnum.TURN_STATE, AgentTurnItemPayloads.turnState(active.status(), null));
             executionContext = new AgentExecutionContext(clock, started.plus(turnTimeout));
             execution.executionContext.set(executionContext);
             if (execution.cancelled.get()) {
@@ -675,7 +675,7 @@ public final class AgentTurnRuntimeService {
                 executionContext.checkActive();
                 metrics.observeContext(assembly.report().estimatedTokens(), assembly.report().compressed(),
                         assembly.report().degraded());
-                appendItem(active, AgentItemTypeEnum.EXECUTION_EVENT, contextPayload(assembly.report()));
+                appendItem(active, AgentItemTypeEnum.EXECUTION_EVENT, AgentTurnItemPayloads.context(assembly.report()));
                 result = executionRouter.route(
                         thread, active, assembly.items(), execution.answers(), executionContext);
             }
@@ -686,7 +686,7 @@ public final class AgentTurnRuntimeService {
             }
             for (AgentTurnCoordinator.AgentItemDraft draft : result.items()) {
                 executionContext.checkActive();
-                AgentItemTypeEnum draftType = parseType(draft.type());
+            AgentItemTypeEnum draftType = AgentTurnItemPayloads.parseType(draft.type());
                 if (!execution.workflowAnswer()
                         && draftType != AgentItemTypeEnum.WORKFLOW_STARTED
                         && draftType != AgentItemTypeEnum.WORKFLOW_QUESTION) {
@@ -706,7 +706,7 @@ public final class AgentTurnRuntimeService {
                 if (!updateTurn(active, waiting)) {
                     return;
                 }
-                appendItem(waiting, AgentItemTypeEnum.TURN_STATE, turnStatePayload(waiting.status(), null));
+                appendItem(waiting, AgentItemTypeEnum.TURN_STATE, AgentTurnItemPayloads.turnState(waiting.status(), null));
                 return;
             }
             if (execution.workflowAnswer()) {
@@ -719,7 +719,7 @@ public final class AgentTurnRuntimeService {
                         return;
                     }
                     appendItem(waiting, AgentItemTypeEnum.TURN_STATE,
-                            turnStatePayload(waiting.status(), null));
+                            AgentTurnItemPayloads.turnState(waiting.status(), null));
                     return;
                 }
             }
@@ -766,7 +766,7 @@ public final class AgentTurnRuntimeService {
         if (terminal.startedAt() != null && terminal.finishedAt() != null) {
             metrics.observeTurn(Duration.between(terminal.startedAt(), terminal.finishedAt()), status.name());
         }
-        appendItem(terminal, AgentItemTypeEnum.TURN_STATE, turnStatePayload(status, code));
+        appendItem(terminal, AgentItemTypeEnum.TURN_STATE, AgentTurnItemPayloads.turnState(status, code));
     }
 
     private boolean updateTurn(AgentTurnModel expected, AgentTurnModel next) {
@@ -799,23 +799,12 @@ public final class AgentTurnRuntimeService {
     }
 
     private boolean sourceContainsOrderFact(AgentTurnModel source, String orderId) {
-        String marker = "\"orderId\":\"" + escape(orderId) + "\"";
+        String marker = "\"orderId\":\"" + AgentTurnItemPayloads.escape(orderId) + "\"";
         return items.listItems(source.userId(), source.threadId(), 0L, 501).stream()
                 .filter(item -> source.turnId().equals(item.turnId()))
                 .filter(item -> item.type() == AgentItemTypeEnum.ORDER_DETAIL
                         || item.type() == AgentItemTypeEnum.ORDER_LIST)
                 .anyMatch(item -> item.payloadJson().contains(marker));
-    }
-
-    private String orderActionPayload(AgentOrderActionInput action) {
-        return "{\"sourceTurnId\":\"" + escape(action.sourceTurnId())
-                + "\",\"orderId\":\"" + escape(action.orderId())
-                + "\",\"actionType\":\"" + action.actionType().name() + "\"}";
-    }
-
-    private AgentItemModel withSequence(AgentItemModel item, long sequence) {
-        return new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), sequence,
-                item.type(), item.payload(), item.createdAt());
     }
 
     private void scheduleQueueTimeout(String threadId, QueuedTurn queued) {
@@ -832,23 +821,6 @@ public final class AgentTurnRuntimeService {
             pendingGlobal.decrementAndGet();
         }
         finish(target.turn, AgentTurnStatusEnum.TIMED_OUT, "QUEUE_WAIT_TIMEOUT");
-    }
-
-    private String turnStatePayload(AgentTurnStatusEnum status, String errorCode) {
-        return "{\"status\":\"" + status.name() + "\",\"errorCode\":"
-                + (errorCode == null ? "null" : "\"" + escape(errorCode) + "\"") + "}";
-    }
-
-    private String contextPayload(cn.ethan.core.agent.context.AgentContextBudgetReport report) {
-        return "{\"kind\":\"CONTEXT_ASSEMBLED\",\"estimatedTokens\":" + report.estimatedTokens()
-                + ",\"inputBudget\":" + report.inputBudget()
-                + ",\"snapshotThroughSequence\":" + report.snapshotThroughSequence()
-                + ",\"compressed\":" + report.compressed()
-                + ",\"degraded\":" + report.degraded() + "}";
-    }
-
-    private String escape(String value) {
-        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private AgentTurnModel requireMatchingAnswerDuplicate(
@@ -926,19 +898,6 @@ public final class AgentTurnRuntimeService {
         } catch (RuntimeException invalidAnswer) {
             return false;
         }
-    }
-
-    private Map<String, String> normalizeAnswers(
-            AgentWorkflowAnswerActionEnum action,
-            Map<String, String> answers
-    ) {
-        if (action == AgentWorkflowAnswerActionEnum.CANCEL) {
-            return Map.of();
-        }
-        if (answers == null || answers.isEmpty()) {
-            throw new IllegalArgumentException("answers 不能为空");
-        }
-        return normalizeSubmittedAnswers(answers);
     }
 
     private boolean reconcileAnswerFailure(
@@ -1020,7 +979,7 @@ public final class AgentTurnRuntimeService {
             metrics.observeTurn(Duration.between(terminal.startedAt(), finishedAt), status.name());
         }
         try {
-            appendItem(terminal, AgentItemTypeEnum.TURN_STATE, turnStatePayload(status, code));
+            appendItem(terminal, AgentItemTypeEnum.TURN_STATE, AgentTurnItemPayloads.turnState(status, code));
         } catch (RuntimeException eventFailure) {
             metrics.observeFailure("WORKFLOW_ANSWER_TERMINAL_EVENT_FAILED");
         }
@@ -1041,55 +1000,6 @@ public final class AgentTurnRuntimeService {
 
     private AgentThreadModel ownedThread(String userId, String threadId) {
         return threads.get(userId, threadId);
-    }
-
-    private AgentItemTypeEnum parseType(String value) {
-        try {
-            return AgentItemTypeEnum.valueOf(value);
-        } catch (RuntimeException failure) {
-            return AgentItemTypeEnum.EXECUTION_EVENT;
-        }
-    }
-
-    private String requireText(String value, String name) {
-        String normalized = value == null ? null : value.trim();
-        if (normalized == null || normalized.isBlank()
-                || normalized.length() > AgentTurnModel.MAX_USER_MESSAGE_LENGTH) {
-            throw new IllegalArgumentException(name + " 不能为空且长度不能超过 "
-                    + AgentTurnModel.MAX_USER_MESSAGE_LENGTH);
-        }
-        return normalized;
-    }
-
-    private String requireClientRequestId(String clientRequestId) {
-        String normalized = clientRequestId == null ? null : clientRequestId.trim();
-        if (normalized == null || normalized.isBlank()
-                || normalized.length() > AgentTurnModel.MAX_CLIENT_REQUEST_ID_LENGTH) {
-            throw new IllegalArgumentException("clientRequestId 不能为空且长度不能超过 "
-                    + AgentTurnModel.MAX_CLIENT_REQUEST_ID_LENGTH);
-        }
-        return normalized;
-    }
-
-    private String normalizeUserId(String userId) {
-        String normalized = userId == null ? null : userId.trim();
-        if (normalized == null || normalized.isBlank()
-                || normalized.length() > AgentThreadModel.MAX_USER_ID_LENGTH) {
-            throw new IllegalArgumentException("userId 不能为空且长度不能超过 "
-                    + AgentThreadModel.MAX_USER_ID_LENGTH);
-        }
-        return normalized;
-    }
-
-    private Map<String, String> normalizeSubmittedAnswers(Map<String, String> answers) {
-        java.util.LinkedHashMap<String, String> normalized = new java.util.LinkedHashMap<>();
-        answers.forEach((name, value) -> {
-            if (name == null || value == null) {
-                throw new IllegalArgumentException("QuestionCard 回答字段和值不能为空");
-            }
-            normalized.put(name, value.trim());
-        });
-        return Map.copyOf(normalized);
     }
 
     private static final class ThreadSlot {

@@ -15,12 +15,8 @@ import cn.ethan.core.commerce.order.LogisticsGateway;
 import cn.ethan.core.commerce.order.LogisticsEventModel;
 import cn.ethan.core.commerce.order.OrderGateway;
 import cn.ethan.core.commerce.order.OrderLookupResultModel;
-import cn.ethan.core.commerce.order.OrderSnapshotModel;
 import cn.ethan.core.commerce.order.OrderSearchCriteria;
 import cn.ethan.core.commerce.order.OrderSearchResultModel;
-import cn.ethan.core.commerce.order.OrderStatusEnum;
-import cn.ethan.core.commerce.order.OrderVisibilityEnum;
-import cn.ethan.core.commerce.order.OrderSearchStatusEnum;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -38,14 +34,7 @@ import java.util.UUID;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeParseException;
 import java.util.concurrent.TimeoutException;
-import java.math.BigDecimal;
-import java.util.Arrays;
-import java.util.Set;
 
 /**
  * 类型职责：使用 Spring AI Tool Calling 协调只读查询和确定性 Workflow 启动。
@@ -213,191 +202,6 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         return prompt.append("当前请求：\n").append(message).toString();
     }
 
-    private static String requiredArgument(String name, String value) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("Tool 参数不能为空：" + name);
-        }
-        return value.trim();
-    }
-
-    private static String renderOrderLookup(OrderLookupResultModel lookup) {
-        if (lookup == null) {
-            return "{\"status\":\"TEMPORARY_FAILURE\"}";
-        }
-        StringBuilder value = new StringBuilder("{\"status\":\"")
-                .append(escapeJson(lookup.status().name())).append('"');
-        if ("FOUND".equals(lookup.status().name()) && lookup.order() != null) {
-            OrderSnapshotModel order = lookup.order();
-            appendJsonString(value, "orderId", order.orderId());
-            appendJsonString(value, "orderStatus", order.status().name());
-            appendJsonNumber(value, "daysSinceDelivery", order.daysSinceDelivery());
-            appendJsonString(value, "createdAt", instant(order.createdAt()));
-            appendJsonString(value, "expectedDeliveryAt", instant(order.expectedDeliveryAt()));
-            appendJsonString(value, "lastLogisticsAt", instant(order.lastLogisticsAt()));
-            appendJsonString(value, "logisticsStatus", order.logisticsStatus());
-            appendJsonNumber(value, "paidAmount", order.paidAmount());
-            appendJsonString(value, "currency", order.currency());
-            appendJsonString(value, "itemSummary", order.itemSummary());
-            appendJsonString(value, "visibility", order.hiddenAt() == null ? "ACTIVE" : "HIDDEN");
-        }
-        return value.append('}').toString();
-    }
-
-    private static String renderOrderSearch(OrderSearchResultModel result) {
-        StringBuilder value = new StringBuilder("{\"status\":\"")
-                .append(escapeJson(result == null || result.status() == null
-                        ? OrderSearchStatusEnum.TEMPORARY_FAILURE.name() : result.status().name()))
-                .append("\",\"orders\":[");
-        boolean first = true;
-        if (result != null && result.orders() != null) {
-            for (OrderSnapshotModel order : result.orders()) {
-                if (order == null) continue;
-                if (!first) value.append(',');
-                value.append(renderOrderSnapshot(order));
-                first = false;
-            }
-        }
-        return value.append("]}").toString();
-    }
-
-    private static String renderOrderSnapshot(OrderSnapshotModel order) {
-        StringBuilder value = new StringBuilder();
-        appendJsonString(value, "orderId", order.orderId());
-        appendJsonString(value, "orderStatus", order.status().name());
-        appendJsonNumber(value, "daysSinceDelivery", order.daysSinceDelivery());
-        appendJsonString(value, "createdAt", instant(order.createdAt()));
-        appendJsonString(value, "expectedDeliveryAt", instant(order.expectedDeliveryAt()));
-        appendJsonString(value, "lastLogisticsAt", instant(order.lastLogisticsAt()));
-        appendJsonString(value, "logisticsStatus", order.logisticsStatus());
-        appendJsonNumber(value, "paidAmount", order.paidAmount());
-        appendJsonString(value, "currency", order.currency());
-        appendJsonString(value, "itemSummary", order.itemSummary());
-        appendJsonString(value, "visibility", order.hiddenAt() == null ? "ACTIVE" : "HIDDEN");
-        return "{" + value.substring(1) + "}";
-    }
-
-    private static String renderLogistics(String orderId, List<LogisticsEventModel> trace) {
-        StringBuilder value = new StringBuilder("{\"orderId\":\"")
-                .append(escapeJson(orderId)).append("\",\"events\":[");
-        boolean first = true;
-        if (trace != null) {
-            for (LogisticsEventModel event : trace) {
-                if (event == null) {
-                    continue;
-                }
-                if (!first) {
-                    value.append(',');
-                }
-                StringBuilder eventJson = new StringBuilder();
-                appendJsonString(eventJson, "eventId", event.eventId());
-                appendJsonString(eventJson, "orderId", event.orderId());
-                appendJsonString(eventJson, "status", event.status());
-                appendJsonString(eventJson, "location", event.location());
-                appendJsonString(eventJson, "description", event.description());
-                appendJsonString(eventJson, "occurredAt", instant(event.occurredAt()));
-                value.append('{').append(eventJson.substring(1)).append('}');
-                first = false;
-            }
-        }
-        return value.append("]}").toString();
-    }
-
-    private static String renderLogistics(List<LogisticsEventModel> trace) {
-        return renderLogistics("", trace);
-    }
-
-    private static String instant(Instant value) {
-        return value == null ? null : value.toString();
-    }
-
-    private static void appendJsonString(StringBuilder target, String name, String value) {
-        if (value == null) {
-            return;
-        }
-        target.append(",\"").append(escapeJson(name)).append("\":\"")
-                .append(escapeJson(value)).append('"');
-    }
-
-    private static void appendJsonNumber(StringBuilder target, String name, Number value) {
-        if (value == null) {
-            return;
-        }
-        target.append(",\"").append(escapeJson(name)).append("\":").append(value);
-    }
-
-    private static String boundToolValue(String value) {
-        if (value == null || value.length() <= 2_000) {
-            return value == null ? "" : value;
-        }
-        return value.substring(0, 1_980) + "…[TOOL_RESULT_TRUNCATED]";
-    }
-
-    private static OrderSearchCriteria parseSearchCriteria(
-            String createdFrom,
-            String createdTo,
-            String minAmount,
-            String maxAmount,
-            String statuses,
-            String keyword,
-            String logisticsStalledDays,
-            String visibility
-    ) {
-        Set<OrderStatusEnum> parsedStatuses = statuses == null || statuses.isBlank()
-                ? Set.of()
-                : Arrays.stream(statuses.split(","))
-                .map(String::trim)
-                .filter(value -> !value.isEmpty())
-                .map(value -> OrderStatusEnum.valueOf(value.toUpperCase()))
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
-        OrderVisibilityEnum parsedVisibility = visibility == null || visibility.isBlank()
-                ? OrderVisibilityEnum.ACTIVE
-                : OrderVisibilityEnum.valueOf(visibility.trim().toUpperCase());
-        return new OrderSearchCriteria(
-                parseBoundary("createdFrom", createdFrom, false),
-                parseBoundary("createdTo", createdTo, true),
-                parseAmount("minAmount", minAmount),
-                parseAmount("maxAmount", maxAmount),
-                parsedStatuses, keyword, parseStalledDays(logisticsStalledDays), parsedVisibility);
-    }
-
-    private static BigDecimal parseAmount(String name, String value) {
-        if (value == null || value.isBlank()) return null;
-        try {
-            return new BigDecimal(value.trim());
-        } catch (NumberFormatException failure) {
-            throw new IllegalArgumentException("Tool 参数不是有效金额：" + name);
-        }
-    }
-
-    private static Integer parseStalledDays(String value) {
-        if (value == null || value.isBlank()) return null;
-        try {
-            return Integer.valueOf(value.trim());
-        } catch (NumberFormatException failure) {
-            throw new IllegalArgumentException("Tool 参数不是有效物流停滞天数：logisticsStalledDays");
-        }
-    }
-
-    private static Instant parseBoundary(String name, String value, boolean endOfDay) {
-        if (value == null || value.isBlank()) return null;
-        String normalized = value.trim();
-        try {
-            return Instant.parse(normalized);
-        } catch (DateTimeParseException instantParseFailure) {
-            try {
-                LocalDate date = LocalDate.parse(normalized);
-                return date.atTime(endOfDay ? LocalTime.MAX : LocalTime.MIN)
-                        .toInstant(ZoneOffset.UTC);
-            } catch (DateTimeParseException failure) {
-                throw new IllegalArgumentException("Tool 参数不是有效日期：" + name);
-            }
-        }
-    }
-
-    private static String escapeJson(String value) {
-        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\r", "\\r").replace("\n", "\\n");
-    }
 
     /**
      * 类型职责：向模型公开用户归属受控的只读查询工具。
@@ -424,12 +228,12 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             return invoke("lookup_order", Map.of("orderId", value(orderId)),
                     () -> {
                         OrderLookupResultModel lookup = orders.findOrder(
-                                requiredArgument("orderId", orderId), userId);
+                                SpringAiOrderToolSupport.requiredArgument("orderId", orderId), userId);
                         if (lookup.status() == cn.ethan.core.commerce.order.OrderLookupStatusEnum.FOUND
                                 && lookup.order() != null) {
-                            invocation.recordStructured("ORDER_DETAIL", renderOrderSnapshot(lookup.order()));
+                            invocation.recordStructured("ORDER_DETAIL", SpringAiOrderToolSupport.renderOrderSnapshot(lookup.order()));
                         }
-                        return renderOrderLookup(lookup);
+                        return SpringAiOrderToolSupport.renderOrderLookup(lookup);
                     });
         }
 
@@ -444,7 +248,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 @ToolParam(description = "可选，物流连续多少天未更新；无需筛选时留空或传空字符串") String logisticsStalledDays,
                 @ToolParam(description = "可选，可填写 ACTIVE、HIDDEN 或 ALL；默认 ACTIVE") String visibility
         ) {
-            OrderSearchCriteria criteria = parseSearchCriteria(createdFrom, createdTo, minAmount, maxAmount,
+            OrderSearchCriteria criteria = SpringAiOrderToolSupport.parseSearchCriteria(createdFrom, createdTo, minAmount, maxAmount,
                     statuses, keyword, logisticsStalledDays, visibility);
             return invoke("search_orders", Map.of(
                             "createdFrom", value(createdFrom), "createdTo", value(createdTo),
@@ -454,8 +258,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                             "visibility", value(visibility)),
                     () -> {
                         OrderSearchResultModel result = orders.searchOrders(criteria, userId);
-                        invocation.recordStructured("ORDER_LIST", renderOrderSearch(result));
-                        return renderOrderSearch(result);
+                        invocation.recordStructured("ORDER_LIST", SpringAiOrderToolSupport.renderOrderSearch(result));
+                        return SpringAiOrderToolSupport.renderOrderSearch(result);
                     });
         }
 
@@ -463,11 +267,11 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         public String logisticsTrace(@ToolParam(description = "订单号") String orderId) {
             return invoke("logistics_trace", Map.of("orderId", value(orderId)),
                     () -> {
-                        String normalizedOrderId = requiredArgument("orderId", orderId);
+                        String normalizedOrderId = SpringAiOrderToolSupport.requiredArgument("orderId", orderId);
                         List<LogisticsEventModel> trace = logistics.findTrace(normalizedOrderId, userId);
                         invocation.recordStructured("LOGISTICS_TIMELINE",
-                                renderLogistics(normalizedOrderId, trace));
-                        return renderLogistics(normalizedOrderId, trace);
+                                SpringAiOrderToolSupport.renderLogistics(normalizedOrderId, trace));
+                        return SpringAiOrderToolSupport.renderLogistics(normalizedOrderId, trace);
                     });
         }
 
@@ -478,7 +282,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 String result = call.run();
                 invocation.checkActive();
                 invocation.recordResult(invocationId, name, "SUCCESS", result);
-                return boundToolValue(result);
+                return SpringAiOrderToolSupport.boundToolValue(result);
             } catch (RuntimeException failure) {
                 invocation.recordResult(invocationId, name, "FAILED", failure.getClass().getSimpleName());
                 throw failure;
@@ -684,7 +488,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         }
 
         private static String escape(String value) {
-            return escapeJson(value);
+            return SpringAiOrderToolSupport.escapeJson(value);
         }
     }
 }

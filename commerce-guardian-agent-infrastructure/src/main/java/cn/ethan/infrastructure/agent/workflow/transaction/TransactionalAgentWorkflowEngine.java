@@ -495,17 +495,17 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
         return new QuestionPlan(
                 STEP_INTENT, "INTENT", "先确定售后事项",
                 "你希望我处理哪一类订单售后？选择后我会继续查找相关订单。",
-                List.of(field("intent", "售后事项", "SINGLE_SELECT", true, 32, options, false)),
-                List.of(summary("处理范围", "退款、催发货或订单记录管理")));
+                List.of(AgentWorkflowQuestionSchema.field("intent", "售后事项", "SINGLE_SELECT", true, 32, options, false)),
+                List.of(AgentWorkflowQuestionSchema.summary("处理范围", "退款、催发货或订单记录管理")));
     }
 
     private QuestionPlan historyActionQuestion() {
         return new QuestionPlan(
                 STEP_HISTORY_ACTION, "HISTORY_ACTION", "选择订单记录操作",
                 "订单记录只影响你的历史列表，不会删除交易或物流审计事实。请选择要执行的操作。",
-                List.of(field("historyAction", "记录操作", "SINGLE_SELECT", true, 32,
+                List.of(AgentWorkflowQuestionSchema.field("historyAction", "记录操作", "SINGLE_SELECT", true, 32,
                         List.of(HIDE_ORDER, RESTORE_ORDER), false)),
-                List.of(summary("操作范围", "隐藏或恢复订单历史记录")));
+                List.of(AgentWorkflowQuestionSchema.summary("操作范围", "隐藏或恢复订单历史记录")));
     }
 
     private QuestionPlan orderQuestion(List<OrderSnapshotModel> candidates) {
@@ -514,8 +514,8 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
                 + candidates.stream().limit(3).map(this::orderSummary).reduce((left, right) -> left + "\n" + right).orElse("");
         return new QuestionPlan(
                 STEP_ORDER, "ORDER_SELECT", "请确认具体订单", prompt,
-                List.of(field("orderId", "订单号", "SINGLE_SELECT", true, 64, options, true)),
-                candidates.stream().limit(3).map(order -> summary("候选订单", orderSummary(order))).toList());
+                List.of(AgentWorkflowQuestionSchema.field("orderId", "订单号", "SINGLE_SELECT", true, 64, options, true)),
+                candidates.stream().limit(3).map(order -> AgentWorkflowQuestionSchema.summary("候选订单", orderSummary(order))).toList());
     }
 
     private QuestionPlan reasonQuestion(SelectedOrder selected) {
@@ -523,9 +523,9 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
         return new QuestionPlan(
                 STEP_REASON, "REASON", "补充退款原因",
                 "为了让售后记录完整，请告诉我这笔退款的原因。提交后还会让你在最终确认卡中授权。",
-                List.of(field("reason", "退款原因", "TEXT", true, MAX_REASON_LENGTH, List.of(), true)),
-                List.of(summary("订单", orderSummary(order)),
-                        summary("物流", logisticsSummary(order, selected.events()))));
+                List.of(AgentWorkflowQuestionSchema.field("reason", "退款原因", "TEXT", true, MAX_REASON_LENGTH, List.of(), true)),
+                List.of(AgentWorkflowQuestionSchema.summary("订单", orderSummary(order)),
+                        AgentWorkflowQuestionSchema.summary("物流", logisticsSummary(order, selected.events()))));
     }
 
     private QuestionPlan confirmationQuestion(WorkflowRequest request, SelectedOrder selected) {
@@ -544,16 +544,16 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
             default -> "确认后才会提交订单动作。";
         };
         List<Map<String, String>> summaries = new ArrayList<>(List.of(
-                summary("操作", action),
-                summary("订单", orderSummary(selected.order())),
-                summary("物流", logisticsSummary(selected.order(), selected.events()))));
+                AgentWorkflowQuestionSchema.summary("操作", action),
+                AgentWorkflowQuestionSchema.summary("订单", orderSummary(selected.order())),
+                AgentWorkflowQuestionSchema.summary("物流", logisticsSummary(selected.order(), selected.events()))));
         if (REFUND.equals(request.intent())) {
-            summaries.add(summary("退款原因", request.reason()));
+            summaries.add(AgentWorkflowQuestionSchema.summary("退款原因", request.reason()));
         }
         return new QuestionPlan(
                 STEP_CONFIRM, "CONFIRM", "请确认这项订单操作",
                 "请核对订单和物流信息。" + consequence,
-                List.of(field("decision", "是否提交" + action, "SINGLE_SELECT", true, 32,
+                List.of(AgentWorkflowQuestionSchema.field("decision", "是否提交" + action, "SINGLE_SELECT", true, 32,
                         List.of("APPROVE", "REJECT"), false)),
                 summaries);
     }
@@ -939,30 +939,6 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
 
     private Map<String, String> step(String name, String status) {
         return Map.of("name", name, "status", status);
-    }
-
-    private Map<String, Object> field(
-            String name,
-            String label,
-            String type,
-            boolean required,
-            int maxLength,
-            List<String> options,
-            boolean allowCustom
-    ) {
-        Map<String, Object> value = new LinkedHashMap<>();
-        value.put("name", name);
-        value.put("label", label);
-        value.put("type", type);
-        value.put("required", required);
-        value.put("maxLength", maxLength);
-        value.put("options", options);
-        value.put("allowCustom", allowCustom);
-        return value;
-    }
-
-    private Map<String, String> summary(String label, String value) {
-        return value == null || value.isBlank() ? null : Map.of("label", label, "value", bounded(value, 256));
     }
 
     private String writeJson(Object value) {
