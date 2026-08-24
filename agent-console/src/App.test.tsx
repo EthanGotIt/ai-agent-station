@@ -18,7 +18,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "从一个售后问题开始" })).not.toBeNull();
+    expect(await screen.findByRole("heading", { name: "直接输入请求" })).not.toBeNull();
     expect(fetchMock.mock.calls.every(([input]) => String(input).startsWith("/api/agent/"))).toBe(true);
     expect(fetchMock.mock.calls.every(([input]) => !String(input).includes("legacy"))).toBe(true);
   });
@@ -184,7 +184,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(JSON.parse(String(turnCall?.[1]?.body)).message).toBe("中文输入");
   });
 
-  it("动态 QuestionCard 接管输入区，支持三选项、其他自定义值、摘要和受限 Markdown", async () => {
+  it("动态 QuestionCard 接管输入区，支持三选项、其他自定义值、摘要和受限文本", async () => {
     const thread = threadRecord("thread-1", "退款确认 Thread");
     const questionEvent = itemEvent("item-question-2", "thread-1", "turn-1", "WORKFLOW_QUESTION", 1, {
       schemaVersion: 1,
@@ -226,7 +226,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(screen.getAllByText("ORDER-001").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("¥100")).not.toBeNull();
     expect(screen.queryByText("**订单**")).toBeNull();
-    expect(screen.getByRole("table", { name: "订单信息表格" })).not.toBeNull();
+    expect(screen.queryByRole("table")).toBeNull();
     expect(screen.queryByRole("option", { name: "不应展示" })).toBeNull();
 
     fireEvent.change(screen.getByLabelText("退款原因"), { target: { value: "__OTHER__" } });
@@ -281,7 +281,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(JSON.parse(String(answerCall?.[1]?.body)).answers).toEqual({ decision: "REJECT" });
   });
 
-  it("SSE delta 只更新回复气泡，界面展示持久 Item 聚合的业务进度", async () => {
+  it("旧版 SSE delta 不进入 UI，界面只展示持久 Item 聚合的业务进度", async () => {
     const thread = threadRecord("thread-1", "业务进度 Thread");
     const deltaEvent = `event: assistant.delta\ndata: ${JSON.stringify({
       eventId: "delta-1", threadId: "thread-1", turnId: "turn-1", itemId: null,
@@ -313,6 +313,79 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(screen.queryByText("assistant.delta")).toBeNull();
     expect(screen.queryByText("**内部原始增量**")).toBeNull();
     expect(screen.queryByText("运行轨迹")).toBeNull();
+  });
+
+  it("运行详情展示当前 Turn 的完整 Item 序列，而不是截断为八步", async () => {
+    const thread = threadRecord("thread-1", "完整序列 Thread");
+    const events = Array.from({ length: 10 }, (_, index) => {
+      const sequence = index + 1;
+      const type = sequence === 1 ? "USER_MESSAGE" : sequence === 10 ? "TURN_STATE" : "EXECUTION_EVENT";
+      const data = type === "USER_MESSAGE"
+        ? { schemaVersion: 1, kind: type, data: "查询订单进度" }
+        : type === "TURN_STATE"
+          ? { schemaVersion: 1, kind: type, data: { status: "COMPLETED" } }
+          : { schemaVersion: 1, kind: type, data: `步骤 ${sequence}` };
+      return itemEvent(`item-sequence-${sequence}`, "thread-1", "turn-1", type, sequence, data);
+    });
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") {
+        return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      }
+      if (url.includes("/threads/thread-1/items")) {
+        return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      }
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse(events));
+      if (url.endsWith("/turns/turn-1/execution")) return Promise.resolve(json({
+        turnId: "turn-1",
+        timeline: [{ itemId: "item-sequence-10", turnId: "turn-1", sequence: 10, type: "TURN_STATE", schemaVersion: 1,
+          payload: JSON.stringify({ schemaVersion: 1, kind: "TURN_STATE", data: { status: "COMPLETED" } }), createdAt: thread.createdAt }]
+      }));
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("请求已完成")).not.toBeNull();
+    expect(screen.queryByText("可以这样问")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /运行详情/ }));
+    expect(await screen.findByRole("heading", { name: "运行详情" })).not.toBeNull();
+    expect(screen.getByText("10 个持久化 Item · Turn turn-1")).not.toBeNull();
+    expect(screen.getByText("#010")).not.toBeNull();
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/turns/turn-1/execution")).length).toBe(1);
+  });
+
+  it("执行回放失败时保留当前 Item 并在检查器降级", async () => {
+    const thread = threadRecord("thread-1", "回放降级 Thread");
+    const events = [
+      itemEvent("item-user-replay", "thread-1", "turn-1", "USER_MESSAGE", 1,
+        { schemaVersion: 1, kind: "USER_MESSAGE", data: "查询订单" }),
+      itemEvent("item-state-replay", "thread-1", "turn-1", "TURN_STATE", 2,
+        { schemaVersion: 1, kind: "TURN_STATE", data: { status: "COMPLETED" } })
+    ];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") {
+        return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      }
+      if (url.includes("/threads/thread-1/items")) {
+        return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      }
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse(events));
+      if (url.endsWith("/turns/turn-1/execution")) {
+        return Promise.resolve(new Response(JSON.stringify({ code: "TEMPORARY_FAILURE" }), { status: 503 }));
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("请求已完成")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /运行详情/ }));
+    expect(await screen.findByText("回放暂不可用，已显示当前已恢复事实。")).not.toBeNull();
+    expect(screen.getByText("#002")).not.toBeNull();
   });
 
   it("结构化订单 Item 渲染订单卡片和物流时间线，不展示内部归属字段", async () => {
@@ -353,12 +426,12 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(screen.getByText("杭州转运中心")).not.toBeNull();
     expect(screen.getByText("包裹已揽收")).not.toBeNull();
     expect(screen.queryByText("internal-user-should-not-render")).toBeNull();
-    expect(screen.getByText("已找到 1 个匹配订单")).not.toBeNull();
+    expect(screen.getByText("找到 1 个匹配订单")).not.toBeNull();
     const orderCard = screen.getByText("无线耳机").closest(".order-card");
     fireEvent.click(within(orderCard as HTMLElement).getByRole("button", { name: "申请退款" }));
-    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/threads/thread-1/turns"))).toBe(true));
-    const actionCall = fetchMock.mock.calls.find(([input]) => String(input).includes("/threads/thread-1/turns"));
-    expect(JSON.parse(String(actionCall?.[1]?.body)).message).toContain("ORDER-TODAY-001");
+    const composer = screen.getByRole("textbox", { name: "输入请求" }) as HTMLTextAreaElement;
+    expect(composer.value).toContain("ORDER-TODAY-001");
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/threads/thread-1/turns"))).toBe(false);
   });
 
   it("为耗尽的外部动作显示人工重试并调用稳定 API", async () => {
@@ -489,7 +562,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
 
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /Thread 2/ }));
-    expect(await screen.findByRole("heading", { name: "从一个售后问题开始" })).not.toBeNull();
+    expect(await screen.findByRole("heading", { name: "直接输入请求" })).not.toBeNull();
 
     delayedHistory.resolve(json({ items: [staleItem], afterSequence: 0, nextAfterSequence: 1, hasMore: false }));
     await new Promise((resolve) => window.setTimeout(resolve, 0));

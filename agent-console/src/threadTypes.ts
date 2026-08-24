@@ -29,6 +29,18 @@ export type ExternalActionStatus =
   | "MANUAL_RETRY_REQUIRED"
   | "SUCCEEDED";
 
+export type ExternalActionReceipt = {
+  actionType?: string;
+  orderId?: string;
+  code?: string;
+  message?: string;
+  attemptCount?: number;
+  retryCycleAttemptCount?: number;
+  verificationStatus?: string;
+  verificationMessage?: string;
+  verifiedAt?: string;
+};
+
 export type AgentItemType =
   | "USER_MESSAGE"
   | "TURN_STATE"
@@ -101,6 +113,9 @@ export type QuestionCardState = {
   runId: string;
   questionId: string;
   checkpointId: string;
+  operation?: string;
+  step?: string;
+  stepNo?: number;
   version: number;
   title: string;
   prompt: string;
@@ -154,6 +169,11 @@ export type ThreadViewTurn = {
   finishedAt: string | null;
   workflowRunId: string | null;
   externalActionStatus: ExternalActionStatus | null;
+  externalActionReceipt: ExternalActionReceipt | null;
+  items: AgentItem[];
+  activities: BusinessProgress[];
+  orderCards: OrderCard[];
+  logisticsTimelines: LogisticsTimeline[];
 };
 
 export type AgentThreadPage = {
