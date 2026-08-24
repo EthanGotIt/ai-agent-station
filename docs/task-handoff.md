@@ -15,6 +15,8 @@ updated: 2026-08-24
 - 第四阶段验证：订单服务夹具 5 项测试通过；服务保持关闭，MySQL 继续运行。下一步唯一动作是清理已确认零调用的遗留别名和前端派生路径，并保留旧 Workflow 兼容逻辑。
 - 第五阶段已完成：对生产代码与前端路径进行调用点复核，确认 `currentRetryCycleAttemptCount()` 为零调用别名并删除；`manualRetry`、ExternalAction Lease/幂等、旧 Workflow Item 回退、执行回放缓存和 SSE 游标恢复均有实际调用或兼容测试，未误删。未发现可安全删除的前端订单动作/QuestionCard 派生路径。
 - 第五阶段验证：Core 外部动作模型定向测试通过；旧 Workflow 兼容测试保留，工作树中用户既有脚本/部署/IDE 改动仍未纳入。下一步唯一动作是建立可复现的 review runbook 与安全启动/停止/status 脚本，供最终现场验收使用。
+- 第六阶段已完成：新增 `docs/review-runbook.md` 和 `scripts/review/review-services.ps1`。手册固定物流查询、退款取消/恢复/授权、催发货自动重试/人工恢复三条黄金路径；脚本只管理自身记录的前端 5173、Agent 8090、独立订单夹具 18080 进程，状态/日志/SQLite 均位于系统临时目录，不触碰 MySQL 或用户已有服务。
+- 第六阶段验证：PowerShell `status` 解析与空状态运行通过；脚本未启动任何服务。下一步唯一动作是启动隔离夹具、后端和前端，执行完整测试矩阵与四种浏览器尺寸验收，结束后关闭所有测试服务并更新最终文档。
 - 已完成的主要提交：`a079c06 feat: deliver the item-driven agent workbench`、`ce642f0 refactor: complete the persisted-item runtime contract`、`4059449 fix: allow workflow cancellation at every question`、`b7b4ea3 feat: add deterministic order action turns`、`569c6f9 feat: fold order actions into source cards`、`edec9ae refactor: separate workflow orchestration responsibilities`、`e99f622 feat: refine conversation and question card proportions`、`d539869 fix: harden persisted workflow startup compatibility`、`104158e fix: clear folded workflow questions`。
 - 当前事实源：SSE 对外仅发送 `ready`、`heartbeat` 和 `item.*`；`assistant.delta`、`turn.*`、全局八步进度、固定快捷问、全局订单结果区和 Markdown 表格渲染均已删除。模型最终消息、订单动作、Workflow 状态、外部动作回执和错误通过持久化 Item 恢复，前端用纯函数按 Turn 聚合。
 - 确定性订单动作已落地：订单卡片调用 `/api/agent/threads/{threadId}/order-actions`，查询/刷新不调用模型，退款/催发货/隐藏/恢复进入现有 Workflow；`INPUT_KIND`、`ORDER_ACTION_JSON`、`ORDER_ACTION_REQUEST` 支持重启恢复和幂等。回答 `action=CANCEL` 跳过必填校验、关闭 Question、拒绝 Workflow，不产生外部副作用；回答子 Turn 会折回来源卡片并清除已结束 QuestionCard。
