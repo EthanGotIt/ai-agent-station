@@ -49,7 +49,7 @@ Thread
 └── ContextSnapshot（截至某个 sequence 的版本化摘要）
 ```
 
-Item 是唯一事实来源。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersion=1` 和 `kind` 判别 envelope；`TURN_STATE` 记录 QUEUED、ACTIVE、WAITING、终态等生命周期事实。文本增量只通过 SSE 发送，完成消息、工具调用、工具结果、Workflow 状态和错误才持久化。客户端断线时先按 `afterSequence` 读取 Items，再订阅事件，不重放丢失的增量文本。
+Item 是唯一事实来源。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersion=1` 和 `kind` 判别 envelope；`TURN_STATE` 记录 QUEUED、ACTIVE、WAITING、终态等生命周期事实，模型最终消息、工具调用/结果、Workflow 状态、订单动作请求和错误均即时持久化。模型内部可以流式消费，但 SSE 对外只发送 `ready`、`heartbeat` 和 `item.*`，不再暴露 `assistant.delta` 或瞬时 `turn.*`；客户端断线时先按 `afterSequence` 读取 Items，再订阅事件，不重放丢失的文本增量。
 
 `AgentContextAssembler` 从最新快照的 `throughSequence` 继续读取，过滤当前 Turn 已写入的输入，依次放入系统提示和工具定义、快照之后的最近 Item、当前输入，并为输出预留预算。超过阈值时通过 `AgentContextSummarizer` 压缩最旧已完成 Turn；摘要失败沿用旧快照和最近窗口，`AgentContextBudgetReport` 标记降级但不阻塞执行。所有预算和工具结果截断上限均配置化。
 
@@ -63,7 +63,9 @@ Item 是唯一事实来源。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersio
      → Worker 执行 → SUCCEEDED / MANUAL_RETRY_REQUIRED
 ```
 
-回答路径参数携带 `runId + questionId`，请求体只携带 `clientRequestId + checkpointId + expectedVersion + answers`，并作为同一 Thread 的新 Turn 进入 FIFO。启动、问题创建和版本关闭受本地事务约束；同一 Thread 同时最多一个开放 QuestionCard。退款仅允许 PAID/SHIPPED/DELIVERED，催发货仅允许 PAID；原始模型思考内容不进入 API、SSE、数据库或日志。
+回答路径参数携带 `runId + questionId`，请求体携带 `clientRequestId + checkpointId + expectedVersion + action(SUBMIT|CANCEL) + answers`，并作为同一 Thread 的新 Turn 进入 FIFO。`CANCEL` 将答案归一为空对象，跳过字段校验和外部动作准备，原子关闭 Question、拒绝 Workflow 并收敛 owner Turn；旧请求缺省为 `SUBMIT`。启动、问题创建和版本关闭受本地事务约束；同一 Thread 同时最多一个开放 QuestionCard。退款仅允许 PAID/SHIPPED/DELIVERED，催发货仅允许 PAID；原始模型思考内容不进入 API、SSE、数据库或日志。
+
+订单卡片使用确定性动作入口 `POST /threads/{threadId}/order-actions`。查询/刷新动作直接调用订单端口并追加结构化 `ORDER_*`/`LOGISTICS_TIMELINE` Item；退款、催发货、隐藏和恢复只启动已有 `ORDER_SERVICE` Workflow，确认前不创建外部动作命令、不调用模型。动作请求同时保存在 Turn 的 `INPUT_KIND=ORDER_ACTION`、`ORDER_ACTION_JSON` 和 `ORDER_ACTION_REQUEST` Item 中，按 `clientRequestId` 幂等并校验来源 Turn、订单归属和 Thread FIFO。Workflow 回答子 Turn 通过 `sourceTurnId`/`runId` 折回来源 Turn，技术 Turn 仅在 Item 检查器中展开。
 
 ## Runtime 可靠性
 
@@ -82,6 +84,7 @@ GET    /threads/{threadId}
 PATCH  /threads/{threadId}
 GET    /threads/{threadId}/items?afterSequence=0&limit=200
 POST   /threads/{threadId}/turns
+POST   /threads/{threadId}/order-actions
 POST   /turns/{turnId}/cancel
 GET    /threads/{threadId}/events
 GET    /turns/{turnId}/execution
@@ -89,10 +92,12 @@ POST   /workflow-runs/{runId}/questions/{questionId}/answers
 POST   /workflow-runs/{runId}/retry
 ```
 
-SSE 事件包含完整 envelope：`eventId、threadId、turnId、itemId（可选）、type、sequence、timestamp、payload`；`data` 不再只发送 payload。客户端按真实 `eventId/itemId/sequence` 去重。身份只从认证上下文读取，不信任请求体中的用户字段。
+SSE 事件包含完整 envelope：`eventId、threadId、turnId、itemId（可选）、type、sequence、timestamp、payload`；公开类型收敛为 `ready`、`heartbeat` 和 `item.*`，`data` 不再只发送 payload。客户端按真实 `eventId/itemId/sequence` 去重。身份只从认证上下文读取，不信任请求体中的用户字段。
 
 执行回放接口从同一组 Item 事实投影当前 Turn 的队列、上下文、Tool、Workflow、审批和外部动作时间线；回放过程不调用模型、不启动 Workflow，也不重放外部副作用。运行指标只保留低基数维度：队列等待、Turn/Tool 耗时、上下文预算、Workflow 等待、Worker 重试、Lease 接管和失败分类。`scripts.runtime_eval` 使用 Fake 协调器和 Fake 执行器做确定性门禁，Live Model 评测单独产出质量报告。
 
 ## 数据库
 
-`docs/dev-ops/mysql/commerce-guardian-agent.sql` 是新库的破坏性基线；已有库必须先备份并由 `db/migration/V1__align_workflow_question_recovery.sql`、`V2__expand_order_search_fields.sql`、`V3__support_multi_step_order_workflow.sql`、`V4__index_order_service_actions.sql` 和 `V5__align_legacy_state_schema.sql` 逐版本增量升级。V5 专门兼容早期已部署库缺少的 Thread/Turn/ExternalAction 状态字段、结果表和幂等约束，不删除或重建业务事实。基线包含演示订单/物流和 `AGENT_THREAD`、`AGENT_TURN`、`AGENT_ITEM`、`AGENT_CONTEXT_SNAPSHOT`、`AGENT_WORKFLOW_RUN`、`AGENT_WORKFLOW_QUESTION`、`EXTERNAL_ACTION_COMMAND`、`EXTERNAL_ACTION_RESULT`。同一用户的同一来源 Turn 和 Workflow 类型只能有一个 WorkflowRun；迁移不得重建或覆盖已有业务事实。
+`docs/dev-ops/mysql/commerce-guardian-agent.sql` 是新库的破坏性基线；已有库必须先备份并由 `db/migration/V1__align_workflow_question_recovery.sql`、`V2__expand_order_search_fields.sql`、`V3__support_multi_step_order_workflow.sql`、`V4__index_order_service_actions.sql`、`V5__align_legacy_state_schema.sql` 和 `V6__persist_turn_input_kind_and_order_actions.sql` 逐版本增量升级。V5 兼容早期已部署库缺少的 Thread/Turn/ExternalAction 状态字段、结果表和幂等约束；V6 增加 `AGENT_TURN.INPUT_KIND`、`ORDER_ACTION_JSON`，并根据历史 `WORKFLOW_ANSWERS_JSON` 安全回填回答 Turn，不删除或重建业务事实。基线包含演示订单/物流和 `AGENT_THREAD`、`AGENT_TURN`、`AGENT_ITEM`、`AGENT_CONTEXT_SNAPSHOT`、`AGENT_WORKFLOW_RUN`、`AGENT_WORKFLOW_QUESTION`、`EXTERNAL_ACTION_COMMAND`、`EXTERNAL_ACTION_RESULT`。同一用户的同一来源 Turn 和 Workflow 类型只能有一个 WorkflowRun；迁移不得重建或覆盖已有业务事实。
+
+V6 现场迁移先备份配置库并在一次性克隆库执行。克隆库和当前配置库均由应用启动实际迁移到 Flyway 版本 6，确认 `INPUT_KIND` 非空、`ORDER_ACTION_JSON` 可空；校准库未启动迁移，18 条历史退款 Workflow 的状态未被重写。外部 HTTP 订单服务、Agent 和前端验收结束后关闭测试进程，MySQL 保持运行。

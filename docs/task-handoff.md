@@ -1,20 +1,17 @@
-status: active
+status: completed
 updated: 2026-08-24
 
 # Commerce Guardian Agent 交接
 
 ## 当前执行阶段
 
-- 当前目标：执行“交互与后端健壮性打磨计划”第五轮；第三轮已提交为 `b7b4ea3`，第四轮已提交为 `569c6f9 feat: fold order actions into source cards`。服务仍保持关闭，MySQL 保持运行。
-- 第五轮已落地：新增 `AgentTurnExecutionRouter`，Runtime 只负责队列/取消/超时/Item 收口，普通消息、Workflow 回答和订单动作由路由器分派；删除无调用的 `manualRetryAttemptCount()` 别名，保留总尝试次数、周期次数、Lease、幂等重试和历史 Workflow 兼容逻辑。
-- 第五轮验证：Core Runtime 6 项、Infrastructure 确定性动作 2 项定向测试通过；编译通过。尚未提交第五轮代码。
-- 下一步唯一动作：提交后端职责清理，然后执行 V6 克隆迁移、隔离服务现场验收、浏览器尺寸复核和最终文档交接。
-
-- 当前目标：已完成在“订单调度清单”四轮实现之上向首选高保真稿 `.impeccable/mocks/decision/dispatch-ledger-primary.png` 的工作台视觉收敛。未执行 Git 暂存或提交。
-- 当前事实源：SSE 对外仅保留 `ready`、`heartbeat` 和 `item.*`；模型 delta、Turn 瞬时事件、全局八步进度、全局订单区、固定快捷问和 Markdown 表格渲染已从产品路径移除。前端以持久化 Items 纯函数投影 Turn，运行详情在右侧 Item 检查器按需打开。
-- 本轮视觉调整：移除大标题首屏，顶栏收敛为“产品名｜订单调度台”；桌面端从顶栏直接进入与设计稿一致的约 23.5% Thread 列、49% 中央业务流、27.5% 右侧浅色 Item 账本（钳制 280–376px / 340–440px），应用外壳在宽屏铺满浏览器；补齐 Thread 搜索、账户菜单、确认/回执/空态、触控目标和移动侧栏。对话工作区固定在视口高度内，消息记录独立滚动，输入区作为工作区底部常驻，不再随整页历史被推到最新 Turn 才可见。中央对话正文收敛为约 15px，线程标题约 17px，元数据约 11–12px，并同步收紧消息节奏以接近 Codex 操作台比例。1024px 使用右侧抽屉，390px 使用全屏检查器。未改变 Item、订单卡片或 Workflow 行为。
-- 本轮验证：本地 5173 前端连接真实 8090 后端，在 1280×720、1024×768、390×844 用 12 条历史 Turn 的真实数据核验页面无文档级溢出、`.thread-records` 独立滚动且输入框始终在视口内；`npm.cmd run typecheck`、Vitest 25 项、生产构建和 Impeccable detector 均通过。实际页面设计记录见 `DESIGN.md`。
-- 当前状态：本轮已完成。Thread 搜索和真实上下文摘要已补齐；不为追求视觉相似新增无行为的假控件。
+- 当前目标：执行“交互与后端健壮性打磨计划”六轮流程，已完成并暂停；未 push。工作树中既有 `.idea`、deployment、Docker、Hook、scripts、AGENTS 和 README 改动均未纳入本轮提交。
+- 已完成的主要提交：`a079c06 feat: deliver the item-driven agent workbench`、`ce642f0 refactor: complete the persisted-item runtime contract`、`4059449 fix: allow workflow cancellation at every question`、`b7b4ea3 feat: add deterministic order action turns`、`569c6f9 feat: fold order actions into source cards`、`edec9ae refactor: separate workflow orchestration responsibilities`、`e99f622 feat: refine conversation and question card proportions`、`d539869 fix: harden persisted workflow startup compatibility`、`104158e fix: clear folded workflow questions`。
+- 当前事实源：SSE 对外仅发送 `ready`、`heartbeat` 和 `item.*`；`assistant.delta`、`turn.*`、全局八步进度、固定快捷问、全局订单结果区和 Markdown 表格渲染均已删除。模型最终消息、订单动作、Workflow 状态、外部动作回执和错误通过持久化 Item 恢复，前端用纯函数按 Turn 聚合。
+- 确定性订单动作已落地：订单卡片调用 `/api/agent/threads/{threadId}/order-actions`，查询/刷新不调用模型，退款/催发货/隐藏/恢复进入现有 Workflow；`INPUT_KIND`、`ORDER_ACTION_JSON`、`ORDER_ACTION_REQUEST` 支持重启恢复和幂等。回答 `action=CANCEL` 跳过必填校验、关闭 Question、拒绝 Workflow，不产生外部副作用；回答子 Turn 会折回来源卡片并清除已结束 QuestionCard。
+- 页面实际结果：顶栏、Thread 列、中央业务流和按需 Item 检查器保持固定工作台层级；消息记录独立滚动，Composer 常驻底部。正文 14px、页面/Turn 标题 16px、卡片标题 15px、技术元数据 11–12px；1920×900、1440×900、1024×768、390×844 均已用 Playwright 现场复核，含 1024 抽屉和移动全屏检查器。
+- V6 迁移证据：配置库和一次性克隆库均已备份并由应用实际启动到 Flyway 版本 6；克隆库确认 `AGENT_TURN.INPUT_KIND` 非空、`ORDER_ACTION_JSON` 可空，历史字段安全回填。校准库未启动 V6，旧退款 Workflow 18 条（含等待输入、等待外部动作和人工重试）状态未被改写。备份文件为 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-v6-before-20260824.sql` 与 `C:\Users\23260\AppData\Local\Temp\commerce-guardian-agent-calibration-v6-before-20260824.sql`。
+- 最终验证已通过：`python -m scripts.convention_check`、Python 单元测试 8 项、`scripts.runtime_eval`、`mvn dependency:analyze -DskipTests`、Maven clean 测试 139 项、前端 typecheck、Vitest 27 项和生产构建均成功；Impeccable detector 对 `agent-console/src` 返回 `[]`。现场验收结束后已关闭 5173 前端、8090 Agent 和 18080 订单夹具，MySQL 3306 保持运行。
 
 - 当前目标：执行“订单售后 Workflow 推进计划”。实现、真实浏览器验收、独立 HTTP 订单服务现场验收和最终完整矩阵均已完成；目标标记为 `completed`。本轮最终功能提交为 `80c5ca9`，现场验证交接为 `5eb9823`，完成状态交接为 `ed455a6`。
 - 已修改范围：统一 `ORDER_SERVICE` 的查询、物流、退款、催发货、隐藏/恢复订单历史能力，完成 QuestionCard、业务进度聚合、Thread 回收站/行内重命名、移动端抽屉、V5 增量迁移、显式外部动作确认和受限 Markdown 表格渲染。未触碰工作树中既有的 IDE、部署、Docker、Hook 和脚本改动。

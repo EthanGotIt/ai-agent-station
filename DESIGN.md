@@ -19,13 +19,15 @@
 
 - 空对话只提示“直接输入请求”，不再渲染固定快捷问。
 - Turn 只展示一行由真实 Item 聚合出的阶段摘要、状态和耗时；订单列表、订单详情与物流时间线在同一 Turn 内以内联结构化卡片呈现。
-- 订单卡片操作只把带订单号的可编辑请求填入 Composer 并聚焦，不会绕过用户确认自动发送。
+- 订单卡片操作走确定性 `order-actions` Turn：查询直接读取订单/物流事实，退款、催发货、隐藏和恢复进入现有 Workflow；不会经过模型，也不会生成可见的模拟问答。外部写操作仍由 QuestionCard 做最终授权。
+- 订单动作 Turn 和 Workflow 回答 Turn 按 `sourceTurnId`、`runId`、`orderId` 折回来源 Turn；刷新后仍由持久化 `ORDER_ACTION_REQUEST`、`WORKFLOW_ANSWER` 和结构化订单 Item 恢复同一张卡片。运行详情仍可查看完整技术 Item。
+- QuestionCard 的普通步骤按钮为“继续”，最终授权为“确认并执行”，次按钮为“结束本次操作”。取消动作不会触发必填字段校验，并以 `CANCEL` 回答关闭 Workflow、保留取消事实且不创建外部动作。
 - `运行详情`显示浅色账本式真实 sequence、时间、Item 类型和受控 JSON；敏感键会被遮蔽，不展示 Thinking。Escape、关闭按钮和遮罩均可退出，抽屉打开时锁定页面滚动并将焦点移至关闭按钮。
 - 终态 Turn 首次打开检查器时按需读取并缓存只读执行回放；回放失败时保留已由 Items/SSE 恢复的事实，并在检查器内给出降级提示。
 - QuestionCard 使用后端提供的 `operation`、`step`、`stepNo`；外部动作回执区分已核验与“操作已受理、最新状态暂未核验”，后者提供可编辑的重新查询入口。
 
 ## 验收记录
 
-- `npm.cmd run typecheck`、`npm.cmd test -- --run`、`npm.cmd run build` 已通过；Vitest 覆盖多 Turn/Item 聚合、旧 SSE 增量忽略、快捷问消失、完整 Item 检查器、回放失败降级和结构化订单卡片操作。
+- `npm.cmd run typecheck`、`npm.cmd test -- --run`、`npm.cmd run build` 已通过；当前 Vitest 为 27 项，覆盖多 Turn/Item 聚合、旧 SSE 增量忽略、快捷问消失、完整 Item 检查器、回放失败降级、结构化订单卡片直达动作和取消后 QuestionCard 收敛。
 - Impeccable detector 扫描 `agent-console/src` 返回空问题集。
-- 已使用真实后端数据复核 1600×990、1024×768、390×844：桌面三栏、1024 右侧抽屉与移动端全屏检查器均可用；关闭检查器后移动端主业务流保持可操作。最近的现场截图由本地开发服务器生成。
+- 已使用真实后端数据复核 1920×900、1440×900、1024×768、390×844：桌面三栏、1024 右侧抽屉与移动端全屏检查器均可用；关闭检查器后移动端主业务流保持可操作。正文基准为 14px，页面/Turn 标题为 16px，卡片标题为 15px，技术元数据使用 11–12px 等宽字体。最近的现场截图由本地开发服务器生成。
