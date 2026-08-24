@@ -5,10 +5,10 @@ updated: 2026-08-24
 
 ## 当前执行阶段
 
-- 当前目标：执行“交互与后端健壮性打磨计划”第四轮；服务仍保持关闭，MySQL 保持运行。第三轮已提交为 `b7b4ea3 feat: add deterministic order action turns`。
-- 第四轮已落地：订单卡片按钮直接调用 `/order-actions`，不再修改或提交 composer；Action/Workflow Answer 子 Turn 按 `sourceTurnId/runId` 合并回来源 Turn，QuestionCard 紧贴原业务卡片，无法映射时仍保留独立事实。新增 `ORDER_ACTION_REQUEST` 检查器标签；QuestionCard 使用真实 `operation/step/stepNo` 阶段名，原因字段为多行输入，提交/取消按钮和错误焦点语义收敛；正文 14px、标题 15–16px、中央阅读列约 820px、卡片/正文约 760px。
-- 第四轮验证：前端类型检查、Vitest 26 项、生产构建通过；新增 Action Turn 折叠和直达接口回归。尚未提交第四轮代码。
-- 下一步唯一动作：提交前端卡片投影与比例改动，然后进入后端职责清理和全链路现场验收。
+- 当前目标：执行“交互与后端健壮性打磨计划”第五轮；第三轮已提交为 `b7b4ea3`，第四轮已提交为 `569c6f9 feat: fold order actions into source cards`。服务仍保持关闭，MySQL 保持运行。
+- 第五轮已落地：新增 `AgentTurnExecutionRouter`，Runtime 只负责队列/取消/超时/Item 收口，普通消息、Workflow 回答和订单动作由路由器分派；删除无调用的 `manualRetryAttemptCount()` 别名，保留总尝试次数、周期次数、Lease、幂等重试和历史 Workflow 兼容逻辑。
+- 第五轮验证：Core Runtime 6 项、Infrastructure 确定性动作 2 项定向测试通过；编译通过。尚未提交第五轮代码。
+- 下一步唯一动作：提交后端职责清理，然后执行 V6 克隆迁移、隔离服务现场验收、浏览器尺寸复核和最终文档交接。
 
 - 当前目标：已完成在“订单调度清单”四轮实现之上向首选高保真稿 `.impeccable/mocks/decision/dispatch-ledger-primary.png` 的工作台视觉收敛。未执行 Git 暂存或提交。
 - 当前事实源：SSE 对外仅保留 `ready`、`heartbeat` 和 `item.*`；模型 delta、Turn 瞬时事件、全局八步进度、全局订单区、固定快捷问和 Markdown 表格渲染已从产品路径移除。前端以持久化 Items 纯函数投影 Turn，运行详情在右侧 Item 检查器按需打开。

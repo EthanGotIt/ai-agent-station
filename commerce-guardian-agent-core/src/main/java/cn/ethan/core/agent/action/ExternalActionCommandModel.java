@@ -109,11 +109,6 @@ public record ExternalActionCommandModel(
         return retryCycleAttemptCount;
     }
 
-    /** 兼容后续 Worker 使用的人工重试周期命名。 */
-    public int manualRetryAttemptCount() {
-        return retryCycleAttemptCount;
-    }
-
     public ExternalActionCommandModel claimed(String workerId, Instant leaseUntil, Instant now) {
         if (workerId == null || workerId.isBlank() || leaseUntil == null || now == null
                 || !leaseUntil.isAfter(now)) {

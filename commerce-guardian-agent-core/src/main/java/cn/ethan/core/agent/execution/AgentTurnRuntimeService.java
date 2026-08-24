@@ -64,8 +64,7 @@ public final class AgentTurnRuntimeService {
     private final AgentWorkflowAnswerFailureReconciler failureReconciler;
     private final AgentThreadService threads;
     private final AgentContextAssembler contextAssembler;
-    private final AgentTurnCoordinator coordinator;
-    private final AgentOrderActionCoordinator orderActionCoordinator;
+    private final AgentTurnExecutionRouter executionRouter;
     private final AgentThreadEventGateway events;
     private final Executor executor;
     private final ScheduledExecutorService scheduler;
@@ -163,8 +162,7 @@ public final class AgentTurnRuntimeService {
         this.failureReconciler = failureReconciler;
         this.threads = threads;
         this.contextAssembler = contextAssembler;
-        this.coordinator = coordinator;
-        this.orderActionCoordinator = orderActionCoordinator;
+        this.executionRouter = new AgentTurnExecutionRouter(coordinator, orderActionCoordinator);
         this.events = events;
         this.executor = executor;
         this.scheduler = scheduler;
@@ -670,18 +668,16 @@ public final class AgentTurnRuntimeService {
         try {
             AgentTurnCoordinator.AgentCoordinatorResult result;
             if (execution.orderAction()) {
-                if (orderActionCoordinator == null) {
-                    throw new IllegalStateException("订单动作协调器未装配");
-                }
-                result = orderActionCoordinator.run(
-                        thread, active, List.of(), active.orderActionInput(), executionContext);
+                result = executionRouter.route(
+                        thread, active, List.of(), execution.answers(), executionContext);
             } else {
                 var assembly = contextAssembler.assembleWithReport(thread, active.turnId(), active.input());
                 executionContext.checkActive();
                 metrics.observeContext(assembly.report().estimatedTokens(), assembly.report().compressed(),
                         assembly.report().degraded());
                 appendItem(active, AgentItemTypeEnum.EXECUTION_EVENT, contextPayload(assembly.report()));
-                result = coordinator.run(thread, active, assembly.items(), execution.answers(), executionContext);
+                result = executionRouter.route(
+                        thread, active, assembly.items(), execution.answers(), executionContext);
             }
             if (execution.cancelled.get() || executionContext.cancelled()) {
                 finish(active, execution.timedOut.get() ? AgentTurnStatusEnum.TIMED_OUT : AgentTurnStatusEnum.CANCELLED,
