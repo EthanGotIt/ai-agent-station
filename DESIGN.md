@@ -32,4 +32,4 @@
 
 - `npm.cmd run typecheck`、`npm.cmd test -- --run`、`npm.cmd run build` 已通过；当前 Vitest 为 28 项，覆盖多 Turn/Item 聚合、旧 SSE 增量忽略、快捷问消失、完整 Item 检查器、回放失败降级、结构化订单卡片直达动作、卡内动作状态回执、居中 QuestionCard 模态浮层和取消后 QuestionCard 收敛。
 - Impeccable detector 扫描 `agent-console/src` 返回空问题集。
-- 已使用真实后端数据复核 1920×900、1440×900、1024×768、390×844：桌面三栏、1024 右侧抽屉与移动端全屏检查器均可用；关闭检查器后移动端主业务流保持可操作。正文基准为 14px，页面/Turn 标题为 16px，卡片标题为 15px，技术元数据使用 11–12px 等宽字体。最近的现场截图由本地开发服务器生成。
+- 已使用真实后端数据复核 1920×900、1440×900、1024×768、390×844：桌面三栏、1024 右侧抽屉与移动端全屏检查器均可用；居中 QuestionCard 避开底部 Composer，关闭检查器后移动端主业务流保持可操作。现场还验证了空退款原因 `CANCEL`、订单卡片 `QUERY_LOGISTICS` 直达请求，以及催发货 3 次夹具失败→人工重试→第 4 次成功的卡内回执（`injectedFailures=3`、`businessMutations=1`）。正文基准为 14px，页面/Turn 标题为 16px，卡片标题为 15px，技术元数据使用 11–12px 等宽字体；可复现启停与三条黄金路径见 `docs/review-runbook.md`。

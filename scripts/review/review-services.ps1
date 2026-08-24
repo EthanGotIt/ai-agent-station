@@ -85,8 +85,17 @@ function Start-Services {
         $env:AI_AGENT_ORDER_GATEWAY = "http"
         $env:AI_AGENT_ORDER_BASE_URL = "http://127.0.0.1:18080"
     }
-    $state = @(Start-ReviewProcess "agent-app" "mvn.cmd" @(
-            "-pl", "commerce-guardian-agent-app", "spring-boot:run", "-DskipTests"
+    & mvn.cmd -pl commerce-guardian-agent-app -am package -DskipTests
+    if ($LASTEXITCODE -ne 0) {
+        throw "Agent app package failed with exit code $LASTEXITCODE"
+    }
+    $applicationJar = Get-ChildItem -LiteralPath (Join-Path $Root "commerce-guardian-agent-app\target") `
+        -Filter "*.jar" | Where-Object { $_.Name -notlike "*.original" } | Select-Object -First 1
+    if ($null -eq $applicationJar) {
+        throw "Agent app jar was not produced"
+    }
+    $state = @(Start-ReviewProcess "agent-app" "java.exe" @(
+            "-jar", $applicationJar.FullName
         ) 8090)
     Write-State $state
 

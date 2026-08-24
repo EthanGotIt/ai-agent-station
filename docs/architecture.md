@@ -44,6 +44,7 @@ Thread
 │   ├── USER_MESSAGE
 │   ├── TOOL_CALL / TOOL_RESULT
 │   ├── WORKFLOW_STARTED / WORKFLOW_QUESTION / WORKFLOW_ANSWER
+│   ├── ORDER_ACTION_REQUEST
 │   ├── EXTERNAL_ACTION_STATUS
 │   └── ASSISTANT_MESSAGE / ERROR
 └── ContextSnapshot（截至某个 sequence 的版本化摘要）
@@ -52,6 +53,8 @@ Thread
 Item 是唯一事实来源。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersion=1` 和 `kind` 判别 envelope；`TURN_STATE` 记录 QUEUED、ACTIVE、WAITING、终态等生命周期事实，模型最终消息、工具调用/结果、Workflow 状态、订单动作请求和错误均即时持久化。模型内部可以流式消费，但 SSE 对外只发送 `ready`、`heartbeat` 和 `item.*`，不再暴露 `assistant.delta` 或瞬时 `turn.*`；客户端断线时先按 `afterSequence` 读取 Items，再订阅事件，不重放丢失的文本增量。
 
 `AgentContextAssembler` 从最新快照的 `throughSequence` 继续读取，过滤当前 Turn 已写入的输入，依次放入系统提示和工具定义、快照之后的最近 Item、当前输入，并为输出预留预算。超过阈值时通过 `AgentContextSummarizer` 压缩最旧已完成 Turn；摘要失败沿用旧快照和最近窗口，`AgentContextBudgetReport` 标记降级但不阻塞执行。所有预算和工具结果截断上限均配置化。
+
+Runtime 的输入边界由 `AgentTurnExecutionRouter` 按 `MESSAGE`、`WORKFLOW_ANSWER` 和 `ORDER_ACTION` 分派；`AgentTurnInputValidator` 与 `AgentTurnItemPayloads` 只负责无副作用的规范化和 Item envelope 构造。Spring AI 协调器保留模型调用与受控 Tool 生命周期，订单 Tool 的参数解析、字段白名单和输出截断由 `SpringAiOrderToolSupport` 承担；事务 Workflow 引擎的 Question schema 由 `AgentWorkflowQuestionSchema` 集中维护。这样拆分不改变同 Thread FIFO、持久化 Item、事务边界或外部动作幂等契约。
 
 ## 编排和审批
 
@@ -101,3 +104,5 @@ SSE 事件包含完整 envelope：`eventId、threadId、turnId、itemId（可选
 `docs/dev-ops/mysql/commerce-guardian-agent.sql` 是新库的破坏性基线；已有库必须先备份并由 `db/migration/V1__align_workflow_question_recovery.sql`、`V2__expand_order_search_fields.sql`、`V3__support_multi_step_order_workflow.sql`、`V4__index_order_service_actions.sql`、`V5__align_legacy_state_schema.sql` 和 `V6__persist_turn_input_kind_and_order_actions.sql` 逐版本增量升级。V5 兼容早期已部署库缺少的 Thread/Turn/ExternalAction 状态字段、结果表和幂等约束；V6 增加 `AGENT_TURN.INPUT_KIND`、`ORDER_ACTION_JSON`，并根据历史 `WORKFLOW_ANSWERS_JSON` 安全回填回答 Turn，不删除或重建业务事实。基线包含演示订单/物流和 `AGENT_THREAD`、`AGENT_TURN`、`AGENT_ITEM`、`AGENT_CONTEXT_SNAPSHOT`、`AGENT_WORKFLOW_RUN`、`AGENT_WORKFLOW_QUESTION`、`EXTERNAL_ACTION_COMMAND`、`EXTERNAL_ACTION_RESULT`。同一用户的同一来源 Turn 和 Workflow 类型只能有一个 WorkflowRun；迁移不得重建或覆盖已有业务事实。
 
 V6 现场迁移先备份配置库并在一次性克隆库执行。克隆库和当前配置库均由应用启动实际迁移到 Flyway 版本 6，确认 `INPUT_KIND` 非空、`ORDER_ACTION_JSON` 可空；校准库未启动迁移，18 条历史退款 Workflow 的状态未被重写。外部 HTTP 订单服务、Agent 和前端验收结束后关闭测试进程，MySQL 保持运行。
+
+本地现场复核可使用 `docs/review-runbook.md` 和 `scripts/review/review-services.ps1`。订单夹具通过 `ORDER_SERVICE_FIXTURE_EXPEDITE_TRANSIENT_FAILURES` 注入有限的催发货可重试失败，并在 `/_fixture/stats` 暴露注入次数；注入只持久化验收故障计数，不写入订单服务幂等记录或业务状态。
