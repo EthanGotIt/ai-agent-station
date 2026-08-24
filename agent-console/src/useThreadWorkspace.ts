@@ -18,6 +18,7 @@ import type {
   OrderCard,
   QuestionField,
   QuestionCardState,
+  WorkflowAnswerAction,
   QuestionSummaryLine,
   ThreadViewTurn
 } from "./threadTypes";
@@ -749,7 +750,10 @@ export function useThreadWorkspace(userId: string) {
     }
   }, [busy, question, threadId, threads, userId]);
 
-  const answer = useCallback(async (answers: Record<string, string>) => {
+  const answer = useCallback(async (
+    answers: Record<string, string>,
+    action: WorkflowAnswerAction = "SUBMIT"
+  ) => {
     if (!question || busy) return;
     const requestQuestion = question;
     const requestThreadId = threadIdRef.current;
@@ -763,7 +767,7 @@ export function useThreadWorkspace(userId: string) {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-User-Id": userId },
           body: JSON.stringify({ clientRequestId: id("answer"), checkpointId: requestQuestion.checkpointId,
-            expectedVersion: requestQuestion.version, answers })
+            expectedVersion: requestQuestion.version, action, answers })
         }
       );
       if (generationRef.current === generation && threadIdRef.current === requestThreadId) {

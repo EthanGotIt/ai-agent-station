@@ -78,10 +78,12 @@ class MybatisAgentTurnStoreWorkflowAnswerTest {
         assertEquals("checkpoint-1", persistedTurn.get().getWorkflowCheckpointId());
         assertEquals(2L, persistedTurn.get().getWorkflowQuestionVersion());
         assertEquals(0L, persistedTurn.get().getVersionNo());
+        assertEquals("SUBMIT", objectMapper.readTree(persistedTurn.get().getWorkflowAnswersJson())
+                .path("action").asString());
         assertEquals("APPROVE", objectMapper.readTree(persistedTurn.get().getWorkflowAnswersJson())
-                .path("decision").asString());
+                .path("answers").path("decision").asString());
         assertEquals("可恢复", objectMapper.readTree(persistedTurn.get().getWorkflowAnswersJson())
-                .path("reason").asString());
+                .path("answers").path("reason").asString());
         assertNotNull(persistedItem.get());
         assertEquals(7L, persistedItem.get().getSequenceNo());
         assertEquals(answerInput, restored.workflowAnswerInput());

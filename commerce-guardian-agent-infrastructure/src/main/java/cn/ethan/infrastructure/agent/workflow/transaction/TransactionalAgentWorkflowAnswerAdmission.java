@@ -11,6 +11,7 @@ import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.thread.AgentWorkflowAnswerInput;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowAnswerActionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 import cn.ethan.infrastructure.agent.thread.persistence.JacksonAgentWorkflowAnswerCodec;
@@ -72,7 +73,9 @@ public final class TransactionalAgentWorkflowAnswerAdmission implements AgentWor
                 .orElseThrow(() -> new AgentThreadConflictException(
                         "QUESTION_NOT_OPEN", "QuestionCard 已关闭或不属于当前 Thread"));
         requireMatchingAvailableQuestion(command, question);
-        Map<String, String> validatedAnswers = question.validateAnswers(command.answers());
+        Map<String, String> validatedAnswers = command.action() == AgentWorkflowAnswerActionEnum.CANCEL
+                ? Map.of()
+                : question.validateAnswers(command.answers());
 
         String answerTurnId = UUID.randomUUID().toString();
         OptionalLong reservedVersion = questions.reserveAnswerTurn(
@@ -88,7 +91,7 @@ public final class TransactionalAgentWorkflowAnswerAdmission implements AgentWor
         long expectedEnqueuedVersion = reservedVersion.getAsLong() + 1;
         AgentWorkflowAnswerInput answerInput = new AgentWorkflowAnswerInput(
                 command.runId(), command.questionId(), command.checkpointId(),
-                expectedEnqueuedVersion, validatedAnswers);
+                expectedEnqueuedVersion, validatedAnswers, command.action());
         Instant createdAt = clock.instant();
         AgentTurnModel turn = new AgentTurnModel(
                 answerTurnId, command.threadId(), command.userId(), command.clientRequestId(),
@@ -125,6 +128,7 @@ public final class TransactionalAgentWorkflowAnswerAdmission implements AgentWor
                 && input.questionId().equals(command.questionId())
                 && input.checkpointId().equals(command.checkpointId())
                 && input.admissionExpectedVersion() == command.expectedVersion()
+                && input.action() == command.action()
                 && input.answers().equals(command.answers());
         if (!matches) {
             throw new AgentThreadConflictException(

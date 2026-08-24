@@ -8,6 +8,7 @@ import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionFieldModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowAnswerActionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 import cn.ethan.infrastructure.agent.thread.persistence.JacksonAgentWorkflowAnswerCodec;
@@ -145,6 +146,24 @@ class TransactionalAgentWorkflowAnswerAdmissionTest {
         assertSchemaRejected(Map.of("decision", "CONFIRM"));
         assertSchemaRejected(Map.of("decision", " "));
         assertSchemaRejected(Map.of("decision", "APPROVE", "note", "x".repeat(129)));
+    }
+
+    @Test
+    void admitsCancelWithoutRequiredAnswersAndPersistsCancelAction() throws Exception {
+        Fixture fixture = new Fixture();
+
+        AgentWorkflowAnswerAdmissionResult result = fixture.admission.admit(new AgentWorkflowAnswerAdmissionCommand(
+                "user-1", "thread-1", "request-cancel", 1, "run-1",
+                "question-1", "checkpoint-1", 0, Map.of("decision", "ignored"),
+                AgentWorkflowAnswerActionEnum.CANCEL));
+
+        assertTrue(result.newlyAdmitted());
+        assertEquals(AgentWorkflowAnswerActionEnum.CANCEL, result.turn().workflowAnswerInput().action());
+        assertTrue(result.turn().workflowAnswerInput().answers().isEmpty());
+        JsonNode item = fixture.objectMapper.readTree(result.initialItem().payload());
+        assertEquals("CANCEL", item.path("data").path("action").asString());
+        assertTrue(item.path("data").path("answers").isObject());
+        assertEquals(1, fixture.questions.reserveCalls);
     }
 
     private void assertSchemaRejected(Map<String, String> answers) {

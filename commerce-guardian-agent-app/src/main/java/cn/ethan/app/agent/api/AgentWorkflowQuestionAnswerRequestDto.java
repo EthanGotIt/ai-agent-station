@@ -1,6 +1,7 @@
 package cn.ethan.app.agent.api;
 
 import cn.ethan.core.agent.thread.AgentTurnModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowAnswerActionEnum;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -17,6 +18,7 @@ public record AgentWorkflowQuestionAnswerRequestDto(
         @NotBlank @Size(max = AgentTurnModel.MAX_CLIENT_REQUEST_ID_LENGTH) String clientRequestId,
         @NotBlank String checkpointId,
         @NotNull Long expectedVersion,
-        @NotNull Map<String, String> answers
+        @NotNull Map<String, String> answers,
+        AgentWorkflowAnswerActionEnum action
 ) {
 }

@@ -123,6 +123,8 @@ export type QuestionCardState = {
   summary?: QuestionSummaryLine[];
 };
 
+export type WorkflowAnswerAction = "SUBMIT" | "CANCEL";
+
 export type BusinessProgressStatus = "ACTIVE" | "WAITING" | "DONE" | "ERROR";
 
 export type BusinessProgress = {

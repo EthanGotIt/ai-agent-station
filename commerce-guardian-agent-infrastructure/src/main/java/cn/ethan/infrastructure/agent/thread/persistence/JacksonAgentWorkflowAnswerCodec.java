@@ -1,8 +1,10 @@
 package cn.ethan.infrastructure.agent.thread.persistence;
 
 import cn.ethan.core.agent.thread.AgentWorkflowAnswerInput;
+import cn.ethan.core.agent.workflow.AgentWorkflowAnswerActionEnum;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Component;
 
@@ -25,7 +27,10 @@ public final class JacksonAgentWorkflowAnswerCodec {
 
     public String encodeAnswers(AgentWorkflowAnswerInput input) {
         try {
-            return objectMapper.writeValueAsString(input.answers());
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("action", input.action().name());
+            root.set("answers", objectMapper.valueToTree(input.answers()));
+            return objectMapper.writeValueAsString(root);
         } catch (Exception failure) {
             throw new IllegalStateException("无法编码 Workflow 回答字段", failure);
         }
@@ -39,10 +44,20 @@ public final class JacksonAgentWorkflowAnswerCodec {
             String answersJson
     ) {
         try {
+            JsonNode root = objectMapper.readTree(answersJson);
+            AgentWorkflowAnswerActionEnum action = AgentWorkflowAnswerActionEnum.SUBMIT;
+            JsonNode answersNode = root;
+            if (root != null && root.isObject() && root.has("answers")) {
+                String actionValue = root.path("action").asString();
+                if (actionValue != null && !actionValue.isBlank()) {
+                    action = AgentWorkflowAnswerActionEnum.valueOf(actionValue);
+                }
+                answersNode = root.path("answers");
+            }
             Map<String, String> answers = objectMapper.readValue(
-                    answersJson, new TypeReference<Map<String, String>>() { });
+                    answersNode.toString(), new TypeReference<Map<String, String>>() { });
             return new AgentWorkflowAnswerInput(
-                    runId, questionId, checkpointId, enqueuedQuestionVersion, answers);
+                    runId, questionId, checkpointId, enqueuedQuestionVersion, answers, action);
         } catch (Exception failure) {
             throw new IllegalStateException("无法解码 Workflow 回答字段", failure);
         }
@@ -57,6 +72,7 @@ public final class JacksonAgentWorkflowAnswerCodec {
         data.put("questionId", input.questionId());
         data.put("checkpointId", input.checkpointId());
         data.put("enqueuedQuestionVersion", input.enqueuedQuestionVersion());
+        data.put("action", input.action().name());
         data.set("answers", objectMapper.valueToTree(input.answers()));
         try {
             return objectMapper.writeValueAsString(root);

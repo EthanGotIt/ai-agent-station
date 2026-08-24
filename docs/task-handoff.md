@@ -1,9 +1,13 @@
-status: completed
+status: active
 updated: 2026-08-24
 
 # Commerce Guardian Agent 交接
 
 ## 当前执行阶段
+
+- 当前目标：执行“交互与后端健壮性打磨计划”第二轮；已完成服务关闭和上一轮前端、Item Runtime 基线提交，当前已落地 QuestionCard 的显式 `SUBMIT/CANCEL` 协议。取消在必填字段为空时跳过业务校验、订单查询和外部动作，按持久化 Workflow 事实收敛为 `REJECTED`；前端 Escape/取消按钮发送 `action=CANCEL` 和空答案。第二轮待提交后进入确定性订单动作 Turn。
+- 第二轮验证：Core/Infrastructure 定向 Workflow 测试 10 项、前端类型检查和 Vitest 25 项通过；取消路径新增必填字段为空、跳过远程订单查询、Action 持久化和旧答案 JSON 兼容覆盖。
+- 下一步唯一动作：显式提交第二轮取消协议改动，然后实现 `/api/agent/threads/{threadId}/order-actions`、`ORDER_ACTION_REQUEST` Item 和可恢复的 `ORDER_ACTION` Turn 输入。
 
 - 当前目标：已完成在“订单调度清单”四轮实现之上向首选高保真稿 `.impeccable/mocks/decision/dispatch-ledger-primary.png` 的工作台视觉收敛。未执行 Git 暂存或提交。
 - 当前事实源：SSE 对外仅保留 `ready`、`heartbeat` 和 `item.*`；模型 delta、Turn 瞬时事件、全局八步进度、全局订单区、固定快捷问和 Markdown 表格渲染已从产品路径移除。前端以持久化 Items 纯函数投影 Turn，运行详情在右侧 Item 检查器按需打开。

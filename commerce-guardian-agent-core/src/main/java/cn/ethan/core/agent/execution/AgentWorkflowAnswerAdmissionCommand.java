@@ -2,6 +2,7 @@ package cn.ethan.core.agent.execution;
 
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowAnswerActionEnum;
 
 import java.util.Map;
 
@@ -20,8 +21,25 @@ public record AgentWorkflowAnswerAdmissionCommand(
         String questionId,
         String checkpointId,
         long expectedVersion,
-        Map<String, String> answers
+        Map<String, String> answers,
+        AgentWorkflowAnswerActionEnum action
 ) {
+
+    /** 保留旧接口的正常提交语义。 */
+    public AgentWorkflowAnswerAdmissionCommand(
+            String userId,
+            String threadId,
+            String clientRequestId,
+            int queuePosition,
+            String runId,
+            String questionId,
+            String checkpointId,
+            long expectedVersion,
+            Map<String, String> answers
+    ) {
+        this(userId, threadId, clientRequestId, queuePosition, runId, questionId,
+                checkpointId, expectedVersion, answers, AgentWorkflowAnswerActionEnum.SUBMIT);
+    }
 
     public AgentWorkflowAnswerAdmissionCommand {
         userId = normalizeIdentity(userId, "userId", AgentThreadModel.MAX_USER_ID_LENGTH);
@@ -32,10 +50,17 @@ public record AgentWorkflowAnswerAdmissionCommand(
                 || checkpointId == null || checkpointId.isBlank()) {
             throw new IllegalArgumentException("Workflow 回答 admission 标识不能为空");
         }
-        if (queuePosition < 1 || expectedVersion < 0 || answers == null || answers.isEmpty()) {
+        if (queuePosition < 1 || expectedVersion < 0) {
             throw new IllegalArgumentException("Workflow 回答 admission 参数无效");
         }
-        answers = Map.copyOf(answers);
+        action = action == null ? AgentWorkflowAnswerActionEnum.SUBMIT : action;
+        answers = answers == null ? Map.of() : Map.copyOf(answers);
+        if (action == AgentWorkflowAnswerActionEnum.SUBMIT && answers.isEmpty()) {
+            throw new IllegalArgumentException("Workflow 提交回答不能为空");
+        }
+        if (action == AgentWorkflowAnswerActionEnum.CANCEL) {
+            answers = Map.of();
+        }
     }
 
     private static String normalizeIdentity(String value, String name, int maxLength) {

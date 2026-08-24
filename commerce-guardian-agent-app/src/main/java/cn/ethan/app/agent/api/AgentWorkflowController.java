@@ -2,6 +2,7 @@ package cn.ethan.app.agent.api;
 
 import cn.ethan.core.agent.action.ExternalActionService;
 import cn.ethan.core.agent.execution.AgentTurnRuntimeService;
+import cn.ethan.core.agent.workflow.AgentWorkflowAnswerActionEnum;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -44,7 +45,8 @@ public final class AgentWorkflowController {
     ) {
         return ResponseEntity.accepted().body(AgentTurnAcceptedResponseDto.from(runtime.answerQuestion(
                 userContext.currentUserId(request), body.clientRequestId(), runId, questionId,
-                body.checkpointId(), body.expectedVersion(), body.answers()
+                body.checkpointId(), body.expectedVersion(),
+                body.action() == null ? AgentWorkflowAnswerActionEnum.SUBMIT : body.action(), body.answers()
         )));
     }
 

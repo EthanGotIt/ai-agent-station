@@ -18,6 +18,7 @@ import cn.ethan.core.agent.thread.AgentWorkflowAnswerInput;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStatusEnum;
+import cn.ethan.core.agent.workflow.AgentWorkflowAnswerActionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowOwnerRecoveryCandidate;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 
@@ -302,18 +303,32 @@ public final class AgentTurnRuntimeService {
             long expectedVersion,
             Map<String, String> answers
     ) {
+        return answerQuestion(userId, threadId, requestId, runId, questionId, checkpointId,
+                expectedVersion, AgentWorkflowAnswerActionEnum.SUBMIT, answers);
+    }
+
+    public AgentTurnModel answerQuestion(
+            String userId,
+            String threadId,
+            String requestId,
+            String runId,
+            String questionId,
+            String checkpointId,
+            long expectedVersion,
+            AgentWorkflowAnswerActionEnum action,
+            Map<String, String> answers
+    ) {
         AgentThreadModel thread = ownedThread(userId, threadId);
         String ownerId = thread.userId();
         String ownerThreadId = thread.threadId();
         String normalizedRequestId = requireClientRequestId(requestId);
-        if (answers == null || answers.isEmpty()) {
-            throw new IllegalArgumentException("answers 不能为空");
-        }
-        Map<String, String> persistedAnswers = normalizeSubmittedAnswers(answers);
+        AgentWorkflowAnswerActionEnum normalizedAction = action == null
+                ? AgentWorkflowAnswerActionEnum.SUBMIT : action;
+        Map<String, String> persistedAnswers = normalizeAnswers(normalizedAction, answers);
         Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(ownerId, normalizedRequestId);
         if (duplicate.isPresent()) {
             return requireMatchingAnswerDuplicate(duplicate.get(), ownerId, ownerThreadId, runId,
-                    questionId, checkpointId, expectedVersion, persistedAnswers);
+                    questionId, checkpointId, expectedVersion, normalizedAction, persistedAnswers);
         }
         AgentWorkflowQuestionModel question = questions.findOpenQuestion(ownerId, ownerThreadId)
                 .orElseThrow(() -> new AgentThreadConflictException("QUESTION_NOT_OPEN", "QuestionCard 已关闭"));
@@ -328,7 +343,7 @@ public final class AgentTurnRuntimeService {
             Optional<AgentTurnModel> duplicateAfterLock = turns.findTurnByRequest(ownerId, normalizedRequestId);
             if (duplicateAfterLock.isPresent()) {
                 return requireMatchingAnswerDuplicate(duplicateAfterLock.get(), ownerId, ownerThreadId, runId,
-                        questionId, checkpointId, expectedVersion, persistedAnswers);
+                        questionId, checkpointId, expectedVersion, normalizedAction, persistedAnswers);
             }
             if (slot.queue.size() >= maxPendingPerThread || pendingGlobal.get() >= maxPendingGlobal) {
                 throw new AgentThreadConflictException("AGENT_QUEUE_FULL", "回答请求无法入队");
@@ -336,7 +351,7 @@ public final class AgentTurnRuntimeService {
             AgentWorkflowAnswerAdmissionResult admission = answerAdmission.admit(
                     new AgentWorkflowAnswerAdmissionCommand(
                             ownerId, ownerThreadId, normalizedRequestId, slot.queue.size() + 1,
-                            runId, questionId, checkpointId, expectedVersion, persistedAnswers));
+                            runId, questionId, checkpointId, expectedVersion, persistedAnswers, normalizedAction));
             if (!admission.newlyAdmitted()) {
                 return admission.turn();
             }
@@ -375,20 +390,34 @@ public final class AgentTurnRuntimeService {
             long expectedVersion,
             Map<String, String> answers
     ) {
+        return answerQuestion(userId, requestId, runId, questionId, checkpointId, expectedVersion,
+                AgentWorkflowAnswerActionEnum.SUBMIT, answers);
+    }
+
+    public AgentTurnModel answerQuestion(
+            String userId,
+            String requestId,
+            String runId,
+            String questionId,
+            String checkpointId,
+            long expectedVersion,
+            AgentWorkflowAnswerActionEnum action,
+            Map<String, String> answers
+    ) {
         String normalizedUserId = normalizeUserId(userId);
         String normalizedRequestId = requireClientRequestId(requestId);
-        if (answers == null || answers.isEmpty()) {
-            throw new IllegalArgumentException("answers 不能为空");
-        }
+        AgentWorkflowAnswerActionEnum normalizedAction = action == null
+                ? AgentWorkflowAnswerActionEnum.SUBMIT : action;
+        Map<String, String> persistedAnswers = normalizeAnswers(normalizedAction, answers);
         Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(normalizedUserId, normalizedRequestId);
         if (duplicate.isPresent()) {
             return requireMatchingAnswerDuplicate(duplicate.get(), normalizedUserId, duplicate.get().threadId(), runId,
-                    questionId, checkpointId, expectedVersion, normalizeSubmittedAnswers(answers));
+                    questionId, checkpointId, expectedVersion, normalizedAction, persistedAnswers);
         }
         AgentWorkflowQuestionModel question = questions.findOpenQuestionByRun(normalizedUserId, runId)
                 .orElseThrow(() -> new AgentThreadConflictException("QUESTION_NOT_OPEN", "QuestionCard 已关闭"));
         return answerQuestion(normalizedUserId, question.threadId(), normalizedRequestId, runId, questionId,
-                checkpointId, expectedVersion, answers);
+                checkpointId, expectedVersion, normalizedAction, persistedAnswers);
     }
 
     public boolean cancel(String userId, String turnId) {
@@ -697,6 +726,7 @@ public final class AgentTurnRuntimeService {
             String questionId,
             String checkpointId,
             long expectedVersion,
+            AgentWorkflowAnswerActionEnum action,
             Map<String, String> answers
     ) {
         AgentWorkflowAnswerInput input = existing.workflowAnswerInput();
@@ -707,6 +737,7 @@ public final class AgentTurnRuntimeService {
                 && input.questionId().equals(questionId)
                 && input.checkpointId().equals(checkpointId)
                 && input.admissionExpectedVersion() == expectedVersion
+                && input.action() == action
                 && input.answers().equals(answers);
         if (!matches) {
             throw new AgentThreadConflictException(
@@ -737,11 +768,27 @@ public final class AgentTurnRuntimeService {
             AgentWorkflowQuestionModel question,
             AgentWorkflowAnswerInput input
     ) {
+        if (input.action() == AgentWorkflowAnswerActionEnum.CANCEL) {
+            return input.answers().isEmpty();
+        }
         try {
             return question.validateAnswers(input.answers()).equals(input.answers());
         } catch (RuntimeException invalidAnswer) {
             return false;
         }
+    }
+
+    private Map<String, String> normalizeAnswers(
+            AgentWorkflowAnswerActionEnum action,
+            Map<String, String> answers
+    ) {
+        if (action == AgentWorkflowAnswerActionEnum.CANCEL) {
+            return Map.of();
+        }
+        if (answers == null || answers.isEmpty()) {
+            throw new IllegalArgumentException("answers 不能为空");
+        }
+        return normalizeSubmittedAnswers(answers);
     }
 
     private boolean reconcileAnswerFailure(

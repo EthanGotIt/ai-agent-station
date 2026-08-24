@@ -18,6 +18,7 @@ import cn.ethan.core.agent.workflow.AgentWorkflowDecisionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowEngine;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionFieldModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowAnswerActionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
@@ -239,6 +240,9 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
         }
         AgentWorkflowRunModel run = workflowRuns.find(thread.userId(), answerInput.runId())
                 .orElseThrow(() -> new IllegalStateException("WorkflowRun 不存在或不属于当前用户"));
+        if (answerInput.action() == AgentWorkflowAnswerActionEnum.CANCEL) {
+            return new ResumePreparation(question, run, Map.of(), "CANCEL", null);
+        }
         Map<String, String> validatedAnswers = question.validateAnswers(answerInput.answers());
         String step = questionStep(question);
         if (isLegacyQuestion(question, run)) {
@@ -288,7 +292,11 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
         if (!questions.closeAnswerTurn(thread.userId(), question.questionId(),
                 question.version(), answerTurn.turnId(), now)) {
             throw new AgentThreadConflictException(
-                    "WORKFLOW_VERSION_CONFLICT", "QuestionCard 回答 Turn、入队状态或版本已变化");
+                "WORKFLOW_VERSION_CONFLICT", "QuestionCard 回答 Turn、入队状态或版本已变化");
+        }
+
+        if ("CANCEL".equals(preparation.step())) {
+            return cancel(thread, answerTurn, run, now);
         }
 
         if (isLegacyQuestion(question, run)) {
@@ -382,6 +390,20 @@ public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngi
         projectOwner(thread, run.runId(), AgentTurnStatusEnum.COMPLETED,
                 null, "本次操作已取消。", now);
         return new ResumeResult("已取消本次订单操作，未产生外部副作用。", "REJECTED", null);
+    }
+
+    private ResumeResult cancel(
+            AgentThreadModel thread,
+            AgentTurnModel answerTurn,
+            AgentWorkflowRunModel run,
+            Instant now
+    ) {
+        workflowRuns.update(run.status(AgentWorkflowStatusEnum.REJECTED,
+                steps("TERMINAL"), run.stateJson(), now));
+        appendAnswerResult(answerTurn, "REJECTED", run.runId(), now);
+        projectOwner(thread, run.runId(), AgentTurnStatusEnum.COMPLETED,
+                null, "本次操作已结束，未执行外部动作。", now);
+        return new ResumeResult("本次操作已结束，未执行外部动作。", "REJECTED", null);
     }
 
     private ResumeResult approve(

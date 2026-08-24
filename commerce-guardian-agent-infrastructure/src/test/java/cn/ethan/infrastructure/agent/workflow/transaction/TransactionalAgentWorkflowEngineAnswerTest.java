@@ -13,6 +13,7 @@ import cn.ethan.core.agent.workflow.AgentWorkflowQuestionFieldModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowAnswerActionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -74,6 +76,41 @@ class TransactionalAgentWorkflowEngineAnswerTest {
         assertEquals(AgentWorkflowStatusEnum.REJECTED, runs.updated.status());
         assertEquals(1, items.values.size());
         assertTrue(items.values.get(0).itemId().length() <= 64);
+    }
+
+    @Test
+    void cancelSkipsRequiredValidationAndRemoteOrderLookup() {
+        QuestionStore questions = new QuestionStore();
+        RunStore runs = new RunStore();
+        ItemStore items = new ItemStore();
+        AtomicInteger lookups = new AtomicInteger();
+        ExternalActionCommandStore commands = (ExternalActionCommandStore) Proxy.newProxyInstance(
+                ExternalActionCommandStore.class.getClassLoader(),
+                new Class<?>[]{ExternalActionCommandStore.class},
+                (proxy, method, arguments) -> defaultValue(method.getReturnType()));
+        TransactionalAgentWorkflowEngine engine = new TransactionalAgentWorkflowEngine(
+                Clock.fixed(NOW, ZoneOffset.UTC), questions, commands, new ObjectMapper(), runs,
+                (orderId, userId) -> {
+                    lookups.incrementAndGet();
+                    return OrderLookupResultModel.notFound();
+                }, items);
+        AgentThreadModel thread = new AgentThreadModel(
+                "thread-1", "user-1", "测试", AgentThreadStatusEnum.ACTIVE,
+                null, null, 0, NOW, NOW);
+        AgentWorkflowAnswerInput persistedInput = new AgentWorkflowAnswerInput(
+                "run-1", "question-1", "checkpoint-1", 2, Map.of(),
+                AgentWorkflowAnswerActionEnum.CANCEL);
+        AgentTurnModel answerTurn = new AgentTurnModel(
+                "answer-turn-1", "thread-1", "user-1", "request-cancel", "QuestionCard 回答",
+                AgentTurnStatusEnum.ACTIVE, 1, "run-1", null, NOW, NOW, null, persistedInput);
+
+        AgentWorkflowEngine.ResumeResult result = engine.resume(thread, answerTurn, Map.of());
+
+        assertEquals("REJECTED", result.resultStatus());
+        assertEquals(0, lookups.get());
+        assertEquals(AgentWorkflowStatusEnum.REJECTED, runs.updated.status());
+        assertEquals(2L, questions.closedExpectedVersion);
+        assertEquals("answer-turn-1", questions.closedAnswerTurnId);
     }
 
     private static Object defaultValue(Class<?> type) {

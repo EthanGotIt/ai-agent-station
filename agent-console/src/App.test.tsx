@@ -241,7 +241,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(JSON.parse(String(answerCall?.[1]?.body)).answers).toEqual({ reason: "包装破损", note: "希望原路退回" });
   });
 
-  it("QuestionCard 的 Escape 使用结构化拒绝回答取消当前业务操作", async () => {
+  it("QuestionCard 的 Escape 使用独立取消动作结束当前业务操作", async () => {
     const thread = threadRecord("thread-1", "取消确认 Thread");
     const questionEvent = itemEvent("item-question-3", "thread-1", "turn-1", "WORKFLOW_QUESTION", 1, {
       schemaVersion: 1,
@@ -278,7 +278,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
       String(input).includes("/workflow-runs/run-3/questions/question-3/answers"))).toBe(true));
     const answerCall = fetchMock.mock.calls.find(([input]) =>
       String(input).includes("/workflow-runs/run-3/questions/question-3/answers"));
-    expect(JSON.parse(String(answerCall?.[1]?.body)).answers).toEqual({ decision: "REJECT" });
+    expect(JSON.parse(String(answerCall?.[1]?.body))).toMatchObject({ action: "CANCEL", answers: {} });
   });
 
   it("旧版 SSE delta 不进入 UI，界面只展示持久 Item 聚合的业务进度", async () => {
