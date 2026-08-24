@@ -222,7 +222,10 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: "确认退款原因" })).not.toBeNull();
-    expect(screen.queryByRole("textbox", { name: "输入请求" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "确认退款原因" })).not.toBeNull();
+    expect(screen.getByRole("textbox", { name: "输入请求" })).toHaveProperty("disabled", true);
+    expect(document.querySelector(".question-modal-layer .question-card")).not.toBeNull();
+    expect(document.querySelector(".thread-records .question-card")).toBeNull();
     expect(screen.getAllByText("ORDER-001").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("¥100")).not.toBeNull();
     expect(screen.queryByText("**订单**")).toBeNull();
@@ -431,6 +434,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     fireEvent.click(within(orderCard as HTMLElement).getByRole("button", { name: "申请退款" }));
     const composer = screen.getByRole("textbox", { name: "输入请求" }) as HTMLTextAreaElement;
     expect(composer.value).toBe("");
+    expect(screen.getByRole("status", { name: "申请退款 执行提示" })).not.toBeNull();
     const actionCall = fetchMock.mock.calls.find(([input]) => String(input).includes("/threads/thread-1/order-actions"));
     expect(JSON.parse(String(actionCall?.[1]?.body))).toMatchObject({
       sourceTurnId: "turn-1", orderId: "ORDER-TODAY-001", actionType: "REFUND"
@@ -500,8 +504,11 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
 
     expect(await screen.findByText("补充退款原因")).not.toBeNull();
     expect(document.querySelectorAll(".conversation-turn")).toHaveLength(1);
+    expect(screen.getByRole("status", { name: "申请退款 执行状态" })).not.toBeNull();
+    expect(document.querySelector(".question-modal-layer .question-card")).not.toBeNull();
+    expect(document.querySelector(".thread-records .question-card")).toBeNull();
     expect(screen.queryByText("订单动作")).toBeNull();
-    expect(screen.getByText("ORDER-001")).not.toBeNull();
+    expect(screen.getAllByText("ORDER-001").length).toBeGreaterThanOrEqual(1);
   });
 
   it("回答子 Turn 折回来源后清除已经结束的 QuestionCard", async () => {
