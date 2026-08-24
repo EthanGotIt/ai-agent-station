@@ -1,11 +1,13 @@
-status: completed
+status: active
 updated: 2026-08-24
 
 # Commerce Guardian Agent 交接
 
 ## 当前执行阶段
 
-- 当前目标：执行“交互与后端健壮性打磨计划”六轮流程，已完成并暂停；未 push。工作树中既有 `.idea`、deployment、Docker、Hook、scripts、AGENTS 和 README 改动均未纳入本轮提交。
+- 当前目标：执行已确认的“继续打磨项目”七阶段流程；本轮不 push。工作树中既有 `.idea`、deployment、Docker、Hook、scripts、AGENTS 和 README 改动均未纳入本轮提交。
+- 第一阶段已完成：纯 Item/Turn 投影移至 `agent-console/src/threadProjection.ts`，HTTP 协议边界集中至 `agent-console/src/threadWorkspaceApi.ts`；`useThreadWorkspace` 保留生命周期、SSE 游标、队列动作和恢复缓存，行为不变。
+- 第一阶段验证：前端 typecheck 通过，Vitest 28 项通过；服务保持关闭，MySQL 继续运行。下一步唯一动作是收口订单动作反馈，删除重复的独立执行弹窗与消息式状态，保留 QuestionCard 的中央模态。
 - 已完成的主要提交：`a079c06 feat: deliver the item-driven agent workbench`、`ce642f0 refactor: complete the persisted-item runtime contract`、`4059449 fix: allow workflow cancellation at every question`、`b7b4ea3 feat: add deterministic order action turns`、`569c6f9 feat: fold order actions into source cards`、`edec9ae refactor: separate workflow orchestration responsibilities`、`e99f622 feat: refine conversation and question card proportions`、`d539869 fix: harden persisted workflow startup compatibility`、`104158e fix: clear folded workflow questions`。
 - 当前事实源：SSE 对外仅发送 `ready`、`heartbeat` 和 `item.*`；`assistant.delta`、`turn.*`、全局八步进度、固定快捷问、全局订单结果区和 Markdown 表格渲染均已删除。模型最终消息、订单动作、Workflow 状态、外部动作回执和错误通过持久化 Item 恢复，前端用纯函数按 Turn 聚合。
 - 确定性订单动作已落地：订单卡片调用 `/api/agent/threads/{threadId}/order-actions`，查询/刷新不调用模型，退款/催发货/隐藏/恢复进入现有 Workflow；`INPUT_KIND`、`ORDER_ACTION_JSON`、`ORDER_ACTION_REQUEST` 支持重启恢复和幂等。回答 `action=CANCEL` 跳过必填校验、关闭 Question、拒绝 Workflow，不产生外部副作用；回答子 Turn 会折回来源卡片并清除已结束 QuestionCard。
