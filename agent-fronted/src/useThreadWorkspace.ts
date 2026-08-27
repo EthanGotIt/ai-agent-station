@@ -18,7 +18,7 @@ import type {
   AgentThreadEvent,
   AgentTurnStatus,
   OrderActionType,
-  WorkflowAnswerAction
+  QuestionAnswerAction
 } from "./threadTypes";
 
 const API = "/api/agent";
@@ -450,7 +450,7 @@ export function useThreadWorkspace(userId: string) {
 
   const answer = useCallback(async (
     answers: Record<string, string>,
-    action: WorkflowAnswerAction = "SUBMIT"
+    action: QuestionAnswerAction = "SUBMIT"
   ) => {
     if (!question || busy) return;
     const requestQuestion = question;

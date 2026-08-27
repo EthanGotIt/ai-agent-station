@@ -129,7 +129,7 @@ export type QuestionSummaryLine = {
 
 export type QuestionCardState = {
   kind?: "QUESTION_CARD" | "LEGACY_WORKFLOW_QUESTION";
-  runId: string;
+  runId: string | null;
   questionId: string;
   turnId?: string | null;
   resumeTarget: "AGENT" | "WORKFLOW";
@@ -181,7 +181,7 @@ export type AgentInteraction =
   | { type: "QUESTION_CARD"; question: QuestionCardState }
   | { type: "WORKFLOW_CHECKPOINT"; checkpoint: WorkflowCheckpointState };
 
-export type WorkflowAnswerAction = "SUBMIT" | "CANCEL";
+export type QuestionAnswerAction = "SUBMIT" | "CANCEL";
 
 export type OrderActionType =
   | "QUERY_LOGISTICS"
@@ -285,7 +285,7 @@ export type AgentThreadInteractionDto = {
   type: "QUESTION_CARD" | "WORKFLOW_CHECKPOINT";
   interactionId: string;
   threadId: string;
-  runId: string;
+  runId: string | null;
   turnId: string | null;
   status: string;
   version: number;

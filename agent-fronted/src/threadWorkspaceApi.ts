@@ -6,7 +6,7 @@ import type {
   AgentThreadInteractionDto,
   AgentThreadPage,
   OrderActionType,
-  WorkflowAnswerAction
+  QuestionAnswerAction
 } from "./threadTypes";
 
 type AgentTurnAccepted = { turnId: string };
@@ -78,7 +78,7 @@ export const threadWorkspaceApi = {
     questionId: string,
     clientRequestId: string,
     expectedVersion: number,
-    action: WorkflowAnswerAction,
+    action: QuestionAnswerAction,
     answers: Record<string, string>
   ) {
     return requestJson<AgentTurnAccepted>(

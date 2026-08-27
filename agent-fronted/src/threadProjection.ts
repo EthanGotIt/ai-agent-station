@@ -37,7 +37,7 @@ function parseQuestion(payload: AgentItemPayload): QuestionCardState | null {
   if (!value) return null;
   const runId = stringValue(value.runId);
   const questionId = stringValue(value.questionId);
-  if (!runId || !questionId) return null;
+  if (!questionId) return null;
   const legacy = payload.kind === "WORKFLOW_QUESTION";
   const fields = parseQuestionFields(value.fields ?? value.fieldsJson);
   const summary = Array.isArray(value.summary)
@@ -51,6 +51,7 @@ function parseQuestion(payload: AgentItemPayload): QuestionCardState | null {
   const resumeTarget = rawResumeTarget === "AGENT" || rawResumeTarget === "WORKFLOW"
     ? rawResumeTarget
     : "WORKFLOW";
+  if ((legacy || resumeTarget === "WORKFLOW") && !runId) return null;
   return {
     kind: legacy ? "LEGACY_WORKFLOW_QUESTION" : "QUESTION_CARD",
     runId,

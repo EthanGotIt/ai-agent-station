@@ -91,7 +91,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
       schemaVersion: 1,
       kind: "QUESTION_CARD",
       data: {
-        runId: "run-1",
+        runId: null,
         questionId: "question-1",
         resumeTarget: "AGENT",
         version: 2,
@@ -718,7 +718,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
       schemaVersion: 1,
       kind: "QUESTION_CARD",
       data: {
-        runId: "run-question",
+        runId: null,
         questionId: "question-new",
         resumeTarget: "AGENT",
         version: 0,
@@ -734,7 +734,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
       if (url === "/api/agent/threads?page=0&size=100") return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
       if (url.includes("/threads/thread-1/items")) return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
       if (url.endsWith("/threads/thread-1/interaction")) return Promise.resolve(json({
-        type: "QUESTION_CARD", interactionId: "question-new", threadId: "thread-1", runId: "run-question",
+        type: "QUESTION_CARD", interactionId: "question-new", threadId: "thread-1", runId: null,
         turnId: "turn-1", status: "OPEN", version: 0, resumeTarget: "AGENT", title: "需要订单号",
         prompt: "请补充要查询的订单号。", fieldsJson: questionPayload.data.fieldsJson,
         nodeId: null, actionType: null, orderId: null, impactSummary: null, factsFingerprint: null, decision: null
