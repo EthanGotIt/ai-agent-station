@@ -963,9 +963,11 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                 }
             }
             appendDecision(active, result);
-            if (result.question() != null || result.questionCard() != null) {
+            if (result.question() != null || result.questionCard() != null
+                    || result.workflowCheckpoint() != null) {
                 executionContext.checkActive();
-                if (execution.workflowAnswer()) {
+                if (execution.workflowAnswer() || execution.questionAnswer()
+                        || execution.workflowDecision()) {
                     if (!result.assistantMessage().isBlank()) {
                         appendItem(active, AgentItemTypeEnum.ASSISTANT_MESSAGE, result.assistantMessage());
                     }
@@ -979,7 +981,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                 appendItem(waiting, AgentItemTypeEnum.TURN_STATE, AgentTurnItemPayloads.turnState(waiting.status(), null));
                 return;
             }
-            if (execution.workflowAnswer()) {
+            if (execution.workflowAnswer() || execution.workflowDecision()) {
                 boolean awaitingExternalAction = result.items().stream()
                         .anyMatch(item -> "EXTERNAL_ACTION_STATUS".equals(item.type()));
                 if (awaitingExternalAction) {
@@ -997,7 +999,9 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
             if (!result.assistantMessage().isBlank()) {
                 appendItem(active, AgentItemTypeEnum.ASSISTANT_MESSAGE, result.assistantMessage());
             }
-            if (execution.questionAnswer() && !closeQuestionAnswer(active)) {
+            if (execution.questionAnswer()
+                    && !"REJECTED".equals(result.decisionCode())
+                    && !closeQuestionAnswer(active)) {
                 finish(active, AgentTurnStatusEnum.FAILED, "QUESTION_ANSWER_CLOSE_FAILED");
                 return;
             }
@@ -1531,6 +1535,10 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
 
         private boolean questionAnswer() {
             return questionAnswerInput != null;
+        }
+
+        private boolean workflowDecision() {
+            return turn.workflowDecisionInput() != null;
         }
 
         private boolean orderAction() {

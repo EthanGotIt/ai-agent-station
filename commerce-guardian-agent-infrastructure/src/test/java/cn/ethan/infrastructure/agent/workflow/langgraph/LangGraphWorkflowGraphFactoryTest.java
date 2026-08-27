@@ -3,6 +3,7 @@ package cn.ethan.infrastructure.agent.workflow.langgraph;
 import org.bsc.langgraph4j.CompiledGraph;
 import org.bsc.langgraph4j.GraphDefinition;
 import org.bsc.langgraph4j.GraphStateException;
+import org.bsc.langgraph4j.GraphInput;
 import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.checkpoint.MemorySaver;
 import org.bsc.langgraph4j.state.AgentState;
@@ -52,5 +53,19 @@ class LangGraphWorkflowGraphFactoryTest {
         assertEquals(Jackson3AgentGraphStateSerializer.class,
                 graph.stateGraph.getStateSerializer().getClass());
         assertEquals(GraphDefinition.START, GraphDefinition.START);
+    }
+
+    @Test
+    void orderWorkflowInterruptsBeforeAuthorizeAndResumesToEnd() throws Exception {
+        LangGraphWorkflowGraphFactory factory = new LangGraphWorkflowGraphFactory(new ObjectMapper());
+        CompiledGraph<AgentState> graph = factory.createOrderWorkflow(new MemorySaver(), 32);
+        RunnableConfig config = RunnableConfig.builder().threadId("run-order").build();
+
+        AgentState paused = graph.invoke(Map.of("factsDecision", "READY"), config).orElseThrow();
+        assertEquals("SWITCH_REQUIREMENTS", paused.value("lastNode").orElseThrow());
+        assertEquals("AUTHORIZE", graph.lastStateOf(config).orElseThrow().next());
+
+        AgentState completed = graph.invoke(GraphInput.resume(), config).orElseThrow();
+        assertEquals("HANDOFF_AGENT", completed.value("lastNode").orElseThrow());
     }
 }

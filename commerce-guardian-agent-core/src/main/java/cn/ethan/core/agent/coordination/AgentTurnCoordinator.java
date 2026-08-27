@@ -3,6 +3,7 @@ package cn.ethan.core.agent.coordination;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
 import cn.ethan.core.agent.workflow.AgentQuestionCardModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointModel;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.execution.AgentExecutionContext;
@@ -46,7 +47,8 @@ public interface AgentTurnCoordinator {
             boolean waitingUserInput,
             AgentDecisionTypeEnum decision,
             String decisionCode,
-            AgentQuestionCardModel questionCard
+            AgentQuestionCardModel questionCard,
+            AgentWorkflowCheckpointModel workflowCheckpoint
     ) {
         /** 保留旧协调器实现的构造边界；没有显式控制 Tool 时由 Runtime 兼容处理。 */
         public AgentCoordinatorResult(
@@ -56,7 +58,7 @@ public interface AgentTurnCoordinator {
                 String workflowRunId,
                 boolean waitingUserInput
         ) {
-            this(assistantMessage, items, question, workflowRunId, waitingUserInput, null, null, null);
+            this(assistantMessage, items, question, workflowRunId, waitingUserInput, null, null, null, null);
         }
 
         public AgentCoordinatorResult(
@@ -69,7 +71,22 @@ public interface AgentTurnCoordinator {
                 String decisionCode
         ) {
             this(assistantMessage, items, question, workflowRunId, waitingUserInput,
-                    decision, decisionCode, null);
+                    decision, decisionCode, null, null);
+        }
+
+        /** 保留显式 QuestionCard 的构造边界；固定流程 Checkpoint 默认为空。 */
+        public AgentCoordinatorResult(
+                String assistantMessage,
+                List<AgentItemDraft> items,
+                AgentWorkflowQuestionModel question,
+                String workflowRunId,
+                boolean waitingUserInput,
+                AgentDecisionTypeEnum decision,
+                String decisionCode,
+                AgentQuestionCardModel questionCard
+        ) {
+            this(assistantMessage, items, question, workflowRunId, waitingUserInput,
+                    decision, decisionCode, questionCard, null);
         }
 
         public AgentCoordinatorResult {

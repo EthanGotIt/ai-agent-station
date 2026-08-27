@@ -37,7 +37,6 @@ import cn.ethan.core.commerce.order.OrderSnapshotModel;
 import cn.ethan.core.commerce.order.OrderStatusEnum;
 import cn.ethan.core.commerce.order.OrderVisibilityEnum;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -72,7 +71,6 @@ import java.util.function.Supplier;
  * @author ethan
  * @date 2026-08-22
  */
-@Component
 public final class TransactionalAgentWorkflowEngine implements AgentWorkflowEngine {
 
     private static final String ORDER_SERVICE = "ORDER_SERVICE";

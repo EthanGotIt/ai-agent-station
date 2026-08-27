@@ -157,15 +157,23 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                     resumed.message(),
                     List.of(new AgentItemDraft(
                             "WORKFLOW_RESULT", resumed.resultStatus())),
-                    resumed.question(), turn.workflowRunId(), resumed.question() != null
+                    resumed.question(), turn.workflowRunId(),
+                    resumed.question() != null || resumed.questionCard() != null || resumed.checkpoint() != null,
+                    AgentDecisionTypeEnum.FINISH, resumed.resultStatus(),
+                    resumed.questionCard(), resumed.checkpoint()
             );
         }
         if (turn.workflowDecisionInput() != null) {
-            String message = turn.workflowDecisionInput().decision()
-                    == cn.ethan.core.agent.workflow.AgentWorkflowDecisionEnum.APPROVE
-                    ? "已记录 Workflow 执行确认，正在继续处理。" : "已记录拒绝执行，Workflow 将结束。";
-            return new AgentCoordinatorResult(message, List.of(), null, turn.workflowRunId(), false,
-                    AgentDecisionTypeEnum.FINISH, "WORKFLOW_DECISION_RECORDED", null);
+            AgentWorkflowEngine.ResumeResult resumed = workflowEngine.resume(thread, turn, Map.of());
+            List<AgentItemDraft> items = new ArrayList<>();
+            if (resumed.command() != null) {
+                items.add(new AgentItemDraft("EXTERNAL_ACTION_STATUS", resumed.command().payloadJson()));
+            }
+            items.add(new AgentItemDraft("WORKFLOW_RESULT", resumed.resultStatus()));
+            return new AgentCoordinatorResult(resumed.message(), items, null, turn.workflowRunId(),
+                    resumed.questionCard() != null || resumed.checkpoint() != null,
+                    AgentDecisionTypeEnum.FINISH, "WORKFLOW_DECISION_RECORDED",
+                    resumed.questionCard(), resumed.checkpoint());
         }
 
         WorkflowInvocation invocation = new WorkflowInvocation(
@@ -210,7 +218,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                         invocation.decisionMessage == null || invocation.decisionMessage.isBlank()
                                 ? "我已启动订单处理流程，请在授权卡中确认。" : invocation.decisionMessage,
                         List.of(), result.question(), result.runId(), true,
-                        AgentDecisionTypeEnum.START_WORKFLOW, invocation.decisionCode
+                        AgentDecisionTypeEnum.START_WORKFLOW, invocation.decisionCode,
+                        result.questionCard(), result.checkpoint()
                 );
             }
             if (invocation.questionCard != null) {

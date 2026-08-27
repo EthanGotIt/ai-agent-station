@@ -23,17 +23,56 @@ public interface AgentWorkflowEngine {
 
     ResumeResult resume(AgentThreadModel thread, AgentTurnModel turn, Map<String, String> answers);
 
-    record StartResult(String runId, AgentWorkflowQuestionModel question) {
+    /**
+     * Workflow 启动结果：固定流程只能返回独立 QuestionCard 或执行 Checkpoint，旧问题模型仅供迁移期读取。
+     */
+    record StartResult(
+            String runId,
+            AgentQuestionCardModel questionCard,
+            AgentWorkflowCheckpointModel checkpoint,
+            AgentWorkflowQuestionModel legacyQuestion
+    ) {
+        public StartResult(String runId, AgentWorkflowQuestionModel question) {
+            this(runId, null, null, question);
+        }
+
+        public StartResult(String runId, AgentQuestionCardModel questionCard,
+                           AgentWorkflowCheckpointModel checkpoint) {
+            this(runId, questionCard, checkpoint, null);
+        }
+
+        /** 迁移期旧调用方读取的 QuestionCard；新代码应使用 questionCard。 */
+        public AgentWorkflowQuestionModel question() {
+            return legacyQuestion;
+        }
     }
 
     record ResumeResult(
             String message,
             String resultStatus,
             ExternalActionCommandModel command,
-            AgentWorkflowQuestionModel question
+            AgentQuestionCardModel questionCard,
+            AgentWorkflowCheckpointModel checkpoint,
+            AgentWorkflowQuestionModel legacyQuestion
     ) {
         public ResumeResult(String message, String resultStatus, ExternalActionCommandModel command) {
-            this(message, resultStatus, command, null);
+            this(message, resultStatus, command, null, null, null);
+        }
+
+        public ResumeResult(String message, String resultStatus, ExternalActionCommandModel command,
+                            AgentWorkflowQuestionModel legacyQuestion) {
+            this(message, resultStatus, command, null, null, legacyQuestion);
+        }
+
+        public ResumeResult(String message, String resultStatus, ExternalActionCommandModel command,
+                            AgentQuestionCardModel questionCard,
+                            AgentWorkflowCheckpointModel checkpoint) {
+            this(message, resultStatus, command, questionCard, checkpoint, null);
+        }
+
+        /** 迁移期旧调用方读取的 QuestionCard；新代码应使用 questionCard。 */
+        public AgentWorkflowQuestionModel question() {
+            return legacyQuestion;
         }
 
         public ResumeResult {

@@ -18,6 +18,10 @@ Completed:
 - 已新增 `QUESTION_ANSWER`、`WORKFLOW_DECISION` Turn 输入与 Item，事务 admission 统一完成回答/决策 Turn 的首事实持久化和 FIFO 入队。
 - 已新增 `/threads/{threadId}/interaction`、`/questions/{questionId}/answers` 和 `/workflow-runs/{runId}/checkpoints/{checkpointId}/decisions` API。
 - Spring AI 已增加 `request_user_input` 终态 Tool；`complete_agent_cycle` 新契约使用 `FINISH/ASK_USER`，提问不再使用授权字段。
+- 已完成固定订单 Workflow 的 LangGraph4j 迁移：`RESOLVE_ORDER → VERIFY_FACTS → SWITCH_REQUIREMENTS → AUTHORIZE → EXECUTE_ACTION → VERIFY_OUTCOME → HANDOFF_AGENT`。
+- 新引擎在 `AUTHORIZE` 前中断；缺订单/原因创建 Workflow QuestionCard，写动作创建独立 Workflow Checkpoint，批准后才创建 `ExternalActionCommand`。
+- 旧事务推进引擎已退出生产 Spring 装配，仅保留兼容测试和历史回放边界；技术快照失配可从业务 WorkflowRun 重建。
+- 已补齐 QuestionCard/Checkpoint 中断恢复、事实指纹变化回到 `VERIFY_FACTS`、外部命令等待和 LangGraph 拓扑回归测试。
 
 Decisions:
 
@@ -28,7 +32,8 @@ Decisions:
 
 TODO:
 
-- 完成阶段三至七的固定订单 Workflow、Continuation 加固、前端投影、遗留清理和完整验收。
+- 阶段四：统一 Continuation admission、Agent 终态决策和重启恢复，补齐 V7 运行时边界测试。
+- 阶段五至七：前端双卡片投影、遗留代码和测试环境清理、完整迁移与黄金路径验收。
 
 Blocked:
 
@@ -36,7 +41,7 @@ Blocked:
 
 Next action:
 
-- 开始阶段三：将固定订单 Workflow 切换到 LangGraph 七节点图，并用独立 Workflow Checkpoint 替代旧授权 QuestionCard。
+- 开始阶段四：检查 Continuation 重复创建/哈希逻辑，统一 admission 与最多三轮终态恢复。
 
 Validation:
 
@@ -46,6 +51,8 @@ Validation:
 - `mvn -q dependency:analyze '-DskipTests'` 通过。
 - 阶段二定向测试通过：QuestionCard/Checkpoint Core 状态机、Item payload、QuestionCard/Checkpoint MyBatis Store、Turn QuestionAnswer 持久化、`request_user_input` 工具。
 - `mvn -q -pl commerce-guardian-agent-app -am -DskipTests compile` 通过；阶段二新增 API、admission 和 MapperScan 编译通过。
+- 阶段三定向测试通过：LangGraph 图工厂 4 项、状态序列化 1 项、MyBatis Saver 1 项、LangGraph Workflow 引擎 2 项、Spring AI 协调/Tool 边界及旧引擎回归共 24 项；Infrastructure 和 App 编译通过。
+- 阶段三完整后端测试仍受现有 HTTP loopback 单测环境限制；`HttpExternalActionExecutorTest`、`HttpOrderGatewayTest`、`HttpLogisticsGatewayTest` 需要在阶段六切换 Fake Transport 后重新验收。
 
 Preserve:
 

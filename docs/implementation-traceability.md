@@ -1,7 +1,7 @@
 # Commerce Guardian Agent 实现追踪矩阵
 
-> 状态：`completed`
-> 更新日期：2026-08-23
+> 状态：`active`
+> 更新日期：2026-08-27
 > 目标来源：任务 `01a01f3f-2a0e-7e52-b70e-4137e4ff3496` 的最新计划、当前工作树、Git 历史、架构文档、SQL、测试和实际运行结果。
 
 本矩阵只把代码、测试和运行结果作为证据。原计划或 `docs/task-handoff.md` 中的“已完成”描述不能单独作为完成证据。
@@ -11,8 +11,9 @@
 | 阶段 | 当前结论 | 直接证据 | 未闭合事项 |
 | --- | --- | --- | --- |
 | 1. LangGraph4j 基础门禁 | 已完成 | `d74bc79`；`langgraph4j-core:1.8.20`、`AGENT_GRAPH_SNAPSHOT` V8、Jackson 3 序列化、MyBatis Saver 和七节点图测试；Core/Infrastructure 编译、LangGraph 定向测试和 `dependency:analyze` 通过 | 生产 Workflow 尚未切换 |
-| 2. QuestionCard 与 Workflow Checkpoint 拆分 | 已完成 | `AgentQuestionCardModel/Store`、`AgentWorkflowCheckpointModel/Store`；V9 表和历史迁移；Thread `OPEN_INTERACTION_TYPE/ID`；`AgentQuestionAnswerAdmission`、`AgentWorkflowDecisionAdmission`；新 API/DTO；Core 状态机、MyBatis CAS、Turn 持久化、`request_user_input` 定向测试共 12 项 | 阶段三需把旧 Workflow 引擎恢复路径切换到新 Checkpoint |
-| 3–7. Workflow、Continuation、前端、清理、验收 | 未开始 | 当前 handoff 的唯一下一动作 | 继续按阶段闭环，不将未运行的现场验收写成完成证据 |
+| 2. QuestionCard 与 Workflow Checkpoint 拆分 | 已完成 | `AgentQuestionCardModel/Store`、`AgentWorkflowCheckpointModel/Store`；V9 表和历史迁移；Thread `OPEN_INTERACTION_TYPE/ID`；`AgentQuestionAnswerAdmission`、`AgentWorkflowDecisionAdmission`；新 API/DTO；Core 状态机、MyBatis CAS、Turn 持久化、`request_user_input` 定向测试共 12 项 | 旧模型和兼容 API 在阶段六统一清理 |
+| 3. 迁移固定订单 Workflow | 已完成 | `LangGraphAgentWorkflowEngine`、`LangGraphWorkflowGraphFactory.createOrderWorkflow` 和独立 `AgentWorkflowCheckpoint`；七节点拓扑在 `AUTHORIZE` 前中断，QuestionCard/Checkpoint 恢复、事实指纹变化回到 `VERIFY_FACTS`、批准后 ExternalActionCommand 和技术快照重建均有定向测试；旧事务引擎已退出生产 Spring 装配 | Worker 完成后的 `VERIFY_OUTCOME/HANDOFF_AGENT` 业务投影和真实外部动作黄金路径纳入阶段七验收 |
+| 4–7. Continuation、前端、清理、验收 | 未开始 | 当前 handoff 的唯一下一动作 | 继续按阶段闭环，不将未运行的现场验收写成完成证据 |
 
 阶段二的兼容边界：旧 `AGENT_WORKFLOW_QUESTION` 和旧回答 API 仍仅保留兼容路径，新的生产入口写入独立 QuestionCard/Checkpoint 表；`WAIT_USER` 枚举和旧模型仅用于后续阶段删除前的历史兼容。详细执行日志不写入 handoff。
 

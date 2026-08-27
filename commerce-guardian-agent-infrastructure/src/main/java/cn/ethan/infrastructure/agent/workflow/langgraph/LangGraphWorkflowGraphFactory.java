@@ -38,6 +38,9 @@ public final class LangGraphWorkflowGraphFactory {
             RESOLVE_ORDER, VERIFY_FACTS, SWITCH_REQUIREMENTS, AUTHORIZE,
             EXECUTE_ACTION, VERIFY_OUTCOME, HANDOFF_AGENT);
 
+    /** 固定节点顺序供业务投影和验收使用；不会暴露可变图结构。 */
+    public static final List<String> NODES_FOR_DOCUMENTATION = NODES;
+
     private final ObjectMapper objectMapper;
 
     public LangGraphWorkflowGraphFactory(ObjectMapper objectMapper) {
@@ -50,6 +53,28 @@ public final class LangGraphWorkflowGraphFactory {
 
     public CompiledGraph<AgentState> create(BaseCheckpointSaver saver, int recursionLimit)
             throws GraphStateException {
+        return compile(saver, recursionLimit, false);
+    }
+
+    /**
+     * 创建订单 Workflow 的运行图。固定流程在 AUTHORIZE 前中断，
+     * 让业务层先持久化 QuestionCard 或 Workflow Checkpoint，再决定是否恢复图。
+     */
+    public CompiledGraph<AgentState> createOrderWorkflow(BaseCheckpointSaver saver, int recursionLimit)
+            throws GraphStateException {
+        return compile(saver, recursionLimit, true);
+    }
+
+    public CompiledGraph<AgentState> createOrderWorkflow(BaseCheckpointSaver saver)
+            throws GraphStateException {
+        return createOrderWorkflow(saver, 32);
+    }
+
+    private CompiledGraph<AgentState> compile(
+            BaseCheckpointSaver saver,
+            int recursionLimit,
+            boolean interruptBeforeAuthorize
+    ) throws GraphStateException {
         if (recursionLimit < 1) {
             throw new IllegalArgumentException("LangGraph recursionLimit 必须为正数");
         }
@@ -68,6 +93,9 @@ public final class LangGraphWorkflowGraphFactory {
         graph.addEdge(HANDOFF_AGENT, GraphDefinition.END);
 
         CompileConfig.Builder config = CompileConfig.builder().recursionLimit(recursionLimit);
+        if (interruptBeforeAuthorize) {
+            config.interruptBefore(AUTHORIZE);
+        }
         if (saver != null) {
             config.checkpointSaver(saver);
         }
