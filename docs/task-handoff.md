@@ -14,7 +14,8 @@ Completed:
 - 运行时只读取新的 QuestionCard、Workflow Checkpoint、Question Answer 和 Workflow Decision；历史 `WORKFLOW_QUESTION`/`WORKFLOW_ANSWER` 仅保留迁移与只读投影边界。
 - 已将 HTTP 协议单测改为 Fake Transport，并把真实 loopback 测试重命名为 `*IT`；Maven Surefire 只运行 `*Test`，Failsafe 负责 `*IT`。
 - 已清理生产代码、迁移说明、架构/运行手册和脚本中的旧前端与旧授权运行时引用。
-- `mvn clean '-DskipTests=false' test` 通过：core 45、infrastructure 62、app 17；`mvn dependency:analyze -DskipTests` 构建通过。
+- 已修复规范门禁发现的 persistence 包、Clock 注入和测试命名问题；阶段六整改与该独立修复均已提交。
+- 本轮本地验收已通过 convention、脚本 9 项、runtime eval 5 项、`mvn clean '-DskipTests=false' test`（core 45、infrastructure 62、app 17）、前端 typecheck/Vitest 31 项和 production build。
 
 Decisions:
 
@@ -25,22 +26,24 @@ Decisions:
 
 TODO:
 
-- 阶段七：使用数据库副本完成 V7→V8→V9 迁移核验，运行真实配置/订单夹具/前端黄金路径，补齐最终验收证据并关闭任务。
-- 阶段七完成后覆盖 handoff 为 `status: completed` 快照。
+- 阶段七：在支持网络绑定的环境重跑真实 `*IT`，使用数据库副本完成 V7→V8→V9 迁移核验，运行真实配置/订单夹具/前端黄金路径，补齐最终验收证据。
+- 所有阶段七验收完成后，才覆盖 handoff 为 `status: completed` 快照。
 
 Blocked:
 
-- 本地代码门禁暂无阻塞；真实数据库副本、模型服务和可绑定 loopback 的环境尚未在当前验收会话中重新执行。
+- 本地代码门禁暂无阻塞；`mvn verify` 的 8 项真实 HTTP `*IT` 因当前 Windows/JDK 无法建立 loopback selector 未通过，真实数据库副本、模型服务和浏览器黄金路径也尚未在本轮重新执行。
 
 Next action:
 
-- 进入阶段七，运行 Python convention/脚本测试、前端 typecheck/Vitest/build，并核对真实配置验收边界后更新架构、运行手册和实施追踪。
+- 在可绑定 loopback 的环境重跑真实 `*IT`，再按运行手册执行数据库副本、真实模型/订单夹具/浏览器黄金路径验收，并据此覆盖本快照。
 
 Validation:
 
 - `mvn clean '-DskipTests=false' test`：通过。
 - `mvn dependency:analyze -DskipTests`：构建通过；保留既有 `jspecify`/`spring-beans` 声明依赖警告供后续依赖整理。
+- Python convention、脚本 9 项、runtime eval 5 项：通过。
 - HTTP Fake Transport 定向测试、LangGraph/QuestionCard/Checkpoint/Continuation 定向测试：通过。
+- `mvn verify` 已进入真实 `*IT`，但 8 项 loopback selector 错误待支持网络绑定的环境复核；前端 typecheck、Vitest 31 项和生产构建：通过。
 
 Preserve:
 
