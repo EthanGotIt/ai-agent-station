@@ -1,4 +1,4 @@
--- 持久化确定性订单动作 Turn；历史 WORKFLOW_ANSWER 仅供 V9 迁移识别，运行时不再创建。
+-- 持久化确定性订单动作 Turn；旧消息和回答安全回填为 MESSAGE/WORKFLOW_ANSWER。
 SET @cga_schema = DATABASE();
 
 SET @cga_sql = IF(
