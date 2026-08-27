@@ -271,7 +271,15 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
 
     private void retryEnqueue(AgentTurnModel persisted) {
         try {
-            scheduler.schedule(() -> enqueuePersisted(persisted), 250L, TimeUnit.MILLISECONDS);
+            scheduler.schedule(() -> {
+                try {
+                    turns.findTurn(persisted.userId(), persisted.turnId())
+                            .filter(current -> current.status() == AgentTurnStatusEnum.QUEUED)
+                            .ifPresent(this::enqueuePersisted);
+                } catch (RuntimeException refreshFailure) {
+                    metrics.observeFailure("CONTINUATION_ENQUEUE_RETRY_REFRESH_FAILED");
+                }
+            }, 250L, TimeUnit.MILLISECONDS);
         } catch (RuntimeException schedulingFailure) {
             metrics.observeFailure("CONTINUATION_ENQUEUE_RETRY_FAILED");
         }

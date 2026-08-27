@@ -3,6 +3,7 @@ package cn.ethan.core.agent.execution;
 import cn.ethan.core.agent.context.AgentContextAssembler;
 import cn.ethan.core.agent.context.AgentContextSnapshotModel;
 import cn.ethan.core.agent.context.AgentContextSnapshotStore;
+import cn.ethan.core.agent.coordination.AgentContinuationInput;
 import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
 import cn.ethan.core.agent.coordination.AgentOrderActionTypeEnum;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
@@ -11,6 +12,7 @@ import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import cn.ethan.core.agent.thread.AgentThreadStore;
+import cn.ethan.core.agent.thread.AgentTurnInputKindEnum;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnStore;
@@ -28,7 +30,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -209,6 +214,49 @@ class AgentTurnRuntimeServiceTest {
     }
 
     @Test
+    void retriesContinuationUsingLatestPersistedTurnState() throws Exception {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "续跑重试 Thread", null, null);
+        AgentContextAssembler context = new AgentContextAssembler(
+                persistence, persistence, clock, 2_000, 1_000, 256, 128);
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        AtomicInteger coordinatorCalls = new AtomicInteger();
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, threads, context,
+                (current, turn, history, answer) -> {
+                    coordinatorCalls.incrementAndGet();
+                    return new AgentTurnCoordinator.AgentCoordinatorResult("完成", List.of(), null, false);
+                }, new RecordingEvents(), executor, scheduler, clock,
+                1, 4, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256);
+
+        runtime.submitTurn("user-1", thread.threadId(), "blocking-request", "占用唯一排队位");
+        AgentContinuationInput continuationInput = new AgentContinuationInput(
+                "root-turn", "parent-turn", "run-1", "command-1", "SUCCEEDED", 1, 1);
+        AgentTurnModel continuation = new AgentTurnModel(
+                "continuation-turn", thread.threadId(), "user-1", "continuation-request", "自动续跑",
+                AgentTurnStatusEnum.QUEUED, 1, "run-1", null, NOW, null, null, null, 0L,
+                AgentTurnInputKindEnum.AGENT_CONTINUATION, null, continuationInput);
+        persistence.createTurn(continuation);
+        persistence.retryReadTurnId = continuation.turnId();
+        persistence.retryReadLatch = new CountDownLatch(1);
+
+        runtime.enqueuePersisted(continuation);
+        AgentTurnModel cancelled = continuation.terminal(
+                AgentTurnStatusEnum.CANCELLED, "CLIENT_CANCELLED", NOW.plusSeconds(1));
+        assertTrue(persistence.updateTurn(continuation, cancelled));
+        assertTrue(persistence.retryReadLatch.await(2, TimeUnit.SECONDS),
+                "队列重试必须重新读取持久化 Turn 状态");
+
+        executor.runAll();
+
+        assertEquals(1, coordinatorCalls.get(), "已取消的续跑不得被过期快照重新入队");
+        scheduler.shutdownNow();
+    }
+
+    @Test
     void deterministicOrderActionIsQueuedIdempotentlyWithoutModelCall() {
         InMemoryPersistence persistence = new InMemoryPersistence();
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
@@ -291,6 +339,8 @@ class AgentTurnRuntimeServiceTest {
         private final List<AgentItemModel> items = new ArrayList<>();
         private AgentTurnModel raceOnCreation;
         private List<AgentWorkflowOwnerRecoveryCandidate> ownerRecoveryCandidates = List.of();
+        private String retryReadTurnId;
+        private CountDownLatch retryReadLatch;
 
         @Override
         public void createThread(AgentThreadModel thread) {
@@ -315,6 +365,9 @@ class AgentTurnRuntimeServiceTest {
 
         @Override
         public Optional<AgentTurnModel> findTurn(String userId, String turnId) {
+            if (turnId.equals(retryReadTurnId) && retryReadLatch != null) {
+                retryReadLatch.countDown();
+            }
             return Optional.ofNullable(turns.get(turnId))
                     .filter(turn -> turn.userId().equals(userId));
         }
