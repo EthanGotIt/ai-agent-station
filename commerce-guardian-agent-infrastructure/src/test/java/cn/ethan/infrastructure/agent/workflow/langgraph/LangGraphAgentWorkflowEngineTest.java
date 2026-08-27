@@ -144,10 +144,32 @@ class LangGraphAgentWorkflowEngineTest {
         assertEquals(0, fixture.commands.values.size());
     }
 
+    @Test
+    void rejectionRemainsTerminalWhenFactsChange() {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-1")));
+        AgentWorkflowEngine.StartResult started = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "REFUND", "orderId", "ORDER-1", "reason", "商品不符"));
+        fixture.orders.replace(fixtureOrder("ORDER-1", OrderStatusEnum.SHIPPED));
+        assertTrue(fixture.checkpoints.decide("user-1", started.checkpoint().checkpointId(), 0,
+                AgentWorkflowDecisionEnum.REJECT, "facts-v2"));
+
+        AgentWorkflowEngine.ResumeResult resumed = fixture.engine.resume(
+                fixture.thread, decisionTurn(started, AgentWorkflowDecisionEnum.REJECT), Map.of());
+
+        assertEquals("REJECTED", resumed.resultStatus());
+        assertEquals(AgentWorkflowStatusEnum.REJECTED, fixture.runs.current.status());
+        assertEquals(0, fixture.commands.values.size());
+    }
+
     private AgentTurnModel decisionTurn(AgentWorkflowEngine.StartResult started) {
+        return decisionTurn(started, AgentWorkflowDecisionEnum.APPROVE);
+    }
+
+    private AgentTurnModel decisionTurn(AgentWorkflowEngine.StartResult started,
+                                        AgentWorkflowDecisionEnum decision) {
         AgentWorkflowDecisionInput input = new AgentWorkflowDecisionInput(
                 started.runId(), started.checkpoint().checkpointId(), 0,
-                AgentWorkflowDecisionEnum.APPROVE, started.checkpoint().factsFingerprint());
+                decision, started.checkpoint().factsFingerprint());
         return new AgentTurnModel(
                 "decision-" + started.runId(), "thread-1", "user-1", "decision-request-" + started.runId(),
                 "Workflow Checkpoint 决策", cn.ethan.core.agent.thread.AgentTurnStatusEnum.ACTIVE, 0,
@@ -312,7 +334,8 @@ class LangGraphAgentWorkflowEngineTest {
                                AgentWorkflowDecisionEnum decision, String currentFactsFingerprint) {
             AgentWorkflowCheckpointModel checkpoint = values.get(checkpointId);
             if (checkpoint == null || checkpoint.version() != expectedVersion
-                    || !checkpoint.factsFingerprint().equals(currentFactsFingerprint)) {
+                    || (decision != AgentWorkflowDecisionEnum.REJECT
+                    && !checkpoint.factsFingerprint().equals(currentFactsFingerprint))) {
                 return false;
             }
             values.put(checkpointId, decision == AgentWorkflowDecisionEnum.APPROVE

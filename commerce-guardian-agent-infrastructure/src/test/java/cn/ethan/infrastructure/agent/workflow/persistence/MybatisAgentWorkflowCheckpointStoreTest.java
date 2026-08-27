@@ -68,6 +68,17 @@ class MybatisAgentWorkflowCheckpointStoreTest {
     }
 
     @Test
+    void rejectClosesCheckpointWhenFactsChanged() {
+        State state = state(checkpointEntity("OPEN", 0, null), thread("checkpoint-1"), 1);
+        MybatisAgentWorkflowCheckpointStore store = store(state);
+
+        assertTrue(store.decide("user-1", "checkpoint-1", 0, AgentWorkflowDecisionEnum.REJECT, "facts-v2"));
+
+        assertTrue(state.updates.get(0).getParamNameValuePairs().containsValue("REJECTED"));
+        assertEquals(1, state.pointerClears.get());
+    }
+
+    @Test
     void staleVersionDoesNotClearPointerOrWriteDecision() {
         State state = state(checkpointEntity("OPEN", 0, null), thread("checkpoint-1"), 0);
         MybatisAgentWorkflowCheckpointStore store = store(state);

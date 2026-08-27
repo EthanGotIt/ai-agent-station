@@ -93,7 +93,9 @@ public class MybatisAgentWorkflowCheckpointStore implements AgentWorkflowCheckpo
             return false;
         }
         Instant now = clock.instant();
-        if (currentFactsFingerprint == null || !currentFactsFingerprint.equals(checkpoint.getFactsFingerprint())) {
+        if (decision != AgentWorkflowDecisionEnum.REJECT
+                && (currentFactsFingerprint == null
+                || !currentFactsFingerprint.equals(checkpoint.getFactsFingerprint()))) {
             int superseded = mapper.update(null, new UpdateWrapper<AgentWorkflowCheckpointEntity>()
                     .eq("CHECKPOINT_ID", checkpointId).eq("USER_ID", userId)
                     .eq("VERSION_NO", expectedVersion).eq("STATUS", AgentWorkflowCheckpointStatusEnum.OPEN.name())
