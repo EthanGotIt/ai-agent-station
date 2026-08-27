@@ -1,4 +1,4 @@
-package cn.ethan.infrastructure.agent.workflow.langgraph;
+package cn.ethan.infrastructure.agent.workflow.persistence;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;

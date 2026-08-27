@@ -1,5 +1,7 @@
 package cn.ethan.infrastructure.agent.workflow.langgraph;
 
+import cn.ethan.infrastructure.agent.workflow.persistence.AgentGraphSnapshotEntity;
+import cn.ethan.infrastructure.agent.workflow.persistence.AgentGraphSnapshotMapper;
 import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.checkpoint.AbstractCheckpointSaver;
 import org.bsc.langgraph4j.checkpoint.BaseCheckpointSaver;
@@ -12,13 +14,13 @@ import tools.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -39,10 +41,12 @@ public final class MybatisLangGraphCheckpointSaver extends AbstractCheckpointSav
 
     private final AgentGraphSnapshotMapper mapper;
     private final ObjectMapper objectMapper;
+    private final Clock clock;
 
-    public MybatisLangGraphCheckpointSaver(AgentGraphSnapshotMapper mapper, ObjectMapper objectMapper) {
+    public MybatisLangGraphCheckpointSaver(AgentGraphSnapshotMapper mapper, ObjectMapper objectMapper, Clock clock) {
         this.mapper = mapper;
         this.objectMapper = objectMapper;
+        this.clock = Objects.requireNonNull(clock, "clock cannot be null");
     }
 
     @Override
@@ -82,7 +86,7 @@ public final class MybatisLangGraphCheckpointSaver extends AbstractCheckpointSav
         String graphThreadId = graphThreadId(config);
         String stateJson = encodeState(checkpoint.getState());
         Map<String, Object> state = checkpoint.getState();
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         AgentGraphSnapshotEntity entity = existing == null ? new AgentGraphSnapshotEntity() : existing;
         if (entity.getSnapshotId() == null) {
             entity.setSnapshotId(UUID.randomUUID().toString());
@@ -134,8 +138,9 @@ public final class MybatisLangGraphCheckpointSaver extends AbstractCheckpointSav
         if (value != null) {
             try {
                 return Long.parseLong(value.toString());
-            } catch (NumberFormatException ignored) {
+            } catch (NumberFormatException failure) {
                 // 版本不可信时回退 0，业务恢复会重新读取 WorkflowRun。
+                return 0L;
             }
         }
         return 0L;

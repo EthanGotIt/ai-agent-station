@@ -5,7 +5,7 @@ import cn.ethan.core.commerce.order.OrderSearchCriteria;
 import cn.ethan.core.commerce.order.OrderSearchStatusEnum;
 import cn.ethan.core.commerce.order.OrderStatusEnum;
 import cn.ethan.core.commerce.order.OrderVisibilityEnum;
-import cn.ethan.infrastructure.http.FakeClientHttpRequestFactory;
+import cn.ethan.infrastructure.http.FakeClientHttpRequestFactoryTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
 
@@ -31,8 +31,8 @@ class HttpOrderGatewayTest {
 
     @Test
     void mapsOwnedOrderAndPropagatesUserHeader() {
-        FakeClientHttpRequestFactory transport = new FakeClientHttpRequestFactory(request ->
-                FakeClientHttpRequestFactory.Response.json(200, """
+        FakeClientHttpRequestFactoryTest transport = new FakeClientHttpRequestFactoryTest(request ->
+                FakeClientHttpRequestFactoryTest.Response.json(200, """
                         {"accessDenied":false,"orderId":"ORDER-001","userId":"user-1","status":"PAID"}
                         """));
 
@@ -46,8 +46,8 @@ class HttpOrderGatewayTest {
 
     @Test
     void rejectsResponseOwnedByAnotherUser() {
-        FakeClientHttpRequestFactory transport = new FakeClientHttpRequestFactory(request ->
-                FakeClientHttpRequestFactory.Response.json(200,
+        FakeClientHttpRequestFactoryTest transport = new FakeClientHttpRequestFactoryTest(request ->
+                FakeClientHttpRequestFactoryTest.Response.json(200,
                         "{\"orderId\":\"ORDER-001\",\"userId\":\"user-2\",\"status\":\"PAID\"}"));
 
         assertEquals(OrderLookupStatusEnum.ACCESS_DENIED,
@@ -56,13 +56,13 @@ class HttpOrderGatewayTest {
 
     @Test
     void mapsSearchAndActionContractsWithStructuredHeaders() {
-        FakeClientHttpRequestFactory transport = new FakeClientHttpRequestFactory(request -> {
+        FakeClientHttpRequestFactoryTest transport = new FakeClientHttpRequestFactoryTest(request -> {
             if (request.uri().getPath().endsWith("/search")) {
-                return FakeClientHttpRequestFactory.Response.json(200,
+                return FakeClientHttpRequestFactoryTest.Response.json(200,
                         "[{\"orderId\":\"ORDER-001\",\"userId\":\"user-1\","
                                 + "\"status\":\"PAID\",\"itemSummary\":\"无线耳机\"}]");
             }
-            return FakeClientHttpRequestFactory.Response.json(200,
+            return FakeClientHttpRequestFactoryTest.Response.json(200,
                     "{\"success\":true,\"retryable\":false,\"code\":\"OK\",\"message\":\"done\"}");
         });
         HttpOrderGateway gateway = gateway(transport);
@@ -82,8 +82,8 @@ class HttpOrderGatewayTest {
 
     @Test
     void rejectsInvalidIdempotencyKeyWithoutTransportCall() {
-        FakeClientHttpRequestFactory transport = new FakeClientHttpRequestFactory(request ->
-                FakeClientHttpRequestFactory.Response.json(200, "{}"));
+        FakeClientHttpRequestFactoryTest transport = new FakeClientHttpRequestFactoryTest(request ->
+                FakeClientHttpRequestFactoryTest.Response.json(200, "{}"));
 
         var result = gateway(transport).expedite("user-1", "ORDER-001", "bad key", NOW);
 
@@ -93,7 +93,7 @@ class HttpOrderGatewayTest {
 
     @Test
     void mapsTransportFailureToTemporaryFailure() {
-        FakeClientHttpRequestFactory transport = new FakeClientHttpRequestFactory(request -> {
+        FakeClientHttpRequestFactoryTest transport = new FakeClientHttpRequestFactoryTest(request -> {
             throw new IOException("simulated transport failure");
         });
 
@@ -105,10 +105,10 @@ class HttpOrderGatewayTest {
     void rejectsMalformedBaseUrlsBeforeTransport() {
         assertThrows(IllegalArgumentException.class, () -> new HttpOrderGateway(
                 RestClient.builder(), "file:///tmp/orders", Duration.ofSeconds(1),
-                new FakeClientHttpRequestFactory(request -> FakeClientHttpRequestFactory.Response.json(200, "{}"))));
+                new FakeClientHttpRequestFactoryTest(request -> FakeClientHttpRequestFactoryTest.Response.json(200, "{}"))));
     }
 
-    private HttpOrderGateway gateway(FakeClientHttpRequestFactory transport) {
+    private HttpOrderGateway gateway(FakeClientHttpRequestFactoryTest transport) {
         return new HttpOrderGateway(RestClient.builder(), "http://orders.example.test", Duration.ofSeconds(1), transport);
     }
 }

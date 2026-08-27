@@ -1,4 +1,4 @@
-package cn.ethan.infrastructure.agent.workflow.langgraph;
+package cn.ethan.infrastructure.agent.workflow.persistence;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;

@@ -1,6 +1,6 @@
 package cn.ethan.infrastructure.commerce.order.http;
 
-import cn.ethan.infrastructure.http.FakeClientHttpRequestFactory;
+import cn.ethan.infrastructure.http.FakeClientHttpRequestFactoryTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
 
@@ -31,8 +31,8 @@ class HttpLogisticsGatewayTest {
         ));
     }
 
-    private FakeClientHttpRequestFactory fakeTransport() {
-        return new FakeClientHttpRequestFactory(request ->
-                FakeClientHttpRequestFactory.Response.json(200, "[]"));
+    private FakeClientHttpRequestFactoryTest fakeTransport() {
+        return new FakeClientHttpRequestFactoryTest(request ->
+                FakeClientHttpRequestFactoryTest.Response.json(200, "[]"));
     }
 }

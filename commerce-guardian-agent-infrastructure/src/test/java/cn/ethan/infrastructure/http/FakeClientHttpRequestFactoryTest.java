@@ -15,9 +15,9 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -26,12 +26,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * @author ethan
  * @date 2026-08-27
  */
-public final class FakeClientHttpRequestFactory implements ClientHttpRequestFactory {
+public final class FakeClientHttpRequestFactoryTest implements ClientHttpRequestFactory {
 
     private final Responder responder;
     private final List<RecordedRequest> requests = new CopyOnWriteArrayList<>();
 
-    public FakeClientHttpRequestFactory(Responder responder) {
+    public FakeClientHttpRequestFactoryTest(Responder responder) {
         this.responder = responder == null ? request -> Response.json(500, "{}") : responder;
     }
 

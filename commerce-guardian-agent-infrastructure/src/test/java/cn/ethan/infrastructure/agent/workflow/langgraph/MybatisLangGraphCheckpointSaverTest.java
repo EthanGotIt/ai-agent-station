@@ -1,11 +1,16 @@
 package cn.ethan.infrastructure.agent.workflow.langgraph;
 
+import cn.ethan.infrastructure.agent.workflow.persistence.AgentGraphSnapshotEntity;
+import cn.ethan.infrastructure.agent.workflow.persistence.AgentGraphSnapshotMapper;
 import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.checkpoint.Checkpoint;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
 import java.lang.reflect.Proxy;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -24,7 +29,9 @@ class MybatisLangGraphCheckpointSaverTest {
     @Test
     void savesReadsAndOverwritesTechnicalSnapshotWithoutBusinessDecision() throws Exception {
         State state = new State();
-        MybatisLangGraphCheckpointSaver saver = new MybatisLangGraphCheckpointSaver(mapper(state), new ObjectMapper());
+        MybatisLangGraphCheckpointSaver saver = new MybatisLangGraphCheckpointSaver(
+                mapper(state), new ObjectMapper(),
+                Clock.fixed(Instant.parse("2026-08-27T00:00:00Z"), ZoneOffset.UTC));
         RunnableConfig config = RunnableConfig.builder().threadId("run-1").build();
         Checkpoint first = checkpoint("checkpoint-1", "VERIFY_FACTS", "SWITCH_REQUIREMENTS", 3L, "facts-v1");
 
