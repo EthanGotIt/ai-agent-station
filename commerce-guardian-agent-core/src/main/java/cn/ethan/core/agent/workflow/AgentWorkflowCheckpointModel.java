@@ -65,8 +65,9 @@ public record AgentWorkflowCheckpointModel(
     }
 
     public AgentWorkflowCheckpointModel supersede(Instant at) {
-        if (status != AgentWorkflowCheckpointStatusEnum.OPEN) {
-            throw new IllegalStateException("只有开放 Checkpoint 可以标记 SUPERSEDED");
+        if ((status != AgentWorkflowCheckpointStatusEnum.OPEN
+                && status != AgentWorkflowCheckpointStatusEnum.APPROVED) || at == null) {
+            throw new IllegalStateException("只有开放或已批准 Checkpoint 可以标记 SUPERSEDED");
         }
         return new AgentWorkflowCheckpointModel(checkpointId, runId, threadId, turnId, userId, nodeId,
                 actionType, orderId, impactSummary, factsFingerprint, version + 1,

@@ -27,7 +27,7 @@ import java.util.OptionalLong;
  * @date 2026-08-27
  */
 @Repository
-public final class MybatisAgentQuestionCardStore implements AgentQuestionCardStore {
+public class MybatisAgentQuestionCardStore implements AgentQuestionCardStore {
 
     private final AgentQuestionCardMapper mapper;
     private final AgentThreadMapper threadMapper;

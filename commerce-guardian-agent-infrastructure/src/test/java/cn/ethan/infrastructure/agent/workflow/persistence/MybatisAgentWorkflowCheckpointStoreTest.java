@@ -76,6 +76,18 @@ class MybatisAgentWorkflowCheckpointStoreTest {
         assertEquals(0, state.pointerClears.get());
     }
 
+    @Test
+    void approvedCheckpointCanBeSupersededWithoutClearingAlreadyClosedPointer() {
+        State state = state(checkpointEntity("APPROVED", 1, "APPROVE"), thread(null), 1);
+        MybatisAgentWorkflowCheckpointStore store = store(state);
+
+        assertTrue(store.supersede("user-1", "checkpoint-1", 1));
+
+        assertTrue(state.updates.get(0).getParamNameValuePairs().containsValue("SUPERSEDED"));
+        assertTrue(state.updates.get(0).getSqlSet().contains("DECISION = NULL"));
+        assertEquals(0, state.pointerClears.get());
+    }
+
     private AgentWorkflowCheckpointModel checkpoint() {
         return new AgentWorkflowCheckpointModel("checkpoint-1", "run-1", "thread-1", "turn-1", "user-1",
                 "AUTHORIZE", "REFUND", "ORDER-1", "退款订单", "facts-v1", 0,

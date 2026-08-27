@@ -430,12 +430,12 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         WorkflowRequest request = requestFromRun(run);
         OrderSnapshotModel order = lookupSelected(checkpoint.orderId(), thread.userId());
         SelectedOrder selected = selectedOrder(order, thread.userId());
-        requireActionAllowed(request.intent(), selected.order());
         String fingerprint = factsFingerprint(request, new ResolvedCandidates(List.of(order), true), selected);
         if (!checkpoint.factsFingerprint().equals(input.factsFingerprint())
                 || !checkpoint.factsFingerprint().equals(fingerprint)) {
             return reverifyAfterFactsChanged(thread, decisionTurn, run, checkpoint, now);
         }
+        requireActionAllowed(request.intent(), selected.order());
         Map<String, Object> state = state(request.withOrderId(order.orderId()), List.of(order), selected, request.reason());
         Map<String, Object> graphState = new LinkedHashMap<>(state);
         graphState.put("factsDecision", "READY");
@@ -460,15 +460,33 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         WorkflowRequest request = requestFromRun(run);
         OrderSnapshotModel latest = lookupSelected(superseded.orderId(), thread.userId());
         SelectedOrder selected = selectedOrder(latest, thread.userId());
-        requireActionAllowed(request.intent(), latest);
         String fingerprint = factsFingerprint(request, new ResolvedCandidates(List.of(latest), true), selected);
         Map<String, Object> latestState = state(request.withOrderId(latest.orderId()), List.of(latest), selected,
                 request.reason());
+        try {
+            requireActionAllowed(request.intent(), latest);
+        } catch (AgentThreadConflictException actionInvalid) {
+            AgentWorkflowRunModel failed = run.status(AgentWorkflowStatusEnum.FAILED,
+                    steps(LangGraphWorkflowGraphFactory.VERIFY_FACTS, "FAILED"), writeJson(latestState), now);
+            return inTransaction(() -> {
+                supersedeApprovedCheckpoint(superseded, thread.userId());
+                workflowRuns.update(failed);
+                appendAnswerResult(thread, decisionTurn, run.runId(), "FACTS_CHANGED_ACTION_NOT_ALLOWED", now);
+                appendOrderFacts(thread, decisionTurn, List.of(latest), selected, now);
+                appendWorkflowStep(thread, decisionTurn, run.runId(), LangGraphWorkflowGraphFactory.VERIFY_FACTS,
+                        "FAILED", "ACTION_NOT_ALLOWED", now);
+                projectOwner(thread, run, AgentTurnStatusEnum.FAILED,
+                        "订单事实已更新，当前状态不再允许该操作，未执行外部动作。", now);
+                return new ResumeResult("订单事实已更新，当前状态不再允许该操作，未执行外部动作。",
+                        "FAILED", null, null, null);
+            });
+        }
         AgentWorkflowRunModel progressed = run.progress(
                 steps(LangGraphWorkflowGraphFactory.VERIFY_FACTS, "WAITING"), writeJson(latestState), now);
         AgentWorkflowCheckpointModel next = checkpoint(progressed, decisionTurn,
                 request.withOrderId(latest.orderId()), selected, fingerprint, now);
         return inTransaction(() -> {
+            supersedeApprovedCheckpoint(superseded, thread.userId());
             workflowRuns.update(progressed);
             checkpoints.create(next);
             appendAnswerResult(thread, decisionTurn, run.runId(), "FACTS_CHANGED", now);
@@ -482,6 +500,16 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             return new ResumeResult("订单事实已更新，请重新确认执行内容。", "FACTS_CHANGED", null,
                     null, next);
         });
+    }
+
+    private void supersedeApprovedCheckpoint(AgentWorkflowCheckpointModel checkpoint, String userId) {
+        if (checkpoint.status() == AgentWorkflowCheckpointStatusEnum.OPEN
+                || checkpoint.status() == AgentWorkflowCheckpointStatusEnum.APPROVED) {
+            if (!checkpoints.supersede(userId, checkpoint.checkpointId(), checkpoint.version())) {
+                throw new AgentThreadConflictException("CHECKPOINT_VERSION_CONFLICT",
+                        "事实变化时 Checkpoint 版本已变化");
+            }
+        }
     }
 
     private ResumeResult approve(

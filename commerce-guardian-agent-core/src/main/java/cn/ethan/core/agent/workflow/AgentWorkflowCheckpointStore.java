@@ -19,5 +19,9 @@ public interface AgentWorkflowCheckpointStore {
     boolean decide(String userId, String checkpointId, long expectedVersion,
                    AgentWorkflowDecisionEnum decision, String currentFactsFingerprint);
 
+    /**
+     * 使事实已变化的 Checkpoint 失效。除了尚未决策的卡片，也允许收口一个已经批准
+     * 但尚未创建外部动作命令的卡片，避免批准快照在恢复时继续生效。
+     */
     boolean supersede(String userId, String checkpointId, long expectedVersion);
 }

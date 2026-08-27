@@ -48,6 +48,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 类型职责：验证 LangGraph 订单引擎的 QuestionCard/Checkpoint 中断、恢复和外部命令边界。
@@ -103,8 +104,63 @@ class LangGraphAgentWorkflowEngineTest {
         assertEquals(AgentWorkflowStatusEnum.WAITING_USER_INPUT, fixture.runs.current.status());
     }
 
+    @Test
+    void approvedCheckpointWithChangedFactsIsSupersededAndReopened() {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-1")));
+        AgentWorkflowEngine.StartResult started = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "REFUND", "orderId", "ORDER-1", "reason", "商品不符"));
+        fixture.orders.replace(fixtureOrder("ORDER-1", OrderStatusEnum.SHIPPED));
+        assertTrue(fixture.checkpoints.decide("user-1", started.checkpoint().checkpointId(), 0,
+                AgentWorkflowDecisionEnum.APPROVE, started.checkpoint().factsFingerprint()));
+
+        AgentWorkflowEngine.ResumeResult resumed = fixture.engine.resume(
+                fixture.thread, decisionTurn(started), Map.of());
+
+        assertEquals("FACTS_CHANGED", resumed.resultStatus());
+        assertEquals(AgentWorkflowCheckpointStatusEnum.SUPERSEDED,
+                fixture.checkpoints.values.get(started.checkpoint().checkpointId()).status());
+        assertEquals(AgentWorkflowCheckpointStatusEnum.OPEN, resumed.checkpoint().status());
+        assertEquals(AgentWorkflowStatusEnum.WAITING_USER_INPUT, fixture.runs.current.status());
+        assertEquals(0, fixture.commands.values.size());
+    }
+
+    @Test
+    void changedFactsThatInvalidateActionFailSafelyWithoutCreatingCommand() {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-1")));
+        AgentWorkflowEngine.StartResult started = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "REFUND", "orderId", "ORDER-1", "reason", "商品不符"));
+        fixture.orders.replace(fixtureOrder("ORDER-1", OrderStatusEnum.CANCELLED));
+        assertTrue(fixture.checkpoints.decide("user-1", started.checkpoint().checkpointId(), 0,
+                AgentWorkflowDecisionEnum.APPROVE, started.checkpoint().factsFingerprint()));
+
+        AgentWorkflowEngine.ResumeResult resumed = fixture.engine.resume(
+                fixture.thread, decisionTurn(started), Map.of());
+
+        assertEquals("FAILED", resumed.resultStatus());
+        assertNull(resumed.checkpoint());
+        assertEquals(AgentWorkflowCheckpointStatusEnum.SUPERSEDED,
+                fixture.checkpoints.values.get(started.checkpoint().checkpointId()).status());
+        assertEquals(AgentWorkflowStatusEnum.FAILED, fixture.runs.current.status());
+        assertEquals(0, fixture.commands.values.size());
+    }
+
+    private AgentTurnModel decisionTurn(AgentWorkflowEngine.StartResult started) {
+        AgentWorkflowDecisionInput input = new AgentWorkflowDecisionInput(
+                started.runId(), started.checkpoint().checkpointId(), 0,
+                AgentWorkflowDecisionEnum.APPROVE, started.checkpoint().factsFingerprint());
+        return new AgentTurnModel(
+                "decision-" + started.runId(), "thread-1", "user-1", "decision-request-" + started.runId(),
+                "Workflow Checkpoint 决策", cn.ethan.core.agent.thread.AgentTurnStatusEnum.ACTIVE, 0,
+                started.runId(), null, NOW, NOW, null, null, 0L, AgentTurnInputKindEnum.WORKFLOW_DECISION,
+                null, null, input);
+    }
+
     private static OrderSnapshotModel fixtureOrder(String id) {
-        return new OrderSnapshotModel(id, "user-1", OrderStatusEnum.PAID, null,
+        return fixtureOrder(id, OrderStatusEnum.PAID);
+    }
+
+    private static OrderSnapshotModel fixtureOrder(String id, OrderStatusEnum status) {
+        return new OrderSnapshotModel(id, "user-1", status, null,
                 NOW.minusSeconds(3_600), NOW.plusSeconds(3_600), NOW.minusSeconds(60),
                 "运输中", new BigDecimal("19.90"), "CNY", "商品", null);
     }
@@ -137,7 +193,17 @@ class LangGraphAgentWorkflowEngineTest {
         private final List<OrderSnapshotModel> values;
 
         private FakeOrders(List<OrderSnapshotModel> values) {
-            this.values = List.copyOf(values);
+            this.values = new ArrayList<>(values);
+        }
+
+        private void replace(OrderSnapshotModel replacement) {
+            for (int index = 0; index < values.size(); index++) {
+                if (values.get(index).orderId().equals(replacement.orderId())) {
+                    values.set(index, replacement);
+                    return;
+                }
+            }
+            values.add(replacement);
         }
 
         @Override

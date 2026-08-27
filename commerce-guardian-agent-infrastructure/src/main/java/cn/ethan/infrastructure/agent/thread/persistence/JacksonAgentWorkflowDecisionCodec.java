@@ -2,6 +2,7 @@ package cn.ethan.infrastructure.agent.thread.persistence;
 
 import cn.ethan.core.agent.thread.AgentWorkflowDecisionInput;
 import cn.ethan.core.agent.workflow.AgentWorkflowDecisionEnum;
+import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -11,6 +12,7 @@ import tools.jackson.databind.ObjectMapper;
  * @author ethan
  * @date 2026-08-27
  */
+@Component
 public final class JacksonAgentWorkflowDecisionCodec {
 
     private final ObjectMapper objectMapper;

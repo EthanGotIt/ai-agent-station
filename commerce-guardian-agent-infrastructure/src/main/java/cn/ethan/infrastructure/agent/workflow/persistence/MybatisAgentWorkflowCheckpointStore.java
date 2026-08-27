@@ -8,6 +8,7 @@ import cn.ethan.core.agent.workflow.AgentWorkflowDecisionEnum;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentThreadEntity;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentThreadMapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,12 +23,13 @@ import java.util.Optional;
  * @date 2026-08-27
  */
 @Repository
-public final class MybatisAgentWorkflowCheckpointStore implements AgentWorkflowCheckpointStore {
+public class MybatisAgentWorkflowCheckpointStore implements AgentWorkflowCheckpointStore {
 
     private final AgentWorkflowCheckpointMapper mapper;
     private final AgentThreadMapper threadMapper;
     private final Clock clock;
 
+    @Autowired
     public MybatisAgentWorkflowCheckpointStore(AgentWorkflowCheckpointMapper mapper,
                                                 AgentThreadMapper threadMapper) {
         this(mapper, threadMapper, Clock.systemUTC());
@@ -130,12 +132,17 @@ public final class MybatisAgentWorkflowCheckpointStore implements AgentWorkflowC
         Instant now = clock.instant();
         int updated = mapper.update(null, new UpdateWrapper<AgentWorkflowCheckpointEntity>()
                 .eq("CHECKPOINT_ID", checkpointId).eq("USER_ID", userId)
-                .eq("VERSION_NO", expectedVersion).eq("STATUS", AgentWorkflowCheckpointStatusEnum.OPEN.name())
+                .eq("VERSION_NO", expectedVersion)
+                .in("STATUS", AgentWorkflowCheckpointStatusEnum.OPEN.name(),
+                        AgentWorkflowCheckpointStatusEnum.APPROVED.name())
                 .set("STATUS", AgentWorkflowCheckpointStatusEnum.SUPERSEDED.name())
+                .setSql("DECISION = NULL")
                 .set("DECIDED_AT", now).set("VERSION_NO", expectedVersion + 1));
         if (updated == 1) {
-            threadMapper.clearOpenInteraction(checkpoint.getThreadId(), userId,
-                    AgentInteractionTypeEnum.WORKFLOW_CHECKPOINT.name(), checkpointId, now);
+            if (checkpoint.getStatus().equals(AgentWorkflowCheckpointStatusEnum.OPEN)) {
+                threadMapper.clearOpenInteraction(checkpoint.getThreadId(), userId,
+                        AgentInteractionTypeEnum.WORKFLOW_CHECKPOINT.name(), checkpointId, now);
+            }
         }
         return updated == 1;
     }

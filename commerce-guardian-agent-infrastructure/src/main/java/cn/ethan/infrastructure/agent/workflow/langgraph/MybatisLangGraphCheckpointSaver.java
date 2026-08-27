@@ -33,7 +33,7 @@ import java.util.UUID;
  * @date 2026-08-27
  */
 @Repository
-public final class MybatisLangGraphCheckpointSaver extends AbstractCheckpointSaver {
+public class MybatisLangGraphCheckpointSaver extends AbstractCheckpointSaver {
 
     private static final TypeReference<Map<String, Object>> STATE_TYPE = new TypeReference<>() { };
     private static final String WORKFLOW_VERSION = "workflowVersion";

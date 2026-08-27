@@ -44,6 +44,17 @@ class AgentWorkflowCheckpointModelTest {
     }
 
     @Test
+    void approvedCheckpointCanBeSupersededWhenFactsChangeBeforeExecution() {
+        AgentWorkflowCheckpointModel approved = checkpoint().approve(NOW.plusSeconds(1));
+
+        AgentWorkflowCheckpointModel superseded = approved.supersede(NOW.plusSeconds(2));
+
+        assertEquals(2, superseded.version());
+        assertEquals(AgentWorkflowCheckpointStatusEnum.SUPERSEDED, superseded.status());
+        assertNull(superseded.decision());
+    }
+
+    @Test
     void checkpointRequiresStableFactsFingerprint() {
         assertThrows(IllegalArgumentException.class, () -> new AgentWorkflowCheckpointModel(
                 "checkpoint-1", "run-1", "thread-1", "turn-1", "user-1", "AUTHORIZE",
