@@ -195,7 +195,7 @@ public class AgentConfiguration {
                 runtimeProperties.queue().waitTimeout(),
                 threadProperties.turnTimeout(),
                 threadProperties.toolResultMaxCharacters(), metrics, orderActionCoordinator,
-                true, 3, questionCards, checkpoints);
+                runtimeProperties.continuationEnabled(), runtimeProperties.maxAgentCycles(), questionCards, checkpoints);
         runtime.recoverPersistedTurns();
         return runtime;
     }

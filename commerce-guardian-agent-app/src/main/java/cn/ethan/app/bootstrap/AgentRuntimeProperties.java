@@ -16,20 +16,32 @@ public record AgentRuntimeProperties(
         Duration streamTimeout,
         QueueProperties queue,
         ExecutorProperties executor,
-        Duration heartbeatInterval
+        Duration heartbeatInterval,
+        Boolean continuationEnabled,
+        Integer maxAgentCycles
 ) {
 
     private static final Duration DEFAULT_STREAM_TIMEOUT = Duration.ofSeconds(245);
     private static final Duration MAX_STREAM_TIMEOUT = Duration.ofMinutes(5);
     private static final Duration DEFAULT_HEARTBEAT_INTERVAL = Duration.ofSeconds(15);
     private static final Duration MAX_HEARTBEAT_INTERVAL = Duration.ofMinutes(1);
+    private static final int DEFAULT_MAX_AGENT_CYCLES = 3;
 
     public AgentRuntimeProperties(
             Duration streamTimeout,
             QueueProperties queue,
             ExecutorProperties executor
     ) {
-        this(streamTimeout, queue, executor, null);
+        this(streamTimeout, queue, executor, null, null, null);
+    }
+
+    public AgentRuntimeProperties(
+            Duration streamTimeout,
+            QueueProperties queue,
+            ExecutorProperties executor,
+            Duration heartbeatInterval
+    ) {
+        this(streamTimeout, queue, executor, heartbeatInterval, null, null);
     }
 
     @ConstructorBinding
@@ -54,6 +66,11 @@ public record AgentRuntimeProperties(
         );
         if (heartbeatInterval.compareTo(Duration.ofSeconds(1)) < 0) {
             throw new IllegalArgumentException("heartbeatInterval must be at least PT1S");
+        }
+        continuationEnabled = continuationEnabled == null || continuationEnabled;
+        maxAgentCycles = maxAgentCycles == null ? DEFAULT_MAX_AGENT_CYCLES : maxAgentCycles;
+        if (maxAgentCycles < 1 || maxAgentCycles > 5) {
+            throw new IllegalArgumentException("maxAgentCycles must be between 1 and 5");
         }
         if (executor.queueCapacity() < queue.maxPendingGlobal()) {
             throw new IllegalArgumentException(

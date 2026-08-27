@@ -25,6 +25,8 @@ class AgentRuntimePropertiesTest {
 
         assertEquals(Duration.ofSeconds(245), properties.streamTimeout());
         assertEquals(Duration.ofSeconds(15), properties.heartbeatInterval());
+        assertEquals(Boolean.TRUE, properties.continuationEnabled());
+        assertEquals(3, properties.maxAgentCycles());
         assertEquals(4, properties.queue().maxPendingPerThread());
         assertEquals(256, properties.queue().maxPendingGlobal());
         assertEquals(Duration.ofMinutes(2), properties.queue().waitTimeout());
@@ -67,6 +69,14 @@ class AgentRuntimePropertiesTest {
                         new AgentRuntimeProperties.QueueProperties(4, 256, null),
                         new AgentRuntimeProperties.ExecutorProperties(4, 16, 128, null)
                 )
+        );
+    }
+
+    @Test
+    void rejectsContinuationCycleOutsideSafeBound() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new AgentRuntimeProperties(null, null, null, null, true, 6)
         );
     }
 }
