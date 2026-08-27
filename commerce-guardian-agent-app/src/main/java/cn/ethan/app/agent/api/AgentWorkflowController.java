@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * 类型职责：负责 Workflow QuestionCard 回答和外部动作人工重试的 HTTP 协议转换。
@@ -32,7 +31,6 @@ public final class AgentWorkflowController {
     private final AgentQuestionAnswerAdmission questionAdmission;
     private final AgentWorkflowDecisionAdmission decisionAdmission;
 
-    @Autowired
     public AgentWorkflowController(
             AgentTurnRuntimeService runtime,
             AgentUserContext userContext,
