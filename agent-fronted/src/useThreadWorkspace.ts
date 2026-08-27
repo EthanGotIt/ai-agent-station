@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HttpRequestError, readJsonResponse } from "./http";
 import { appendSseChunk } from "./sse";
 import {
+  findOpenInteraction,
   normalizeItem,
+  parseInteraction,
   parseExternalAction,
-  parseQuestion,
   rebuildTurns,
   terminal
 } from "./threadProjection";
@@ -12,11 +13,11 @@ import { threadWorkspaceApi } from "./threadWorkspaceApi";
 import type {
   AgentItem,
   AgentItemWire,
+  AgentInteraction,
   AgentThread,
   AgentThreadEvent,
   AgentTurnStatus,
   OrderActionType,
-  QuestionCardState,
   WorkflowAnswerAction
 } from "./threadTypes";
 
@@ -34,7 +35,7 @@ export function useThreadWorkspace(userId: string) {
   const [archivedThreads, setArchivedThreads] = useState<AgentThread[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [items, setItems] = useState<AgentItem[]>([]);
-  const [question, setQuestion] = useState<QuestionCardState | null>(null);
+  const [interaction, setInteraction] = useState<AgentInteraction | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [archiveLoading, setArchiveLoading] = useState(false);
@@ -46,6 +47,7 @@ export function useThreadWorkspace(userId: string) {
   const historyControllerRef = useRef<AbortController | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const threadIdRef = useRef<string | null>(null);
+  const interactionRef = useRef<AgentInteraction | null>(null);
   const generationRef = useRef(0);
   const retryingRunRef = useRef<string | null>(null);
   const executionCacheRef = useRef(new Map<string, AgentItem[]>());
@@ -53,6 +55,13 @@ export function useThreadWorkspace(userId: string) {
   const [executionReplayStates, setExecutionReplayStates] = useState<Record<string, ExecutionReplayStatus>>({});
   const [retryingRunId, setRetryingRunId] = useState<string | null>(null);
   const turns = useMemo(() => rebuildTurns(items), [items]);
+  const question = interaction?.type === "QUESTION_CARD" ? interaction.question : null;
+  const checkpoint = interaction?.type === "WORKFLOW_CHECKPOINT" ? interaction.checkpoint : null;
+
+  const updateInteraction = useCallback((next: AgentInteraction | null) => {
+    interactionRef.current = next;
+    setInteraction(next);
+  }, []);
 
   useEffect(() => {
     executionCacheRef.current.clear();
@@ -61,15 +70,29 @@ export function useThreadWorkspace(userId: string) {
   }, [userId]);
 
   const applyItems = useCallback((incoming: Array<AgentItem | AgentItemWire>) => {
-    const byId = new Map(itemsRef.current.map((item) => [item.itemId, item]));
-    for (const wire of incoming) {
-      const item = normalizeItem(wire);
-      byId.set(item.itemId, item);
-      cursorRef.current = Math.max(cursorRef.current, item.sequence);
-    }
-    const next = [...byId.values()].sort((left, right) => left.sequence - right.sequence);
+    const normalizedIncoming = incoming.map(normalizeItem);
+    for (const item of normalizedIncoming) cursorRef.current = Math.max(cursorRef.current, item.sequence);
+    const current = itemsRef.current;
+    const knownIds = new Set(current.map((item) => item.itemId));
+    const fresh = normalizedIncoming.filter((item) => !knownIds.has(item.itemId));
+    const lastSequence = current.at(-1)?.sequence ?? 0;
+    const appendOnly = fresh.length > 0
+      && fresh.every((item, index) => item.sequence > lastSequence
+        && (index === 0 || item.sequence > fresh[index - 1].sequence));
+    const next = appendOnly
+      ? [...current, ...fresh]
+      : [...new Map([...current, ...normalizedIncoming].map((item) => [item.itemId, item])).values()]
+        .sort((left, right) => left.sequence - right.sequence);
     itemsRef.current = next;
     setItems(next);
+    const derivedInteraction = findOpenInteraction(next);
+    const hasInteractionMutation = incoming.some((value) => {
+      const type = typeof value.payload === "string" ? value.type : value.payload.kind;
+      return ["QUESTION_CARD", "QUESTION_ANSWER", "WORKFLOW_CHECKPOINT", "WORKFLOW_DECISION"].includes(type);
+    });
+    if (derivedInteraction || hasInteractionMutation || interactionRef.current === null) {
+      updateInteraction(derivedInteraction);
+    }
     for (const item of incoming) {
       const normalized = normalizeItem(item);
       const action = parseExternalAction(normalized.payload);
@@ -78,8 +101,6 @@ export function useThreadWorkspace(userId: string) {
         setRetryingRunId(null);
         setBusy(false);
       }
-      if (normalized.type === "WORKFLOW_QUESTION") setQuestion(parseQuestion(normalized.payload));
-      if (normalized.type === "WORKFLOW_ANSWER") setQuestion(null);
       if (normalized.type === "TURN_STATE" && normalized.payload.kind === "TURN_STATE") {
         const state = normalized.payload.data as { status?: unknown };
         const status = state?.status;
@@ -87,7 +108,7 @@ export function useThreadWorkspace(userId: string) {
         if (typeof status === "string" && terminal(status as AgentTurnStatus)) setBusy(false);
       }
     }
-  }, []);
+  }, [updateInteraction]);
 
   const applyEvent = useCallback((event: AgentThreadEvent) => {
     if (!threadIdRef.current || event.threadId !== threadIdRef.current) return;
@@ -223,7 +244,7 @@ export function useThreadWorkspace(userId: string) {
     itemsRef.current = [];
     cursorRef.current = 0;
     setItems([]);
-    setQuestion(null);
+    updateInteraction(null);
     try {
       const recovered: AgentItemWire[] = [];
       let afterSequence = 0;
@@ -239,6 +260,16 @@ export function useThreadWorkspace(userId: string) {
       if (controller.signal.aborted || generationRef.current !== generation
         || threadIdRef.current !== nextThreadId) return;
       applyItems(recovered);
+      const recoveredInteraction = findOpenInteraction(recovered.map(normalizeItem));
+      try {
+        const serverInteraction = await threadWorkspaceApi.getInteraction(userId, nextThreadId, controller.signal);
+        if (controller.signal.aborted || generationRef.current !== generation || threadIdRef.current !== nextThreadId) return;
+        updateInteraction(serverInteraction ? parseInteraction(serverInteraction) ?? recoveredInteraction : recoveredInteraction);
+      } catch {
+        if (controller.signal.aborted || generationRef.current !== generation || threadIdRef.current !== nextThreadId) return;
+        // Item 历史仍是可恢复事实；交互快照不可用时继续使用本地投影。
+        updateInteraction(recoveredInteraction);
+      }
       setThreadId(nextThreadId);
       setLoading(false);
       void connect(nextThreadId, afterSequence, generation);
@@ -251,7 +282,7 @@ export function useThreadWorkspace(userId: string) {
     } finally {
       if (historyControllerRef.current === controller) historyControllerRef.current = null;
     }
-  }, [applyItems, connect, userId]);
+  }, [applyItems, connect, updateInteraction, userId]);
 
   const selectThread = useCallback((nextThreadId: string) => {
     const generation = generationRef.current + 1;
@@ -265,8 +296,9 @@ export function useThreadWorkspace(userId: string) {
     setRetryingRunId(null);
     setThreadId(null);
     setBusy(false);
+    updateInteraction(null);
     void loadThread(nextThreadId, generation);
-  }, [loadThread]);
+  }, [loadThread, updateInteraction]);
 
   const loadArchivedThreads = useCallback(async () => {
     setArchiveLoading(true);
@@ -427,9 +459,8 @@ export function useThreadWorkspace(userId: string) {
     setBusy(true);
     setError(null);
     try {
-      const accepted = await threadWorkspaceApi.submitWorkflowAnswer(
-        userId, requestQuestion.runId, requestQuestion.questionId, id("answer"), requestQuestion.checkpointId,
-        requestQuestion.version, action, answers
+      const accepted = await threadWorkspaceApi.submitQuestionAnswer(
+        userId, requestQuestion.questionId, id("question-answer"), requestQuestion.version, action, answers
       );
       if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
         activeTurnRef.current = accepted.turnId;
@@ -441,6 +472,29 @@ export function useThreadWorkspace(userId: string) {
       }
     }
   }, [busy, question, userId]);
+
+  const decideCheckpoint = useCallback(async (decision: "APPROVE" | "REJECT") => {
+    if (!checkpoint || busy) return;
+    const requestCheckpoint = checkpoint;
+    const requestThreadId = threadIdRef.current;
+    const generation = generationRef.current;
+    setBusy(true);
+    setError(null);
+    try {
+      const accepted = await threadWorkspaceApi.decideWorkflowCheckpoint(
+        userId, requestCheckpoint.runId, requestCheckpoint.checkpointId, id("workflow-decision"),
+        requestCheckpoint.version, decision, requestCheckpoint.factsFingerprint
+      );
+      if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
+        activeTurnRef.current = accepted.turnId;
+      }
+    } catch (failure) {
+      if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
+        setBusy(false);
+        setError(failure instanceof Error ? failure.message : "执行确认提交失败");
+      }
+    }
+  }, [busy, checkpoint, userId]);
 
   const cancel = useCallback(async () => {
     const turnId = activeTurnRef.current;
@@ -520,6 +574,8 @@ export function useThreadWorkspace(userId: string) {
 
   return {
     answer,
+    checkpoint,
+    decideCheckpoint,
     archiveLoading,
     archiveThread,
     archivedThreads,
@@ -533,6 +589,7 @@ export function useThreadWorkspace(userId: string) {
     loadArchivedThreads,
     loading,
     orderAction,
+    interaction,
     question,
     rename,
     restoreThread,

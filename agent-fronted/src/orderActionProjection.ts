@@ -125,7 +125,7 @@ export function projectOrderAction(turn: ThreadViewTurn, request: OrderActionReq
     if (item.type === "TURN_STATE") {
       const next = stateFromTurnStatus(data?.status);
       if (next) state = next;
-    } else if (item.type === "WORKFLOW_QUESTION") {
+    } else if (["QUESTION_CARD", "WORKFLOW_CHECKPOINT", "WORKFLOW_QUESTION"].includes(item.type)) {
       state = "waiting";
       runId = stringValue(data?.runId) ?? runId;
     } else if (item.type === "WORKFLOW_RESULT") {

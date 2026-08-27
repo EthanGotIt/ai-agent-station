@@ -26,6 +26,10 @@ Completed:
 - Continuation Turn 与首个 `AGENT_CONTINUATION` Item 在同一本地事务中持久化，提交后才进入 Thread FIFO；重复回调复用既有 Turn，队列失败由恢复扫描兜底。
 - 已将运行时的 `continuation-enabled` 与 `max-agent-cycles` 配置接入 Spring Boot，最大自动轮次限制为 1–5（默认 3），达到上限写入 `STOP_LIMIT` 决策而不创建新 Turn。
 - `ExternalActionOutcomeManager` 已改为调用统一 Gateway，完成/人工重试结果会投影 `VERIFY_OUTCOME`、`HANDOFF_AGENT` 和 Continuation 事实；未满足触发条件的失败结果不创建续跑。
+- 已完成前端交互与状态投影：新 `QUESTION_CARD` 只用于补充问题，`WORKFLOW_CHECKPOINT` 使用独立的确认/拒绝卡片，历史 `WORKFLOW_QUESTION` 仅只读展示。
+- 前端已接入 Thread 交互快照 API、Question Answer/Workflow Decision 新路径、固定七节点 Graph 状态、Continuation 提示和外部动作成功后的非阻断告警。
+- 长 Thread Item 投影使用单调 Sequence 的追加快路径；Thread 切换、刷新和交互快照失败时仍以持久 Item 恢复；结构化业务卡与 Agent 结论分开展示。
+- QuestionCard 与 Workflow Checkpoint 已分别覆盖焦点圈定、Escape、Tab、刷新恢复和 44px 触控目标；前端目录与 npm package 已统一为 `agent-fronted`。
 
 Decisions:
 
@@ -37,8 +41,7 @@ Decisions:
 
 TODO:
 
-- 阶段五：完成 QuestionCard 与 Workflow Checkpoint 的独立前端投影、取消/刷新恢复和长 Thread 增量更新。
-- 阶段六：清理旧授权 QuestionCard、旧 Workflow 入口和无调用兼容代码，HTTP 单测切换 Fake Transport。
+- 阶段六：清理旧授权 QuestionCard、旧 Workflow 入口、`compact-authorization`、`ORDER_HISTORY` 和无调用兼容代码，HTTP 单测切换 Fake Transport，并统一文档/脚本引用。
 - 阶段七：执行数据库副本迁移、真实模型/订单夹具/前端黄金路径验收，更新架构与运行手册并关闭任务。
 
 Blocked:
@@ -47,7 +50,7 @@ Blocked:
 
 Next action:
 
-- 开始阶段五：审计前端目录与现有 Item 投影，分别实现问题卡和 Workflow 执行确认卡。
+- 开始阶段六：审计旧授权与旧 Workflow 运行时的可达调用，删除确认无调用的路径并先修复 HTTP Fake Transport 测试。
 
 Validation:
 
@@ -60,9 +63,11 @@ Validation:
 - 阶段三定向测试通过：LangGraph 图工厂 4 项、状态序列化 1 项、MyBatis Saver 1 项、LangGraph Workflow 引擎 2 项、Spring AI 协调/Tool 边界及旧引擎回归共 24 项；Infrastructure 和 App 编译通过。
 - 阶段四定向测试通过：`AgentContinuationInputTest` 1 项、`TransactionalAgentContinuationGatewayTest` 6 项（成功、非终态失败、重复、并发、STOP_LIMIT、禁用）、`ExternalActionWorkerTest` 5 项、`AgentRuntimePropertiesTest` 5 项；Infrastructure 与 App 编译通过。
 - 阶段三完整后端测试仍受现有 HTTP loopback 单测环境限制；`HttpExternalActionExecutorTest`、`HttpOrderGatewayTest`、`HttpLogisticsGatewayTest` 需要在阶段六切换 Fake Transport 后重新验收。
+- 阶段五前端验证通过：`npm --prefix agent-fronted run typecheck`、`npm --prefix agent-fronted test`（31 项）和 `npm --prefix agent-fronted run build`；测试覆盖两种卡片、新 API、历史卡只读、增量投影、成功后续接失败告警和键盘/焦点边界。
 
 Preserve:
 
 - 不修改或提交 `.idea`、deployment、Docker、Hook、脚本及其他未纳入当前阶段的既有工作树改动。
 - 旧 `AGENT_WORKFLOW_QUESTION` 数据表在迁移保留期内只读，运行时代码在后续阶段停止访问。
-- 当前工作树中的 `agent-console` 删除与 `agent-fronted` 未跟踪目录属于既有前端迭代；阶段五先核对其边界，再明确暂存路径，不在阶段四提交中混入。
+- `agent-fronted` 是当前唯一前端目录；旧 `agent-console` 路径在阶段五提交中按明确路径完成重命名，运行时代码不再调用旧授权回答 API。
+- 旧 `WORKFLOW_QUESTION`/`WORKFLOW_ANSWER` Item 只保留历史投影兼容；旧数据库表在保留期内只读，阶段六继续删除运行时可达的旧入口。

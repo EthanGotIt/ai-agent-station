@@ -50,11 +50,18 @@ export type AgentItemType =
   | "TOOL_CALL"
   | "TOOL_RESULT"
   | "WORKFLOW_STARTED"
+  | "QUESTION_CARD"
+  | "QUESTION_ANSWER"
+  | "WORKFLOW_CHECKPOINT"
+  | "WORKFLOW_DECISION"
   | "WORKFLOW_QUESTION"
   | "WORKFLOW_ANSWER"
   | "WORKFLOW_RESULT"
   | "EXTERNAL_ACTION_STATUS"
   | "ORDER_ACTION_REQUEST"
+  | "WORKFLOW_STEP"
+  | "AGENT_CONTINUATION"
+  | "AGENT_DECISION"
   | "EXECUTION_EVENT"
   | "ERROR"
   | string;
@@ -63,8 +70,15 @@ export type AgentItemPayload =
   | { schemaVersion: 1; kind: "USER_MESSAGE"; data: string }
   | { schemaVersion: 1; kind: "ASSISTANT_MESSAGE"; data: string }
   | { schemaVersion: 1; kind: "TURN_STATE"; data: { status: AgentTurnStatus; errorCode?: string | null } }
+  | { schemaVersion: 1; kind: "QUESTION_CARD"; data: QuestionCardState }
+  | { schemaVersion: 1; kind: "QUESTION_ANSWER"; data: QuestionAnswerFact }
+  | { schemaVersion: 1; kind: "WORKFLOW_CHECKPOINT"; data: WorkflowCheckpointState }
+  | { schemaVersion: 1; kind: "WORKFLOW_DECISION"; data: WorkflowDecisionFact }
   | { schemaVersion: 1; kind: "WORKFLOW_QUESTION"; data: QuestionCardState }
   | { schemaVersion: 1; kind: "ORDER_ACTION_REQUEST"; data: { sourceTurnId: string; orderId: string; actionType: OrderActionType } }
+  | { schemaVersion: 1; kind: "WORKFLOW_STEP"; data: WorkflowStepFact }
+  | { schemaVersion: 1; kind: "AGENT_CONTINUATION"; data: AgentContinuationFact }
+  | { schemaVersion: 1; kind: "AGENT_DECISION"; data: AgentDecisionFact }
   | { schemaVersion: 1; kind: AgentItemType; data: unknown };
 
 export type AgentItemWire = {
@@ -114,9 +128,11 @@ export type QuestionSummaryLine = {
 };
 
 export type QuestionCardState = {
+  kind?: "QUESTION_CARD" | "LEGACY_WORKFLOW_QUESTION";
   runId: string;
   questionId: string;
-  checkpointId: string;
+  turnId?: string | null;
+  resumeTarget: "AGENT" | "WORKFLOW";
   operation?: string;
   step?: string;
   stepNo?: number;
@@ -125,7 +141,45 @@ export type QuestionCardState = {
   prompt: string;
   fields: QuestionField[];
   summary?: QuestionSummaryLine[];
+  submitLabel?: string;
+  cancelLabel?: string;
+  /** 只允许历史 Item 走展示兼容，不开放旧授权提交协议。 */
+  legacy?: boolean;
 };
+
+export type WorkflowCheckpointState = {
+  kind?: "WORKFLOW_CHECKPOINT";
+  checkpointId: string;
+  runId: string;
+  turnId?: string | null;
+  status: "OPEN" | "APPROVED" | "REJECTED" | "SUPERSEDED" | string;
+  version: number;
+  nodeId: string;
+  actionType: string;
+  orderId: string;
+  impactSummary: string;
+  factsFingerprint: string;
+  decision?: "APPROVE" | "REJECT" | string | null;
+};
+
+export type QuestionAnswerFact = {
+  questionId: string;
+  runId?: string | null;
+  resumeTarget?: "AGENT" | "WORKFLOW" | string | null;
+  action?: "SUBMIT" | "CANCEL" | string | null;
+};
+
+export type WorkflowDecisionFact = {
+  runId: string;
+  checkpointId: string;
+  expectedVersion?: number;
+  decision: "APPROVE" | "REJECT" | string;
+  factsFingerprint?: string | null;
+};
+
+export type AgentInteraction =
+  | { type: "QUESTION_CARD"; question: QuestionCardState }
+  | { type: "WORKFLOW_CHECKPOINT"; checkpoint: WorkflowCheckpointState };
 
 export type WorkflowAnswerAction = "SUBMIT" | "CANCEL";
 
@@ -145,6 +199,32 @@ export type BusinessProgress = {
   detail: string | null;
   status: BusinessProgressStatus;
   sequence: number;
+};
+
+export type WorkflowStepFact = {
+  runId?: string;
+  node: string;
+  status: string;
+  branch?: string | null;
+  code?: string | null;
+  elapsedMillis?: number;
+};
+
+export type AgentContinuationFact = {
+  rootTurnId: string;
+  parentTurnId: string;
+  triggerRunId: string;
+  triggerCommandId?: string | null;
+  triggerStatus: string;
+  triggerSequence: number;
+  cycleNo: number;
+};
+
+export type AgentDecisionFact = {
+  decision: "FINISH" | "START_WORKFLOW" | "WAIT_USER" | "STOP_LIMIT" | "FALLBACK" | string;
+  cycleNo?: number;
+  runId?: string | null;
+  code?: string | null;
 };
 
 export type OrderCard = {
@@ -179,6 +259,8 @@ export type ThreadViewTurn = {
   content: string;
   status: AgentTurnStatus;
   error: string | null;
+  /** 外部业务成功后，后续 Agent 续接失败只作为非阻断提示。 */
+  continuationWarning: string | null;
   startedAt: string;
   finishedAt: string | null;
   workflowRunId: string | null;
@@ -189,8 +271,35 @@ export type ThreadViewTurn = {
   orderCards: OrderCard[];
   logisticsTimelines: LogisticsTimeline[];
   question: QuestionCardState | null;
+  /** 历史旧问题只读展示，不再作为可提交的开放交互。 */
+  legacyQuestion: QuestionCardState | null;
+  workflowCheckpoint: WorkflowCheckpointState | null;
   sourceTurnId: string | null;
-  inputKind: "MESSAGE" | "WORKFLOW_ANSWER" | "ORDER_ACTION";
+  inputKind: "MESSAGE" | "QUESTION_ANSWER" | "WORKFLOW_ANSWER" | "WORKFLOW_DECISION" | "ORDER_ACTION" | "AGENT_CONTINUATION";
+  workflowSteps: WorkflowStepFact[];
+  decisions: AgentDecisionFact[];
+  continuation: AgentContinuationFact | null;
+};
+
+export type AgentThreadInteractionDto = {
+  type: "QUESTION_CARD" | "WORKFLOW_CHECKPOINT";
+  interactionId: string;
+  threadId: string;
+  runId: string;
+  turnId: string | null;
+  status: string;
+  version: number;
+  resumeTarget: string | null;
+  title: string | null;
+  prompt: string | null;
+  fieldsJson: string | null;
+  nodeId: string | null;
+  actionType: string | null;
+  orderId: string | null;
+  impactSummary: string | null;
+  factsFingerprint: string | null;
+  decision: string | null;
+  legacy?: boolean;
 };
 
 export type AgentThreadPage = {

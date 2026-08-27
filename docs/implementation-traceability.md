@@ -14,8 +14,8 @@
 | 2. QuestionCard 与 Workflow Checkpoint 拆分 | 已完成 | `AgentQuestionCardModel/Store`、`AgentWorkflowCheckpointModel/Store`；V9 表和历史迁移；Thread `OPEN_INTERACTION_TYPE/ID`；`AgentQuestionAnswerAdmission`、`AgentWorkflowDecisionAdmission`；新 API/DTO；Core 状态机、MyBatis CAS、Turn 持久化、`request_user_input` 定向测试共 12 项 | 旧模型和兼容 API 在阶段六统一清理 |
 | 3. 迁移固定订单 Workflow | 已完成 | `LangGraphAgentWorkflowEngine`、`LangGraphWorkflowGraphFactory.createOrderWorkflow` 和独立 `AgentWorkflowCheckpoint`；七节点拓扑在 `AUTHORIZE` 前中断，QuestionCard/Checkpoint 恢复、事实指纹变化回到 `VERIFY_FACTS`、批准后 ExternalActionCommand 和技术快照重建均有定向测试；旧事务引擎已退出生产 Spring 装配 | Worker 完成后的 `VERIFY_OUTCOME/HANDOFF_AGENT` 业务投影和真实外部动作黄金路径纳入阶段七验收 |
 | 4. 加固 V7 Continuation | 已完成 | `AgentContinuationGateway`、`TransactionalAgentContinuationGateway`；`AgentContinuationInput.idempotencyKey()` 覆盖根/父 Turn、Run、Command、状态、结果 Sequence 和 cycle；事务内首事实持久化、提交后入队、重复/并发 admission、STOP_LIMIT 和配置边界测试通过；`ExternalActionOutcomeManager` 已移除本地续跑创建并改用统一 Gateway | 真实重启恢复、外部动作黄金路径纳入阶段七验收 |
-| 5. 前端交互与状态投影 | 未开始 | 当前 handoff 的唯一下一动作 | 需分别实现 QuestionCard 与 Workflow Checkpoint，核对 `agent-fronted` 既有工作树边界 |
-| 6. 遗留代码和测试环境清理 | 未开始 | 阶段四后续任务 | 需确认旧授权路径无可达调用，并切换 HTTP 单测 Fake Transport |
+| 5. 前端交互与状态投影 | 已完成 | `agent-fronted` 已统一目录/package；`QUESTION_CARD`、`QUESTION_ANSWER`、`WORKFLOW_CHECKPOINT`、`WORKFLOW_DECISION` 投影与三条新 API；QuestionCard/Checkpoint 独立卡片、历史 `WORKFLOW_QUESTION` 只读展示、七节点 Graph 状态、Continuation 提示、外部成功后的非阻断告警和 Sequence 追加快路径；typecheck、Vitest 31 项和 production build 通过 | 真实浏览器四尺寸与黄金路径纳入阶段七；旧后端运行时入口在阶段六清理 |
+| 6. 遗留代码和测试环境清理 | 未开始 | 阶段五后续任务 | 需确认旧授权路径无可达调用，并切换 HTTP 单测 Fake Transport |
 | 7. 完整验收与交接 | 未开始 | 阶段五、六完成后的验收门禁 | 未运行的数据库副本、真实配置和黄金路径不能提前记为完成 |
 
 阶段二的兼容边界：旧 `AGENT_WORKFLOW_QUESTION` 和旧回答 API 仍仅保留兼容路径，新的生产入口写入独立 QuestionCard/Checkpoint 表；`WAIT_USER` 枚举和旧模型仅用于后续阶段删除前的历史兼容。详细执行日志不写入 handoff。

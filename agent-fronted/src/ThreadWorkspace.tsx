@@ -29,7 +29,8 @@ import type {
   QuestionCardState,
   QuestionField,
   ThreadStatus,
-  ThreadViewTurn
+  ThreadViewTurn,
+  WorkflowCheckpointState
 } from "./threadTypes";
 import type { useThreadWorkspace } from "./useThreadWorkspace";
 import { OrderActionStatus } from "./OrderActionStatus";
@@ -152,23 +153,22 @@ function QuestionCard({ value, disabled, onSubmit, onCancel }: { value: Question
     if (event.key === "Escape") { event.preventDefault(); onCancel(); }
     else if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.requestSubmit(); }
   };
-  const finalConfirmation = value.step === "CONFIRM";
-  const stageLabel = ({ INTENT: "选择售后事项", ORDER_SELECT: "选择订单", REASON: "补充退款原因", CONFIRM: "最终确认", HISTORY_ACTION: "选择记录操作" } as Record<string, string>)[value.step ?? ""] ?? value.step ?? "等待输入";
-  return <form className="decision-card question-card" onSubmit={(event) => { event.preventDefault(); submit(); }} onKeyDown={keyboard}>
-    <div className="decision-heading"><span className="question-heading-icon"><CheckCircle2 aria-hidden="true" /></span><div className="question-heading-copy"><span className="question-status">需要确认</span><h2>{value.title}</h2><div className="question-meta"><span>业务阶段：{stageLabel}</span>{value.stepNo !== undefined ? <span>第 {value.stepNo} 步</span> : null}<span>检查点 v{value.version}</span></div></div></div>
+  const stageLabel = ({ INTENT: "选择售后事项", ORDER_SELECT: "选择订单", REASON: "补充退款原因", CONFIRM: "最终确认", AUTHORIZE: "授权执行", HISTORY_ACTION: "选择记录操作" } as Record<string, string>)[value.step ?? ""] ?? value.step ?? "等待输入";
+  return <form className={`decision-card question-card ${value.legacy ? "question-card-legacy" : ""}`} onSubmit={(event) => { event.preventDefault(); submit(); }} onKeyDown={keyboard}>
+    <div className="decision-heading"><span className="question-heading-icon"><CheckCircle2 aria-hidden="true" /></span><div className="question-heading-copy"><span className="question-status">需要补充信息</span><h2>{value.title}</h2><div className="question-meta"><span>回答目标：{value.resumeTarget === "AGENT" ? "Agent" : "业务流程"}</span><span>回答主题：{stageLabel}</span>{value.stepNo !== undefined ? <span>第 {value.stepNo} 步</span> : null}<span>问题 v{value.version}</span></div></div></div>
     {value.operation ? <span className="question-operation"><span className="question-operation-dot" aria-hidden="true" />{value.operation}</span> : null}
     <RestrictedMarkdown value={value.prompt} className="question-prompt" />
     {value.summary && value.summary.length > 0 ? <dl className="question-summary">{value.summary.map((line) => <div key={`${line.label}-${line.value}`}><dt>{line.label}</dt><dd>{line.value}</dd></div>)}</dl> : null}
     <div className="question-fields">{value.fields.map((field, index) => {
-      const fieldValue = answers[field.name] ?? ""; const otherSelected = fieldValue === "__OTHER__";
-      const controlProps = { autoFocus: index === 0, "aria-label": field.label, "aria-invalid": invalidField === field.name, disabled, maxLength: field.maxLength ?? 4_000, value: fieldValue, onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setAnswers((current) => ({ ...current, [field.name]: event.target.value })) };
-      return <label className="question-field" key={field.name}><span className="question-field-label">{field.label}{field.required ? <em aria-hidden="true">必填</em> : null}</span>
-        {isSingleSelect(field) ? <select {...controlProps}><option value="">请选择</option>{(field.options ?? []).slice(0, 3).map((option) => <option value={option} key={option}>{option}</option>)}{field.allowCustom ? <option value="__OTHER__">其他</option> : null}</select> : field.name.toLowerCase().includes("reason") ? <textarea {...controlProps} rows={3} placeholder="请说明退款原因" /> : <input {...controlProps} placeholder="请填写" />}
-        {otherSelected ? <input aria-label={`${field.label}自定义内容`} autoFocus disabled={disabled} aria-invalid={invalidField === field.name} maxLength={field.maxLength ?? 4_000} value={customValues[field.name] ?? ""} onChange={(event) => setCustomValues((current) => ({ ...current, [field.name]: event.target.value }))} placeholder="请补充具体内容" /> : null}
-      </label>;
-    })}</div>
+        const fieldValue = answers[field.name] ?? ""; const otherSelected = fieldValue === "__OTHER__";
+        const controlProps = { autoFocus: index === 0, "aria-label": field.label, "aria-invalid": invalidField === field.name, disabled, maxLength: field.maxLength ?? 4_000, value: fieldValue, onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setAnswers((current) => ({ ...current, [field.name]: event.target.value })) };
+        return <label className="question-field" key={field.name}><span className="question-field-label">{field.label}{field.required ? <em aria-hidden="true">必填</em> : null}</span>
+          {isSingleSelect(field) ? <select {...controlProps}><option value="">请选择</option>{(field.options ?? []).slice(0, 3).map((option) => <option value={option} key={option}>{option}</option>)}{field.allowCustom ? <option value="__OTHER__">其他</option> : null}</select> : field.name.toLowerCase().includes("reason") ? <textarea {...controlProps} rows={3} placeholder="请说明具体情况" /> : <input {...controlProps} placeholder="请填写" />}
+          {otherSelected ? <input aria-label={`${field.label}自定义内容`} autoFocus disabled={disabled} aria-invalid={invalidField === field.name} maxLength={field.maxLength ?? 4_000} value={customValues[field.name] ?? ""} onChange={(event) => setCustomValues((current) => ({ ...current, [field.name]: event.target.value }))} placeholder="请补充具体内容" /> : null}
+        </label>;
+      })}</div>
     {formError ? <p className="question-form-error" role="alert"><CircleAlert aria-hidden="true" />{formError}</p> : null}
-    <div className="actions question-actions"><button type="submit" disabled={disabled}><span className="question-action-icon"><Check aria-hidden="true" /></span>{disabled ? "处理中…" : finalConfirmation ? "确认并执行" : "继续"}</button><button className="secondary" type="button" disabled={disabled} onClick={onCancel}><span className="question-action-icon question-action-icon-secondary"><X aria-hidden="true" /></span>结束本次操作</button><span className="question-key-help">Enter 提交 · Shift + Enter 换行 · Esc 结束</span></div>
+    <div className="actions question-actions"><button type="submit" disabled={disabled}><span className="question-action-icon"><Check aria-hidden="true" /></span>{disabled ? "处理中…" : value.submitLabel ?? "继续"}</button><button className="secondary" type="button" disabled={disabled} onClick={onCancel}><span className="question-action-icon question-action-icon-secondary"><X aria-hidden="true" /></span>{value.cancelLabel ?? "结束本次问题"}</button><span className="question-key-help">Enter 提交 · Shift + Enter 换行 · Esc 结束</span></div>
   </form>;
 }
 
@@ -214,6 +214,72 @@ function QuestionModal({ value, disabled, onSubmit, onCancel }: { value: Questio
   </div>;
 }
 
+function workflowActionLabel(actionType: string) {
+  return ({
+    REFUND: "申请退款",
+    EXPEDITE: "催发货",
+    HIDE_ORDER: "隐藏订单",
+    RESTORE_ORDER: "恢复订单"
+  } as Record<string, string>)[actionType] ?? actionType;
+}
+
+function WorkflowCheckpointCard({ value, disabled, onDecision }: { value: WorkflowCheckpointState; disabled: boolean; onDecision: (decision: "APPROVE" | "REJECT") => void }) {
+  const fingerprint = value.factsFingerprint.length > 12 ? `${value.factsFingerprint.slice(0, 12)}…` : value.factsFingerprint;
+  return <div className="decision-card workflow-checkpoint-card" role="group" aria-label="Workflow 执行确认">
+    <div className="decision-heading"><span className="checkpoint-heading-icon"><ShieldCheck aria-hidden="true" /></span><div className="question-heading-copy"><span className="checkpoint-status">确认执行</span><h2>请确认这项订单操作</h2><div className="question-meta"><span>固定流程 · {value.nodeId}</span><span>确认点 v{value.version}</span></div></div></div>
+    <div className="checkpoint-brief">
+      <dl>
+        <div><dt>执行动作</dt><dd>{workflowActionLabel(value.actionType)}</dd></div>
+        <div><dt>作用对象</dt><dd>{value.orderId}</dd></div>
+        <div><dt>影响范围</dt><dd>{value.impactSummary || "将更新该订单的业务状态。"}</dd></div>
+      </dl>
+      <p className="checkpoint-fingerprint">事实已锁定 · {fingerprint}</p>
+    </div>
+    <p className="checkpoint-help">确认后才会向外部订单系统提交写操作；拒绝不会产生外部副作用。</p>
+    <div className="actions checkpoint-actions"><button type="button" disabled={disabled} onClick={() => onDecision("APPROVE")}><span className="question-action-icon"><Check aria-hidden="true" /></span>{disabled ? "处理中…" : "确认并执行"}</button><button className="secondary" type="button" disabled={disabled} onClick={() => onDecision("REJECT")}><span className="question-action-icon question-action-icon-secondary"><X aria-hidden="true" /></span>拒绝执行</button><span className="question-key-help">Enter 确认 · Esc 拒绝</span></div>
+  </div>;
+}
+
+function WorkflowCheckpointModal({ value, disabled, onDecision }: { value: WorkflowCheckpointState; disabled: boolean; onDecision: (decision: "APPROVE" | "REJECT") => void }) {
+  const modalRef = useRef<HTMLDivElement>(null);
+  const decisionRef = useRef(onDecision);
+  const disabledRef = useRef(disabled);
+  decisionRef.current = onDecision;
+  disabledRef.current = disabled;
+  useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    const focusables = () => Array.from(modalRef.current?.querySelectorAll<HTMLElement>("button:not([disabled]), [tabindex]:not([tabindex='-1'])") ?? []);
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (!event.defaultPrevented && !disabledRef.current) { event.preventDefault(); decisionRef.current("REJECT"); }
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const elements = focusables();
+      if (elements.length === 0) return;
+      const first = elements[0];
+      const last = elements.at(-1) as HTMLElement;
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.body.style.overflow = "hidden";
+    focusables()[0]?.focus();
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus({ preventScroll: true });
+    };
+  }, [value.checkpointId, value.version]);
+  return <div className="question-modal-layer checkpoint-modal-layer">
+    <div ref={modalRef} className="question-modal checkpoint-modal" role="dialog" aria-modal="true" aria-label="确认执行">
+      <WorkflowCheckpointCard value={value} disabled={disabled} onDecision={onDecision} />
+      <button className="secondary compact-icon question-modal-close" type="button" aria-label="拒绝执行" disabled={disabled} onClick={() => onDecision("REJECT")}><X aria-hidden="true" /></button>
+    </div>
+  </div>;
+}
+
 function activityIcon(status: BusinessProgressStatus) {
   if (status === "ERROR") return <CircleAlert aria-hidden="true" />;
   if (status === "ACTIVE" || status === "WAITING") return <Clock3 aria-hidden="true" />;
@@ -241,20 +307,64 @@ function ActionFallbackReceipt({ turn, disabled, pendingAction, retryingRunId, o
   return <div className="action-fallback-receipt"><OrderActionStatus view={view} disabled={disabled} retrying={retryingRunId === view.runId} onRetry={onRetry} onRefresh={(orderId) => onAction(turn.turnId, orderId, "REFRESH_ORDER")} /></div>;
 }
 
+function WorkflowState({ turn }: { turn: ThreadViewTurn }) {
+  if (turn.workflowSteps.length === 0) return null;
+  const latest = new Map<string, ThreadViewTurn["workflowSteps"][number]>();
+  for (const step of turn.workflowSteps) latest.set(step.node, step);
+  return <section className="workflow-state" aria-label="固定 Workflow 状态">
+    <div className="workflow-state-heading"><span className="eyebrow">GRAPH STATE</span><span>{latest.size}/{7} 节点有记录</span></div>
+    <ol className="workflow-state-list">{["RESOLVE_ORDER", "VERIFY_FACTS", "SWITCH_REQUIREMENTS", "AUTHORIZE", "EXECUTE_ACTION", "VERIFY_OUTCOME", "HANDOFF_AGENT"].map((node) => {
+      const step = latest.get(node);
+      const state = step?.status === "ERROR" || step?.status === "FAILED" ? "error" : step?.status === "WAITING" ? "waiting" : step ? "done" : "pending";
+      return <li className={`workflow-state-step workflow-state-${state}`} key={node}><span className="workflow-state-dot" aria-hidden="true" /><span>{node}</span></li>;
+    })}</ol>
+  </section>;
+}
+
+function ContinuationNotice({ turn }: { turn: ThreadViewTurn }) {
+  const stopLimit = turn.decisions.find((decision) => decision.decision === "STOP_LIMIT");
+  const fallback = turn.decisions.find((decision) => decision.decision === "FALLBACK");
+  if (!turn.continuation && !stopLimit && !fallback) return null;
+  if (stopLimit) return <p className="continuation-notice continuation-notice-warning" role="status"><Clock3 aria-hidden="true" />已达到自动决策上限，业务结果保持不变；可以继续提问或人工处理。</p>;
+  if (fallback) return <p className="continuation-notice continuation-notice-warning" role="status"><CircleAlert aria-hidden="true" />Agent 已降级为可控结果，业务状态未被覆盖。</p>;
+  return <p className="continuation-notice" role="status"><GitBranch aria-hidden="true" />已接续第 {turn.continuation?.cycleNo} 轮 Agent 判断，业务事实仍以本卡片为准。</p>;
+}
+
+function AgentConclusion({ value }: { value: string }) {
+  const lines = value.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const unique = lines.filter((line, index) => lines.indexOf(line) === index);
+  if (unique.length === 0) return null;
+  return <section className="agent-conclusion" aria-label="Agent 结论"><span className="eyebrow">AGENT CONCLUSION</span><RestrictedMarkdown value={unique.join("\n\n")} className="agent-content" /></section>;
+}
+
+function LegacyQuestionCard({ value }: { value: QuestionCardState }) {
+  return <section className="legacy-question-card" aria-label="历史问题卡片">
+    <div className="legacy-question-heading"><span className="eyebrow">历史问题卡片 · 仅展示</span><strong>{value.title}</strong></div>
+    <RestrictedMarkdown value={value.prompt} className="legacy-question-prompt" />
+    {value.summary && value.summary.length > 0 ? <dl className="legacy-question-summary">{value.summary.map((line) => <div key={`${line.label}-${line.value}`}><dt>{line.label}</dt><dd>{line.value}</dd></div>)}</dl> : null}
+    {value.fields.length > 0 ? <ul className="legacy-question-fields">{value.fields.map((field) => <li key={field.name}>{field.label}</li>)}</ul> : null}
+    <p className="legacy-question-note">该问题来自旧版 Workflow，仅保留历史记录，不能在此重新提交。</p>
+  </section>;
+}
+
 function Turn({ turn, busy, pendingAction, retryingRunId, onRetry, onInspect, onAction }: { turn: ThreadViewTurn; busy: boolean; pendingAction: PendingOrderAction | null; retryingRunId: string | null; onRetry: (runId: string) => void; onInspect: (turnId: string) => void; onAction: (sourceTurnId: string, orderId: string, actionType: OrderActionType) => void }) {
   const hasStructuredFacts = turn.orderCards.length > 0 || turn.logisticsTimelines.length > 0;
   return <article className={`conversation-turn thread-turn turn-${turn.status.toLowerCase()}`}>
     <div className="turn-request"><span className="turn-avatar user-avatar">你</span><div><div className="turn-meta"><strong>你的请求</strong><time>{time(turn.startedAt)}</time><span className={`turn-status status-${turn.status.toLowerCase()}`}>{statusLabel(turn.status)}</span></div><p>{turn.userMessage}</p></div></div>
     <div className="turn-response"><span className="turn-avatar agent-avatar"><Bot aria-label="Agent" /></span><div className="turn-response-body"><div className="turn-meta turn-response-meta"><strong>售后助手</strong><span className="turn-route">业务流</span><button className="detail-trigger" type="button" onClick={() => onInspect(turn.turnId)}><PanelRight aria-hidden="true" />运行详情 <span>{turn.items.length}</span></button></div>
       <div className={`turn-summary summary-${turn.activities.at(-1)?.status?.toLowerCase() ?? "active"}`}><span className="summary-icon">{activityIcon(turn.activities.at(-1)?.status ?? "ACTIVE")}</span><strong>{turnSummary(turn)}</strong>{duration(turn) ? <time>{duration(turn)}</time> : null}</div>
-      {hasStructuredFacts ? <OrderResults turn={turn} disabled={busy} pendingAction={pendingAction} retryingRunId={retryingRunId} onRetry={onRetry} onAction={onAction} /> : turn.content ? <RestrictedMarkdown value={turn.content} className="agent-content" /> : turn.status === "ACTIVE" || turn.status === "QUEUED" ? <p className="agent-content loading-copy">正在分析你的请求…</p> : null}
+      {turn.continuationWarning ? <p className="turn-warning" role="status"><CircleAlert aria-hidden="true" />{turn.continuationWarning}</p> : null}
+      <ContinuationNotice turn={turn} />
+      <WorkflowState turn={turn} />
+      {turn.legacyQuestion ? <LegacyQuestionCard value={turn.legacyQuestion} /> : null}
+      {hasStructuredFacts ? <><OrderResults turn={turn} disabled={busy} pendingAction={pendingAction} retryingRunId={retryingRunId} onRetry={onRetry} onAction={onAction} />{turn.content ? <AgentConclusion value={turn.content} /> : null}</> : turn.content ? <RestrictedMarkdown value={turn.content} className="agent-content" /> : turn.status === "ACTIVE" || turn.status === "QUEUED" ? <p className="agent-content loading-copy">正在分析你的请求…</p> : null}
       {!hasStructuredFacts ? <ActionFallbackReceipt turn={turn} disabled={busy} pendingAction={pendingAction} retryingRunId={retryingRunId} onRetry={onRetry} onAction={onAction} /> : null}
       {turn.error ? <p className="turn-error" role="alert"><CircleAlert aria-hidden="true" />{turn.error}</p> : null}
     </div></div>
   </article>;
 }
 
-const ITEM_LABELS: Record<string, string> = { USER_MESSAGE: "用户请求", TURN_STATE: "Turn 状态", ASSISTANT_MESSAGE: "助手回复", TOOL_CALL: "工具调用", TOOL_RESULT: "工具结果", WORKFLOW_STARTED: "Workflow 启动", WORKFLOW_QUESTION: "确认卡片", WORKFLOW_ANSWER: "确认回答", WORKFLOW_RESULT: "Workflow 回执", EXTERNAL_ACTION_STATUS: "外部动作", ORDER_LIST: "订单列表", ORDER_DETAIL: "订单详情", LOGISTICS_TIMELINE: "物流时间线", ORDER_ACTION_REQUEST: "订单动作", EXECUTION_EVENT: "执行记录", ERROR: "错误" };
+const ITEM_LABELS: Record<string, string> = { USER_MESSAGE: "用户请求", TURN_STATE: "Turn 状态", ASSISTANT_MESSAGE: "助手回复", TOOL_CALL: "工具调用", TOOL_RESULT: "工具结果", WORKFLOW_STARTED: "Workflow 启动", QUESTION_CARD: "问题卡片", QUESTION_ANSWER: "问题回答", WORKFLOW_CHECKPOINT: "执行确认", WORKFLOW_DECISION: "执行决定", WORKFLOW_QUESTION: "历史问题卡片", WORKFLOW_ANSWER: "历史问题回答", WORKFLOW_RESULT: "Workflow 回执", EXTERNAL_ACTION_STATUS: "外部动作", ORDER_LIST: "订单列表", ORDER_DETAIL: "订单详情", LOGISTICS_TIMELINE: "物流时间线", ORDER_ACTION_REQUEST: "订单动作", WORKFLOW_STEP: "Workflow 节点", AGENT_CONTINUATION: "Agent 续跑", AGENT_DECISION: "Agent 决策", EXECUTION_EVENT: "执行记录", ERROR: "错误" };
 
 function safeJsonPreview(item: AgentItem) {
   const redact = (value: unknown): unknown => {
@@ -300,9 +410,11 @@ export function ThreadWorkspace({ workspace, userId }: Props) {
   const visibleThreads = threadView === "ACTIVE" ? workspace.threads : workspace.archivedThreads;
   const normalizedThreadQuery = threadQuery.trim().toLocaleLowerCase();
   const filteredThreads = normalizedThreadQuery ? visibleThreads.filter((item) => `${item.title} ${item.contextId ?? ""}`.toLocaleLowerCase().includes(normalizedThreadQuery)) : visibleThreads;
-  const question = workspace.question;
+  const interaction = workspace.interaction;
+  const question = interaction?.type === "QUESTION_CARD" ? interaction.question : null;
+  const checkpoint = interaction?.type === "WORKFLOW_CHECKPOINT" ? interaction.checkpoint : null;
   const readOnly = currentThread?.status === "ARCHIVED";
-  const inputDisabled = workspace.busy || Boolean(question) || readOnly || !workspace.threadId;
+  const inputDisabled = workspace.busy || Boolean(interaction) || readOnly || !workspace.threadId;
   const inspectedTurn = workspace.turns.find((turn) => turn.turnId === inspectedTurnId) ?? null;
   useEffect(() => {
     if (!workspace.busy) setPendingAction(null);
@@ -331,7 +443,7 @@ export function ThreadWorkspace({ workspace, userId }: Props) {
         <div className="thread-search"><Search aria-hidden="true" /><input type="search" aria-label="搜索对话" value={threadQuery} onChange={(event) => setThreadQuery(event.target.value)} placeholder="搜索对话" /></div>
         <div className="thread-list">{workspace.archiveLoading && threadView === "ARCHIVED" ? <p className="thread-list-empty">正在读取回收站…</p> : null}{!workspace.archiveLoading && filteredThreads.length === 0 ? <p className="thread-list-empty">{normalizedThreadQuery ? "没有匹配的对话。" : threadView === "ACTIVE" ? "还没有进行中的对话。" : "回收站还是空的。"}</p> : null}{filteredThreads.map((item) => <div className={`thread-row ${item.threadId === workspace.threadId ? "selected" : ""}`} key={item.threadId}>
           {editingThreadId === item.threadId ? <input className="thread-row-title-input" aria-label={`重命名 ${item.title}`} autoFocus value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} onBlur={cancelRename} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === "Escape") { event.preventDefault(); cancelRename(); } if (event.key === "Enter") { event.preventDefault(); void saveRename(); } }} /> : <button type="button" className="thread-row-select" onClick={() => chooseThread(item.threadId)}><span><strong>{item.title}</strong><small>{item.contextId ?? "订单售后"}</small></span></button>}
-          <div className="thread-row-side"><span className={`status status-${item.status.toLowerCase()}`}>{item.status === "ACTIVE" ? "进行中" : "已归档"}</span><div className="thread-row-actions">{editingThreadId !== item.threadId ? <button className="thread-row-action" type="button" aria-label="重命名对话" onClick={() => startRename(item)}><Pencil aria-hidden="true" /></button> : null}{item.status === "ACTIVE" ? <button className="thread-row-action archive-action" type="button" aria-label="归档对话" disabled={workspace.busy || Boolean(question)} onClick={() => void archive(item.threadId)}><Archive aria-hidden="true" /></button> : <button className="thread-row-action" type="button" aria-label="恢复对话" onClick={() => void restore(item.threadId)}><ArchiveRestore aria-hidden="true" /></button>}</div></div>
+          <div className="thread-row-side"><span className={`status status-${item.status.toLowerCase()}`}>{item.status === "ACTIVE" ? "进行中" : "已归档"}</span><div className="thread-row-actions">{editingThreadId !== item.threadId ? <button className="thread-row-action" type="button" aria-label="重命名对话" onClick={() => startRename(item)}><Pencil aria-hidden="true" /></button> : null}{item.status === "ACTIVE" ? <button className="thread-row-action archive-action" type="button" aria-label="归档对话" disabled={workspace.busy || Boolean(interaction)} onClick={() => void archive(item.threadId)}><Archive aria-hidden="true" /></button> : <button className="thread-row-action" type="button" aria-label="恢复对话" onClick={() => void restore(item.threadId)}><ArchiveRestore aria-hidden="true" /></button>}</div></div>
         </div>)}</div>
         <div className="thread-sidebar-note"><GitBranch aria-hidden="true" /><p>订单事实、确认记录和处理结果会留在对应 Turn；归档只收起记录。</p></div>
       </aside>
@@ -342,6 +454,7 @@ export function ThreadWorkspace({ workspace, userId }: Props) {
         {readOnly && currentThread ? <div className="composer composer-readonly"><ArchiveRestore aria-hidden="true" /><div><strong>这段对话已归档</strong><span>恢复后才能继续查询订单或发起售后操作。</span></div><button className="secondary" type="button" onClick={() => void restore(currentThread.threadId)}>恢复对话</button></div> : <form className="composer" onSubmit={submit}><label htmlFor="thread-message">输入请求</label><textarea ref={composerRef} id="thread-message" value={message} disabled={inputDisabled} onKeyDown={keyboard} onChange={(event) => setMessage(event.target.value)} placeholder="输入订单号、物流问题或售后诉求…" /><div className="composer-actions"><span>Enter 发送 · Shift + Enter 换行</span>{workspace.busy ? <button className="secondary icon-button" type="button" onClick={() => void workspace.cancel()}><Square aria-hidden="true" />取消处理</button> : <button className="icon-button" type="submit" disabled={!message.trim() || inputDisabled}><Send aria-hidden="true" />发送</button>}</div></form>}
       </main>
       {question ? <QuestionModal value={question} disabled={workspace.busy} onSubmit={(answers) => void workspace.answer(answers)} onCancel={() => void workspace.answer({}, "CANCEL")} /> : null}
+      {checkpoint ? <WorkflowCheckpointModal value={checkpoint} disabled={workspace.busy} onDecision={(decision) => void workspace.decideCheckpoint(decision)} /> : null}
       <ItemInspector turn={inspectedTurn} replayStatus={inspectedTurnId ? workspace.executionReplayStates[inspectedTurnId] ?? "idle" : "idle"} onClose={() => setInspectedTurnId(null)} />
     </div>
   </section>;

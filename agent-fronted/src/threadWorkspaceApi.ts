@@ -3,6 +3,7 @@ import type {
   AgentItemPage,
   AgentItemWire,
   AgentThread,
+  AgentThreadInteractionDto,
   AgentThreadPage,
   OrderActionType,
   WorkflowAnswerAction
@@ -42,6 +43,13 @@ export const threadWorkspaceApi = {
     );
   },
 
+  getInteraction(userId: string, threadId: string, signal?: AbortSignal) {
+    return requestJson<AgentThreadInteractionDto | undefined>(
+      `${API}/threads/${encodeURIComponent(threadId)}/interaction`,
+      { headers: userHeaders(userId), signal }
+    );
+  },
+
   submitMessage(userId: string, threadId: string, clientRequestId: string, message: string) {
     return requestJson<AgentTurnAccepted>(`${API}/threads/${encodeURIComponent(threadId)}/turns`, {
       method: "POST",
@@ -65,22 +73,39 @@ export const threadWorkspaceApi = {
     });
   },
 
-  submitWorkflowAnswer(
+  submitQuestionAnswer(
     userId: string,
-    runId: string,
     questionId: string,
     clientRequestId: string,
-    checkpointId: string,
     expectedVersion: number,
     action: WorkflowAnswerAction,
     answers: Record<string, string>
   ) {
     return requestJson<AgentTurnAccepted>(
-      `${API}/workflow-runs/${encodeURIComponent(runId)}/questions/${encodeURIComponent(questionId)}/answers`,
+      `${API}/questions/${encodeURIComponent(questionId)}/answers`,
       {
         method: "POST",
         headers: userHeaders(userId, true),
-        body: JSON.stringify({ clientRequestId, checkpointId, expectedVersion, action, answers })
+        body: JSON.stringify({ clientRequestId, expectedVersion, action, answers })
+      }
+    );
+  },
+
+  decideWorkflowCheckpoint(
+    userId: string,
+    runId: string,
+    checkpointId: string,
+    clientRequestId: string,
+    expectedVersion: number,
+    decision: "APPROVE" | "REJECT",
+    factsFingerprint: string
+  ) {
+    return requestJson<AgentTurnAccepted>(
+      `${API}/workflow-runs/${encodeURIComponent(runId)}/checkpoints/${encodeURIComponent(checkpointId)}/decisions`,
+      {
+        method: "POST",
+        headers: userHeaders(userId, true),
+        body: JSON.stringify({ clientRequestId, expectedVersion, decision, factsFingerprint })
       }
     );
   },

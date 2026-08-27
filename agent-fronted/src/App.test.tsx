@@ -89,23 +89,23 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     const thread = threadRecord("thread-1", "退款确认 Thread");
     const questionPayload = JSON.stringify({
       schemaVersion: 1,
-      kind: "WORKFLOW_QUESTION",
+      kind: "QUESTION_CARD",
       data: {
         runId: "run-1",
         questionId: "question-1",
-        checkpointId: "checkpoint-1",
+        resumeTarget: "AGENT",
         version: 2,
         title: "退款确认",
         prompt: "是否继续退款？",
         fields: [{ name: "decision", label: "决定", type: "select", required: true, options: ["APPROVE", "REJECT"] }]
       }
     });
-    const questionEvent = `event: item.workflow_question\ndata: ${JSON.stringify({
+    const questionEvent = `event: item.question_card\ndata: ${JSON.stringify({
       eventId: "item-question-1",
       threadId: "thread-1",
       turnId: "turn-1",
       itemId: "item-question-1",
-      type: "item.workflow_question",
+      type: "item.question_card",
       payload: questionPayload,
       sequence: 1,
       timestamp: thread.createdAt
@@ -119,7 +119,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
         return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
       }
       if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse([questionEvent]));
-      if (url.includes("/workflow-runs/run-1/questions/question-1/answers")) {
+      if (url.includes("/questions/question-1/answers")) {
         return Promise.resolve(json({ turnId: "answer-turn-1" }));
       }
       throw new Error(`unexpected request: ${url}`);
@@ -138,10 +138,11 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     fireEvent.submit(decision.closest("form") as HTMLFormElement);
 
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) =>
-      String(input).includes("/workflow-runs/run-1/questions/question-1/answers"))).toBe(true));
+      String(input).includes("/questions/question-1/answers"))).toBe(true));
     const answerCall = fetchMock.mock.calls.find(([input]) =>
-      String(input).includes("/workflow-runs/run-1/questions/question-1/answers"));
-    expect(JSON.parse(String(answerCall?.[1]?.body)).answers).toEqual({ decision: "APPROVE" });
+      String(input).includes("/questions/question-1/answers"));
+    expect(JSON.parse(String(answerCall?.[1]?.body))).toMatchObject({ action: "SUBMIT", expectedVersion: 2, answers: { decision: "APPROVE" } });
+    expect(JSON.parse(String(answerCall?.[1]?.body))).not.toHaveProperty("checkpointId");
   });
 
   it("composer 使用 Enter 发送、Shift+Enter 换行并保护中文输入法组合态", async () => {
@@ -186,13 +187,13 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
 
   it("动态 QuestionCard 接管输入区，支持三选项、其他自定义值、摘要和受限文本", async () => {
     const thread = threadRecord("thread-1", "退款确认 Thread");
-    const questionEvent = itemEvent("item-question-2", "thread-1", "turn-1", "WORKFLOW_QUESTION", 1, {
+    const questionEvent = itemEvent("item-question-2", "thread-1", "turn-1", "QUESTION_CARD", 1, {
       schemaVersion: 1,
-      kind: "WORKFLOW_QUESTION",
+      kind: "QUESTION_CARD",
       data: {
         runId: "run-2",
         questionId: "question-2",
-        checkpointId: "checkpoint-2",
+        resumeTarget: "WORKFLOW",
         version: 3,
         title: "确认退款原因",
         prompt: "请确认 **订单** 的退款原因。\n\n| 信息 | 内容 |\n|---|---|\n| 订单 | ORDER-001 |",
@@ -212,7 +213,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
         return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
       }
       if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse([questionEvent]));
-      if (url.includes("/workflow-runs/run-2/questions/question-2/answers")) {
+      if (url.includes("/questions/question-2/answers")) {
         return Promise.resolve(json({ turnId: "answer-turn-2" }));
       }
       throw new Error(`unexpected request: ${url}`);
@@ -238,19 +239,19 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
 
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) =>
-      String(input).includes("/workflow-runs/run-2/questions/question-2/answers"))).toBe(true));
+      String(input).includes("/questions/question-2/answers"))).toBe(true));
     const answerCall = fetchMock.mock.calls.find(([input]) =>
-      String(input).includes("/workflow-runs/run-2/questions/question-2/answers"));
+      String(input).includes("/questions/question-2/answers"));
     expect(JSON.parse(String(answerCall?.[1]?.body)).answers).toEqual({ reason: "包装破损", note: "希望原路退回" });
   });
 
   it("QuestionCard 的 Escape 使用独立取消动作结束当前业务操作", async () => {
     const thread = threadRecord("thread-1", "取消确认 Thread");
-    const questionEvent = itemEvent("item-question-3", "thread-1", "turn-1", "WORKFLOW_QUESTION", 1, {
+    const questionEvent = itemEvent("item-question-3", "thread-1", "turn-1", "QUESTION_CARD", 1, {
       schemaVersion: 1,
-      kind: "WORKFLOW_QUESTION",
+      kind: "QUESTION_CARD",
       data: {
-        runId: "run-3", questionId: "question-3", checkpointId: "checkpoint-3", version: 1,
+        runId: "run-3", questionId: "question-3", resumeTarget: "WORKFLOW", version: 1,
         title: "退款确认", prompt: "是否继续退款？",
         fields: [{ name: "decision", label: "决定", type: "CONFIRM", required: true, options: ["APPROVE", "REJECT"] }]
       }
@@ -264,7 +265,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
         return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
       }
       if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse([questionEvent]));
-      if (url.includes("/workflow-runs/run-3/questions/question-3/answers")) {
+      if (url.includes("/questions/question-3/answers")) {
         return Promise.resolve(json({ turnId: "answer-turn-3" }));
       }
       throw new Error(`unexpected request: ${url}`);
@@ -278,9 +279,9 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     fireEvent.keyDown(form as HTMLFormElement, { key: "Escape" });
 
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) =>
-      String(input).includes("/workflow-runs/run-3/questions/question-3/answers"))).toBe(true));
+      String(input).includes("/questions/question-3/answers"))).toBe(true));
     const answerCall = fetchMock.mock.calls.find(([input]) =>
-      String(input).includes("/workflow-runs/run-3/questions/question-3/answers"));
+      String(input).includes("/questions/question-3/answers"));
     expect(JSON.parse(String(answerCall?.[1]?.body))).toMatchObject({ action: "CANCEL", answers: {} });
   });
 
@@ -450,9 +451,9 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
         { schemaVersion: 1, kind: "USER_MESSAGE", data: "查一下订单" }),
       itemEvent("item-order-guard", "thread-1", "turn-1", "ORDER_DETAIL", 2,
         { schemaVersion: 1, kind: "ORDER_DETAIL", data: { orderId: "ORDER-001", orderStatus: "SHIPPED", itemSummary: "保温杯", visibility: "ACTIVE" } }),
-      itemEvent("item-question-guard", "thread-1", "turn-1", "WORKFLOW_QUESTION", 3,
-        { schemaVersion: 1, kind: "WORKFLOW_QUESTION", data: {
-          runId: "run-guard", questionId: "question-guard", checkpointId: "checkpoint-guard", version: 1,
+      itemEvent("item-question-guard", "thread-1", "turn-1", "QUESTION_CARD", 3,
+        { schemaVersion: 1, kind: "QUESTION_CARD", data: {
+          runId: "run-guard", questionId: "question-guard", resumeTarget: "WORKFLOW", version: 1,
           title: "补充退款原因", prompt: "请说明原因。", step: "REASON", stepNo: 2,
           fields: [{ name: "reason", label: "退款原因", type: "TEXT", required: true }]
         } })
@@ -485,9 +486,9 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
         { schemaVersion: 1, kind: "TURN_STATE", data: { status: "COMPLETED" } }),
       itemEvent("item-action-request", "thread-1", "turn-action", "ORDER_ACTION_REQUEST", 4,
         { schemaVersion: 1, kind: "ORDER_ACTION_REQUEST", data: { sourceTurnId: "turn-1", orderId: "ORDER-001", actionType: "REFUND" } }),
-      itemEvent("item-action-question", "thread-1", "turn-action", "WORKFLOW_QUESTION", 5,
-        { schemaVersion: 1, kind: "WORKFLOW_QUESTION", data: {
-          runId: "run-action", questionId: "question-action", checkpointId: "checkpoint-action", version: 1,
+      itemEvent("item-action-question", "thread-1", "turn-action", "QUESTION_CARD", 5,
+        { schemaVersion: 1, kind: "QUESTION_CARD", data: {
+          runId: "run-action", questionId: "question-action", resumeTarget: "WORKFLOW", version: 1,
           title: "补充退款原因", prompt: "请说明原因。", step: "REASON", stepNo: 2,
           fields: [{ name: "reason", label: "退款原因", type: "TEXT", required: true }]
         } })
@@ -545,6 +546,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
 
     expect(await screen.findByText("申请退款")).not.toBeNull();
     expect(screen.queryByRole("heading", { name: "补充退款原因" })).toBeNull();
+    expect(screen.getByText("该问题来自旧版 Workflow，仅保留历史记录，不能在此重新提交。")).not.toBeNull();
     expect(document.querySelectorAll(".conversation-turn")).toHaveLength(1);
   });
 
@@ -610,6 +612,33 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     render(<App />);
 
     expect(await screen.findByText("失败")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "人工重试" })).toBeNull();
+  });
+
+  it("外部动作已成功时，后续 Continuation 失败只显示非阻断提示", async () => {
+    const thread = threadRecord("thread-1", "续接提示 Thread");
+    const events = [
+      itemEvent("item-success-user", "thread-1", "turn-1", "USER_MESSAGE", 1,
+        { schemaVersion: 1, kind: "USER_MESSAGE", data: "发起退款" }),
+      itemEvent("item-success-action", "thread-1", "turn-1", "EXTERNAL_ACTION_STATUS", 2,
+        { schemaVersion: 1, kind: "EXTERNAL_ACTION_STATUS", data: { runId: "run-success", status: "SUCCEEDED" } }),
+      itemEvent("item-continuation-error", "thread-1", "turn-1", "ERROR", 3,
+        { schemaVersion: 1, kind: "ERROR", data: "Agent 续接失败" })
+    ];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      if (url.includes("/threads/thread-1/items")) return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse(events));
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("业务操作已完成")).not.toBeNull();
+    expect(await screen.findByText(/业务操作已完成，后续 Agent 续接未完成/)).not.toBeNull();
+    expect(screen.queryByText("Agent 续接失败")).toBeNull();
     expect(screen.queryByRole("button", { name: "人工重试" })).toBeNull();
   });
 
@@ -681,6 +710,93 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     delayedHistory.resolve(json({ items: [staleItem], afterSequence: 0, nextAfterSequence: 1, hasMore: false }));
     await new Promise((resolve) => window.setTimeout(resolve, 0));
     expect(screen.queryByText("stale old")).toBeNull();
+  });
+
+  it("新 QuestionCard 只提交问题回答，不携带旧授权字段", async () => {
+    const thread = threadRecord("thread-1", "Agent 问题 Thread");
+    const questionPayload = {
+      schemaVersion: 1,
+      kind: "QUESTION_CARD",
+      data: {
+        runId: "run-question",
+        questionId: "question-new",
+        resumeTarget: "AGENT",
+        version: 0,
+        title: "需要订单号",
+        prompt: "请补充要查询的订单号。",
+        fieldsJson: JSON.stringify([{ name: "orderId", label: "订单号", type: "TEXT", required: true }])
+      }
+    };
+    const event = itemEvent("item-question-new", "thread-1", "turn-1", "QUESTION_CARD", 1, questionPayload);
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      void init;
+      if (url === "/api/agent/threads?page=0&size=100") return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      if (url.includes("/threads/thread-1/items")) return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      if (url.endsWith("/threads/thread-1/interaction")) return Promise.resolve(json({
+        type: "QUESTION_CARD", interactionId: "question-new", threadId: "thread-1", runId: "run-question",
+        turnId: "turn-1", status: "OPEN", version: 0, resumeTarget: "AGENT", title: "需要订单号",
+        prompt: "请补充要查询的订单号。", fieldsJson: questionPayload.data.fieldsJson,
+        nodeId: null, actionType: null, orderId: null, impactSummary: null, factsFingerprint: null, decision: null
+      }));
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse([event]));
+      if (url.endsWith("/questions/question-new/answers")) return Promise.resolve(json({ turnId: "answer-question-new" }));
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "需要订单号" })).not.toBeNull();
+    expect(screen.getByText("回答目标：Agent")).not.toBeNull();
+    fireEvent.change(screen.getByLabelText("订单号"), { target: { value: "ORDER-NEW-001" } });
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/questions/question-new/answers"))).toBe(true));
+    const answerCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/questions/question-new/answers"));
+    expect(JSON.parse(String(answerCall?.[1]?.body))).toEqual(expect.objectContaining({ expectedVersion: 0, answers: { orderId: "ORDER-NEW-001" }, action: "SUBMIT" }));
+    expect(JSON.parse(String(answerCall?.[1]?.body))).not.toHaveProperty("checkpointId");
+  });
+
+  it("Workflow Checkpoint 使用独立执行确认卡，只提交批准或拒绝", async () => {
+    const thread = threadRecord("thread-1", "执行确认 Thread");
+    const checkpointPayload = {
+      schemaVersion: 1,
+      kind: "WORKFLOW_CHECKPOINT",
+      data: {
+        checkpointId: "checkpoint-new", runId: "run-checkpoint", nodeId: "AUTHORIZE", actionType: "REFUND",
+        orderId: "ORDER-CHECK-001", impactSummary: "将原路退回 ¥99.00。", factsFingerprint: "facts-v1", version: 2
+      }
+    };
+    const event = itemEvent("item-checkpoint-new", "thread-1", "turn-1", "WORKFLOW_CHECKPOINT", 1, checkpointPayload);
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      if (url.includes("/threads/thread-1/items")) return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      if (url.endsWith("/threads/thread-1/interaction")) return Promise.resolve(json({
+        type: "WORKFLOW_CHECKPOINT", interactionId: "checkpoint-new", threadId: "thread-1", runId: "run-checkpoint",
+        turnId: "turn-1", status: "OPEN", version: 2, resumeTarget: null, title: null, prompt: null, fieldsJson: null,
+        nodeId: "AUTHORIZE", actionType: "REFUND", orderId: "ORDER-CHECK-001", impactSummary: "将原路退回 ¥99.00。",
+        factsFingerprint: "facts-v1", decision: null
+      }));
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse([event]));
+      if (url.endsWith("/workflow-runs/run-checkpoint/checkpoints/checkpoint-new/decisions")) return Promise.resolve(json({ turnId: "decision-new" }));
+      throw new Error(`unexpected request: ${url} ${String(init?.body ?? "")}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "请确认这项订单操作" })).not.toBeNull();
+    expect(screen.getByText("申请退款")).not.toBeNull();
+    expect(screen.getByText("ORDER-CHECK-001")).not.toBeNull();
+    expect(screen.getByText("将原路退回 ¥99.00。")).not.toBeNull();
+    expect(screen.queryByRole("textbox", { name: "订单号" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "确认并执行" }));
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/workflow-runs/run-checkpoint/checkpoints/checkpoint-new/decisions"))).toBe(true));
+    const decisionCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/workflow-runs/run-checkpoint/checkpoints/checkpoint-new/decisions"));
+    expect(JSON.parse(String(decisionCall?.[1]?.body))).toEqual(expect.objectContaining({ expectedVersion: 2, decision: "APPROVE", factsFingerprint: "facts-v1" }));
   });
 });
 
