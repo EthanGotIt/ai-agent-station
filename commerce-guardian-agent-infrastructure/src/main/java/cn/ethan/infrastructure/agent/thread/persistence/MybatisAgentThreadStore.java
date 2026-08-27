@@ -1,6 +1,7 @@
 package cn.ethan.infrastructure.agent.thread.persistence;
 
 import cn.ethan.core.agent.thread.AgentThreadArchiveGuard;
+import cn.ethan.core.agent.thread.AgentInteractionTypeEnum;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentThreadStatusEnum;
 import cn.ethan.core.agent.thread.AgentThreadStore;
@@ -104,6 +105,9 @@ public class MybatisAgentThreadStore implements AgentThreadStore {
                 .set("CONTEXT_ID", thread.contextId())
                 // MyBatis-Plus 默认忽略 null 字段；显式 set 才能关闭已回答 Question 指针
                 .set("OPEN_QUESTION_ID", thread.openQuestionId())
+                .set("OPEN_INTERACTION_TYPE", thread.openInteractionType() == null
+                        ? null : thread.openInteractionType().name())
+                .set("OPEN_INTERACTION_ID", thread.openInteractionId())
                 .set("UPDATED_AT", thread.updatedAt()));
     }
 
@@ -116,6 +120,9 @@ public class MybatisAgentThreadStore implements AgentThreadStore {
         entity.setContextType(model.contextType());
         entity.setContextId(model.contextId());
         entity.setOpenQuestionId(model.openQuestionId());
+        entity.setOpenInteractionType(model.openInteractionType() == null
+                ? null : model.openInteractionType().name());
+        entity.setOpenInteractionId(model.openInteractionId());
         entity.setNextSequence(model.nextSequence());
         entity.setCreatedAt(model.createdAt());
         entity.setUpdatedAt(model.updatedAt());
@@ -123,9 +130,14 @@ public class MybatisAgentThreadStore implements AgentThreadStore {
     }
 
     private static AgentThreadModel toModel(AgentThreadEntity entity) {
+        AgentInteractionTypeEnum interactionType = entity.getOpenInteractionType() == null
+                || entity.getOpenInteractionType().isBlank() ? null
+                : AgentInteractionTypeEnum.valueOf(entity.getOpenInteractionType());
         return new AgentThreadModel(entity.getThreadId(), entity.getUserId(), entity.getTitle(),
                 AgentThreadStatusEnum.valueOf(entity.getStatus()), entity.getContextType(), entity.getContextId(),
-                value(entity.getNextSequence()), entity.getCreatedAt(), entity.getUpdatedAt(), entity.getOpenQuestionId());
+                value(entity.getNextSequence()), entity.getCreatedAt(), entity.getUpdatedAt(),
+                entity.getOpenQuestionId(), interactionType,
+                entity.getOpenInteractionId() == null ? entity.getOpenQuestionId() : entity.getOpenInteractionId());
     }
 
     private static long value(Long value) {

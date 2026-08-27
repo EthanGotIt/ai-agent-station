@@ -19,6 +19,8 @@ import cn.ethan.core.agent.thread.AgentThreadArchiveGuard;
 import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
 import cn.ethan.core.agent.coordination.AgentOrderActionCoordinator;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
+import cn.ethan.core.agent.workflow.AgentQuestionCardStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStore;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
@@ -51,7 +53,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 @MapperScan({
         "cn.ethan.infrastructure.commerce.order.persistence",
         "cn.ethan.infrastructure.agent.thread.persistence",
-        "cn.ethan.infrastructure.agent.action.persistence"
+        "cn.ethan.infrastructure.agent.action.persistence",
+        "cn.ethan.infrastructure.agent.workflow.persistence"
 })
 @EnableConfigurationProperties({
         AgentRuntimeProperties.class,
@@ -179,7 +182,9 @@ public class AgentConfiguration {
             Clock clock,
             AgentRuntimeProperties runtimeProperties,
             AgentThreadProperties threadProperties,
-            AgentRuntimeMetrics metrics
+            AgentRuntimeMetrics metrics,
+            AgentQuestionCardStore questionCards,
+            AgentWorkflowCheckpointStore checkpoints
     ) {
         AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
                 threadStore, turns, items, questions, answerAdmission, failureReconciler,
@@ -189,7 +194,8 @@ public class AgentConfiguration {
                 runtimeProperties.queue().maxPendingGlobal(),
                 runtimeProperties.queue().waitTimeout(),
                 threadProperties.turnTimeout(),
-                threadProperties.toolResultMaxCharacters(), metrics, orderActionCoordinator);
+                threadProperties.toolResultMaxCharacters(), metrics, orderActionCoordinator,
+                true, 3, questionCards, checkpoints);
         runtime.recoverPersistedTurns();
         return runtime;
     }

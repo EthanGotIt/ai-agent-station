@@ -19,7 +19,9 @@ public record AgentThreadModel(
         long nextSequence,
         Instant createdAt,
         Instant updatedAt,
-        String openQuestionId
+        String openQuestionId,
+        AgentInteractionTypeEnum openInteractionType,
+        String openInteractionId
 ) {
     public static final int MAX_THREAD_ID_LENGTH = 64;
     public static final int MAX_USER_ID_LENGTH = 128;
@@ -38,7 +40,26 @@ public record AgentThreadModel(
             Instant createdAt,
             Instant updatedAt
     ) {
-        this(threadId, userId, title, status, contextType, contextId, nextSequence, createdAt, updatedAt, null);
+        this(threadId, userId, title, status, contextType, contextId, nextSequence, createdAt, updatedAt,
+                null, null, null);
+    }
+
+    /** 保留旧持久化边界；旧 OPEN_QUESTION_ID 等同于 QUESTION_CARD 引用。 */
+    public AgentThreadModel(
+            String threadId,
+            String userId,
+            String title,
+            AgentThreadStatusEnum status,
+            String contextType,
+            String contextId,
+            long nextSequence,
+            Instant createdAt,
+            Instant updatedAt,
+            String openQuestionId
+    ) {
+        this(threadId, userId, title, status, contextType, contextId, nextSequence, createdAt, updatedAt,
+                openQuestionId, openQuestionId == null ? null : AgentInteractionTypeEnum.QUESTION_CARD,
+                openQuestionId);
     }
 
     public AgentThreadModel {
@@ -53,6 +74,22 @@ public record AgentThreadModel(
         status = status == null ? AgentThreadStatusEnum.ACTIVE : status;
         nextSequence = Math.max(nextSequence, 0L);
         openQuestionId = openQuestionId == null || openQuestionId.isBlank() ? null : openQuestionId.trim();
+        openInteractionType = openInteractionType == null && openInteractionId != null
+                ? AgentInteractionTypeEnum.QUESTION_CARD : openInteractionType;
+        openInteractionId = openInteractionId == null || openInteractionId.isBlank()
+                ? openQuestionId : openInteractionId.trim();
+        if (openInteractionId == null && openInteractionType != null) {
+            throw new IllegalArgumentException("开放交互类型必须关联 interactionId");
+        }
+        if (openInteractionId != null && openInteractionType == null) {
+            throw new IllegalArgumentException("开放交互必须声明 interactionType");
+        }
+        if (openInteractionType == AgentInteractionTypeEnum.QUESTION_CARD && openQuestionId == null) {
+            openQuestionId = openInteractionId;
+        }
+        if (openInteractionType != AgentInteractionTypeEnum.QUESTION_CARD) {
+            openQuestionId = null;
+        }
     }
 
     private static String normalizeIdentity(String value, String name, int maxLength) {
@@ -75,12 +112,24 @@ public record AgentThreadModel(
     }
 
     public AgentThreadModel withOpenQuestion(String questionId, Instant at) {
-        return new AgentThreadModel(threadId, userId, title, status, contextType, contextId,
-                nextSequence, createdAt, at, questionId);
+        return withOpenInteraction(AgentInteractionTypeEnum.QUESTION_CARD, questionId, at);
     }
 
     public AgentThreadModel withoutOpenQuestion(Instant at) {
+        return withoutOpenInteraction(at);
+    }
+
+    public AgentThreadModel withOpenInteraction(AgentInteractionTypeEnum type, String interactionId, Instant at) {
+        if (type == null || interactionId == null || interactionId.isBlank()) {
+            throw new IllegalArgumentException("开放交互类型和 ID 不能为空");
+        }
         return new AgentThreadModel(threadId, userId, title, status, contextType, contextId,
-                nextSequence, createdAt, at, null);
+                nextSequence, createdAt, at,
+                type == AgentInteractionTypeEnum.QUESTION_CARD ? interactionId : null, type, interactionId);
+    }
+
+    public AgentThreadModel withoutOpenInteraction(Instant at) {
+        return new AgentThreadModel(threadId, userId, title, status, contextType, contextId,
+                nextSequence, createdAt, at, null, null, null);
     }
 }

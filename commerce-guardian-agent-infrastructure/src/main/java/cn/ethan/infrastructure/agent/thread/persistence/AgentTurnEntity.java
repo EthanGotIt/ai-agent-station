@@ -30,6 +30,8 @@ public final class AgentTurnEntity {
     private String inputKind;
     @TableField("ORDER_ACTION_JSON")
     private String orderActionJson;
+    @TableField("CONTINUATION_JSON")
+    private String continuationJson;
     @TableField("STATUS")
     private String status;
     @TableField("QUEUE_POSITION")
@@ -38,12 +40,18 @@ public final class AgentTurnEntity {
     private String workflowRunId;
     @TableField("WORKFLOW_QUESTION_ID")
     private String workflowQuestionId;
+    @TableField("QUESTION_CARD_ID")
+    private String questionCardId;
     @TableField("WORKFLOW_CHECKPOINT_ID")
     private String workflowCheckpointId;
     @TableField("WORKFLOW_QUESTION_VERSION")
     private Long workflowQuestionVersion;
     @TableField("WORKFLOW_ANSWERS_JSON")
     private String workflowAnswersJson;
+    @TableField("QUESTION_ANSWER_JSON")
+    private String questionAnswerJson;
+    @TableField("WORKFLOW_DECISION_JSON")
+    private String workflowDecisionJson;
     @TableField("ERROR_CODE")
     private String errorCode;
     @TableField("CREATED_AT")
@@ -72,6 +80,8 @@ public final class AgentTurnEntity {
     public void setInputKind(String inputKind) { this.inputKind = inputKind; }
     public String getOrderActionJson() { return orderActionJson; }
     public void setOrderActionJson(String orderActionJson) { this.orderActionJson = orderActionJson; }
+    public String getContinuationJson() { return continuationJson; }
+    public void setContinuationJson(String continuationJson) { this.continuationJson = continuationJson; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public Integer getQueuePosition() { return queuePosition; }
@@ -80,12 +90,18 @@ public final class AgentTurnEntity {
     public void setWorkflowRunId(String workflowRunId) { this.workflowRunId = workflowRunId; }
     public String getWorkflowQuestionId() { return workflowQuestionId; }
     public void setWorkflowQuestionId(String workflowQuestionId) { this.workflowQuestionId = workflowQuestionId; }
+    public String getQuestionCardId() { return questionCardId; }
+    public void setQuestionCardId(String questionCardId) { this.questionCardId = questionCardId; }
     public String getWorkflowCheckpointId() { return workflowCheckpointId; }
     public void setWorkflowCheckpointId(String workflowCheckpointId) { this.workflowCheckpointId = workflowCheckpointId; }
     public Long getWorkflowQuestionVersion() { return workflowQuestionVersion; }
     public void setWorkflowQuestionVersion(Long workflowQuestionVersion) { this.workflowQuestionVersion = workflowQuestionVersion; }
     public String getWorkflowAnswersJson() { return workflowAnswersJson; }
     public void setWorkflowAnswersJson(String workflowAnswersJson) { this.workflowAnswersJson = workflowAnswersJson; }
+    public String getQuestionAnswerJson() { return questionAnswerJson; }
+    public void setQuestionAnswerJson(String questionAnswerJson) { this.questionAnswerJson = questionAnswerJson; }
+    public String getWorkflowDecisionJson() { return workflowDecisionJson; }
+    public void setWorkflowDecisionJson(String workflowDecisionJson) { this.workflowDecisionJson = workflowDecisionJson; }
     public String getErrorCode() { return errorCode; }
     public void setErrorCode(String errorCode) { this.errorCode = errorCode; }
     public Instant getCreatedAt() { return createdAt; }

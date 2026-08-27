@@ -6,6 +6,16 @@
 
 本矩阵只把代码、测试和运行结果作为证据。原计划或 `docs/task-handoff.md` 中的“已完成”描述不能单独作为完成证据。
 
+## V7 整改与 Workflow 框架迁移追踪（进行中）
+
+| 阶段 | 当前结论 | 直接证据 | 未闭合事项 |
+| --- | --- | --- | --- |
+| 1. LangGraph4j 基础门禁 | 已完成 | `d74bc79`；`langgraph4j-core:1.8.20`、`AGENT_GRAPH_SNAPSHOT` V8、Jackson 3 序列化、MyBatis Saver 和七节点图测试；Core/Infrastructure 编译、LangGraph 定向测试和 `dependency:analyze` 通过 | 生产 Workflow 尚未切换 |
+| 2. QuestionCard 与 Workflow Checkpoint 拆分 | 已完成 | `AgentQuestionCardModel/Store`、`AgentWorkflowCheckpointModel/Store`；V9 表和历史迁移；Thread `OPEN_INTERACTION_TYPE/ID`；`AgentQuestionAnswerAdmission`、`AgentWorkflowDecisionAdmission`；新 API/DTO；Core 状态机、MyBatis CAS、Turn 持久化、`request_user_input` 定向测试共 12 项 | 阶段三需把旧 Workflow 引擎恢复路径切换到新 Checkpoint |
+| 3–7. Workflow、Continuation、前端、清理、验收 | 未开始 | 当前 handoff 的唯一下一动作 | 继续按阶段闭环，不将未运行的现场验收写成完成证据 |
+
+阶段二的兼容边界：旧 `AGENT_WORKFLOW_QUESTION` 和旧回答 API 仍仅保留兼容路径，新的生产入口写入独立 QuestionCard/Checkpoint 表；`WAIT_USER` 枚举和旧模型仅用于后续阶段删除前的历史兼容。详细执行日志不写入 handoff。
+
 ## 订单售后 Workflow 计划追踪
 
 | 计划阶段 | 当前结论 | 直接证据 | 未闭合事项 |

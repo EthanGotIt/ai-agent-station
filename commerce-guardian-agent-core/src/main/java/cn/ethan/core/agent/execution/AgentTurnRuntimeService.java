@@ -12,6 +12,8 @@ import cn.ethan.core.agent.thread.AgentTurnInputKindEnum;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import cn.ethan.core.agent.context.AgentContextAssembler;
 import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
+import cn.ethan.core.agent.coordination.AgentContinuationInput;
+import cn.ethan.core.agent.coordination.AgentDecisionTypeEnum;
 import cn.ethan.core.agent.coordination.AgentOrderActionCoordinator;
 import cn.ethan.core.agent.coordination.AgentOrderActionInput;
 import cn.ethan.core.agent.coordination.AgentOrderActionTypeEnum;
@@ -19,6 +21,13 @@ import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.thread.AgentThreadStore;
 import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.thread.AgentWorkflowAnswerInput;
+import cn.ethan.core.agent.thread.AgentQuestionAnswerInput;
+import cn.ethan.core.agent.thread.AgentWorkflowDecisionInput;
+import cn.ethan.core.agent.thread.AgentInteractionTypeEnum;
+import cn.ethan.core.agent.workflow.AgentQuestionCardStore;
+import cn.ethan.core.agent.workflow.AgentQuestionCardStatusEnum;
+import cn.ethan.core.agent.workflow.AgentQuestionCardAnswerActionEnum;
+import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStatusEnum;
@@ -31,9 +40,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
@@ -50,7 +61,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * @author ethan
  * @date 2026-08-19
  */
-public final class AgentTurnRuntimeService {
+public final class AgentTurnRuntimeService implements AgentTurnQueue {
 
     private static final String SAFE_EXECUTION_ERROR = "Agent 执行失败";
 
@@ -60,6 +71,8 @@ public final class AgentTurnRuntimeService {
     private final AgentTurnStore turns;
     private final AgentItemStore items;
     private final AgentWorkflowQuestionStore questions;
+    private final AgentQuestionCardStore questionCards;
+    private final AgentWorkflowCheckpointStore checkpoints;
     private final AgentWorkflowAnswerAdmission answerAdmission;
     private final AgentWorkflowAnswerFailureReconciler failureReconciler;
     private final AgentThreadService threads;
@@ -75,6 +88,8 @@ public final class AgentTurnRuntimeService {
     private final Duration turnTimeout;
     private final int toolResultMaxCharacters;
     private final AgentRuntimeMetrics metrics;
+    private final boolean continuationEnabled;
+    private final int maxAgentCycles;
     private final AtomicInteger pendingGlobal = new AtomicInteger();
     private final Map<String, ThreadSlot> slots = new ConcurrentHashMap<>();
     private final Map<String, PendingFailureReconciliation> pendingFailureReconciliations = new ConcurrentHashMap<>();
@@ -102,7 +117,7 @@ public final class AgentTurnRuntimeService {
         this(threadStore, turns, items, questions, answerAdmission, failureReconciler,
                 threads, contextAssembler, coordinator,
                 events, executor, scheduler, clock, maxPendingPerThread, maxPendingGlobal, waitTimeout, turnTimeout,
-                toolResultMaxCharacters, AgentRuntimeMetrics.noop(), null);
+                toolResultMaxCharacters, AgentRuntimeMetrics.noop(), null, true, 3, null, null);
     }
 
     public AgentTurnRuntimeService(
@@ -129,7 +144,7 @@ public final class AgentTurnRuntimeService {
         this(threadStore, turns, items, questions, answerAdmission, failureReconciler,
                 threads, contextAssembler, coordinator, events, executor, scheduler, clock,
                 maxPendingPerThread, maxPendingGlobal, waitTimeout, turnTimeout,
-                toolResultMaxCharacters, metrics, null);
+                toolResultMaxCharacters, metrics, null, true, 3, null, null);
     }
 
     public AgentTurnRuntimeService(
@@ -154,10 +169,75 @@ public final class AgentTurnRuntimeService {
             AgentRuntimeMetrics metrics,
             AgentOrderActionCoordinator orderActionCoordinator
     ) {
+        this(threadStore, turns, items, questions, answerAdmission, failureReconciler,
+                threads, contextAssembler, coordinator, events, executor, scheduler, clock,
+                maxPendingPerThread, maxPendingGlobal, waitTimeout, turnTimeout,
+                toolResultMaxCharacters, metrics, orderActionCoordinator, true, 3, null, null);
+    }
+
+    public AgentTurnRuntimeService(
+            AgentThreadStore threadStore,
+            AgentTurnStore turns,
+            AgentItemStore items,
+            AgentWorkflowQuestionStore questions,
+            AgentWorkflowAnswerAdmission answerAdmission,
+            AgentWorkflowAnswerFailureReconciler failureReconciler,
+            AgentThreadService threads,
+            AgentContextAssembler contextAssembler,
+            AgentTurnCoordinator coordinator,
+            AgentThreadEventGateway events,
+            Executor executor,
+            ScheduledExecutorService scheduler,
+            Clock clock,
+            int maxPendingPerThread,
+            int maxPendingGlobal,
+            Duration waitTimeout,
+            Duration turnTimeout,
+            int toolResultMaxCharacters,
+            AgentRuntimeMetrics metrics,
+            AgentOrderActionCoordinator orderActionCoordinator,
+            boolean continuationEnabled,
+            int maxAgentCycles
+    ) {
+        this(threadStore, turns, items, questions, answerAdmission, failureReconciler,
+                threads, contextAssembler, coordinator, events, executor, scheduler, clock,
+                maxPendingPerThread, maxPendingGlobal, waitTimeout, turnTimeout, toolResultMaxCharacters,
+                metrics, orderActionCoordinator, continuationEnabled, maxAgentCycles, null, null);
+    }
+
+    /** 生产装配边界：同时启用独立 QuestionCard 与 Workflow Checkpoint 交互事实。 */
+    public AgentTurnRuntimeService(
+            AgentThreadStore threadStore,
+            AgentTurnStore turns,
+            AgentItemStore items,
+            AgentWorkflowQuestionStore questions,
+            AgentWorkflowAnswerAdmission answerAdmission,
+            AgentWorkflowAnswerFailureReconciler failureReconciler,
+            AgentThreadService threads,
+            AgentContextAssembler contextAssembler,
+            AgentTurnCoordinator coordinator,
+            AgentThreadEventGateway events,
+            Executor executor,
+            ScheduledExecutorService scheduler,
+            Clock clock,
+            int maxPendingPerThread,
+            int maxPendingGlobal,
+            Duration waitTimeout,
+            Duration turnTimeout,
+            int toolResultMaxCharacters,
+            AgentRuntimeMetrics metrics,
+            AgentOrderActionCoordinator orderActionCoordinator,
+            boolean continuationEnabled,
+            int maxAgentCycles,
+            AgentQuestionCardStore questionCards,
+            AgentWorkflowCheckpointStore checkpoints
+    ) {
         this.threadStore = threadStore;
         this.turns = turns;
         this.items = items;
         this.questions = questions;
+        this.questionCards = questionCards;
+        this.checkpoints = checkpoints;
         this.answerAdmission = answerAdmission;
         this.failureReconciler = failureReconciler;
         this.threads = threads;
@@ -173,6 +253,8 @@ public final class AgentTurnRuntimeService {
         this.turnTimeout = turnTimeout == null ? Duration.ofMinutes(4) : turnTimeout;
         this.toolResultMaxCharacters = Math.max(256, toolResultMaxCharacters);
         this.metrics = metrics == null ? AgentRuntimeMetrics.noop() : metrics;
+        this.continuationEnabled = continuationEnabled;
+        this.maxAgentCycles = Math.max(1, Math.min(maxAgentCycles, 5));
     }
 
     public void recoverPersistedTurns() {
@@ -214,21 +296,43 @@ public final class AgentTurnRuntimeService {
                         continue;
                     }
                 }
-                boolean present = slot.queue.stream()
-                        .anyMatch(queued -> queued.turn.turnId().equals(persisted.turnId()));
+                if (persisted.questionAnswerInput() != null) {
+                    if (!persisted.createdAt().plus(waitTimeout).isAfter(clock.instant())) {
+                        finish(persisted, AgentTurnStatusEnum.TIMED_OUT, "QUEUE_WAIT_TIMEOUT");
+                        continue;
+                    }
+                    try {
+                        if (!matchesEnqueuedQuestionCard(persisted)) {
+                            finish(persisted, AgentTurnStatusEnum.FAILED, "QUESTION_ANSWER_STALE");
+                            continue;
+                        }
+                    } catch (RuntimeException questionFailure) {
+                        metrics.observeFailure("QUESTION_ANSWER_RECOVERY_QUERY_FAILED");
+                        finish(persisted, AgentTurnStatusEnum.FAILED, "QUESTION_ANSWER_RECOVERY_FAILED");
+                        continue;
+                    }
+                }
+                boolean present = (slot.active != null
+                        && slot.active.turn.turnId().equals(persisted.turnId()))
+                        || slot.queue.stream().anyMatch(queued -> queued.turn.turnId().equals(persisted.turnId()))
+                        || slot.deferred.stream().anyMatch(queued -> queued.turn.turnId().equals(persisted.turnId()));
                 if (present) {
                     continue;
                 }
-                if (slot.queue.size() >= maxPendingPerThread || pendingGlobal.get() >= maxPendingGlobal) {
+                if (slot.queue.size() + slot.deferred.size() >= maxPendingPerThread
+                        || pendingGlobal.get() >= maxPendingGlobal) {
                     finish(persisted, AgentTurnStatusEnum.FAILED, "RUNTIME_QUEUE_OVERFLOW");
                     continue;
                 }
                 QueuedTurn queued = new QueuedTurn(
-                        persisted, persisted.workflowAnswerInput(), new AtomicBoolean(false),
+                        persisted, persisted.workflowAnswerInput(), persisted.questionAnswerInput(),
+                        new AtomicBoolean(false),
                         new AtomicBoolean(false), new AtomicReference<>());
                 slot.queue.addLast(queued);
                 pendingGlobal.incrementAndGet();
-                scheduleQueueTimeout(thread.threadId(), queued);
+                if (!queued.continuation()) {
+                    scheduleQueueTimeout(thread.threadId(), queued);
+                }
                 schedule(slot, thread);
             }
         }
@@ -236,10 +340,84 @@ public final class AgentTurnRuntimeService {
 
     /** 返回当前用户在 Thread 上唯一开放的 QuestionCard，供刷新后恢复输入区。 */
     public Optional<AgentWorkflowQuestionModel> findOpenQuestion(String userId, String threadId) {
-        if (userId == null || userId.isBlank() || threadId == null || threadId.isBlank()) {
+        if (questions == null || userId == null || userId.isBlank() || threadId == null || threadId.isBlank()) {
             return Optional.empty();
         }
         return questions.findOpenQuestion(userId.strip(), threadId.strip());
+    }
+
+    /** 返回 Thread 上任意一种开放交互；新旧模型并存期间由 Runtime 统一执行互斥门禁。 */
+    private boolean hasOpenInteraction(String userId, String threadId) {
+        if (questions != null && questions.findOpenQuestion(userId, threadId).isPresent()) {
+            return true;
+        }
+        if (questionCards != null && questionCards.findOpen(userId, threadId).isPresent()) {
+            return true;
+        }
+        return checkpoints != null && checkpoints.findOpen(userId, threadId).isPresent();
+    }
+
+    private boolean hasBlockingInteraction(AgentTurnModel turn) {
+        if (!hasOpenInteraction(turn.userId(), turn.threadId())) {
+            return false;
+        }
+        if (turn.questionAnswerInput() != null && questionCards != null) {
+            return questionCards.findOpen(turn.userId(), turn.threadId())
+                    .map(question -> !question.questionId().equals(turn.questionAnswerInput().questionId()))
+                    .orElse(false);
+        }
+        return true;
+    }
+
+    /**
+     * 将已在本地事务中提交的 continuation Turn 放入运行时队列。
+     *
+     * <p>该方法只接受持久化后的 QUEUED Turn；重复调用只会命中内存去重，
+     * 因此可安全作为事务提交回调和启动恢复的共同入口。</p>
+     */
+    @Override
+    public void enqueuePersisted(AgentTurnModel persisted) {
+        if (persisted == null || persisted.status() != AgentTurnStatusEnum.QUEUED) {
+            return;
+        }
+        AgentThreadModel thread = threadStore.findThread(persisted.userId(), persisted.threadId()).orElse(null);
+        if (thread == null) {
+            finish(persisted, AgentTurnStatusEnum.FAILED, "THREAD_NOT_FOUND");
+            return;
+        }
+        ThreadSlot slot = slots.computeIfAbsent(thread.threadId(), ignored -> new ThreadSlot());
+        synchronized (slot) {
+            if (slot.active != null && slot.active.turn.turnId().equals(persisted.turnId())) {
+                return;
+            }
+            if (slot.queue.stream().anyMatch(queued -> queued.turn.turnId().equals(persisted.turnId()))
+                    || slot.deferred.stream().anyMatch(queued -> queued.turn.turnId().equals(persisted.turnId()))) {
+                return;
+            }
+            if (slot.queue.size() + slot.deferred.size() >= maxPendingPerThread
+                    || pendingGlobal.get() >= maxPendingGlobal) {
+                retryEnqueue(persisted);
+                return;
+            }
+            QueuedTurn queued = new QueuedTurn(
+                    persisted, persisted.workflowAnswerInput(), persisted.questionAnswerInput(),
+                    new AtomicBoolean(false),
+                    new AtomicBoolean(false), new AtomicReference<>());
+            slot.queue.addLast(queued);
+            pendingGlobal.incrementAndGet();
+            if (!queued.continuation()) {
+                scheduleQueueTimeout(thread.threadId(), queued);
+            }
+            schedule(slot, thread);
+        }
+    }
+
+    private void retryEnqueue(AgentTurnModel persisted) {
+        try {
+            scheduler.schedule(() -> enqueuePersisted(persisted), 250L, TimeUnit.MILLISECONDS);
+        } catch (RuntimeException schedulingFailure) {
+            metrics.observeFailure("CONTINUATION_ENQUEUE_RETRY_FAILED");
+        }
     }
 
     private void reconcileWorkflowOwner(AgentWorkflowOwnerRecoveryCandidate candidate) {
@@ -277,7 +455,7 @@ public final class AgentTurnRuntimeService {
         String normalizedMessage = AgentTurnInputValidator.requireText(message, "message");
         Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(ownerId, normalizedRequestId);
         if (duplicate.isPresent()) return duplicate.get();
-        if (questions.findOpenQuestion(ownerId, ownerThreadId).isPresent()) {
+        if (hasOpenInteraction(ownerId, ownerThreadId)) {
             throw new AgentThreadConflictException("THREAD_AWAITING_ANSWER", "当前 Thread 正在等待 QuestionCard 回答");
         }
         ThreadSlot slot = slots.computeIfAbsent(ownerThreadId, ignored -> new ThreadSlot());
@@ -287,7 +465,7 @@ public final class AgentTurnRuntimeService {
             if (duplicateAfterLock.isPresent()) {
                 return duplicateAfterLock.get();
             }
-            if (slot.queue.size() >= maxPendingPerThread) {
+            if (slot.queue.size() + slot.deferred.size() >= maxPendingPerThread) {
                 throw new AgentThreadConflictException("THREAD_QUEUE_FULL", "当前 Thread 排队请求已满");
             }
             if (pendingGlobal.get() >= maxPendingGlobal) {
@@ -295,7 +473,7 @@ public final class AgentTurnRuntimeService {
             }
             AgentTurnModel turn = new AgentTurnModel(
                     UUID.randomUUID().toString(), ownerThreadId, ownerId, normalizedRequestId, normalizedMessage,
-                    AgentTurnStatusEnum.QUEUED, slot.queue.size() + 1, null, null,
+                    AgentTurnStatusEnum.QUEUED, slot.queue.size() + slot.deferred.size() + 1, null, null,
                     clock.instant(), null, null
             );
             AgentItemModel initialItem = new AgentItemModel(
@@ -315,7 +493,7 @@ public final class AgentTurnRuntimeService {
                 events.itemCreated(AgentTurnItemPayloads.withSequence(initialItem, initialSequence));
             }
             appendItem(turn, AgentItemTypeEnum.TURN_STATE, AgentTurnItemPayloads.turnState(turn.status(), null));
-            queued = new QueuedTurn(turn, null, new AtomicBoolean(false),
+            queued = new QueuedTurn(turn, null, null, new AtomicBoolean(false),
                     new AtomicBoolean(false), new AtomicReference<>());
             slot.queue.addLast(queued);
             pendingGlobal.incrementAndGet();
@@ -355,7 +533,7 @@ public final class AgentTurnRuntimeService {
         if (!sourceContainsOrderFact(source, action.orderId())) {
             throw new AgentThreadConflictException("ORDER_FACT_NOT_FOUND", "来源 Turn 中没有可验证的订单事实");
         }
-        if (questions.findOpenQuestion(ownerId, ownerThreadId).isPresent()) {
+        if (hasOpenInteraction(ownerId, ownerThreadId)) {
             throw new AgentThreadConflictException("THREAD_AWAITING_ANSWER", "当前 Thread 正在等待 QuestionCard 回答");
         }
         ThreadSlot slot = slots.computeIfAbsent(ownerThreadId, ignored -> new ThreadSlot());
@@ -365,7 +543,7 @@ public final class AgentTurnRuntimeService {
                 return requireMatchingOrderActionDuplicate(
                         duplicateAfterLock.get(), ownerId, ownerThreadId, action);
             }
-            if (slot.queue.size() >= maxPendingPerThread) {
+            if (slot.queue.size() + slot.deferred.size() >= maxPendingPerThread) {
                 throw new AgentThreadConflictException("THREAD_QUEUE_FULL", "当前 Thread 排队请求已满");
             }
             if (pendingGlobal.get() >= maxPendingGlobal) {
@@ -374,7 +552,7 @@ public final class AgentTurnRuntimeService {
             String input = "订单动作 " + action.actionType().name() + " · " + action.orderId();
             AgentTurnModel turn = new AgentTurnModel(
                     UUID.randomUUID().toString(), ownerThreadId, ownerId, normalizedRequestId, input,
-                    AgentTurnStatusEnum.QUEUED, slot.queue.size() + 1, null, null,
+                    AgentTurnStatusEnum.QUEUED, slot.queue.size() + slot.deferred.size() + 1, null, null,
                     clock.instant(), null, null, null, 0L,
                     AgentTurnInputKindEnum.ORDER_ACTION, action);
             AgentItemModel initialItem = new AgentItemModel(
@@ -396,7 +574,7 @@ public final class AgentTurnRuntimeService {
                 events.itemCreated(AgentTurnItemPayloads.withSequence(initialItem, initialSequence));
             }
             appendItem(turn, AgentItemTypeEnum.TURN_STATE, AgentTurnItemPayloads.turnState(turn.status(), null));
-            QueuedTurn queued = new QueuedTurn(turn, null, new AtomicBoolean(false),
+            QueuedTurn queued = new QueuedTurn(turn, null, null, new AtomicBoolean(false),
                     new AtomicBoolean(false), new AtomicReference<>());
             slot.queue.addLast(queued);
             pendingGlobal.incrementAndGet();
@@ -437,8 +615,29 @@ public final class AgentTurnRuntimeService {
         String normalizedRequestId = AgentTurnInputValidator.requireClientRequestId(requestId);
         AgentWorkflowAnswerActionEnum normalizedAction = action == null
                 ? AgentWorkflowAnswerActionEnum.SUBMIT : action;
-        Map<String, String> persistedAnswers = AgentTurnInputValidator.normalizeAnswers(normalizedAction, answers);
         Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(ownerId, normalizedRequestId);
+        Map<String, String> persistedAnswers;
+        try {
+            persistedAnswers = AgentTurnInputValidator.normalizeAnswers(normalizedAction, answers);
+        } catch (IllegalArgumentException invalidAnswers) {
+            // 单张授权卡只有受控授权字段；无可编辑字段时允许空提交，由服务端补齐 APPROVE。
+            if (normalizedAction != AgentWorkflowAnswerActionEnum.SUBMIT
+                    || answers != null && !answers.isEmpty()) {
+                throw invalidAnswers;
+            }
+            if (duplicate.filter(this::isImplicitAuthorizationSubmission).isPresent()) {
+                persistedAnswers = duplicate.get().workflowAnswerInput().answers();
+            } else {
+                AgentWorkflowQuestionModel authorizationQuestion = questions.findOpenQuestion(ownerId, ownerThreadId)
+                        .orElseThrow(() -> invalidAnswers);
+                if (!isAuthorizationQuestion(authorizationQuestion)) {
+                    throw invalidAnswers;
+                }
+                persistedAnswers = Map.of("authorization", "APPROVE");
+            }
+        }
+        persistedAnswers = reuseImplicitAuthorization(duplicate, normalizedAction, persistedAnswers);
+        persistedAnswers = addImplicitAuthorization(ownerId, ownerThreadId, normalizedAction, persistedAnswers);
         if (duplicate.isPresent()) {
             return requireMatchingAnswerDuplicate(duplicate.get(), ownerId, ownerThreadId, runId,
                     questionId, checkpointId, expectedVersion, normalizedAction, persistedAnswers);
@@ -458,18 +657,20 @@ public final class AgentTurnRuntimeService {
                 return requireMatchingAnswerDuplicate(duplicateAfterLock.get(), ownerId, ownerThreadId, runId,
                         questionId, checkpointId, expectedVersion, normalizedAction, persistedAnswers);
             }
-            if (slot.queue.size() >= maxPendingPerThread || pendingGlobal.get() >= maxPendingGlobal) {
+            if (slot.queue.size() + slot.deferred.size() >= maxPendingPerThread
+                    || pendingGlobal.get() >= maxPendingGlobal) {
                 throw new AgentThreadConflictException("AGENT_QUEUE_FULL", "回答请求无法入队");
             }
             AgentWorkflowAnswerAdmissionResult admission = answerAdmission.admit(
                     new AgentWorkflowAnswerAdmissionCommand(
-                            ownerId, ownerThreadId, normalizedRequestId, slot.queue.size() + 1,
+                            ownerId, ownerThreadId, normalizedRequestId,
+                            slot.queue.size() + slot.deferred.size() + 1,
                             runId, questionId, checkpointId, expectedVersion, persistedAnswers, normalizedAction));
             if (!admission.newlyAdmitted()) {
                 return admission.turn();
             }
             AgentTurnModel turn = admission.turn();
-            QueuedTurn queued = new QueuedTurn(turn, turn.workflowAnswerInput(),
+            QueuedTurn queued = new QueuedTurn(turn, turn.workflowAnswerInput(), turn.questionAnswerInput(),
                     new AtomicBoolean(false), new AtomicBoolean(false), new AtomicReference<>());
             boolean added = false;
             try {
@@ -521,8 +722,31 @@ public final class AgentTurnRuntimeService {
         String normalizedRequestId = AgentTurnInputValidator.requireClientRequestId(requestId);
         AgentWorkflowAnswerActionEnum normalizedAction = action == null
                 ? AgentWorkflowAnswerActionEnum.SUBMIT : action;
-        Map<String, String> persistedAnswers = AgentTurnInputValidator.normalizeAnswers(normalizedAction, answers);
         Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(normalizedUserId, normalizedRequestId);
+        Map<String, String> persistedAnswers;
+        try {
+            persistedAnswers = AgentTurnInputValidator.normalizeAnswers(normalizedAction, answers);
+        } catch (IllegalArgumentException invalidAnswers) {
+            // 单张授权卡没有可编辑字段时，点击“确认并执行”可以提交空 answers；
+            // 在持久化层补齐受控授权值，其他 Question 仍严格要求非空回答。
+            if (normalizedAction != AgentWorkflowAnswerActionEnum.SUBMIT
+                    || answers != null && !answers.isEmpty()) {
+                throw invalidAnswers;
+            }
+            if (duplicate.filter(this::isImplicitAuthorizationSubmission).isPresent()) {
+                persistedAnswers = duplicate.get().workflowAnswerInput().answers();
+            } else {
+                AgentWorkflowQuestionModel authorizationQuestion = questions.findOpenQuestionByRun(normalizedUserId, runId)
+                        .orElseThrow(() -> invalidAnswers);
+                if (!isAuthorizationQuestion(authorizationQuestion)) {
+                    throw invalidAnswers;
+                }
+                persistedAnswers = Map.of("authorization", "APPROVE");
+            }
+        }
+        persistedAnswers = addImplicitAuthorizationByRun(
+                normalizedUserId, runId, normalizedAction, persistedAnswers);
+        persistedAnswers = reuseImplicitAuthorization(duplicate, normalizedAction, persistedAnswers);
         if (duplicate.isPresent()) {
             return requireMatchingAnswerDuplicate(duplicate.get(), normalizedUserId, duplicate.get().threadId(), runId,
                     questionId, checkpointId, expectedVersion, normalizedAction, persistedAnswers);
@@ -560,6 +784,17 @@ public final class AgentTurnRuntimeService {
                 }
                 activeToCancel = slot.active;
             }
+            if (queuedToCancel == null && activeToCancel == null) {
+                for (QueuedTurn deferred : slot.deferred) {
+                    if (deferred.turn.turnId().equals(turnId)) {
+                        deferred.cancelled.set(true);
+                        slot.deferred.remove(deferred);
+                        pendingGlobal.decrementAndGet();
+                        queuedToCancel = deferred;
+                        break;
+                    }
+                }
+            }
         }
         if (queuedToCancel != null) {
             finish(queuedToCancel.turn, AgentTurnStatusEnum.CANCELLED, "CLIENT_CANCELLED");
@@ -596,6 +831,7 @@ public final class AgentTurnRuntimeService {
                     pendingGlobal.decrementAndGet();
                 }
                 runOne(slot, thread, execution);
+                promoteDeferredIfReady(slot, thread);
             }
         } finally {
             synchronized (slot) {
@@ -613,14 +849,26 @@ public final class AgentTurnRuntimeService {
                     execution.timedOut.get() ? "QUEUE_WAIT_TIMEOUT" : "CLIENT_CANCELLED");
             return;
         }
+        if (execution.continuation() && hasOpenInteraction(turn.userId(), turn.threadId())) {
+            synchronized (slot) {
+                slot.deferred.addLast(execution);
+                pendingGlobal.incrementAndGet();
+            }
+            metrics.observeFailure("CONTINUATION_DEFERRED_FOR_QUESTION");
+            return;
+        }
         Instant started;
         try {
             if (execution.workflowAnswer() && !matchesEnqueuedQuestion(turn)) {
                 finish(turn, AgentTurnStatusEnum.FAILED, "WORKFLOW_ANSWER_STALE");
                 return;
             }
-            if (!execution.workflowAnswer()
-                    && questions.findOpenQuestion(turn.userId(), turn.threadId()).isPresent()) {
+            if (execution.questionAnswer() && !matchesEnqueuedQuestionCard(turn)) {
+                finish(turn, AgentTurnStatusEnum.FAILED, "QUESTION_ANSWER_STALE");
+                return;
+            }
+            if (!execution.workflowAnswer() && !execution.questionAnswer()
+                    && hasBlockingInteraction(turn)) {
                 finish(turn, AgentTurnStatusEnum.FAILED, "THREAD_AWAITING_ANSWER");
                 return;
             }
@@ -649,6 +897,27 @@ public final class AgentTurnRuntimeService {
             execution.executionContext.set(executionContext);
             if (execution.cancelled.get()) {
                 executionContext.cancel();
+            }
+            if (execution.continuation() && !continuationEnabled) {
+                appendItem(active, AgentItemTypeEnum.AGENT_DECISION,
+                        AgentTurnItemPayloads.decision(AgentDecisionTypeEnum.FALLBACK,
+                                active.continuationInput().cycleNo(), active.workflowRunId(),
+                                "CONTINUATION_DISABLED"));
+                appendItem(active, AgentItemTypeEnum.ASSISTANT_MESSAGE,
+                        "自动续跑当前已关闭；已保留订单结果，你可以继续手动查询最新状态。");
+                finish(active, AgentTurnStatusEnum.COMPLETED, "CONTINUATION_DISABLED");
+                return;
+            }
+            if (execution.continuation()
+                    && active.continuationInput().cycleNo() > maxAgentCycles) {
+                appendItem(active, AgentItemTypeEnum.AGENT_DECISION,
+                        AgentTurnItemPayloads.decision(AgentDecisionTypeEnum.STOP_LIMIT,
+                                active.continuationInput().cycleNo(), active.workflowRunId(),
+                                "MAX_AGENT_CYCLES"));
+                appendItem(active, AgentItemTypeEnum.ASSISTANT_MESSAGE,
+                        "已达到本次订单处理的最大自动决策轮次，请继续使用查询或人工操作。");
+                finish(active, AgentTurnStatusEnum.COMPLETED, "MAX_AGENT_CYCLES");
+                return;
             }
             timeout = scheduler.schedule(
                     () -> {
@@ -686,14 +955,15 @@ public final class AgentTurnRuntimeService {
             }
             for (AgentTurnCoordinator.AgentItemDraft draft : result.items()) {
                 executionContext.checkActive();
-            AgentItemTypeEnum draftType = AgentTurnItemPayloads.parseType(draft.type());
+                AgentItemTypeEnum draftType = AgentTurnItemPayloads.parseType(draft.type());
                 if (!execution.workflowAnswer()
                         && draftType != AgentItemTypeEnum.WORKFLOW_STARTED
                         && draftType != AgentItemTypeEnum.WORKFLOW_QUESTION) {
                     appendItem(active, draftType, draft.payload());
                 }
             }
-            if (result.question() != null) {
+            appendDecision(active, result);
+            if (result.question() != null || result.questionCard() != null) {
                 executionContext.checkActive();
                 if (execution.workflowAnswer()) {
                     if (!result.assistantMessage().isBlank()) {
@@ -727,6 +997,10 @@ public final class AgentTurnRuntimeService {
             if (!result.assistantMessage().isBlank()) {
                 appendItem(active, AgentItemTypeEnum.ASSISTANT_MESSAGE, result.assistantMessage());
             }
+            if (execution.questionAnswer() && !closeQuestionAnswer(active)) {
+                finish(active, AgentTurnStatusEnum.FAILED, "QUESTION_ANSWER_CLOSE_FAILED");
+                return;
+            }
             finish(active, AgentTurnStatusEnum.COMPLETED, null);
         } catch (RuntimeException failure) {
             boolean timedOut = failure instanceof AgentExecutionTimeoutException || execution.timedOut.get();
@@ -734,6 +1008,19 @@ public final class AgentTurnRuntimeService {
                     || failure instanceof AgentExecutionCancelledException
                     || execution.cancelled.get();
             if (!cancelled) {
+                if (execution.continuation()) {
+                    try {
+                        int cycleNo = active.continuationInput() == null
+                                ? 0 : active.continuationInput().cycleNo();
+                        appendItem(active, AgentItemTypeEnum.AGENT_DECISION,
+                                AgentTurnItemPayloads.decision(AgentDecisionTypeEnum.FALLBACK,
+                                        cycleNo, active.workflowRunId(), "CONTINUATION_FAILED"));
+                        appendItem(active, AgentItemTypeEnum.ASSISTANT_MESSAGE,
+                                "已保留已执行的订单结果，但自动续跑未完成；你仍可以继续查询最新状态。");
+                    } catch (RuntimeException fallbackFailure) {
+                        failure.addSuppressed(fallbackFailure);
+                    }
+                }
                 try {
                     appendItem(active, AgentItemTypeEnum.ERROR,
                             SAFE_EXECUTION_ERROR);
@@ -758,6 +1045,9 @@ public final class AgentTurnRuntimeService {
         if (active.workflowAnswerInput() != null && isFailureTerminal(status)) {
             reconcileAnswerFailure(active, status, code, finishedAt);
             return;
+        }
+        if (active.questionAnswerInput() != null && isFailureTerminal(status)) {
+            releaseQuestionAnswer(active);
         }
         AgentTurnModel terminal = active.terminal(status, code, finishedAt);
         if (!updateTurn(active, terminal)) {
@@ -787,6 +1077,19 @@ public final class AgentTurnRuntimeService {
         ));
     }
 
+    private void appendDecision(
+            AgentTurnModel turn,
+            AgentTurnCoordinator.AgentCoordinatorResult result
+    ) {
+        if (result == null || result.decision() == null) {
+            return;
+        }
+        int cycleNo = turn.continuationInput() == null ? 0 : turn.continuationInput().cycleNo();
+        String runId = result.workflowRunId() == null ? turn.workflowRunId() : result.workflowRunId();
+        appendItem(turn, AgentItemTypeEnum.AGENT_DECISION,
+                AgentTurnItemPayloads.decision(result.decision(), cycleNo, runId, result.decisionCode()));
+    }
+
     private void appendItem(AgentItemModel item) {
         AgentItemModel bounded = item.type() == AgentItemTypeEnum.TOOL_RESULT && item.payload() != null
                 && item.payload().length() > toolResultMaxCharacters
@@ -800,15 +1103,78 @@ public final class AgentTurnRuntimeService {
 
     private boolean sourceContainsOrderFact(AgentTurnModel source, String orderId) {
         String marker = "\"orderId\":\"" + AgentTurnItemPayloads.escape(orderId) + "\"";
-        return items.listItems(source.userId(), source.threadId(), 0L, 501).stream()
-                .filter(item -> source.turnId().equals(item.turnId()))
+        List<AgentItemModel> threadItems = allItems(source.userId(), source.threadId());
+        Set<String> foldedTurnIds = new HashSet<>();
+        foldedTurnIds.add(source.turnId());
+        boolean changed;
+        do {
+            changed = false;
+            for (AgentItemModel item : threadItems) {
+                if (item == null || item.turnId() == null || foldedTurnIds.contains(item.turnId())) {
+                    continue;
+                }
+                String payload = item.payloadJson() == null ? "" : item.payloadJson();
+                boolean belongsToSource = item.type() == AgentItemTypeEnum.ORDER_ACTION_REQUEST
+                        && payload.contains("\"sourceTurnId\":\""
+                        + AgentTurnItemPayloads.escape(source.turnId()) + "\"");
+                if (!belongsToSource && item.type() == AgentItemTypeEnum.AGENT_CONTINUATION) {
+                    belongsToSource = payload.contains("\"rootTurnId\":\""
+                            + AgentTurnItemPayloads.escape(source.turnId()) + "\"");
+                }
+                if (belongsToSource) {
+                    changed |= foldedTurnIds.add(item.turnId());
+                }
+            }
+        } while (changed);
+        return threadItems.stream()
+                .filter(item -> item != null && foldedTurnIds.contains(item.turnId()))
                 .filter(item -> item.type() == AgentItemTypeEnum.ORDER_DETAIL
                         || item.type() == AgentItemTypeEnum.ORDER_LIST)
-                .anyMatch(item -> item.payloadJson().contains(marker));
+                .anyMatch(item -> item.payloadJson() != null && item.payloadJson().contains(marker));
+    }
+
+    /** 统一取完整 Item 链，避免订单事实在长 Thread 中落出最近 500 条窗口。 */
+    private List<AgentItemModel> allItems(String userId, String threadId) {
+        List<AgentItemModel> result = new java.util.ArrayList<>();
+        long cursor = 0L;
+        for (int pageNo = 0; pageNo < 100; pageNo++) {
+            List<AgentItemModel> page = items.listItems(userId, threadId, cursor, 501);
+            if (page == null || page.isEmpty()) {
+                break;
+            }
+            long next = cursor;
+            for (AgentItemModel item : page) {
+                if (item == null || item.sequence() <= cursor) {
+                    continue;
+                }
+                result.add(item);
+                next = Math.max(next, item.sequence());
+            }
+            if (next <= cursor || page.size() < 501) {
+                break;
+            }
+            cursor = next;
+        }
+        return result;
     }
 
     private void scheduleQueueTimeout(String threadId, QueuedTurn queued) {
         scheduler.schedule(() -> expireQueued(threadId, queued), waitTimeout.toMillis(), TimeUnit.MILLISECONDS);
+    }
+
+    private void promoteDeferredIfReady(ThreadSlot slot, AgentThreadModel thread) {
+        if (hasOpenInteraction(thread.userId(), thread.threadId())) {
+            return;
+        }
+        synchronized (slot) {
+            if (slot.deferred.isEmpty()) {
+                return;
+            }
+            QueuedTurn continuation = slot.deferred.pollFirst();
+            if (continuation != null) {
+                slot.queue.addFirst(continuation);
+            }
+        }
     }
 
     private void expireQueued(String threadId, QueuedTurn target) {
@@ -886,6 +1252,55 @@ public final class AgentTurnRuntimeService {
                 .isPresent();
     }
 
+    private boolean matchesEnqueuedQuestionCard(AgentTurnModel turn) {
+        AgentQuestionAnswerInput input = turn.questionAnswerInput();
+        if (input == null || questionCards == null) {
+            return false;
+        }
+        return questionCards.find(turn.userId(), input.questionId())
+                .filter(question -> question.threadId().equals(turn.threadId()))
+                .filter(question -> java.util.Objects.equals(question.runId(), input.runId()))
+                .filter(question -> question.version() == input.enqueuedQuestionVersion())
+                .filter(question -> turn.turnId().equals(question.answerTurnId()))
+                .filter(question -> question.status() == AgentQuestionCardStatusEnum.OPEN)
+                .filter(question -> question.answerEnqueueStatus()
+                        == cn.ethan.core.agent.workflow.AgentQuestionCardAnswerEnqueueStatusEnum.ENQUEUED)
+                .filter(question -> input.action() == AgentQuestionCardAnswerActionEnum.CANCEL
+                        || matchesQuestionAnswerSchema(question, input))
+                .isPresent();
+    }
+
+    private boolean matchesQuestionAnswerSchema(
+            cn.ethan.core.agent.workflow.AgentQuestionCardModel question,
+            AgentQuestionAnswerInput input
+    ) {
+        try {
+            return question.validateAnswers(input.answers()).equals(input.answers());
+        } catch (RuntimeException invalidAnswer) {
+            return false;
+        }
+    }
+
+    private boolean closeQuestionAnswer(AgentTurnModel turn) {
+        if (questionCards == null || turn.questionAnswerInput() == null) {
+            return true;
+        }
+        AgentQuestionAnswerInput input = turn.questionAnswerInput();
+        AgentQuestionCardStatusEnum terminal = input.action() == AgentQuestionCardAnswerActionEnum.CANCEL
+                ? AgentQuestionCardStatusEnum.CANCELLED : AgentQuestionCardStatusEnum.ANSWERED;
+        return questionCards.closeAnswerTurn(turn.userId(), input.questionId(), input.enqueuedQuestionVersion(),
+                turn.turnId(), terminal, clock.instant());
+    }
+
+    private void releaseQuestionAnswer(AgentTurnModel turn) {
+        if (questionCards == null || turn.questionAnswerInput() == null) {
+            return;
+        }
+        AgentQuestionAnswerInput input = turn.questionAnswerInput();
+        questionCards.releaseAnswerTurn(turn.userId(), input.questionId(), input.enqueuedQuestionVersion(),
+                turn.turnId());
+    }
+
     private boolean matchesAnswerSchema(
             AgentWorkflowQuestionModel question,
             AgentWorkflowAnswerInput input
@@ -898,6 +1313,78 @@ public final class AgentTurnRuntimeService {
         } catch (RuntimeException invalidAnswer) {
             return false;
         }
+    }
+
+    private boolean isAuthorizationQuestion(AgentWorkflowQuestionModel question) {
+        return question != null && question.fieldsJson() != null
+                && question.fieldsJson().contains("\"purpose\":\"AUTHORIZATION\"");
+    }
+
+    private boolean isImplicitAuthorizationSubmission(AgentTurnModel turn) {
+        AgentWorkflowAnswerInput input = turn == null ? null : turn.workflowAnswerInput();
+        return input != null
+                && input.action() == AgentWorkflowAnswerActionEnum.SUBMIT
+                && input.answers().size() == 1
+                && "APPROVE".equalsIgnoreCase(input.answers().get("authorization"));
+    }
+
+    /** 授权卡的按钮本身表达 APPROVE；允许 API 客户端只提交可编辑字段。 */
+    private Map<String, String> addImplicitAuthorization(
+            String userId,
+            String threadId,
+            AgentWorkflowAnswerActionEnum action,
+            Map<String, String> answers
+    ) {
+        if (action != AgentWorkflowAnswerActionEnum.SUBMIT
+                || answers.containsKey("authorization")) {
+            return answers;
+        }
+        return questions.findOpenQuestion(userId, threadId)
+                .filter(this::isAuthorizationQuestion)
+                .map(ignored -> withAuthorization(answers))
+                .orElse(answers);
+    }
+
+    /** 无 threadId 的历史回答接口按 runId 定位同一授权卡。 */
+    private Map<String, String> addImplicitAuthorizationByRun(
+            String userId,
+            String runId,
+            AgentWorkflowAnswerActionEnum action,
+            Map<String, String> answers
+    ) {
+        if (action != AgentWorkflowAnswerActionEnum.SUBMIT
+                || answers.containsKey("authorization")) {
+            return answers;
+        }
+        return questions.findOpenQuestionByRun(userId, runId)
+                .filter(this::isAuthorizationQuestion)
+                .map(ignored -> withAuthorization(answers))
+                .orElse(answers);
+    }
+
+    private Map<String, String> withAuthorization(Map<String, String> answers) {
+        java.util.LinkedHashMap<String, String> enriched = new java.util.LinkedHashMap<>(answers);
+        enriched.put("authorization", "APPROVE");
+        return Map.copyOf(enriched);
+    }
+
+    private Map<String, String> reuseImplicitAuthorization(
+            Optional<AgentTurnModel> duplicate,
+            AgentWorkflowAnswerActionEnum action,
+            Map<String, String> answers
+    ) {
+        if (action != AgentWorkflowAnswerActionEnum.SUBMIT || answers.containsKey("authorization")) {
+            return answers;
+        }
+        return duplicate.filter(this::isImplicitAuthorizationSubmission)
+                .filter(existing -> {
+                    Map<String, String> editable = new java.util.LinkedHashMap<>(
+                            existing.workflowAnswerInput().answers());
+                    editable.remove("authorization");
+                    return editable.equals(answers);
+                })
+                .map(existing -> existing.workflowAnswerInput().answers())
+                .orElse(answers);
     }
 
     private boolean reconcileAnswerFailure(
@@ -1004,6 +1491,7 @@ public final class AgentTurnRuntimeService {
 
     private static final class ThreadSlot {
         private final Deque<QueuedTurn> queue = new ArrayDeque<>();
+        private final Deque<QueuedTurn> deferred = new ArrayDeque<>();
         private boolean running;
         private QueuedTurn active;
     }
@@ -1032,6 +1520,7 @@ public final class AgentTurnRuntimeService {
     private record QueuedTurn(
             AgentTurnModel turn,
             AgentWorkflowAnswerInput answerInput,
+            AgentQuestionAnswerInput questionAnswerInput,
             AtomicBoolean cancelled,
             AtomicBoolean timedOut,
             AtomicReference<AgentExecutionContext> executionContext
@@ -1040,13 +1529,25 @@ public final class AgentTurnRuntimeService {
             return answerInput != null;
         }
 
+        private boolean questionAnswer() {
+            return questionAnswerInput != null;
+        }
+
         private boolean orderAction() {
             return turn.inputKind() == AgentTurnInputKindEnum.ORDER_ACTION
                     && turn.orderActionInput() != null;
         }
 
+        private boolean continuation() {
+            return turn.inputKind() == AgentTurnInputKindEnum.AGENT_CONTINUATION
+                    && turn.continuationInput() != null;
+        }
+
         private Map<String, String> answers() {
-            return answerInput == null ? Map.of() : answerInput.answers();
+            if (answerInput != null) {
+                return answerInput.answers();
+            }
+            return questionAnswerInput == null ? Map.of() : questionAnswerInput.answers();
         }
     }
 }

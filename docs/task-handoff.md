@@ -14,6 +14,10 @@ Completed:
 - 已保留当前工作树中的用户既有改动，阶段提交只按明确路径隔离。
 - 已完成 LangGraph4j 1.8.20 依赖门禁、`AGENT_GRAPH_SNAPSHOT` V8 迁移、Jackson 3 状态序列化、MyBatis Checkpoint Saver 和七节点图骨架。
 - 已验证固定拓扑、条件循环、最大迭代、技术快照保存/覆盖/恢复和 JDK 17 + Spring Boot 4.1 + Spring AI 2.0 + MyBatis 构建兼容性。
+- 已完成阶段二的 QuestionCard/Workflow Checkpoint Core 模型、状态 CAS、独立 MyBatis 持久化表、V9 迁移和 Thread 单开放交互指针。
+- 已新增 `QUESTION_ANSWER`、`WORKFLOW_DECISION` Turn 输入与 Item，事务 admission 统一完成回答/决策 Turn 的首事实持久化和 FIFO 入队。
+- 已新增 `/threads/{threadId}/interaction`、`/questions/{questionId}/answers` 和 `/workflow-runs/{runId}/checkpoints/{checkpointId}/decisions` API。
+- Spring AI 已增加 `request_user_input` 终态 Tool；`complete_agent_cycle` 新契约使用 `FINISH/ASK_USER`，提问不再使用授权字段。
 
 Decisions:
 
@@ -24,7 +28,7 @@ Decisions:
 
 TODO:
 
-- 完成阶段二至七的交互契约、固定订单 Workflow、Continuation 加固、前端投影、遗留清理和完整验收。
+- 完成阶段三至七的固定订单 Workflow、Continuation 加固、前端投影、遗留清理和完整验收。
 
 Blocked:
 
@@ -32,7 +36,7 @@ Blocked:
 
 Next action:
 
-- 开始阶段二：新增独立 `AgentQuestionCardModel/Store` 与 `AgentWorkflowCheckpointModel/Store`，更新 Thread 开放交互引用和 V9 迁移。
+- 开始阶段三：将固定订单 Workflow 切换到 LangGraph 七节点图，并用独立 Workflow Checkpoint 替代旧授权 QuestionCard。
 
 Validation:
 
@@ -40,6 +44,8 @@ Validation:
 - `mvn -q -pl commerce-guardian-agent-infrastructure -am -DskipTests compile` 通过。
 - `mvn -q -pl commerce-guardian-agent-infrastructure -am '-Dtest=*LangGraph*Test' '-Dsurefire.failIfNoSpecifiedTests=false' test` 通过（4 项）。
 - `mvn -q dependency:analyze '-DskipTests'` 通过。
+- 阶段二定向测试通过：QuestionCard/Checkpoint Core 状态机、Item payload、QuestionCard/Checkpoint MyBatis Store、Turn QuestionAnswer 持久化、`request_user_input` 工具。
+- `mvn -q -pl commerce-guardian-agent-app -am -DskipTests compile` 通过；阶段二新增 API、admission 和 MapperScan 编译通过。
 
 Preserve:
 

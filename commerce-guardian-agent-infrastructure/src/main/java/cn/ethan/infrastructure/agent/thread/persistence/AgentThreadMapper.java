@@ -24,9 +24,24 @@ public interface AgentThreadMapper extends BaseMapper<AgentThreadEntity> {
             + "WHERE THREAD_ID = #{threadId} AND USER_ID = #{userId} AND OPEN_QUESTION_ID IS NULL")
     int setOpenQuestion(String threadId, String userId, String questionId, Instant updatedAt);
 
+    @Update("UPDATE AGENT_THREAD SET OPEN_INTERACTION_TYPE = #{interactionType}, "
+            + "OPEN_INTERACTION_ID = #{interactionId}, "
+            + "OPEN_QUESTION_ID = CASE WHEN #{interactionType} = 'QUESTION_CARD' THEN #{interactionId} ELSE NULL END, "
+            + "UPDATED_AT = #{updatedAt} WHERE THREAD_ID = #{threadId} AND USER_ID = #{userId} "
+            + "AND OPEN_INTERACTION_ID IS NULL")
+    int setOpenInteraction(String threadId, String userId, String interactionType,
+                           String interactionId, Instant updatedAt);
+
     @Update("UPDATE AGENT_THREAD SET OPEN_QUESTION_ID = NULL, UPDATED_AT = #{updatedAt} "
             + "WHERE THREAD_ID = #{threadId} AND USER_ID = #{userId} AND OPEN_QUESTION_ID = #{questionId}")
     int clearOpenQuestion(String threadId, String userId, String questionId, Instant updatedAt);
+
+    @Update("UPDATE AGENT_THREAD SET OPEN_INTERACTION_TYPE = NULL, OPEN_INTERACTION_ID = NULL, "
+            + "OPEN_QUESTION_ID = NULL, UPDATED_AT = #{updatedAt} WHERE THREAD_ID = #{threadId} "
+            + "AND USER_ID = #{userId} AND OPEN_INTERACTION_TYPE = #{interactionType} "
+            + "AND OPEN_INTERACTION_ID = #{interactionId}")
+    int clearOpenInteraction(String threadId, String userId, String interactionType,
+                              String interactionId, Instant updatedAt);
 
     @Select("SELECT * FROM AGENT_THREAD WHERE USER_ID = #{userId} ORDER BY UPDATED_AT DESC")
     List<AgentThreadEntity> selectByUser(String userId);

@@ -2,6 +2,7 @@ package cn.ethan.core.agent.coordination;
 
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
+import cn.ethan.core.agent.workflow.AgentQuestionCardModel;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.execution.AgentExecutionContext;
@@ -42,11 +43,39 @@ public interface AgentTurnCoordinator {
             List<AgentItemDraft> items,
             AgentWorkflowQuestionModel question,
             String workflowRunId,
-            boolean waitingUserInput
+            boolean waitingUserInput,
+            AgentDecisionTypeEnum decision,
+            String decisionCode,
+            AgentQuestionCardModel questionCard
     ) {
+        /** 保留旧协调器实现的构造边界；没有显式控制 Tool 时由 Runtime 兼容处理。 */
+        public AgentCoordinatorResult(
+                String assistantMessage,
+                List<AgentItemDraft> items,
+                AgentWorkflowQuestionModel question,
+                String workflowRunId,
+                boolean waitingUserInput
+        ) {
+            this(assistantMessage, items, question, workflowRunId, waitingUserInput, null, null, null);
+        }
+
+        public AgentCoordinatorResult(
+                String assistantMessage,
+                List<AgentItemDraft> items,
+                AgentWorkflowQuestionModel question,
+                String workflowRunId,
+                boolean waitingUserInput,
+                AgentDecisionTypeEnum decision,
+                String decisionCode
+        ) {
+            this(assistantMessage, items, question, workflowRunId, waitingUserInput,
+                    decision, decisionCode, null);
+        }
+
         public AgentCoordinatorResult {
             assistantMessage = assistantMessage == null ? "" : assistantMessage;
             items = items == null ? List.of() : List.copyOf(items);
+            decisionCode = decisionCode == null || decisionCode.isBlank() ? null : decisionCode.trim();
         }
     }
 

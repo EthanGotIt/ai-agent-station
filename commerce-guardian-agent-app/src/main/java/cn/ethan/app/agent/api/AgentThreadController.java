@@ -3,6 +3,8 @@ package cn.ethan.app.agent.api;
 import cn.ethan.core.agent.execution.AgentTurnRuntimeService;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import cn.ethan.core.agent.thread.AgentThreadStatusEnum;
+import cn.ethan.core.agent.workflow.AgentQuestionCardStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStore;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 
 import java.util.Locale;
@@ -30,15 +33,31 @@ public final class AgentThreadController {
     private final AgentThreadService threads;
     private final AgentTurnRuntimeService runtime;
     private final AgentUserContext userContext;
+    private final AgentQuestionCardStore questions;
+    private final AgentWorkflowCheckpointStore checkpoints;
 
+    /** 保留无新交互 Store 的旧测试装配边界。 */
     public AgentThreadController(
             AgentThreadService threads,
             AgentTurnRuntimeService runtime,
             AgentUserContext userContext
     ) {
+        this(threads, runtime, userContext, null, null);
+    }
+
+    @Autowired
+    public AgentThreadController(
+            AgentThreadService threads,
+            AgentTurnRuntimeService runtime,
+            AgentUserContext userContext,
+            AgentQuestionCardStore questions,
+            AgentWorkflowCheckpointStore checkpoints
+    ) {
         this.threads = threads;
         this.runtime = runtime;
         this.userContext = userContext;
+        this.questions = questions;
+        this.checkpoints = checkpoints;
     }
 
     @PostMapping("/threads")
@@ -80,6 +99,31 @@ public final class AgentThreadController {
         threads.get(userId, threadId);
         return runtime.findOpenQuestion(userId, threadId)
                 .map(question -> ResponseEntity.ok(AgentWorkflowQuestionSnapshotDto.from(question)))
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @GetMapping("/threads/{threadId}/interaction")
+    public ResponseEntity<AgentThreadInteractionDto> interaction(
+            @PathVariable String threadId,
+            HttpServletRequest request
+    ) {
+        String userId = userContext.currentUserId(request);
+        threads.get(userId, threadId);
+        if (questions != null) {
+            var question = questions.findOpen(userId, threadId);
+            if (question.isPresent()) {
+                return ResponseEntity.ok(AgentThreadInteractionDto.from(question.get()));
+            }
+        }
+        if (checkpoints != null) {
+            var checkpoint = checkpoints.findOpen(userId, threadId);
+            if (checkpoint.isPresent()) {
+                return ResponseEntity.ok(AgentThreadInteractionDto.from(checkpoint.get()));
+            }
+        }
+        return runtime.findOpenQuestion(userId, threadId)
+                .map(question -> ResponseEntity.ok(AgentThreadInteractionDto.fromLegacyQuestion(
+                        AgentWorkflowQuestionSnapshotDto.from(question))))
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
 

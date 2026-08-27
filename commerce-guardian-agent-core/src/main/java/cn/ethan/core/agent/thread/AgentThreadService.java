@@ -90,7 +90,7 @@ public final class AgentThreadService {
                 current.threadId(), current.userId(), title == null ? current.title() : title,
                 archive ? AgentThreadStatusEnum.ARCHIVED : AgentThreadStatusEnum.ACTIVE,
                 current.contextType(), current.contextId(), current.nextSequence(), current.createdAt(), clock.instant(),
-                current.openQuestionId()
+                current.openQuestionId(), current.openInteractionType(), current.openInteractionId()
         );
         threads.updateThread(updated);
         return updated;

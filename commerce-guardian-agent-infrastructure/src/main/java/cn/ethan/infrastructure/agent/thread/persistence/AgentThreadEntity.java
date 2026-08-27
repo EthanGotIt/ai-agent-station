@@ -30,6 +30,10 @@ public final class AgentThreadEntity {
     private String contextId;
     @TableField("OPEN_QUESTION_ID")
     private String openQuestionId;
+    @TableField("OPEN_INTERACTION_TYPE")
+    private String openInteractionType;
+    @TableField("OPEN_INTERACTION_ID")
+    private String openInteractionId;
     @TableField("NEXT_SEQUENCE")
     private Long nextSequence;
     @TableField("CREATED_AT")
@@ -54,6 +58,10 @@ public final class AgentThreadEntity {
     public void setContextId(String contextId) { this.contextId = contextId; }
     public String getOpenQuestionId() { return openQuestionId; }
     public void setOpenQuestionId(String openQuestionId) { this.openQuestionId = openQuestionId; }
+    public String getOpenInteractionType() { return openInteractionType; }
+    public void setOpenInteractionType(String openInteractionType) { this.openInteractionType = openInteractionType; }
+    public String getOpenInteractionId() { return openInteractionId; }
+    public void setOpenInteractionId(String openInteractionId) { this.openInteractionId = openInteractionId; }
     public Long getNextSequence() { return nextSequence; }
     public void setNextSequence(Long nextSequence) { this.nextSequence = nextSequence; }
     public Instant getCreatedAt() { return createdAt; }
