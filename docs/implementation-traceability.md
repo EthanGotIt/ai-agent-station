@@ -12,11 +12,11 @@
 | --- | --- | --- | --- |
 | 1. LangGraph4j 基础门禁 | 已完成 | `d74bc79`；`langgraph4j-core:1.8.20`、`AGENT_GRAPH_SNAPSHOT` V8、Jackson 3 序列化、MyBatis Saver 和七节点图测试；Core/Infrastructure 编译、LangGraph 定向测试和 `dependency:analyze` 通过 | 生产 Workflow 尚未切换 |
 | 2. QuestionCard 与 Workflow Checkpoint 拆分 | 已完成 | `AgentQuestionCardModel/Store`、`AgentWorkflowCheckpointModel/Store`；V9 表和历史迁移；Thread `OPEN_INTERACTION_TYPE/ID`；`AgentQuestionAnswerAdmission`、`AgentWorkflowDecisionAdmission`；新 API/DTO；Core 状态机、MyBatis CAS、Turn 持久化、`request_user_input` 定向测试共 12 项 | 旧模型和兼容 API 在阶段六统一清理 |
-| 3. 迁移固定订单 Workflow | 已完成 | `LangGraphAgentWorkflowEngine`、`LangGraphWorkflowGraphFactory.createOrderWorkflow` 和独立 `AgentWorkflowCheckpoint`；七节点拓扑在 `AUTHORIZE` 前中断，QuestionCard/Checkpoint 恢复、事实指纹变化回到 `VERIFY_FACTS`、批准后 ExternalActionCommand 和技术快照重建均有定向测试；本轮补充批准后事实变化时的 `SUPERSEDED → VERIFY_FACTS` 和动作失效安全终态；旧事务引擎已退出生产 Spring 装配 | Worker 完成后的 `VERIFY_OUTCOME/HANDOFF_AGENT` 业务投影和真实外部动作黄金路径纳入阶段七验收 |
+| 3. 迁移固定订单 Workflow | 已完成 | `LangGraphAgentWorkflowEngine`、`LangGraphWorkflowGraphFactory.createOrderWorkflow` 和独立 `AgentWorkflowCheckpoint`；七节点拓扑在 `AUTHORIZE` 前中断，QuestionCard/Checkpoint 恢复、事实指纹变化回到 `VERIFY_FACTS`、批准后 ExternalActionCommand 和技术快照重建均有定向测试；本轮补充批准后事实变化时的 `SUPERSEDED → VERIFY_FACTS`、动作失效安全终态，以及事实变化时拒绝仍然终止 Workflow；旧事务引擎已退出生产 Spring 装配 | Worker 完成后的 `VERIFY_OUTCOME/HANDOFF_AGENT` 业务投影和真实外部动作黄金路径纳入阶段七验收 |
 | 4. 加固 V7 Continuation | 已完成 | `AgentContinuationGateway`、`TransactionalAgentContinuationGateway`；`AgentContinuationInput.idempotencyKey()` 覆盖根/父 Turn、Run、Command、状态、结果 Sequence 和 cycle；事务内首事实持久化、提交后入队、重复/并发 admission、STOP_LIMIT 和配置边界测试通过；`ExternalActionOutcomeManager` 已移除本地续跑创建并改用统一 Gateway；`e289bcb` 使队列暂满后的续跑重试重新读取持久化 Turn 状态，避免过期快照恢复已取消 Turn | 真实重启恢复、外部动作黄金路径纳入阶段七验收 |
 | 5. 前端交互与状态投影 | 已完成 | `agent-fronted` 已统一目录/package；`QUESTION_CARD`、`QUESTION_ANSWER`、`WORKFLOW_CHECKPOINT`、`WORKFLOW_DECISION` 投影与三条新 API；QuestionCard/Checkpoint 独立卡片、历史 `WORKFLOW_QUESTION` 只读展示、七节点 Graph 状态、Continuation 提示、外部成功后的非阻断告警和 Sequence 追加快路径；`e94eb4b` 修正 Agent QuestionCard 合法的 `runId: null`，并覆盖真实 payload；typecheck、Vitest 31 项和 production build 通过 | 真实浏览器四尺寸与黄金路径纳入阶段七 |
 | 6. 遗留代码和测试环境清理 | 已完成 | `e7c18c8` 删除旧 Question/Answer 模型、admission、事务 Workflow 引擎、旧 API DTO、Mapper/Store 和旧授权配置；`96b2e27` 删除无生产引用的重复 Workflow Answer 类型，历史 `WORKFLOW_ANSWER` 仍仅按消息标记读取；`01ad541` 修复规范门禁发现的 persistence 包、Clock 注入和测试命名问题。`FakeClientHttpRequestFactoryTest` 覆盖 HTTP 单测，真实 loopback 契约移至 `HttpOrderGatewayIT`/`HttpExternalActionExecutorIT`，Surefire 与 Failsafe 分离；`rg` 未发现旧生产入口或旧前端目录引用；`833765c` 清理依赖分析警告 | 阶段七外部环境和黄金路径验收 |
-| 7. 完整验收与交接 | 本地门禁通过，外部环境待复核 | 2026-08-27 本轮 `convention_check`、脚本 9 项、runtime eval 5 项、Maven Core 47/Infrastructure 65/App 17、前端 typecheck/Vitest 31/build 和无警告 `dependency:analyze` 均通过；`bd0fe9a` 收口 Checkpoint 恢复状态与 Spring Bean 装配；`mvn verify` 已进入真实 `*IT`，但 8 项因当前 Windows/JDK 无法建立 loopback selector 报错 | 数据库副本 V7→V8→V9、真实模型/订单夹具/浏览器黄金路径，以及支持网络绑定环境中的 `*IT` 仍需复核 |
+| 7. 完整验收与交接 | 本地门禁通过，外部环境待复核 | 2026-08-27 本轮 `convention_check`、脚本 9 项、runtime eval 5 项、Maven Core 47/Infrastructure 67/App 17、前端 typecheck/Vitest 31/build 和无警告 `dependency:analyze` 均通过；`bd0fe9a` 收口 Checkpoint 恢复状态与 Spring Bean 装配，`a7e99b3` 收口事实变化时拒绝终态；`mvn verify` 已进入真实 `*IT`，但 8 项因当前 Windows/JDK 无法建立 loopback selector 报错 | 数据库副本 V7→V8→V9、真实模型/订单夹具/浏览器黄金路径，以及支持网络绑定环境中的 `*IT` 仍需复核 |
 
 阶段二的兼容边界：旧 `AGENT_WORKFLOW_QUESTION`、旧 Turn 列和旧 `WORKFLOW_ANSWER` Item 仅由 V9 迁移脚本或前端历史投影读取；新的生产入口只写独立 QuestionCard/Checkpoint 表和 `QUESTION_ANSWER`/`WORKFLOW_DECISION` Turn。运行时代码不再提供旧 API、旧模型或旧 Workflow admission。详细执行日志不写入 handoff。
 
@@ -34,7 +34,7 @@
 
 - `C:\Users\23260\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m scripts.convention_check`：通过。
 - `C:\Users\23260\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest discover -s scripts/tests -p "test_*.py"`：9 项通过；`scripts.runtime_eval` 的 5 个确定性门禁通过。
-- `mvn clean '-DskipTests=false' test`：通过，Core 47、Infrastructure 65、App 17。
+- `mvn clean '-DskipTests=false' test`：通过，Core 47、Infrastructure 67、App 17。
 - `mvn dependency:analyze -DskipTests`：通过，三个 Maven 模块均无依赖问题；删除未使用的 `jspecify` 测试声明并移除 App Controller 冗余 `@Autowired`。
 - `npm --prefix agent-fronted run typecheck`、`npm --prefix agent-fronted test -- --run`（31 项）和 `npm --prefix agent-fronted run build`：均通过。
 - 代码评审回归：过期 Continuation 队列重试重新读取最新 Turn；批准 Checkpoint 的事实变化会先失效并重核验，动作不再允许时安全失败且不创建命令；Agent QuestionCard 允许 `runId: null`；无引用的旧 Workflow Answer 类型已删除；QuestionCard/Checkpoint Store 可被事务代理，Workflow Decision codec 已注册为 Bean。
@@ -43,7 +43,7 @@
 
 ## 基线结论
 
-- 本地代码门禁已通过：规范检查、脚本 9 项、runtime eval 5 项、Maven Core 47/Infrastructure 65/App 17，以及前端 typecheck、Vitest 31 项和 production build。
+- 本地代码门禁已通过：规范检查、脚本 9 项、runtime eval 5 项、Maven Core 47/Infrastructure 67/App 17，以及前端 typecheck、Vitest 31 项和 production build。
 - `mvn dependency:analyze -DskipTests` 构建通过且无依赖问题。
 - `mvn verify` 的真实 HTTP `*IT` 受到当前环境 loopback selector 限制，8 项错误待网络绑定能力可用时复核；Fake Transport 单测不替代该验收。
 - 数据库副本 V7→V8→V9、真实模型/订单夹具/浏览器黄金路径本轮未重跑，历史现场记录需按发布前运行手册再次确认。
