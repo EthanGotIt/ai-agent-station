@@ -25,7 +25,6 @@ public record AgentTurnModel(
         Instant createdAt,
         Instant startedAt,
         Instant finishedAt,
-        AgentWorkflowAnswerInput workflowAnswerInput,
         AgentQuestionAnswerInput questionAnswerInput,
         long version,
         AgentTurnInputKindEnum inputKind,
@@ -51,48 +50,7 @@ public record AgentTurnModel(
             Instant finishedAt
     ) {
         this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowRunId,
-                errorCode, createdAt, startedAt, finishedAt, null, null, 0L, null, null, null, null);
-    }
-
-    public AgentTurnModel(
-            String turnId,
-            String threadId,
-            String userId,
-            String clientRequestId,
-            String input,
-            AgentTurnStatusEnum status,
-            int queuePosition,
-            String workflowRunId,
-            String errorCode,
-            Instant createdAt,
-            Instant startedAt,
-            Instant finishedAt,
-            AgentWorkflowAnswerInput workflowAnswerInput
-    ) {
-        this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowRunId,
-                errorCode, createdAt, startedAt, finishedAt, workflowAnswerInput, 0L);
-    }
-
-    public AgentTurnModel(
-            String turnId,
-            String threadId,
-            String userId,
-            String clientRequestId,
-            String input,
-            AgentTurnStatusEnum status,
-            int queuePosition,
-            String workflowRunId,
-            String errorCode,
-            Instant createdAt,
-            Instant startedAt,
-            Instant finishedAt,
-            AgentWorkflowAnswerInput workflowAnswerInput,
-            long version
-    ) {
-        this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowRunId,
-                errorCode, createdAt, startedAt, finishedAt, workflowAnswerInput, null, version,
-                workflowAnswerInput == null ? AgentTurnInputKindEnum.MESSAGE : AgentTurnInputKindEnum.WORKFLOW_ANSWER,
-                null, null, null);
+                errorCode, createdAt, startedAt, finishedAt, null, 0L, null, null, null, null);
     }
 
     /** 创建 QuestionCard 回答 Turn；QuestionCard 可恢复到 Agent 或固定 Workflow。 */
@@ -112,7 +70,29 @@ public record AgentTurnModel(
             AgentQuestionAnswerInput questionAnswerInput
     ) {
         this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowRunId,
-                errorCode, createdAt, startedAt, finishedAt, null, questionAnswerInput, 0L,
+                errorCode, createdAt, startedAt, finishedAt, questionAnswerInput, 0L,
+                AgentTurnInputKindEnum.QUESTION_ANSWER, null, null, null);
+    }
+
+    /** 创建带版本号的 QuestionCard 回答 Turn，供持久化恢复和版本边界测试使用。 */
+    public AgentTurnModel(
+            String turnId,
+            String threadId,
+            String userId,
+            String clientRequestId,
+            String input,
+            AgentTurnStatusEnum status,
+            int queuePosition,
+            String workflowRunId,
+            String errorCode,
+            Instant createdAt,
+            Instant startedAt,
+            Instant finishedAt,
+            AgentQuestionAnswerInput questionAnswerInput,
+            long version
+    ) {
+        this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowRunId,
+                errorCode, createdAt, startedAt, finishedAt, questionAnswerInput, version,
                 AgentTurnInputKindEnum.QUESTION_ANSWER, null, null, null);
     }
 
@@ -129,17 +109,17 @@ public record AgentTurnModel(
             Instant createdAt,
             Instant startedAt,
             Instant finishedAt,
-            AgentWorkflowAnswerInput workflowAnswerInput,
+            AgentQuestionAnswerInput questionAnswerInput,
             long version,
             AgentTurnInputKindEnum inputKind,
             AgentOrderActionInput orderActionInput
     ) {
         this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowRunId,
-                errorCode, createdAt, startedAt, finishedAt, workflowAnswerInput, null, version,
+                errorCode, createdAt, startedAt, finishedAt, questionAnswerInput, version,
                 inputKind, orderActionInput, null, null);
     }
 
-    /** 保留既有输入构造边界；新决策 Turn 应显式携带 workflowDecisionInput。 */
+    /** 创建带续跑输入的 Turn；决策输入为空时保留兼容的短构造边界。 */
     public AgentTurnModel(
             String turnId,
             String threadId,
@@ -153,40 +133,14 @@ public record AgentTurnModel(
             Instant createdAt,
             Instant startedAt,
             Instant finishedAt,
-            AgentWorkflowAnswerInput workflowAnswerInput,
-            long version,
-            AgentTurnInputKindEnum inputKind,
-            AgentOrderActionInput orderActionInput,
-            AgentContinuationInput continuationInput,
-            AgentWorkflowDecisionInput workflowDecisionInput
-    ) {
-        this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowRunId, errorCode,
-                createdAt, startedAt, finishedAt, workflowAnswerInput, null, version, inputKind, orderActionInput,
-                continuationInput, workflowDecisionInput);
-    }
-
-    /** 保留既有输入构造边界；新决策 Turn 应显式携带 workflowDecisionInput。 */
-    public AgentTurnModel(
-            String turnId,
-            String threadId,
-            String userId,
-            String clientRequestId,
-            String input,
-            AgentTurnStatusEnum status,
-            int queuePosition,
-            String workflowRunId,
-            String errorCode,
-            Instant createdAt,
-            Instant startedAt,
-            Instant finishedAt,
-            AgentWorkflowAnswerInput workflowAnswerInput,
+            AgentQuestionAnswerInput questionAnswerInput,
             long version,
             AgentTurnInputKindEnum inputKind,
             AgentOrderActionInput orderActionInput,
             AgentContinuationInput continuationInput
     ) {
         this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowRunId, errorCode,
-                createdAt, startedAt, finishedAt, workflowAnswerInput, null, version, inputKind, orderActionInput,
+                createdAt, startedAt, finishedAt, questionAnswerInput, version, inputKind, orderActionInput,
                 continuationInput, null);
     }
 
@@ -201,12 +155,8 @@ public record AgentTurnModel(
                 ? workflowDecisionInput != null ? AgentTurnInputKindEnum.WORKFLOW_DECISION
                 : continuationInput != null ? AgentTurnInputKindEnum.AGENT_CONTINUATION
                 : questionAnswerInput != null ? AgentTurnInputKindEnum.QUESTION_ANSWER
-                : workflowAnswerInput != null ? AgentTurnInputKindEnum.WORKFLOW_ANSWER
                 : orderActionInput != null ? AgentTurnInputKindEnum.ORDER_ACTION : AgentTurnInputKindEnum.MESSAGE
                 : inputKind;
-        if (inputKind == AgentTurnInputKindEnum.WORKFLOW_ANSWER && workflowAnswerInput == null) {
-            throw new IllegalArgumentException("Workflow answer Turn 缺少结构化输入");
-        }
         if (inputKind == AgentTurnInputKindEnum.QUESTION_ANSWER && questionAnswerInput == null) {
             throw new IllegalArgumentException("QuestionCard answer Turn 缺少结构化输入");
         }
@@ -234,9 +184,6 @@ public record AgentTurnModel(
         if (version < 0) {
             throw new IllegalArgumentException("Turn version 不能为负数");
         }
-        if (workflowAnswerInput != null && !workflowAnswerInput.runId().equals(workflowRunId)) {
-            throw new IllegalArgumentException("回答 Turn 的 workflowRunId 与结构化输入不一致");
-        }
         if (workflowDecisionInput != null && !workflowDecisionInput.runId().equals(workflowRunId)) {
             throw new IllegalArgumentException("决策 Turn 的 workflowRunId 与结构化输入不一致");
         }
@@ -258,28 +205,28 @@ public record AgentTurnModel(
     public AgentTurnModel queued(int position) {
         return new AgentTurnModel(turnId, threadId, userId, clientRequestId, input,
                 AgentTurnStatusEnum.QUEUED, position, workflowRunId, errorCode,
-                createdAt, startedAt, finishedAt, workflowAnswerInput, questionAnswerInput, version + 1,
+                createdAt, startedAt, finishedAt, questionAnswerInput, version + 1,
                 inputKind, orderActionInput, continuationInput, workflowDecisionInput);
     }
 
     public AgentTurnModel active(Instant at) {
         return new AgentTurnModel(turnId, threadId, userId, clientRequestId, input,
                 AgentTurnStatusEnum.ACTIVE, queuePosition, workflowRunId, errorCode,
-                createdAt, at, null, workflowAnswerInput, questionAnswerInput, version + 1,
+                createdAt, at, null, questionAnswerInput, version + 1,
                 inputKind, orderActionInput, continuationInput, workflowDecisionInput);
     }
 
     public AgentTurnModel terminal(AgentTurnStatusEnum terminal, String code, Instant at) {
         return new AgentTurnModel(turnId, threadId, userId, clientRequestId, input,
                 terminal, queuePosition, workflowRunId, code, createdAt, startedAt, at,
-                workflowAnswerInput, questionAnswerInput, version + 1, inputKind, orderActionInput, continuationInput,
+                questionAnswerInput, version + 1, inputKind, orderActionInput, continuationInput,
                 workflowDecisionInput);
     }
 
     public AgentTurnModel workflow(String runId, AgentTurnStatusEnum nextStatus) {
         return new AgentTurnModel(turnId, threadId, userId, clientRequestId, input,
                 nextStatus, queuePosition, runId, errorCode, createdAt, startedAt, finishedAt,
-                workflowAnswerInput, questionAnswerInput, version + 1, inputKind, orderActionInput, continuationInput,
+                questionAnswerInput, version + 1, inputKind, orderActionInput, continuationInput,
                 workflowDecisionInput);
     }
 }

@@ -19,14 +19,21 @@
 
 - 空对话只提示“直接输入请求”，不再渲染固定快捷问。
 - Turn 只展示一行由真实 Item 聚合出的阶段摘要、状态和耗时；订单列表、订单详情与物流时间线在同一 Turn 内以内联结构化卡片呈现。
-- 订单卡片操作走确定性 `order-actions` Turn：查询直接读取订单/物流事实，退款、催发货、隐藏和恢复进入现有 Workflow；不会经过模型，也不会生成可见的模拟问答。外部写操作仍由 QuestionCard 做最终授权。
-- 订单动作 Turn 和 Workflow 回答 Turn 按 `sourceTurnId`、`runId`、`orderId` 折回来源 Turn；刷新后仍由持久化 `ORDER_ACTION_REQUEST`、`WORKFLOW_ANSWER` 和结构化订单 Item 恢复同一张卡片。运行详情仍可查看完整技术 Item。
+- 订单卡片操作走确定性 `order-actions` Turn：查询直接读取订单/物流事实，退款、催发货、隐藏和恢复进入现有 Workflow；不会经过模型，也不会生成可见的模拟问答。缺少业务信息时由 QuestionCard 提问，外部写操作在 `AUTHORIZE` 节点使用独立 Workflow Checkpoint 确认。
+- 订单动作 Turn、QuestionCard 回答 Turn 和 Workflow 决策 Turn 按 `sourceTurnId`、`runId`、`orderId` 折回来源 Turn；刷新后仍由持久化 `ORDER_ACTION_REQUEST`、`QUESTION_ANSWER`、`WORKFLOW_DECISION` 和结构化订单 Item 恢复同一张卡片。历史 `WORKFLOW_QUESTION`/`WORKFLOW_ANSWER` 仅在检查器只读展示。
 - 执行类订单动作在来源 Turn 的对应订单卡片内显示单一状态回执：排队、处理中、等待确认、失败/人工重试和完成均绑定真实动作 Item；查询和刷新完成后直接更新同一张结构化卡片。页面不再显示重复的执行消息气泡或独立动作弹窗。
-- QuestionCard 的普通步骤按钮为“继续”，最终授权为“确认并执行”，次按钮为“结束本次操作”。取消动作不会触发必填字段校验，并以 `CANCEL` 回答关闭 Workflow、保留取消事实且不创建外部动作。
+- QuestionCard 的普通步骤按钮为“继续”，取消按钮为“结束本次提问”；Workflow Checkpoint 只展示动作、对象、影响和“确认执行/拒绝执行”。QuestionCard 取消不会触发必填字段校验；Checkpoint 拒绝关闭 Workflow 且不创建外部动作。
 - 活跃 QuestionCard 不再嵌入历史 Turn，而是作为页面中央、避开底部 Composer 的模态浮层；它带遮罩、关闭按钮、Esc 取消、焦点收束和独立滚动，底部输入框保留但在确认期间禁用，历史 Turn 只保留阶段摘要与卡内动作回执。
 - `运行详情`显示浅色账本式真实 sequence、时间、Item 类型和受控 JSON；敏感键会被遮蔽，不展示 Thinking。Escape、关闭按钮和遮罩均可退出，抽屉打开时锁定页面滚动并将焦点移至关闭按钮。
 - 终态 Turn 首次打开检查器时按需读取并缓存只读执行回放；回放失败时保留已由 Items/SSE 恢复的事实，并在检查器内给出降级提示。
 - QuestionCard 使用后端提供的 `operation`、`step`、`stepNo`；外部动作回执区分已核验与“操作已受理、最新状态暂未核验”，后者提供可编辑的重新查询入口。
+
+## 受控闭环投影
+
+- 订单 Workflow 的实际节点固定为 `RESOLVE_ORDER → VERIFY_FACTS → SWITCH_REQUIREMENTS → AUTHORIZE → EXECUTE_ACTION → VERIFY_OUTCOME → HANDOFF_AGENT`。主区只显示当前业务摘要和结果；节点分支、耗时、错误码和 Agent 决策放在运行详情中按需查看。
+- 外部动作成功或人工重试耗尽，以及授权时发现订单事实/执行资格变化后，服务端在本地事务中追加 `AGENT_CONTINUATION` Turn 和触发 Item，事务提交后才进入同 Thread FIFO。续跑最多 3 轮；开放 QuestionCard 存在时延后，不抢占用户回答。
+- 续跑 Turn、Workflow 回答 Turn 和订单动作 Turn 都按 `rootTurnId/sourceTurnId/runId` 折叠回原业务 Turn。用户不会看到技术性的模拟问答；只在检查器中看到完整序列。
+- QuestionCard schema 只描述待补充字段与 `resumeTarget=AGENT|WORKFLOW`；执行确认由 Workflow Checkpoint 的动作摘要、事实指纹和版本单独描述。两种交互均通过各自的回答/决策 Turn 收口，取消或拒绝不创建外部动作。
 
 ## 验收记录
 

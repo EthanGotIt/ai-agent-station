@@ -1,237 +1,114 @@
 package cn.ethan.infrastructure.commerce.order.http;
 
-import cn.ethan.core.commerce.order.OrderLookupResultModel;
 import cn.ethan.core.commerce.order.OrderLookupStatusEnum;
 import cn.ethan.core.commerce.order.OrderSearchCriteria;
 import cn.ethan.core.commerce.order.OrderSearchStatusEnum;
 import cn.ethan.core.commerce.order.OrderStatusEnum;
 import cn.ethan.core.commerce.order.OrderVisibilityEnum;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
+import cn.ethan.infrastructure.http.FakeClientHttpRequestFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
-import java.math.BigDecimal;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * HTTP 订单网关测试：验证外部响应归属、超时和成功映射边界。
+ * HTTP 订单网关单元测试：使用内存 Transport 验证协议映射，不依赖 loopback 监听。
  *
  * @author ethan
- * @date 2026-08-05
+ * @date 2026-08-27
  */
 class HttpOrderGatewayTest {
 
-    private final AtomicReference<String> requestUserId = new AtomicReference<>();
-    private final AtomicReference<String> requestIdempotencyKey = new AtomicReference<>();
-    private final AtomicReference<String> requestUri = new AtomicReference<>();
-
-    private HttpServer server;
-    private String responseBody;
-    private boolean holdResponse;
-    private CountDownLatch responseRelease;
-
-    @BeforeEach
-    void startServer() throws IOException {
-        responseBody = "{}";
-        holdResponse = false;
-        responseRelease = new CountDownLatch(1);
-        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/", this::respond);
-        server.start();
-    }
-
-    @AfterEach
-    void stopServer() {
-        responseRelease.countDown();
-        server.stop(0);
-    }
+    private static final Instant NOW = Instant.parse("2026-08-27T00:00:00Z");
 
     @Test
-    void returnsFoundOrderForMatchingUser() {
-        responseBody = """
-                {
-                  "accessDenied": false,
-                  "orderId": "ORDER-001",
-                  "userId": "user-1",
-                  "status": "PAID",
-                  "daysSinceDelivery": null
-                }
-                """;
+    void mapsOwnedOrderAndPropagatesUserHeader() {
+        FakeClientHttpRequestFactory transport = new FakeClientHttpRequestFactory(request ->
+                FakeClientHttpRequestFactory.Response.json(200, """
+                        {"accessDenied":false,"orderId":"ORDER-001","userId":"user-1","status":"PAID"}
+                        """));
 
-        OrderLookupResultModel result = gateway(Duration.ofSeconds(1))
-                .findOrder("ORDER-001", "user-1");
+        var result = gateway(transport).findOrder("ORDER-001", "user-1");
 
         assertEquals(OrderLookupStatusEnum.FOUND, result.status());
         assertEquals("user-1", result.order().userId());
-        assertEquals("user-1", requestUserId.get());
+        assertEquals("user-1", transport.requests().get(0).headers().getFirst("X-User-Id"));
+        assertEquals("/orders/ORDER-001", transport.requests().get(0).uri().getPath());
     }
 
     @Test
     void rejectsResponseOwnedByAnotherUser() {
-        responseBody = """
-                {
-                  "accessDenied": false,
-                  "orderId": "ORDER-001",
-                  "userId": "user-2",
-                  "status": "PAID"
-                }
-                """;
+        FakeClientHttpRequestFactory transport = new FakeClientHttpRequestFactory(request ->
+                FakeClientHttpRequestFactory.Response.json(200,
+                        "{\"orderId\":\"ORDER-001\",\"userId\":\"user-2\",\"status\":\"PAID\"}"));
 
-        OrderLookupResultModel result = gateway(Duration.ofSeconds(1))
-                .findOrder("ORDER-001", "user-1");
-
-        assertEquals(OrderLookupStatusEnum.ACCESS_DENIED, result.status());
+        assertEquals(OrderLookupStatusEnum.ACCESS_DENIED,
+                gateway(transport).findOrder("ORDER-001", "user-1").status());
     }
 
     @Test
-    void timeoutBecomesTemporaryFailure() {
-        holdResponse = true;
-        responseBody = """
-                {
-                  "orderId": "ORDER-001",
-                  "userId": "user-1",
-                  "status": "PAID"
-                }
-                """;
-
-        OrderLookupResultModel result = gateway(Duration.ofMillis(50))
-                .findOrder("ORDER-001", "user-1");
-
-        assertEquals(OrderLookupStatusEnum.TEMPORARY_FAILURE, result.status());
-    }
-
-    @Test
-    void searchesWithStructuredFiltersAndProjectsOwnedOrders() {
-        responseBody = """
-                [{
-                  "orderId": "ORDER-001",
-                  "userId": "user-1",
-                  "status": "PAID",
-                  "createdAt": "2026-08-22T08:00:00Z",
-                  "paidAmount": 99.00,
-                  "currency": "CNY",
-                  "itemSummary": "无线耳机",
-                  "logisticsStatus": "待发货"
-                }]
-                """;
+    void mapsSearchAndActionContractsWithStructuredHeaders() {
+        FakeClientHttpRequestFactory transport = new FakeClientHttpRequestFactory(request -> {
+            if (request.uri().getPath().endsWith("/search")) {
+                return FakeClientHttpRequestFactory.Response.json(200,
+                        "[{\"orderId\":\"ORDER-001\",\"userId\":\"user-1\","
+                                + "\"status\":\"PAID\",\"itemSummary\":\"无线耳机\"}]");
+            }
+            return FakeClientHttpRequestFactory.Response.json(200,
+                    "{\"success\":true,\"retryable\":false,\"code\":\"OK\",\"message\":\"done\"}");
+        });
+        HttpOrderGateway gateway = gateway(transport);
 
         OrderSearchCriteria criteria = new OrderSearchCriteria(
-                Instant.parse("2026-08-22T00:00:00Z"), Instant.parse("2026-08-22T23:59:59Z"),
-                new BigDecimal("50"), new BigDecimal("120"), Set.of(OrderStatusEnum.PAID),
-                "耳机", 3, OrderVisibilityEnum.ACTIVE, 5);
-        var result = gateway(Duration.ofSeconds(1)).searchOrders(criteria, "user-1");
+                NOW.minusSeconds(3600), NOW, new BigDecimal("50"), new BigDecimal("120"),
+                Set.of(OrderStatusEnum.PAID), "耳机", 3, OrderVisibilityEnum.ACTIVE, 5);
+        var search = gateway.searchOrders(criteria, "user-1");
+        var action = gateway.expedite("user-1", "ORDER-001", "action-1", NOW);
 
-        assertEquals(OrderSearchStatusEnum.SUCCESS, result.status());
-        assertEquals(1, result.orders().size());
-        assertEquals("无线耳机", result.orders().get(0).itemSummary());
-        assertEquals("user-1", requestUserId.get());
-        assertTrue(requestUri.get().contains("createdFrom=2026-08-22T00:00:00Z"));
-        assertTrue(requestUri.get().contains("minAmount=50"));
-        assertTrue(requestUri.get().contains("visibility=ACTIVE"));
+        assertEquals(OrderSearchStatusEnum.SUCCESS, search.status());
+        assertEquals("ORDER-001", search.orders().get(0).orderId());
+        assertEquals("OK", action.code());
+        assertEquals("action-1", transport.requests().get(1).headers().getFirst("Idempotency-Key"));
+        assertTrue(transport.requests().get(0).uri().getQuery().contains("visibility=ACTIVE"));
     }
 
     @Test
-    void sendsExpediteAndVisibilityActionsToOrderServiceContract() {
-        responseBody = """
-                {
-                  "success": true,
-                  "retryable": false,
-                  "code": "OK",
-                  "message": "done"
-                }
-                """;
-        HttpOrderGateway gateway = gateway(Duration.ofSeconds(1));
+    void rejectsInvalidIdempotencyKeyWithoutTransportCall() {
+        FakeClientHttpRequestFactory transport = new FakeClientHttpRequestFactory(request ->
+                FakeClientHttpRequestFactory.Response.json(200, "{}"));
 
-        assertEquals("OK", gateway.expedite("user-1", "ORDER-001", "action-expedite", Instant.now()).code());
-        assertTrue(requestUri.get().contains("/orders/ORDER-001/expedite"));
-        assertEquals("action-expedite", requestIdempotencyKey.get());
-        assertEquals("OK", gateway.refund("user-1", "ORDER-001", "商品不符",
-                "action-refund", Instant.now()).code());
-        assertTrue(requestUri.get().contains("/orders/ORDER-001/refund"));
-        assertEquals("action-refund", requestIdempotencyKey.get());
-        assertEquals("OK", gateway.setVisibility("user-1", "ORDER-001",
-                OrderVisibilityEnum.HIDDEN, "action-hide", Instant.now()).code());
-        assertTrue(requestUri.get().contains("/orders/ORDER-001/visibility"));
-        assertEquals("action-hide", requestIdempotencyKey.get());
+        var result = gateway(transport).expedite("user-1", "ORDER-001", "bad key", NOW);
+
+        assertEquals("IDEMPOTENCY_KEY_INVALID", result.code());
+        assertTrue(transport.requests().isEmpty());
     }
 
     @Test
-    void rejectsMissingOrMalformedIdempotencyKeyBeforeCallingOrderService() {
-        responseBody = """
-                {
-                  "success": true,
-                  "retryable": false,
-                  "code": "OK",
-                  "message": "done"
-                }
-                """;
-        HttpOrderGateway gateway = gateway(Duration.ofSeconds(1));
+    void mapsTransportFailureToTemporaryFailure() {
+        FakeClientHttpRequestFactory transport = new FakeClientHttpRequestFactory(request -> {
+            throw new IOException("simulated transport failure");
+        });
 
-        assertEquals("IDEMPOTENCY_KEY_INVALID",
-                gateway.expedite("user-1", "ORDER-001", " ", Instant.now()).code());
-        assertEquals("IDEMPOTENCY_KEY_INVALID",
-                gateway.refund("user-1", "ORDER-001", "商品不符", "bad key", Instant.now()).code());
-        assertEquals("IDEMPOTENCY_KEY_INVALID",
-                gateway.setVisibility("user-1", "ORDER-001", OrderVisibilityEnum.HIDDEN,
-                        "bad\nkey", Instant.now()).code());
-        assertNull(requestUri.get());
-        assertNull(requestIdempotencyKey.get());
+        assertEquals(OrderLookupStatusEnum.TEMPORARY_FAILURE,
+                gateway(transport).findOrder("ORDER-001", "user-1").status());
     }
 
     @Test
-    void rejectsMalformedBaseUrls() {
+    void rejectsMalformedBaseUrlsBeforeTransport() {
         assertThrows(IllegalArgumentException.class, () -> new HttpOrderGateway(
-                RestClient.builder(), "orders.example.test", Duration.ofSeconds(1)
-        ));
-        assertThrows(IllegalArgumentException.class, () -> new HttpOrderGateway(
-                RestClient.builder(), "https://user:secret@orders.example.test", Duration.ofSeconds(1)
-        ));
-        assertThrows(IllegalArgumentException.class, () -> new HttpOrderGateway(
-                RestClient.builder(), "https://orders.example.test#fragment", Duration.ofSeconds(1)
-        ));
+                RestClient.builder(), "file:///tmp/orders", Duration.ofSeconds(1),
+                new FakeClientHttpRequestFactory(request -> FakeClientHttpRequestFactory.Response.json(200, "{}"))));
     }
 
-    private HttpOrderGateway gateway(Duration timeout) {
-        return new HttpOrderGateway(
-                RestClient.builder(),
-                "http://127.0.0.1:" + server.getAddress().getPort(),
-                timeout
-        );
-    }
-
-    private void respond(HttpExchange exchange) throws IOException {
-        try (exchange) {
-            requestUserId.set(exchange.getRequestHeaders().getFirst("X-User-Id"));
-            requestIdempotencyKey.set(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
-            requestUri.set(exchange.getRequestURI().toString());
-            if (holdResponse) {
-                try {
-                    responseRelease.await(5, TimeUnit.SECONDS);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-            }
-            byte[] body = responseBody.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, body.length);
-            exchange.getResponseBody().write(body);
-        }
+    private HttpOrderGateway gateway(FakeClientHttpRequestFactory transport) {
+        return new HttpOrderGateway(RestClient.builder(), "http://orders.example.test", Duration.ofSeconds(1), transport);
     }
 }

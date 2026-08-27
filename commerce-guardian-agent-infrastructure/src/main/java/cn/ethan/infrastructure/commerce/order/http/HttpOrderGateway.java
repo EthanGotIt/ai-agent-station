@@ -12,6 +12,7 @@ import cn.ethan.core.commerce.order.OrderVisibilityEnum;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.core.ParameterizedTypeReference;
 import org.slf4j.Logger;
@@ -50,17 +51,31 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
             @Value("${ai-agent.order.base-url:http://localhost:18080}") String baseUrl,
             @Value("${ai-agent.order.http-timeout:PT5S}") Duration timeout
     ) {
-        Duration effectiveTimeout = normalizeTimeout(timeout);
-        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(
-                HttpClient.newBuilder()
-                        .connectTimeout(effectiveTimeout)
-                        .build()
-        );
-        requestFactory.setReadTimeout(effectiveTimeout);
+        this(builder, baseUrl, timeout, defaultRequestFactory(normalizeTimeout(timeout)));
+    }
+
+    /** 注入 HTTP Transport 以隔离协议单测；生产装配仍使用带连接/读取超时的 JDK 客户端。 */
+    public HttpOrderGateway(
+            RestClient.Builder builder,
+            String baseUrl,
+            Duration timeout,
+            ClientHttpRequestFactory requestFactory
+    ) {
+        normalizeTimeout(timeout);
+        if (requestFactory == null) {
+            throw new IllegalArgumentException("order HTTP request factory is required");
+        }
         this.client = builder.clone()
                 .baseUrl(requireBaseUrl(baseUrl))
                 .requestFactory(requestFactory)
                 .build();
+    }
+
+    private static ClientHttpRequestFactory defaultRequestFactory(Duration timeout) {
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(
+                HttpClient.newBuilder().connectTimeout(timeout).build());
+        requestFactory.setReadTimeout(timeout);
+        return requestFactory;
     }
 
     @Override

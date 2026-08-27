@@ -10,8 +10,6 @@ public enum AgentDecisionTypeEnum {
     FINISH,
     START_WORKFLOW,
     ASK_USER,
-    /** 旧版本兼容值；新控制 Tool 使用 ASK_USER。 */
-    WAIT_USER,
     STOP_LIMIT,
     FALLBACK
 }

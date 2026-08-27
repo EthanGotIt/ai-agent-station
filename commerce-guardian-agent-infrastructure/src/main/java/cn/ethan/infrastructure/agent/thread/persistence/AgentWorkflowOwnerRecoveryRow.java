@@ -12,7 +12,7 @@ public final class AgentWorkflowOwnerRecoveryRow {
     private String userId;
     private String workflowRunId;
     private String workflowRunStatus;
-    private Integer openQuestion;
+    private Integer openInteraction;
 
     public String getTurnId() {
         return turnId;
@@ -46,11 +46,11 @@ public final class AgentWorkflowOwnerRecoveryRow {
         this.workflowRunStatus = workflowRunStatus;
     }
 
-    public Integer getOpenQuestion() {
-        return openQuestion;
+    public Integer getOpenInteraction() {
+        return openInteraction;
     }
 
-    public void setOpenQuestion(Integer openQuestion) {
-        this.openQuestion = openQuestion;
+    public void setOpenInteraction(Integer openInteraction) {
+        this.openInteraction = openInteraction;
     }
 }

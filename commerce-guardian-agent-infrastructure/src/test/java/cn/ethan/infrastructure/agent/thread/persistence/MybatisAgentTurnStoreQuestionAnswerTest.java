@@ -7,7 +7,6 @@ import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.workflow.AgentQuestionCardAnswerActionEnum;
 import cn.ethan.core.agent.workflow.AgentQuestionCardResumeTargetEnum;
-import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
@@ -16,7 +15,6 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * 类型职责：验证 QuestionCard 回答 Turn 使用独立结构化列并可在重启后恢复。
@@ -52,7 +50,7 @@ class MybatisAgentTurnStoreQuestionAnswerTest {
             default -> defaultValue(method);
         });
         MybatisAgentTurnStore store = new MybatisAgentTurnStore(
-                turns, items, threads, new JacksonAgentWorkflowAnswerCodec(new ObjectMapper()));
+                turns, items, threads);
         AgentQuestionAnswerInput input = new AgentQuestionAnswerInput(
                 "question-1", null, AgentQuestionCardResumeTargetEnum.AGENT, 2,
                 Map.of("orderId", "ORDER-1"), AgentQuestionCardAnswerActionEnum.SUBMIT);
@@ -68,7 +66,6 @@ class MybatisAgentTurnStoreQuestionAnswerTest {
         assertEquals(input, restored.questionAnswerInput());
         assertEquals("QUESTION_ANSWER", persisted.get().getInputKind());
         assertEquals("question-1", persisted.get().getQuestionCardId());
-        assertNull(persisted.get().getWorkflowAnswersJson());
     }
 
     @SuppressWarnings("unchecked")

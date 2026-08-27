@@ -27,15 +27,14 @@ public record AgentThreadInteractionDto(
         String orderId,
         String impactSummary,
         String factsFingerprint,
-        String decision,
-        boolean legacy
+        String decision
 ) {
 
     public static AgentThreadInteractionDto from(AgentQuestionCardModel question) {
         return new AgentThreadInteractionDto(
                 AgentInteractionTypeEnum.QUESTION_CARD, question.questionId(), question.threadId(), question.runId(),
                 question.turnId(), question.status().name(), question.version(), question.resumeTarget().name(),
-                question.title(), question.prompt(), question.fieldsJson(), null, null, null, null, null, null, false);
+                question.title(), question.prompt(), question.fieldsJson(), null, null, null, null, null, null);
     }
 
     public static AgentThreadInteractionDto from(AgentWorkflowCheckpointModel checkpoint) {
@@ -44,13 +43,6 @@ public record AgentThreadInteractionDto(
                 checkpoint.runId(), checkpoint.turnId(), checkpoint.status().name(), checkpoint.version(), null,
                 null, null, null, checkpoint.nodeId(), checkpoint.actionType(), checkpoint.orderId(),
                 checkpoint.impactSummary(), checkpoint.factsFingerprint(),
-                checkpoint.decision() == null ? null : checkpoint.decision().name(), false);
-    }
-
-    public static AgentThreadInteractionDto fromLegacyQuestion(AgentWorkflowQuestionSnapshotDto question) {
-        return new AgentThreadInteractionDto(
-                AgentInteractionTypeEnum.QUESTION_CARD, question.questionId(), question.threadId(), question.runId(),
-                null, "OPEN", question.version(), "WORKFLOW", question.title(), question.prompt(),
-                question.fieldsJson(), null, null, null, null, null, null, true);
+                checkpoint.decision() == null ? null : checkpoint.decision().name());
     }
 }

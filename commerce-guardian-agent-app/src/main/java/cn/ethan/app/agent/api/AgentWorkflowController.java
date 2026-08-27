@@ -2,7 +2,6 @@ package cn.ethan.app.agent.api;
 
 import cn.ethan.core.agent.action.ExternalActionService;
 import cn.ethan.core.agent.execution.AgentTurnRuntimeService;
-import cn.ethan.core.agent.workflow.AgentWorkflowAnswerActionEnum;
 import cn.ethan.core.agent.execution.AgentQuestionAnswerAdmission;
 import cn.ethan.core.agent.execution.AgentQuestionAnswerAdmissionCommand;
 import cn.ethan.core.agent.execution.AgentWorkflowDecisionAdmission;
@@ -33,15 +32,6 @@ public final class AgentWorkflowController {
     private final AgentQuestionAnswerAdmission questionAdmission;
     private final AgentWorkflowDecisionAdmission decisionAdmission;
 
-    /** 保留旧测试装配边界；生产装配使用新的 Question/Checkpoint admission。 */
-    public AgentWorkflowController(
-            AgentTurnRuntimeService runtime,
-            AgentUserContext userContext,
-            ExternalActionService actions
-    ) {
-        this(runtime, userContext, actions, null, null);
-    }
-
     @Autowired
     public AgentWorkflowController(
             AgentTurnRuntimeService runtime,
@@ -55,20 +45,6 @@ public final class AgentWorkflowController {
         this.actions = actions;
         this.questionAdmission = questionAdmission;
         this.decisionAdmission = decisionAdmission;
-    }
-
-    @PostMapping("/workflow-runs/{runId}/questions/{questionId}/answers")
-    public ResponseEntity<AgentTurnAcceptedResponseDto> answer(
-            @PathVariable String runId,
-            @PathVariable String questionId,
-            @Valid @RequestBody AgentWorkflowQuestionAnswerRequestDto body,
-            HttpServletRequest request
-    ) {
-        return ResponseEntity.accepted().body(AgentTurnAcceptedResponseDto.from(runtime.answerQuestion(
-                userContext.currentUserId(request), body.clientRequestId(), runId, questionId,
-                body.checkpointId(), body.expectedVersion(),
-                body.action() == null ? AgentWorkflowAnswerActionEnum.SUBMIT : body.action(), body.answers()
-        )));
     }
 
     @PostMapping("/questions/{questionId}/answers")

@@ -38,16 +38,10 @@ public final class AgentTurnEntity {
     private Integer queuePosition;
     @TableField("WORKFLOW_RUN_ID")
     private String workflowRunId;
-    @TableField("WORKFLOW_QUESTION_ID")
-    private String workflowQuestionId;
     @TableField("QUESTION_CARD_ID")
     private String questionCardId;
     @TableField("WORKFLOW_CHECKPOINT_ID")
     private String workflowCheckpointId;
-    @TableField("WORKFLOW_QUESTION_VERSION")
-    private Long workflowQuestionVersion;
-    @TableField("WORKFLOW_ANSWERS_JSON")
-    private String workflowAnswersJson;
     @TableField("QUESTION_ANSWER_JSON")
     private String questionAnswerJson;
     @TableField("WORKFLOW_DECISION_JSON")
@@ -88,16 +82,10 @@ public final class AgentTurnEntity {
     public void setQueuePosition(Integer queuePosition) { this.queuePosition = queuePosition; }
     public String getWorkflowRunId() { return workflowRunId; }
     public void setWorkflowRunId(String workflowRunId) { this.workflowRunId = workflowRunId; }
-    public String getWorkflowQuestionId() { return workflowQuestionId; }
-    public void setWorkflowQuestionId(String workflowQuestionId) { this.workflowQuestionId = workflowQuestionId; }
     public String getQuestionCardId() { return questionCardId; }
     public void setQuestionCardId(String questionCardId) { this.questionCardId = questionCardId; }
     public String getWorkflowCheckpointId() { return workflowCheckpointId; }
     public void setWorkflowCheckpointId(String workflowCheckpointId) { this.workflowCheckpointId = workflowCheckpointId; }
-    public Long getWorkflowQuestionVersion() { return workflowQuestionVersion; }
-    public void setWorkflowQuestionVersion(Long workflowQuestionVersion) { this.workflowQuestionVersion = workflowQuestionVersion; }
-    public String getWorkflowAnswersJson() { return workflowAnswersJson; }
-    public void setWorkflowAnswersJson(String workflowAnswersJson) { this.workflowAnswersJson = workflowAnswersJson; }
     public String getQuestionAnswerJson() { return questionAnswerJson; }
     public void setQuestionAnswerJson(String questionAnswerJson) { this.questionAnswerJson = questionAnswerJson; }
     public String getWorkflowDecisionJson() { return workflowDecisionJson; }

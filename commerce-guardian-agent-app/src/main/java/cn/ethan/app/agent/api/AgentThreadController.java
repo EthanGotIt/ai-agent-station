@@ -1,6 +1,5 @@
 package cn.ethan.app.agent.api;
 
-import cn.ethan.core.agent.execution.AgentTurnRuntimeService;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import cn.ethan.core.agent.thread.AgentThreadStatusEnum;
 import cn.ethan.core.agent.workflow.AgentQuestionCardStore;
@@ -31,30 +30,18 @@ import java.util.Locale;
 public final class AgentThreadController {
 
     private final AgentThreadService threads;
-    private final AgentTurnRuntimeService runtime;
     private final AgentUserContext userContext;
     private final AgentQuestionCardStore questions;
     private final AgentWorkflowCheckpointStore checkpoints;
 
-    /** 保留无新交互 Store 的旧测试装配边界。 */
-    public AgentThreadController(
-            AgentThreadService threads,
-            AgentTurnRuntimeService runtime,
-            AgentUserContext userContext
-    ) {
-        this(threads, runtime, userContext, null, null);
-    }
-
     @Autowired
     public AgentThreadController(
             AgentThreadService threads,
-            AgentTurnRuntimeService runtime,
             AgentUserContext userContext,
             AgentQuestionCardStore questions,
             AgentWorkflowCheckpointStore checkpoints
     ) {
         this.threads = threads;
-        this.runtime = runtime;
         this.userContext = userContext;
         this.questions = questions;
         this.checkpoints = checkpoints;
@@ -90,18 +77,6 @@ public final class AgentThreadController {
         return AgentThreadDto.from(threads.get(userContext.currentUserId(request), threadId));
     }
 
-    @GetMapping("/threads/{threadId}/question")
-    public ResponseEntity<AgentWorkflowQuestionSnapshotDto> question(
-            @PathVariable String threadId,
-            HttpServletRequest request
-    ) {
-        String userId = userContext.currentUserId(request);
-        threads.get(userId, threadId);
-        return runtime.findOpenQuestion(userId, threadId)
-                .map(question -> ResponseEntity.ok(AgentWorkflowQuestionSnapshotDto.from(question)))
-                .orElseGet(() -> ResponseEntity.noContent().build());
-    }
-
     @GetMapping("/threads/{threadId}/interaction")
     public ResponseEntity<AgentThreadInteractionDto> interaction(
             @PathVariable String threadId,
@@ -121,10 +96,7 @@ public final class AgentThreadController {
                 return ResponseEntity.ok(AgentThreadInteractionDto.from(checkpoint.get()));
             }
         }
-        return runtime.findOpenQuestion(userId, threadId)
-                .map(question -> ResponseEntity.ok(AgentThreadInteractionDto.fromLegacyQuestion(
-                        AgentWorkflowQuestionSnapshotDto.from(question))))
-                .orElseGet(() -> ResponseEntity.noContent().build());
+        return ResponseEntity.noContent().build();
     }
 
     @PatchMapping("/threads/{threadId}")

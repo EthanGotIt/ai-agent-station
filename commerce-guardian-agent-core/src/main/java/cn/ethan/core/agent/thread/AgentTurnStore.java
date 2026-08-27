@@ -51,11 +51,6 @@ public interface AgentTurnStore {
 
     List<AgentTurnModel> listRecoverableTurns();
 
-    /** 返回终态已写入但仍可能绑定 OPEN+ENQUEUED Question 的历史回答 Turn。 */
-    default List<AgentTurnModel> listWorkflowAnswerReconciliationCandidates() {
-        return List.of();
-    }
-
     /**
      * 返回启动时需要与 WorkflowRun 重新对齐的 owner Turn；正常开放 Question 不应出现在结果中。
      */

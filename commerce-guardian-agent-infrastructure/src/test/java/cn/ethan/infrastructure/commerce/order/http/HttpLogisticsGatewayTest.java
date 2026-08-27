@@ -1,5 +1,6 @@
 package cn.ethan.infrastructure.commerce.order.http;
 
+import cn.ethan.infrastructure.http.FakeClientHttpRequestFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
 
@@ -19,13 +20,19 @@ class HttpLogisticsGatewayTest {
     @Test
     void acceptsAbsoluteHttpEndpointAndRejectsUnsafeBaseUrls() {
         assertDoesNotThrow(() -> new HttpLogisticsGateway(
-                RestClient.builder(), "https://orders.example.test/api", Duration.ofSeconds(1)
+                RestClient.builder(), "https://orders.example.test/api", Duration.ofSeconds(1),
+                fakeTransport()));
+        assertThrows(IllegalArgumentException.class, () -> new HttpLogisticsGateway(
+                RestClient.builder(), "file:///tmp/orders", Duration.ofSeconds(1), fakeTransport()
         ));
         assertThrows(IllegalArgumentException.class, () -> new HttpLogisticsGateway(
-                RestClient.builder(), "file:///tmp/orders", Duration.ofSeconds(1)
+                RestClient.builder(), "https://orders.example.test?override=true", Duration.ofSeconds(1),
+                fakeTransport()
         ));
-        assertThrows(IllegalArgumentException.class, () -> new HttpLogisticsGateway(
-                RestClient.builder(), "https://orders.example.test?override=true", Duration.ofSeconds(1)
-        ));
+    }
+
+    private FakeClientHttpRequestFactory fakeTransport() {
+        return new FakeClientHttpRequestFactory(request ->
+                FakeClientHttpRequestFactory.Response.json(200, "[]"));
     }
 }

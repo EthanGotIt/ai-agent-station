@@ -5,7 +5,7 @@ import cn.ethan.core.agent.workflow.AgentQuestionCardAnswerEnqueueStatusEnum;
 import cn.ethan.core.agent.workflow.AgentQuestionCardModel;
 import cn.ethan.core.agent.workflow.AgentQuestionCardStatusEnum;
 import cn.ethan.core.agent.workflow.AgentQuestionCardStore;
-import cn.ethan.core.agent.workflow.AgentWorkflowQuestionFieldModel;
+import cn.ethan.core.agent.workflow.AgentQuestionFieldModel;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentThreadMapper;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentThreadEntity;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
@@ -209,7 +209,7 @@ public final class MybatisAgentQuestionCardStore implements AgentQuestionCardSto
                 parseAnswerFields(entity.getFieldsJson()));
     }
 
-    private List<AgentWorkflowQuestionFieldModel> parseAnswerFields(String fieldsJson) {
+    private List<AgentQuestionFieldModel> parseAnswerFields(String fieldsJson) {
         if (fieldsJson == null || fieldsJson.isBlank()) {
             return List.of();
         }
@@ -219,14 +219,14 @@ public final class MybatisAgentQuestionCardStore implements AgentQuestionCardSto
             if (fields == null || !fields.isArray()) {
                 return List.of();
             }
-            List<AgentWorkflowQuestionFieldModel> result = new ArrayList<>();
+            List<AgentQuestionFieldModel> result = new ArrayList<>();
             for (JsonNode field : fields) {
                 List<String> options = new ArrayList<>();
                 JsonNode optionNode = field.path("options");
                 if (optionNode.isArray()) {
                     optionNode.forEach(option -> options.add(option.asString()));
                 }
-                result.add(new AgentWorkflowQuestionFieldModel(field.path("name").asString(),
+                result.add(new AgentQuestionFieldModel(field.path("name").asString(),
                         field.path("required").asBoolean(false), field.path("maxLength").asInt(256),
                         options, field.path("allowCustom").asBoolean(false)));
             }

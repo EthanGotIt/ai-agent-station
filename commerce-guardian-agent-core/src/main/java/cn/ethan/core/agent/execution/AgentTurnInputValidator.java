@@ -2,10 +2,6 @@ package cn.ethan.core.agent.execution;
 
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
-import cn.ethan.core.agent.workflow.AgentWorkflowAnswerActionEnum;
-
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 /**
  * 类型职责：集中校验进入 Runtime 的身份、请求 ID、消息和结构化回答，避免生命周期类混入协议清洗。
@@ -48,23 +44,4 @@ public final class AgentTurnInputValidator {
         return normalized;
     }
 
-    public static Map<String, String> normalizeAnswers(
-            AgentWorkflowAnswerActionEnum action,
-            Map<String, String> answers
-    ) {
-        if (action == AgentWorkflowAnswerActionEnum.CANCEL) {
-            return Map.of();
-        }
-        if (answers == null || answers.isEmpty()) {
-            throw new IllegalArgumentException("answers 不能为空");
-        }
-        LinkedHashMap<String, String> normalized = new LinkedHashMap<>();
-        answers.forEach((name, value) -> {
-            if (name == null || value == null) {
-                throw new IllegalArgumentException("QuestionCard 回答字段和值不能为空");
-            }
-            normalized.put(name, value.trim());
-        });
-        return Map.copyOf(normalized);
-    }
 }

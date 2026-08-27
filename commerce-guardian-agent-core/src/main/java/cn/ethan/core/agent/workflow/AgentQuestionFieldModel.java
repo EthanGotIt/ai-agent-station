@@ -8,7 +8,7 @@ import java.util.List;
  * @author ethan
  * @date 2026-08-21
  */
-public record AgentWorkflowQuestionFieldModel(
+public record AgentQuestionFieldModel(
         String name,
         boolean required,
         int maxLength,
@@ -16,8 +16,8 @@ public record AgentWorkflowQuestionFieldModel(
         boolean allowCustom
 ) {
 
-    /** 保留无自定义值字段的构造边界，旧 Question schema 默认只接受固定选项。 */
-    public AgentWorkflowQuestionFieldModel(
+    /** 保留无自定义值字段的构造边界，默认只接受固定选项。 */
+    public AgentQuestionFieldModel(
             String name,
             boolean required,
             int maxLength,
@@ -26,7 +26,7 @@ public record AgentWorkflowQuestionFieldModel(
         this(name, required, maxLength, options, false);
     }
 
-    public AgentWorkflowQuestionFieldModel {
+    public AgentQuestionFieldModel {
         if (name == null || !name.matches("[A-Za-z][A-Za-z0-9_]{0,63}")) {
             throw new IllegalArgumentException("QuestionCard 字段名不合法");
         }

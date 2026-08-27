@@ -25,7 +25,9 @@ Commerce Guardian Agent 将订单售后请求转换为可恢复的 Thread → Tu
 ## Capabilities and Constraints
 
 - 支持订单搜索、订单详情、物流时间线、退款、催发货、订单历史隐藏与恢复。
-- 外部写操作必须经过 QuestionCard 和确定性 Workflow，不能由模型直接产生副作用。
+- 外部写操作必须经过确定性 Workflow 的 `AUTHORIZE` Checkpoint，不能由模型直接产生副作用；缺少订单号或退款原因时才使用 QuestionCard 提问。
+- 每个 Thread 最多一个开放交互；QuestionCard 只收集受控字段，Workflow Checkpoint 只确认动作、对象、影响和事实版本，拒绝/取消不创建外部命令。
+- Workflow 节点、Agent 决策和续跑触发事实均以受控 Item 持久化；续跑失败不得改写已成功的订单事实。
 - 同一 Thread 串行处理，QuestionCard、WorkflowRun、Checkpoint 和 ExternalActionCommand 必须持久化。
 - 不展示原始 Thinking；业务结果优先使用结构化 Item，运行细节按需查看。
 - 本阶段不新增退货、换货或多订单批处理等业务种类。
@@ -38,7 +40,7 @@ Commerce Guardian Agent 将订单售后请求转换为可恢复的 Thread → Tu
 
 ## Evidence on Hand
 
-- 仓库已有可运行的 React + TypeScript + Vite 工作台：`agent-console`。
+- 仓库已有可运行的 React + TypeScript + Vite 工作台：`agent-fronted`。
 - 仓库已有 Core、Infrastructure、App 三层 Java 服务，以及真实浏览器、MySQL、独立 HTTP 订单服务和 DeepSeek 验收记录。
 - 真实业务事实来自本地夹具或独立 HTTP 订单服务；不得编造生产平台、客户或业务指标。
 

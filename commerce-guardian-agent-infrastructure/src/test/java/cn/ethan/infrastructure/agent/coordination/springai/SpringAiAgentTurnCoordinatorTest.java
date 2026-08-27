@@ -12,9 +12,10 @@ import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentThreadStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
+import cn.ethan.core.agent.thread.AgentQuestionAnswerInput;
 import cn.ethan.core.agent.workflow.AgentWorkflowEngine;
-import cn.ethan.core.agent.workflow.AgentWorkflowAnswerActionEnum;
-import cn.ethan.core.agent.thread.AgentWorkflowAnswerInput;
+import cn.ethan.core.agent.workflow.AgentQuestionCardAnswerActionEnum;
+import cn.ethan.core.agent.workflow.AgentQuestionCardResumeTargetEnum;
 import cn.ethan.core.commerce.order.LogisticsGateway;
 import cn.ethan.core.commerce.order.OrderGateway;
 import org.junit.jupiter.api.Test;
@@ -200,12 +201,12 @@ class SpringAiAgentTurnCoordinatorTest {
     }
 
     private AgentTurnModel cancellationTurn() {
-        AgentWorkflowAnswerInput answer = new AgentWorkflowAnswerInput(
-                "run-1", "question-1", "checkpoint-1", 2L, Map.of(),
-                AgentWorkflowAnswerActionEnum.CANCEL);
+        AgentQuestionAnswerInput answer = new AgentQuestionAnswerInput(
+                "question-1", "run-1", AgentQuestionCardResumeTargetEnum.WORKFLOW, 2L, Map.of(),
+                AgentQuestionCardAnswerActionEnum.CANCEL);
         return new AgentTurnModel(
                 "turn-1", "thread-1", "user-1", "request-1", "结束本次操作",
-                AgentTurnStatusEnum.ACTIVE, 0, "run-1", null, NOW, NOW, null, answer, 0L);
+                AgentTurnStatusEnum.ACTIVE, 0, "run-1", null, NOW, NOW, null, answer);
     }
 
     private ChatResponse response(String content) {

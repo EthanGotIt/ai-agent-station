@@ -1,7 +1,6 @@
 package cn.ethan.core.agent.coordination;
 
 import cn.ethan.core.agent.thread.AgentItemModel;
-import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
 import cn.ethan.core.agent.workflow.AgentQuestionCardModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointModel;
 import cn.ethan.core.agent.thread.AgentThreadModel;
@@ -42,7 +41,6 @@ public interface AgentTurnCoordinator {
     record AgentCoordinatorResult(
             String assistantMessage,
             List<AgentItemDraft> items,
-            AgentWorkflowQuestionModel question,
             String workflowRunId,
             boolean waitingUserInput,
             AgentDecisionTypeEnum decision,
@@ -54,38 +52,35 @@ public interface AgentTurnCoordinator {
         public AgentCoordinatorResult(
                 String assistantMessage,
                 List<AgentItemDraft> items,
-                AgentWorkflowQuestionModel question,
                 String workflowRunId,
                 boolean waitingUserInput
         ) {
-            this(assistantMessage, items, question, workflowRunId, waitingUserInput, null, null, null, null);
+            this(assistantMessage, items, workflowRunId, waitingUserInput, null, null, null, null);
         }
 
         public AgentCoordinatorResult(
                 String assistantMessage,
                 List<AgentItemDraft> items,
-                AgentWorkflowQuestionModel question,
                 String workflowRunId,
                 boolean waitingUserInput,
                 AgentDecisionTypeEnum decision,
                 String decisionCode
         ) {
-            this(assistantMessage, items, question, workflowRunId, waitingUserInput,
+            this(assistantMessage, items, workflowRunId, waitingUserInput,
                     decision, decisionCode, null, null);
         }
 
-        /** 保留显式 QuestionCard 的构造边界；固定流程 Checkpoint 默认为空。 */
+        /** 显式 QuestionCard 的构造边界；固定流程 Checkpoint 默认为空。 */
         public AgentCoordinatorResult(
                 String assistantMessage,
                 List<AgentItemDraft> items,
-                AgentWorkflowQuestionModel question,
                 String workflowRunId,
                 boolean waitingUserInput,
                 AgentDecisionTypeEnum decision,
                 String decisionCode,
                 AgentQuestionCardModel questionCard
         ) {
-            this(assistantMessage, items, question, workflowRunId, waitingUserInput,
+            this(assistantMessage, items, workflowRunId, waitingUserInput,
                     decision, decisionCode, questionCard, null);
         }
 

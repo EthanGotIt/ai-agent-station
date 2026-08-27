@@ -8,8 +8,6 @@ import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.context.AgentContextAssembler;
 import cn.ethan.core.agent.context.AgentContextSnapshotStore;
 import cn.ethan.core.agent.execution.AgentTurnRuntimeService;
-import cn.ethan.core.agent.execution.AgentWorkflowAnswerAdmission;
-import cn.ethan.core.agent.execution.AgentWorkflowAnswerFailureReconciler;
 import cn.ethan.core.agent.execution.AgentExecutionTimelineService;
 import cn.ethan.core.agent.execution.AgentRuntimeMetrics;
 import cn.ethan.core.agent.action.ExternalActionCommandStore;
@@ -18,7 +16,6 @@ import cn.ethan.core.agent.thread.AgentThreadService;
 import cn.ethan.core.agent.thread.AgentThreadArchiveGuard;
 import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
 import cn.ethan.core.agent.coordination.AgentOrderActionCoordinator;
-import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 import cn.ethan.core.agent.workflow.AgentQuestionCardStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStore;
 import org.mybatis.spring.annotation.MapperScan;
@@ -169,9 +166,6 @@ public class AgentConfiguration {
             AgentThreadStore threadStore,
             AgentTurnStore turns,
             AgentItemStore items,
-            AgentWorkflowQuestionStore questions,
-            AgentWorkflowAnswerAdmission answerAdmission,
-            AgentWorkflowAnswerFailureReconciler failureReconciler,
             AgentThreadService threads,
             AgentContextAssembler contextAssembler,
             AgentTurnCoordinator coordinator,
@@ -187,8 +181,7 @@ public class AgentConfiguration {
             AgentWorkflowCheckpointStore checkpoints
     ) {
         AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
-                threadStore, turns, items, questions, answerAdmission, failureReconciler,
-                threads, contextAssembler, coordinator,
+                threadStore, turns, items, threads, contextAssembler, coordinator,
                 events, agentTaskExecutor, agentQueueTimeoutScheduler, clock,
                 runtimeProperties.queue().maxPendingPerThread(),
                 runtimeProperties.queue().maxPendingGlobal(),

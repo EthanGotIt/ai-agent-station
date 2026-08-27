@@ -1,5 +1,6 @@
 package cn.ethan.app.agent.api;
 
+import cn.ethan.core.agent.workflow.AgentQuestionCardAnswerActionEnum;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import jakarta.validation.ValidatorFactory;
@@ -11,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 类型职责：验证普通 Turn 与 Workflow 回答 HTTP 输入统一遵守持久化边界。
+ * 类型职责：验证普通 Turn 与 QuestionCard 回答 HTTP 输入统一遵守持久化边界。
  *
  * @author ethan
  * @date 2026-08-21
@@ -30,10 +31,12 @@ class AgentClientRequestIdValidationTest {
             assertTrue(validator.validate(new AgentTurnSubmitRequestDto(accepted, acceptedMessage)).isEmpty());
             assertFalse(validator.validate(new AgentTurnSubmitRequestDto(rejected, "message")).isEmpty());
             assertFalse(validator.validate(new AgentTurnSubmitRequestDto(accepted, rejectedMessage)).isEmpty());
-            assertTrue(validator.validate(new AgentWorkflowQuestionAnswerRequestDto(
-                    accepted, "checkpoint-1", 0L, Map.of("decision", "APPROVE"))).isEmpty());
-            assertFalse(validator.validate(new AgentWorkflowQuestionAnswerRequestDto(
-                    rejected, "checkpoint-1", 0L, Map.of("decision", "APPROVE"))).isEmpty());
+            assertTrue(validator.validate(new AgentQuestionAnswerRequestDto(
+                    accepted, 0L, Map.of("answer", "value"), null)).isEmpty());
+            assertFalse(validator.validate(new AgentQuestionAnswerRequestDto(
+                    rejected, 0L, Map.of("answer", "value"), null)).isEmpty());
+            assertTrue(validator.validate(new AgentQuestionAnswerRequestDto(
+                    accepted, 0L, null, AgentQuestionCardAnswerActionEnum.CANCEL)).isEmpty());
         }
     }
 }

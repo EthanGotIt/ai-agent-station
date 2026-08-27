@@ -10,8 +10,6 @@ public enum AgentTurnInputKindEnum {
     MESSAGE,
     QUESTION_ANSWER,
     WORKFLOW_DECISION,
-    /** 旧版本结构化 Workflow 回答，仅用于迁移兼容。 */
-    WORKFLOW_ANSWER,
     ORDER_ACTION,
     AGENT_CONTINUATION
 }

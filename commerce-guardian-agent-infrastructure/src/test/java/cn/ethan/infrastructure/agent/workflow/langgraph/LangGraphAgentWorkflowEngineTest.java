@@ -78,7 +78,7 @@ class LangGraphAgentWorkflowEngineTest {
         AgentTurnModel decisionTurn = new AgentTurnModel(
                 "decision-1", "thread-1", "user-1", "decision-request", "Workflow Checkpoint 决策",
                 cn.ethan.core.agent.thread.AgentTurnStatusEnum.ACTIVE, 0, started.runId(), null,
-                NOW, NOW, null, null, null, 0L, AgentTurnInputKindEnum.WORKFLOW_DECISION,
+                 NOW, NOW, null, null, 0L, AgentTurnInputKindEnum.WORKFLOW_DECISION,
                 null, null, input);
 
         AgentWorkflowEngine.ResumeResult resumed = fixture.engine.resume(fixture.thread, decisionTurn, Map.of());

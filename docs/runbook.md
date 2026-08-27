@@ -22,7 +22,7 @@
    mvn spring-boot:run -pl commerce-guardian-agent-app
    ```
 
-4. 运行前端 `cd agent-console; npm run dev`。
+4. 运行前端 `cd agent-fronted; npm run dev`。
 
 本地演示身份通过 `X-User-Id: demo-user-1` 传递；真实部署应在网关完成认证并由应用认证适配器提供用户 ID。
 
@@ -37,7 +37,7 @@ Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8090/api/agent/threads/$thr
 # 已返回的 turnId 可用于只读轨迹回放：GET /api/agent/turns/{turnId}/execution
 ```
 
-退款或催发货请求只会生成 QuestionCard。批准后命令进入 Worker；可通过 Items 和 SSE 观察 `TOOL_*`、`WORKFLOW_*`、`EXTERNAL_ACTION_STATUS` 和 Turn 终态。
+退款或催发货请求在固定 Workflow 的 `AUTHORIZE` 节点生成独立 `WORKFLOW_CHECKPOINT`；批准后命令进入 Worker，缺少订单号或退款原因时才生成 `QUESTION_CARD`。外部动作成功或核验/重试需要 Agent 继续判断时，会追加最多 3 轮的 `AGENT_CONTINUATION` Turn；可通过 Items 和 SSE 观察 `TOOL_*`、`WORKFLOW_*`、`WORKFLOW_STEP`、`AGENT_DECISION`、`EXTERNAL_ACTION_STATUS` 和 Turn 终态。续跑与 Workflow 结果仍以持久化 Items 为准，SSE 只负责实时体验和断线恢复。
 
 ## 排错
 
@@ -55,7 +55,7 @@ python -m unittest discover -s scripts/tests -p "test_*.py"
 python -m scripts.runtime_eval
 mvn dependency:analyze -DskipTests
 mvn clean '-DskipTests=false' test
-cd agent-console
+cd agent-fronted
 npm run typecheck
 npm test -- --run
 npm run test:component

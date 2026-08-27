@@ -5,7 +5,6 @@ import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentThreadConflictException;
-import cn.ethan.core.agent.thread.AgentWorkflowAnswerInput;
 import cn.ethan.core.agent.thread.AgentQuestionAnswerInput;
 import cn.ethan.core.agent.thread.AgentTurnInputKindEnum;
 import cn.ethan.core.agent.coordination.AgentContinuationInput;
@@ -35,7 +34,6 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
     private final AgentTurnMapper mapper;
     private final AgentItemMapper itemMapper;
     private final AgentThreadMapper threadMapper;
-    private final JacksonAgentWorkflowAnswerCodec answerCodec;
     private final JacksonAgentOrderActionCodec orderActionCodec;
     private final JacksonAgentContinuationCodec continuationCodec;
     private final JacksonAgentWorkflowDecisionCodec decisionCodec;
@@ -44,10 +42,9 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
     public MybatisAgentTurnStore(
             AgentTurnMapper mapper,
             AgentItemMapper itemMapper,
-            AgentThreadMapper threadMapper,
-            JacksonAgentWorkflowAnswerCodec answerCodec
+            AgentThreadMapper threadMapper
     ) {
-        this(mapper, itemMapper, threadMapper, answerCodec,
+        this(mapper, itemMapper, threadMapper,
                 new JacksonAgentOrderActionCodec(new tools.jackson.databind.ObjectMapper()),
                 new JacksonAgentContinuationCodec(new tools.jackson.databind.ObjectMapper()),
                 new JacksonAgentWorkflowDecisionCodec(new tools.jackson.databind.ObjectMapper()),
@@ -59,7 +56,6 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
             AgentTurnMapper mapper,
             AgentItemMapper itemMapper,
             AgentThreadMapper threadMapper,
-            JacksonAgentWorkflowAnswerCodec answerCodec,
             JacksonAgentOrderActionCodec orderActionCodec,
             JacksonAgentContinuationCodec continuationCodec,
             JacksonAgentWorkflowDecisionCodec decisionCodec,
@@ -68,7 +64,6 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
         this.mapper = mapper;
         this.itemMapper = itemMapper;
         this.threadMapper = threadMapper;
-        this.answerCodec = answerCodec;
         this.orderActionCodec = orderActionCodec;
         this.continuationCodec = continuationCodec;
         this.decisionCodec = decisionCodec;
@@ -136,7 +131,6 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
         if (isTerminal(expected.status())) {
             return false;
         }
-        AgentWorkflowAnswerInput answer = next.workflowAnswerInput();
         AgentQuestionAnswerInput questionAnswer = next.questionAnswerInput();
         AgentOrderActionInput orderAction = next.orderActionInput();
         AgentWorkflowDecisionInput decision = next.workflowDecisionInput();
@@ -147,12 +141,8 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
                 .set("STATUS", next.status().name())
                 .set("QUEUE_POSITION", next.queuePosition())
                 .set("WORKFLOW_RUN_ID", next.workflowRunId())
-                .set("WORKFLOW_QUESTION_ID", answer == null ? null : answer.questionId())
-                .set("QUESTION_CARD_ID", answer != null ? answer.questionId()
-                        : questionAnswer == null ? null : questionAnswer.questionId())
-                .set("WORKFLOW_CHECKPOINT_ID", answer == null ? null : answer.checkpointId())
-                .set("WORKFLOW_QUESTION_VERSION", answer == null ? null : answer.enqueuedQuestionVersion())
-                .set("WORKFLOW_ANSWERS_JSON", answer == null ? null : answerCodec.encodeAnswers(answer))
+                .set("QUESTION_CARD_ID", questionAnswer == null ? null : questionAnswer.questionId())
+                .set("WORKFLOW_CHECKPOINT_ID", decision == null ? null : decision.checkpointId())
                 .set("QUESTION_ANSWER_JSON", questionAnswerCodec.encode(questionAnswer))
                 .set("INPUT_KIND", next.inputKind().name())
                 .set("ORDER_ACTION_JSON", orderActionCodec.encode(orderAction))
@@ -177,11 +167,6 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
     }
 
     @Override
-    public List<AgentTurnModel> listWorkflowAnswerReconciliationCandidates() {
-        return mapper.selectWorkflowAnswerReconciliationCandidates().stream().map(this::toModel).toList();
-    }
-
-    @Override
     public List<AgentWorkflowOwnerRecoveryCandidate> listWorkflowOwnerRecoveryCandidates() {
         return mapper.selectWorkflowOwnerRecoveryCandidates().stream()
                 .map(row -> new AgentWorkflowOwnerRecoveryCandidate(
@@ -189,7 +174,7 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
                                 .orElseThrow(() -> new IllegalStateException(
                                         "Workflow owner Turn 在恢复查询后消失：" + row.getTurnId())),
                         AgentWorkflowStatusEnum.valueOf(row.getWorkflowRunStatus()),
-                        Integer.valueOf(1).equals(row.getOpenQuestion())))
+                        Integer.valueOf(1).equals(row.getOpenInteraction())))
                 .toList();
     }
 
@@ -206,17 +191,12 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
         entity.setStatus(model.status().name());
         entity.setQueuePosition(model.queuePosition());
         entity.setWorkflowRunId(model.workflowRunId());
-        AgentWorkflowAnswerInput answer = model.workflowAnswerInput();
         AgentQuestionAnswerInput questionAnswer = model.questionAnswerInput();
-        if (answer != null) {
-            entity.setWorkflowQuestionId(answer.questionId());
-            entity.setWorkflowCheckpointId(answer.checkpointId());
-            entity.setWorkflowQuestionVersion(answer.enqueuedQuestionVersion());
-            entity.setWorkflowAnswersJson(answerCodec.encodeAnswers(answer));
-            entity.setQuestionCardId(answer.questionId());
-        }
         if (questionAnswer != null) {
             entity.setQuestionCardId(questionAnswer.questionId());
+        }
+        if (model.workflowDecisionInput() != null) {
+            entity.setWorkflowCheckpointId(model.workflowDecisionInput().checkpointId());
         }
         entity.setQuestionAnswerJson(questionAnswerCodec.encode(questionAnswer));
         entity.setWorkflowDecisionJson(decisionCodec.encode(model.workflowDecisionInput()));
@@ -229,7 +209,7 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
     }
 
     private AgentTurnModel toModel(AgentTurnEntity entity) {
-        AgentTurnInputKindEnum inputKind = inputKind(entity.getInputKind(), entity.getWorkflowAnswersJson(),
+        AgentTurnInputKindEnum inputKind = inputKind(entity.getInputKind(),
                 entity.getQuestionAnswerJson(), entity.getOrderActionJson(), entity.getContinuationJson(),
                 entity.getWorkflowDecisionJson());
         AgentOrderActionInput orderAction = orderActionCodec.decode(entity.getOrderActionJson());
@@ -239,13 +219,12 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
         return new AgentTurnModel(entity.getTurnId(), entity.getThreadId(), entity.getUserId(),
                 entity.getClientRequestId(), entity.getInputText(), AgentTurnStatusEnum.valueOf(entity.getStatus()),
                 value(entity.getQueuePosition()), entity.getWorkflowRunId(), entity.getErrorCode(), entity.getCreatedAt(),
-                entity.getStartedAt(), entity.getFinishedAt(), toAnswerInput(entity), questionAnswer,
+                entity.getStartedAt(), entity.getFinishedAt(), questionAnswer,
                 value(entity.getVersionNo()), inputKind, orderAction, continuation, decision);
     }
 
     private AgentTurnInputKindEnum inputKind(
             String persisted,
-            String workflowAnswersJson,
             String questionAnswerJson,
             String orderActionJson,
             String continuationJson,
@@ -264,28 +243,11 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
             return AgentTurnInputKindEnum.ORDER_ACTION;
         }
         if (persisted != null && !persisted.isBlank()
-                && !(AgentTurnInputKindEnum.WORKFLOW_ANSWER.name().equals(persisted)
-                && (workflowAnswersJson == null || workflowAnswersJson.isBlank()))) {
+                && !"WORKFLOW_ANSWER".equalsIgnoreCase(persisted)) {
             return AgentTurnInputKindEnum.valueOf(persisted);
         }
-        return workflowAnswersJson == null
-                ? AgentTurnInputKindEnum.MESSAGE : AgentTurnInputKindEnum.WORKFLOW_ANSWER;
-    }
-
-    private AgentWorkflowAnswerInput toAnswerInput(AgentTurnEntity entity) {
-        // 旧版本把 owner Turn 的 Workflow 关联字段也写进了回答列，但没有 answers JSON；
-        // owner Turn 不是回答 Turn，恢复时必须保留 owner 语义而不是阻断整个应用启动。
-        if (entity.getWorkflowAnswersJson() == null) {
-            return null;
-        }
-        if (entity.getWorkflowRunId() == null || entity.getWorkflowQuestionId() == null
-                || entity.getWorkflowCheckpointId() == null || entity.getWorkflowQuestionVersion() == null
-                || entity.getWorkflowAnswersJson() == null) {
-            throw new IllegalStateException("回答 Turn 的结构化持久字段不完整：" + entity.getTurnId());
-        }
-        return answerCodec.decode(entity.getWorkflowRunId(), entity.getWorkflowQuestionId(),
-                entity.getWorkflowCheckpointId(), entity.getWorkflowQuestionVersion(),
-                entity.getWorkflowAnswersJson());
+        // 旧版本 WORKFLOW_ANSWER 只作为历史输入标记；新 Runtime 不再恢复或执行该路径。
+        return AgentTurnInputKindEnum.MESSAGE;
     }
 
     private static int value(Integer value) {

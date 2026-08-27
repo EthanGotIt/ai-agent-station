@@ -24,7 +24,7 @@ class AgentQuestionCardModelTest {
     void agentQuestionDoesNotRequireWorkflowRun() {
         AgentQuestionCardModel question = AgentQuestionCardModel.agent(
                 "question-1", "thread-1", "turn-1", "user-1", "缺少订单号", "请补充订单号", "[]",
-                List.of(new AgentWorkflowQuestionFieldModel("orderId", true, 64, List.of())), NOW);
+                List.of(new AgentQuestionFieldModel("orderId", true, 64, List.of())), NOW);
 
         assertNull(question.runId());
         assertEquals(AgentQuestionCardResumeTargetEnum.AGENT, question.resumeTarget());
@@ -49,7 +49,7 @@ class AgentQuestionCardModelTest {
     void answerReservationEnqueueAndCloseAreMonotonic() {
         AgentQuestionCardModel question = AgentQuestionCardModel.agent(
                 "question-1", "thread-1", "turn-1", "user-1", "标题", "问题", "[]",
-                List.of(new AgentWorkflowQuestionFieldModel("answer", true, 32, List.of())), NOW);
+                List.of(new AgentQuestionFieldModel("answer", true, 32, List.of())), NOW);
 
         AgentQuestionCardModel reserved = question.reserveAnswerTurn("answer-turn-1");
         AgentQuestionCardModel enqueued = reserved.answerTurnEnqueued();
@@ -81,7 +81,7 @@ class AgentQuestionCardModelTest {
     void answerSchemaRejectsUnknownMissingAndInvalidValues() {
         AgentQuestionCardModel question = AgentQuestionCardModel.agent(
                 "question-1", "thread-1", "turn-1", "user-1", "标题", "问题", "[]",
-                List.of(new AgentWorkflowQuestionFieldModel(
+                List.of(new AgentQuestionFieldModel(
                         "decision", true, 16, List.of("APPROVE", "REJECT"))), NOW);
 
         assertEquals(Map.of("decision", "APPROVE"), question.validateAnswers(Map.of("decision", " APPROVE ")));

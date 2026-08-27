@@ -109,7 +109,7 @@ class SpringAiAgentToolBoundaryTest {
                 assertEquals("REFUND", arguments.get("intent"));
                 assertEquals("ORDER-1", arguments.get("orderId"));
                 assertFalse(arguments.containsKey("reason"));
-                return new StartResult("run-1", null);
+                return new StartResult("run-1", null, null);
             }
 
             @Override

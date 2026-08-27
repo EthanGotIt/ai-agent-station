@@ -33,7 +33,7 @@ public record AgentQuestionCardModel(
         Instant answeredAt,
         String answerTurnId,
         AgentQuestionCardAnswerEnqueueStatusEnum answerEnqueueStatus,
-        List<AgentWorkflowQuestionFieldModel> answerFields
+        List<AgentQuestionFieldModel> answerFields
 ) {
 
     public AgentQuestionCardModel {
@@ -101,7 +101,7 @@ public record AgentQuestionCardModel(
     public static AgentQuestionCardModel agent(
             String questionId, String threadId, String turnId, String userId,
             String title, String prompt, String fieldsJson,
-            List<AgentWorkflowQuestionFieldModel> fields, Instant createdAt
+            List<AgentQuestionFieldModel> fields, Instant createdAt
     ) {
         return new AgentQuestionCardModel(questionId, null, threadId, turnId, userId,
                 AgentQuestionCardResumeTargetEnum.AGENT, 0, 0, title, prompt, fieldsJson,
@@ -112,7 +112,7 @@ public record AgentQuestionCardModel(
     public static AgentQuestionCardModel workflow(
             String questionId, String runId, String threadId, String turnId, String userId,
             int stepNo, String title, String prompt, String fieldsJson,
-            List<AgentWorkflowQuestionFieldModel> fields, Instant createdAt
+            List<AgentQuestionFieldModel> fields, Instant createdAt
     ) {
         return new AgentQuestionCardModel(questionId, runId, threadId, turnId, userId,
                 AgentQuestionCardResumeTargetEnum.WORKFLOW, stepNo, 0, title, prompt, fieldsJson,
@@ -170,13 +170,13 @@ public record AgentQuestionCardModel(
         if (submittedAnswers == null || submittedAnswers.isEmpty()) {
             throw new IllegalArgumentException("QuestionCard 回答不能为空");
         }
-        Set<String> allowedNames = answerFields.stream().map(AgentWorkflowQuestionFieldModel::name)
+        Set<String> allowedNames = answerFields.stream().map(AgentQuestionFieldModel::name)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
         if (submittedAnswers.keySet().stream().anyMatch(name -> name == null || !allowedNames.contains(name))) {
             throw new IllegalArgumentException("QuestionCard 回答包含未知字段");
         }
         Map<String, String> validated = new LinkedHashMap<>();
-        for (AgentWorkflowQuestionFieldModel field : answerFields) {
+        for (AgentQuestionFieldModel field : answerFields) {
             if (!submittedAnswers.containsKey(field.name())) {
                 if (field.required()) {
                     throw new IllegalArgumentException("QuestionCard 缺少必填字段：" + field.name());

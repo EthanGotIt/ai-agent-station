@@ -4,7 +4,7 @@ import cn.ethan.core.agent.thread.AgentInteractionTypeEnum;
 import cn.ethan.core.agent.workflow.AgentQuestionCardAnswerEnqueueStatusEnum;
 import cn.ethan.core.agent.workflow.AgentQuestionCardModel;
 import cn.ethan.core.agent.workflow.AgentQuestionCardStatusEnum;
-import cn.ethan.core.agent.workflow.AgentWorkflowQuestionFieldModel;
+import cn.ethan.core.agent.workflow.AgentQuestionFieldModel;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentThreadEntity;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentThreadMapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
@@ -114,7 +114,7 @@ class MybatisAgentQuestionCardStoreTest {
     private AgentQuestionCardModel question() {
         return AgentQuestionCardModel.agent("question-1", "thread-1", "origin-turn-1", "user-1",
                 "补充信息", "请补充订单号", "[]",
-                List.of(new AgentWorkflowQuestionFieldModel("orderId", true, 64, List.of())), NOW);
+                List.of(new AgentQuestionFieldModel("orderId", true, 64, List.of())), NOW);
     }
 
     private State state(AgentQuestionCardEntity question, AgentThreadEntity thread, int... results) {

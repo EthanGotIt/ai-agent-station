@@ -3,7 +3,6 @@ package cn.ethan.infrastructure.agent.thread.persistence;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
-import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
@@ -72,12 +71,10 @@ class MybatisAgentTurnStoreVersionTest {
     }
 
     private MybatisAgentTurnStore store(AgentTurnMapper mapper) {
-        JacksonAgentWorkflowAnswerCodec codec = new JacksonAgentWorkflowAnswerCodec(new ObjectMapper());
         return new MybatisAgentTurnStore(
                 mapper,
                 mapper(AgentItemMapper.class, (method, arguments) -> defaultValue(method)),
-                mapper(AgentThreadMapper.class, (method, arguments) -> defaultValue(method)),
-                codec);
+                mapper(AgentThreadMapper.class, (method, arguments) -> defaultValue(method)));
     }
 
     private AgentTurnModel turn() {

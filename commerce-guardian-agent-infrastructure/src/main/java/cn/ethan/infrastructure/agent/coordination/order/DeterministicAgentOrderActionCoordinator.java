@@ -60,7 +60,9 @@ public final class DeterministicAgentOrderActionCoordinator implements AgentOrde
                     Map.of("intent", input.actionType().workflowIntent(), "orderId", input.orderId()));
             executionContext.checkActive();
             return new AgentTurnCoordinator.AgentCoordinatorResult(
-                    "", List.of(), started.question(), started.runId(), true);
+                    "", List.of(), started.runId(), true,
+                    cn.ethan.core.agent.coordination.AgentDecisionTypeEnum.START_WORKFLOW,
+                    "WORKFLOW_STARTED", started.questionCard(), started.checkpoint());
         }
         OrderLookupResultModel lookup = orders.findOrder(input.orderId(), thread.userId());
         executionContext.checkActive();
@@ -68,7 +70,7 @@ public final class DeterministicAgentOrderActionCoordinator implements AgentOrde
             return new AgentTurnCoordinator.AgentCoordinatorResult(
                     "", List.of(new AgentTurnCoordinator.AgentItemDraft(
                     "ERROR", errorPayload(errorCode(lookup), "订单事实暂不可用，请稍后重试。"))),
-                    null, null, false);
+                    null, false);
         }
         OrderSnapshotModel order = lookup.order();
         List<AgentTurnCoordinator.AgentItemDraft> facts = new ArrayList<>();
@@ -82,7 +84,7 @@ public final class DeterministicAgentOrderActionCoordinator implements AgentOrde
             facts.add(new AgentTurnCoordinator.AgentItemDraft(
                     "LOGISTICS_TIMELINE", logisticsPayload(order.orderId(), trace)));
         }
-        return new AgentTurnCoordinator.AgentCoordinatorResult("", facts, null, null, false);
+        return new AgentTurnCoordinator.AgentCoordinatorResult("", facts, null, false);
     }
 
     private String errorCode(OrderLookupResultModel lookup) {

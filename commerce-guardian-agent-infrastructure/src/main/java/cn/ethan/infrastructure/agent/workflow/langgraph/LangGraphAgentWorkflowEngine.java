@@ -28,7 +28,7 @@ import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
-import cn.ethan.core.agent.workflow.AgentWorkflowQuestionFieldModel;
+import cn.ethan.core.agent.workflow.AgentQuestionFieldModel;
 import cn.ethan.core.commerce.order.LogisticsEventModel;
 import cn.ethan.core.commerce.order.LogisticsGateway;
 import cn.ethan.core.commerce.order.OrderGateway;
@@ -538,18 +538,18 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             boolean missingOrder,
             Instant now
     ) {
-        List<AgentWorkflowQuestionFieldModel> fields;
+        List<AgentQuestionFieldModel> fields;
         String title;
         String prompt;
         String step;
         if (missingOrder) {
             List<String> options = candidates.orders().stream().limit(3).map(OrderSnapshotModel::orderId).toList();
-            fields = List.of(new AgentWorkflowQuestionFieldModel("orderId", true, 64, options, true));
+            fields = List.of(new AgentQuestionFieldModel("orderId", true, 64, options, true));
             title = "请确认具体订单";
             prompt = options.isEmpty() ? "暂未找到候选订单，请补充订单号。" : "请选择要处理的订单；如果列表中没有，请填写订单号。";
             step = "ORDER_SELECT";
         } else {
-            fields = List.of(new AgentWorkflowQuestionFieldModel("reason", true, MAX_REASON_LENGTH, List.of(), true));
+            fields = List.of(new AgentQuestionFieldModel("reason", true, MAX_REASON_LENGTH, List.of(), true));
             title = "补充退款原因";
             prompt = "为了让退款记录完整，请补充退款原因。";
             step = "REASON";
@@ -905,7 +905,7 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
                 "description", event.description(), "occurredAt", event.occurredAt().toString());
     }
 
-    private Map<String, Object> fieldJson(AgentWorkflowQuestionFieldModel field) {
+    private Map<String, Object> fieldJson(AgentQuestionFieldModel field) {
         Map<String, Object> value = new LinkedHashMap<>();
         value.put("name", field.name());
         value.put("required", field.required());

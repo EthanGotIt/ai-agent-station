@@ -90,7 +90,7 @@ class DeterministicAgentOrderActionCoordinatorTest {
             public StartResult start(AgentThreadModel thread, AgentTurnModel turn,
                                      String operation, Map<String, String> arguments) {
                 called.set(operation + ":" + arguments.get("intent") + ":" + arguments.get("orderId"));
-                return new StartResult("run-1", null);
+                return new StartResult("run-1", null, null);
             }
 
             @Override

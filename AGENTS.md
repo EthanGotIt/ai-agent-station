@@ -27,6 +27,7 @@
 
 - 接口按职责命名：`*Gateway` 表示外部或跨能力边界，`*Store` 表示本地事实持久化，`*Executor` 执行外部动作，`*Coordinator` 负责单 Turn 协调，`*Engine` 负责确定性 Workflow，`*Subscription` 表示实时订阅；不使用 `I` 前缀，具体实现通过技术或策略前缀区分。
 - Core 的持久业务状态使用 `*Model`；端口内部的 `Command`、`Result`、`Draft` 等操作值使用语义名称即可。数据库映射类型统一位于 Infrastructure 的 `<capability>.persistence` 叶子包并使用 `*Entity`、`*Mapper`；HTTP 请求、响应和 SSE 事件使用 `*Dto`。三者必须在边界转换，不跨层复用。
+- Entity、Mapper 和 MyBatis Store 属于同一能力的 `persistence` 叶子包；实现类使用 `Mybatis`、`SpringAi`、`Http`、`Local`、`InMemory` 等技术或策略前缀，避免用 `Impl` 隐藏实现边界。
 - Agent DTO 使用统一业务前缀和操作前缀，例如 `AgentThreadCreateRequestDto`、`AgentTurnAcceptedResponseDto`、`AgentThreadEventDto`、`AgentErrorResponseDto`。`body` 只表达 `@RequestBody` 参数位置，不作类型后缀。
 - 枚举以 `Enum` 结尾；只有表达完整用例边界的类型才使用 `*Service`，其他职责分别使用 `*Manager`、`*Mapper`、`*Validator`、`*Configuration`、`*Controller`、`*ExceptionHandler`、`*Exception`。队列调度使用 `*Queue`，上下文组装使用 `*Assembler`，租约任务使用 `*Worker`。测试使用 `*Test`，集成测试使用 `*IT`。
 - `*Utils` 只表示同一主题的多个无状态方法，类型必须是 `final` 并有私有构造器。避免 `Common`、`Helper` 等模糊名称。
@@ -35,7 +36,7 @@
 ## 项目与文档命名（硬约束）
 
 - 对外产品名统一写作 `Commerce Guardian Agent`；正文、页面标题、日志提示和示例不得再使用旧项目名或版本号作为产品名。
-- Maven 根项目、模块目录、ArtifactId、前端目录和 npm package 使用小写 kebab-case：`commerce-guardian-agent`、`commerce-guardian-agent-core`、`commerce-guardian-agent-infrastructure`、`commerce-guardian-agent-app`、`agent-console`。
+- Maven 根项目、模块目录、ArtifactId、前端目录和 npm package 使用小写 kebab-case：`commerce-guardian-agent`、`commerce-guardian-agent-core`、`commerce-guardian-agent-infrastructure`、`commerce-guardian-agent-app`、`agent-fronted`。
 - 文档文件名使用小写 kebab-case，表达稳定职责，不在文件名中编码版本号或日期；例如 `architecture.md`、`runbook.md`、`task-handoff.md`。SQL 基线命名为 `commerce-guardian-agent.sql`。
 - Java 类型仍使用 PascalCase，Python 模块使用 snake_case，前端组件使用 PascalCase；目录名遵循所属生态的标准命名。
 - 修改项目名时必须同步检查构建文件、运行配置、数据库名、前端元数据、脚本提示、文档链接和验收示例；不得留下旧项目名或版本标签的功能性引用。
@@ -54,6 +55,8 @@
  * @date 2026-08-19
  */
 ```
+
+其中 `@date` 使用文件创建当天日期；不得仅因格式整理而改写既有类型日期。
 
 - 在能处理、转换或降级的边界捕获异常；无法恢复时交给统一异常边界。资源使用 try-with-resources；日志只记录稳定上下文，不记录密钥、完整 Prompt、原始 Thinking 或用户敏感数据。
 - Controller 只做协议转换；格式校验在输入边界，业务不变量在 Core。Spring Boot 只维护 `application.yml`；敏感配置通过环境变量注入且不提供非空默认值。
@@ -88,7 +91,7 @@
 python -m scripts.convention_check
 python -m unittest discover -s scripts/tests -p "test_*.py"
 mvn clean '-DskipTests=false' test
-npm run typecheck
-npm test -- --run
-npm run build
+npm --prefix agent-fronted run typecheck
+npm --prefix agent-fronted test
+npm --prefix agent-fronted run build
 ```

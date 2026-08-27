@@ -1,6 +1,6 @@
 package cn.ethan.core.agent.thread;
 
-import cn.ethan.core.agent.execution.AgentWorkflowAnswerAdmissionCommand;
+import cn.ethan.core.agent.execution.AgentQuestionAnswerAdmissionCommand;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * 类型职责：验证 Core 创建和回答契约统一限制 clientRequestId 为 128 字符。
+ * 类型职责：验证 Core 创建和 QuestionCard 回答契约统一限制 clientRequestId 为 128 字符。
  *
  * @author ethan
  * @date 2026-08-21
@@ -41,9 +41,8 @@ class AgentTurnClientRequestIdTest {
                 AgentTurnStatusEnum.QUEUED, 1, null, null, Instant.EPOCH, null, null);
     }
 
-    private AgentWorkflowAnswerAdmissionCommand answerCommand(String clientRequestId) {
-        return new AgentWorkflowAnswerAdmissionCommand(
-                "user-1", "thread-1", clientRequestId, 1, "run-1",
-                "question-1", "checkpoint-1", 0, Map.of("decision", "APPROVE"));
+    private AgentQuestionAnswerAdmissionCommand answerCommand(String clientRequestId) {
+        return new AgentQuestionAnswerAdmissionCommand(
+                "user-1", "question-1", clientRequestId, 0, Map.of("answer", "value"), null);
     }
 }

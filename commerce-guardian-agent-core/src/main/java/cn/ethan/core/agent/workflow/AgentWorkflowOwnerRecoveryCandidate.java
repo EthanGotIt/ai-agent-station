@@ -11,7 +11,7 @@ import cn.ethan.core.agent.thread.AgentTurnModel;
 public record AgentWorkflowOwnerRecoveryCandidate(
         AgentTurnModel turn,
         AgentWorkflowStatusEnum workflowStatus,
-        boolean hasOpenQuestion
+        boolean hasOpenInteraction
 ) {
 
     public AgentWorkflowOwnerRecoveryCandidate {

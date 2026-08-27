@@ -14,8 +14,6 @@ import cn.ethan.core.agent.thread.AgentThreadStore;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnStore;
-import cn.ethan.core.agent.workflow.AgentWorkflowQuestionModel;
-import cn.ethan.core.agent.workflow.AgentWorkflowQuestionStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowOwnerRecoveryCandidate;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import org.jspecify.annotations.NonNull;
@@ -30,7 +28,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalLong;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -59,12 +56,10 @@ class AgentTurnRuntimeServiceTest {
         ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
         RecordingEvents events = new RecordingEvents();
         AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
-                persistence, persistence, persistence, persistence,
-                command -> { throw new UnsupportedOperationException("test does not answer a workflow"); },
-                (turn, status, code, finishedAt) -> false,
+                persistence, persistence, persistence,
                 threads, context,
                 (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
-                        "完成：" + turn.input(), List.of(), null, null, false),
+                        "完成：" + turn.input(), List.of(), null, false),
                 events, executor, scheduler, clock,
                 4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256
         );
@@ -101,9 +96,7 @@ class AgentTurnRuntimeServiceTest {
         ManualExecutor executor = new ManualExecutor();
         ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
         AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
-                persistence, persistence, persistence, persistence,
-                command -> { throw new UnsupportedOperationException("test does not answer a workflow"); },
-                (turn, status, code, finishedAt) -> false,
+                persistence, persistence, persistence,
                 threads, context,
                 (current, turn, history, answer) -> {
                     throw new AgentExecutionTimeoutException("模型流式调用超时");
@@ -132,12 +125,10 @@ class AgentTurnRuntimeServiceTest {
         ManualExecutor executor = new ManualExecutor();
         ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
         AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
-                persistence, persistence, persistence, persistence,
-                command -> { throw new UnsupportedOperationException("test does not answer a workflow"); },
-                (turn, status, code, finishedAt) -> false,
+                persistence, persistence, persistence,
                 threads, context,
                 (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
-                        "完成", List.of(), null, null, false),
+                        "完成", List.of(), null, false),
                 new RecordingEvents(), executor, scheduler, clock,
                 4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256
         );
@@ -169,12 +160,10 @@ class AgentTurnRuntimeServiceTest {
                 AgentTurnStatusEnum.QUEUED, 1, null, null, NOW, null, null);
         persistence.raceOnCreation = raced;
         AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
-                persistence, persistence, persistence, persistence,
-                command -> { throw new UnsupportedOperationException("test does not answer a workflow"); },
-                (turn, status, code, finishedAt) -> false,
+                persistence, persistence, persistence,
                 threads, context,
                 (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
-                        "完成", List.of(), null, null, false),
+                        "完成", List.of(), null, false),
                 new RecordingEvents(), executor, scheduler, clock,
                 4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256
         );
@@ -201,13 +190,11 @@ class AgentTurnRuntimeServiceTest {
         ManualExecutor executor = new ManualExecutor();
         ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
         AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
-                persistence, persistence, persistence, persistence,
-                command -> { throw new UnsupportedOperationException("test does not answer a workflow"); },
-                (turn, status, code, finishedAt) -> false,
+                persistence, persistence, persistence,
                 threads,
                 new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
                 (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
-                        "完成", List.of(), null, null, false),
+                        "完成", List.of(), null, false),
                 new RecordingEvents(), executor, scheduler, clock,
                 4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256
         );
@@ -237,10 +224,7 @@ class AgentTurnRuntimeServiceTest {
         ManualExecutor executor = new ManualExecutor();
         ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
         AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
-                persistence, persistence, persistence, persistence,
-                command -> { throw new UnsupportedOperationException("test does not answer a workflow"); },
-                (turn, status, code, finishedAt) -> false,
-                threads,
+                persistence, persistence, persistence, threads,
                 new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
                 (current, turn, history, answer) -> {
                     throw new AssertionError("deterministic order action must not invoke model coordinator");
@@ -252,7 +236,8 @@ class AgentTurnRuntimeServiceTest {
                         new AgentTurnCoordinator.AgentCoordinatorResult("", List.of(
                                 new AgentTurnCoordinator.AgentItemDraft(
                                         "ORDER_DETAIL", "{\"orderId\":\"order-1\"}")),
-                                null, null, false));
+                                 null, false),
+                false, 3, null, null);
 
         AgentTurnModel action = runtime.submitOrderAction("user-1", thread.threadId(), "action-request",
                 source.turnId(), "order-1", AgentOrderActionTypeEnum.REFRESH_ORDER);
@@ -300,7 +285,7 @@ class AgentTurnRuntimeServiceTest {
     }
 
     private static final class InMemoryPersistence implements AgentThreadStore, AgentTurnStore,
-            AgentItemStore, AgentWorkflowQuestionStore, AgentContextSnapshotStore {
+            AgentItemStore, AgentContextSnapshotStore {
         private final Map<String, AgentThreadModel> threads = new HashMap<>();
         private final Map<String, AgentTurnModel> turns = new HashMap<>();
         private final List<AgentItemModel> items = new ArrayList<>();
@@ -395,37 +380,6 @@ class AgentTurnRuntimeServiceTest {
             return items.stream().filter(item -> item.threadId().equals(threadId) && item.sequence() > afterSequence)
                     .sorted(Comparator.comparingLong(AgentItemModel::sequence)).limit(limit).toList();
         }
-
-        @Override
-        public Optional<AgentWorkflowQuestionModel> findOpenQuestion(String userId, String threadId) {
-            return Optional.empty();
-        }
-
-        @Override
-        public Optional<AgentWorkflowQuestionModel> findOpenQuestionByRun(String userId, String runId) {
-            return Optional.empty();
-        }
-
-        @Override
-        public void saveQuestion(AgentWorkflowQuestionModel question) {
-            throw new UnsupportedOperationException("test does not start a workflow");
-        }
-
-        @Override
-        public OptionalLong reserveAnswerTurn(String userId, String questionId, long expectedVersion,
-                                              String answerTurnId) { return OptionalLong.empty(); }
-
-        @Override
-        public OptionalLong markAnswerTurnEnqueued(String userId, String questionId, long expectedVersion,
-                                                   String answerTurnId) { return OptionalLong.empty(); }
-
-        @Override
-        public boolean releaseAnswerTurn(String userId, String questionId, long expectedVersion,
-                                         String answerTurnId) { return false; }
-
-        @Override
-        public boolean closeAnswerTurn(String userId, String questionId, long expectedVersion,
-                                       String answerTurnId, Instant answeredAt) { return false; }
 
         @Override
         public Optional<AgentContextSnapshotModel> findLatestSnapshot(String userId, String threadId) {

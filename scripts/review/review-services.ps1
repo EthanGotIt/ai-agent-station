@@ -99,8 +99,8 @@ function Start-Services {
         ) 8090)
     Write-State $state
 
-    $state = @(Start-ReviewProcess "agent-console" "npm.cmd" @(
-            "--prefix", "agent-console", "run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"
+    $state = @(Start-ReviewProcess "agent-fronted" "npm.cmd" @(
+            "--prefix", "agent-fronted", "run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"
         ) 5173)
     Write-State $state
     Write-Output "Logs: $LogRoot"
