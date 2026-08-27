@@ -12,11 +12,11 @@
 | --- | --- | --- | --- |
 | 1. LangGraph4j 基础门禁 | 已完成 | `d74bc79`；`langgraph4j-core:1.8.20`、`AGENT_GRAPH_SNAPSHOT` V8、Jackson 3 序列化、MyBatis Saver 和七节点图测试；Core/Infrastructure 编译、LangGraph 定向测试和 `dependency:analyze` 通过 | 生产 Workflow 尚未切换 |
 | 2. QuestionCard 与 Workflow Checkpoint 拆分 | 已完成 | `AgentQuestionCardModel/Store`、`AgentWorkflowCheckpointModel/Store`；V9 表和历史迁移；Thread `OPEN_INTERACTION_TYPE/ID`；`AgentQuestionAnswerAdmission`、`AgentWorkflowDecisionAdmission`；新 API/DTO；Core 状态机、MyBatis CAS、Turn 持久化、`request_user_input` 定向测试共 12 项 | 旧模型和兼容 API 在阶段六统一清理 |
-| 3. 迁移固定订单 Workflow | 已完成 | `LangGraphAgentWorkflowEngine`、`LangGraphWorkflowGraphFactory.createOrderWorkflow` 和独立 `AgentWorkflowCheckpoint`；七节点拓扑在 `AUTHORIZE` 前中断，QuestionCard/Checkpoint 恢复、事实指纹变化回到 `VERIFY_FACTS`、批准后 ExternalActionCommand 和技术快照重建均有定向测试；旧事务引擎已退出生产 Spring 装配 | Worker 完成后的 `VERIFY_OUTCOME/HANDOFF_AGENT` 业务投影和真实外部动作黄金路径纳入阶段七验收 |
-| 4. 加固 V7 Continuation | 已完成 | `AgentContinuationGateway`、`TransactionalAgentContinuationGateway`；`AgentContinuationInput.idempotencyKey()` 覆盖根/父 Turn、Run、Command、状态、结果 Sequence 和 cycle；事务内首事实持久化、提交后入队、重复/并发 admission、STOP_LIMIT 和配置边界测试通过；`ExternalActionOutcomeManager` 已移除本地续跑创建并改用统一 Gateway | 真实重启恢复、外部动作黄金路径纳入阶段七验收 |
-| 5. 前端交互与状态投影 | 已完成 | `agent-fronted` 已统一目录/package；`QUESTION_CARD`、`QUESTION_ANSWER`、`WORKFLOW_CHECKPOINT`、`WORKFLOW_DECISION` 投影与三条新 API；QuestionCard/Checkpoint 独立卡片、历史 `WORKFLOW_QUESTION` 只读展示、七节点 Graph 状态、Continuation 提示、外部成功后的非阻断告警和 Sequence 追加快路径；typecheck、Vitest 31 项和 production build 通过 | 真实浏览器四尺寸与黄金路径纳入阶段七 |
-| 6. 遗留代码和测试环境清理 | 已完成 | `e7c18c8` 删除旧 Question/Answer 模型、admission、事务 Workflow 引擎、旧 API DTO、Mapper/Store 和旧授权配置；`AgentTurnModel`/`AgentTurnEntity` 不再暴露旧回答字段，历史 `WORKFLOW_ANSWER` 只按消息标记读取；`01ad541` 修复规范门禁发现的 persistence 包、Clock 注入和测试命名问题。`FakeClientHttpRequestFactoryTest` 覆盖 HTTP 单测，真实 loopback 契约移至 `HttpOrderGatewayIT`/`HttpExternalActionExecutorIT`，Surefire 与 Failsafe 分离；`rg` 未发现旧生产入口或旧前端目录引用 | 阶段七外部环境和黄金路径验收 |
-| 7. 完整验收与交接 | 本地门禁通过，外部环境待复核 | 2026-08-27 本轮 `convention_check`、脚本 9 项、runtime eval 5 项、Maven Core 45/Infrastructure 62/App 17、前端 typecheck/Vitest 31/build 均通过；`mvn verify` 已进入真实 `*IT`，但 8 项因当前 Windows/JDK 无法建立 loopback selector 报错 | 数据库副本 V7→V8→V9、真实模型/订单夹具/浏览器黄金路径，以及支持网络绑定环境中的 `*IT` 仍需复核 |
+| 3. 迁移固定订单 Workflow | 已完成 | `LangGraphAgentWorkflowEngine`、`LangGraphWorkflowGraphFactory.createOrderWorkflow` 和独立 `AgentWorkflowCheckpoint`；七节点拓扑在 `AUTHORIZE` 前中断，QuestionCard/Checkpoint 恢复、事实指纹变化回到 `VERIFY_FACTS`、批准后 ExternalActionCommand 和技术快照重建均有定向测试；本轮补充批准后事实变化时的 `SUPERSEDED → VERIFY_FACTS` 和动作失效安全终态；旧事务引擎已退出生产 Spring 装配 | Worker 完成后的 `VERIFY_OUTCOME/HANDOFF_AGENT` 业务投影和真实外部动作黄金路径纳入阶段七验收 |
+| 4. 加固 V7 Continuation | 已完成 | `AgentContinuationGateway`、`TransactionalAgentContinuationGateway`；`AgentContinuationInput.idempotencyKey()` 覆盖根/父 Turn、Run、Command、状态、结果 Sequence 和 cycle；事务内首事实持久化、提交后入队、重复/并发 admission、STOP_LIMIT 和配置边界测试通过；`ExternalActionOutcomeManager` 已移除本地续跑创建并改用统一 Gateway；`e289bcb` 使队列暂满后的续跑重试重新读取持久化 Turn 状态，避免过期快照恢复已取消 Turn | 真实重启恢复、外部动作黄金路径纳入阶段七验收 |
+| 5. 前端交互与状态投影 | 已完成 | `agent-fronted` 已统一目录/package；`QUESTION_CARD`、`QUESTION_ANSWER`、`WORKFLOW_CHECKPOINT`、`WORKFLOW_DECISION` 投影与三条新 API；QuestionCard/Checkpoint 独立卡片、历史 `WORKFLOW_QUESTION` 只读展示、七节点 Graph 状态、Continuation 提示、外部成功后的非阻断告警和 Sequence 追加快路径；`e94eb4b` 修正 Agent QuestionCard 合法的 `runId: null`，并覆盖真实 payload；typecheck、Vitest 31 项和 production build 通过 | 真实浏览器四尺寸与黄金路径纳入阶段七 |
+| 6. 遗留代码和测试环境清理 | 已完成 | `e7c18c8` 删除旧 Question/Answer 模型、admission、事务 Workflow 引擎、旧 API DTO、Mapper/Store 和旧授权配置；`96b2e27` 删除无生产引用的重复 Workflow Answer 类型，历史 `WORKFLOW_ANSWER` 仍仅按消息标记读取；`01ad541` 修复规范门禁发现的 persistence 包、Clock 注入和测试命名问题。`FakeClientHttpRequestFactoryTest` 覆盖 HTTP 单测，真实 loopback 契约移至 `HttpOrderGatewayIT`/`HttpExternalActionExecutorIT`，Surefire 与 Failsafe 分离；`rg` 未发现旧生产入口或旧前端目录引用；`833765c` 清理依赖分析警告 | 阶段七外部环境和黄金路径验收 |
+| 7. 完整验收与交接 | 本地门禁通过，外部环境待复核 | 2026-08-27 本轮 `convention_check`、脚本 9 项、runtime eval 5 项、Maven Core 47/Infrastructure 65/App 17、前端 typecheck/Vitest 31/build 和无警告 `dependency:analyze` 均通过；`bd0fe9a` 收口 Checkpoint 恢复状态与 Spring Bean 装配；`mvn verify` 已进入真实 `*IT`，但 8 项因当前 Windows/JDK 无法建立 loopback selector 报错 | 数据库副本 V7→V8→V9、真实模型/订单夹具/浏览器黄金路径，以及支持网络绑定环境中的 `*IT` 仍需复核 |
 
 阶段二的兼容边界：旧 `AGENT_WORKFLOW_QUESTION`、旧 Turn 列和旧 `WORKFLOW_ANSWER` Item 仅由 V9 迁移脚本或前端历史投影读取；新的生产入口只写独立 QuestionCard/Checkpoint 表和 `QUESTION_ANSWER`/`WORKFLOW_DECISION` Turn。运行时代码不再提供旧 API、旧模型或旧 Workflow admission。详细执行日志不写入 handoff。
 
@@ -30,20 +30,21 @@
 | 4. 统一 `ORDER_SERVICE` Workflow | 已验证（独立 HTTP 边界完成） | `49311ca`、`6d40351`、`7029122`、`22eb4de`、`80c5ca9`；真实浏览器完成退款拒绝、隐藏/恢复、催发货的候选核验和最终授权；独立 HTTP 订单服务真实响应“今天订单”查询，Agent 真实 QuestionCard 授权退款将远程订单更新为 `REFUNDED`；同一 Workflow 幂等键重放服务端业务变更为 0，Java HTTP 适配器对催发货、隐藏、恢复各重复一次仍只产生一次服务端业务变更；HTTP 写操作契约测试确认幂等键传递，空/非法键在出网前被拒绝 | 无；第三方生产订单平台鉴权和 Docker 容器现场属于部署环境验收；V5 前置备份差异按 P2 接受并记录 |
 | 5. 能力集与产品化收尾 | 已验证完成 | `fcec19d`、`b1fc6bc`；真实浏览器完成 Thread 行内重命名 Enter/Escape、ACTIVE/ARCHIVED 恢复、移动端抽屉、订单卡片上下文动作和聚合进度；当前 typecheck、31 项 Vitest、production build 通过 | 无 |
 
-## 本轮阶段七验收（2026-08-27）
+## 本轮阶段七代码评审验收（2026-08-27）
 
 - `C:\Users\23260\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m scripts.convention_check`：通过。
 - `C:\Users\23260\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest discover -s scripts/tests -p "test_*.py"`：9 项通过；`scripts.runtime_eval` 的 5 个确定性门禁通过。
-- `mvn clean '-DskipTests=false' test`：通过，Core 45、Infrastructure 62、App 17。
-- `mvn dependency:analyze -DskipTests`：构建通过；保留 `jspecify` 未使用声明和 App 使用未声明 `spring-beans` 两项依赖整理警告。
+- `mvn clean '-DskipTests=false' test`：通过，Core 47、Infrastructure 65、App 17。
+- `mvn dependency:analyze -DskipTests`：通过，三个 Maven 模块均无依赖问题；删除未使用的 `jspecify` 测试声明并移除 App Controller 冗余 `@Autowired`。
 - `npm --prefix agent-fronted run typecheck`、`npm --prefix agent-fronted test -- --run`（31 项）和 `npm --prefix agent-fronted run build`：均通过。
+- 代码评审回归：过期 Continuation 队列重试重新读取最新 Turn；批准 Checkpoint 的事实变化会先失效并重核验，动作不再允许时安全失败且不创建命令；Agent QuestionCard 允许 `runId: null`；无引用的旧 Workflow Answer 类型已删除；QuestionCard/Checkpoint Store 可被事务代理，Workflow Decision codec 已注册为 Bean。
 - `mvn verify` 已按配置进入真实 `*IT`；`HttpOrderGatewayIT` 与 `HttpExternalActionExecutorIT` 共 8 项因当前 Windows/JDK 环境返回 `Unable to establish loopback connection`，不是 Fake Transport 单测失败。必须在支持网络绑定的环境重跑，不能将该结果记为协议验收通过。
-- 本轮未重新启动数据库副本迁移、真实模型、订单夹具和浏览器黄金路径；下方历史现场证据继续保留，但不替代本轮重跑。
+- 按用户要求，本轮未继续启动服务；未重新运行数据库副本迁移、真实模型、订单夹具和浏览器黄金路径。下方历史现场证据继续保留，但不替代本轮重跑。
 
 ## 基线结论
 
-- 本地代码门禁已通过：规范检查、脚本 9 项、runtime eval 5 项、Maven Core 45/Infrastructure 62/App 17，以及前端 typecheck、Vitest 31 项和 production build。
-- `mvn dependency:analyze -DskipTests` 构建通过，并保留两项非阻断依赖警告，供后续依赖整理。
+- 本地代码门禁已通过：规范检查、脚本 9 项、runtime eval 5 项、Maven Core 47/Infrastructure 65/App 17，以及前端 typecheck、Vitest 31 项和 production build。
+- `mvn dependency:analyze -DskipTests` 构建通过且无依赖问题。
 - `mvn verify` 的真实 HTTP `*IT` 受到当前环境 loopback selector 限制，8 项错误待网络绑定能力可用时复核；Fake Transport 单测不替代该验收。
 - 数据库副本 V7→V8→V9、真实模型/订单夹具/浏览器黄金路径本轮未重跑，历史现场记录需按发布前运行手册再次确认。
 - 当前工作树仍包含用户既有的 `.idea`、部署、Docker、Hook、脚本和配置改动；本阶段未覆盖或混入这些改动。
