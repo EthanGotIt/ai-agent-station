@@ -257,6 +257,38 @@ class AgentTurnRuntimeServiceTest {
     }
 
     @Test
+    void doesNotEnqueueTurnCancelledBeforeAfterCommitCallback() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "回调竞态 Thread", null, null);
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        AtomicInteger coordinatorCalls = new AtomicInteger();
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, threads,
+                new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
+                (current, turn, history, answer) -> {
+                    coordinatorCalls.incrementAndGet();
+                    return new AgentTurnCoordinator.AgentCoordinatorResult("完成", List.of(), null, false);
+                }, new RecordingEvents(), executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256);
+        AgentTurnModel turn = new AgentTurnModel(
+                "callback-turn", thread.threadId(), "user-1", "callback-request", "回调续跑",
+                AgentTurnStatusEnum.QUEUED, 1, null, null, NOW, null, null);
+        persistence.createTurn(turn);
+        AgentTurnModel cancelled = turn.terminal(
+                AgentTurnStatusEnum.CANCELLED, "CLIENT_CANCELLED", NOW.plusSeconds(1));
+        assertTrue(persistence.updateTurn(turn, cancelled));
+
+        runtime.enqueuePersisted(turn);
+        executor.runAll();
+
+        assertEquals(0, coordinatorCalls.get(), "回调前已取消的 Turn 不得进入执行器");
+        scheduler.shutdownNow();
+    }
+
+    @Test
     void deterministicOrderActionIsQueuedIdempotentlyWithoutModelCall() {
         InMemoryPersistence persistence = new InMemoryPersistence();
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);

@@ -237,27 +237,32 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         if (persisted == null || persisted.status() != AgentTurnStatusEnum.QUEUED) {
             return;
         }
-        AgentThreadModel thread = threadStore.findThread(persisted.userId(), persisted.threadId()).orElse(null);
+        AgentTurnModel latest = turns.findTurn(persisted.userId(), persisted.turnId()).orElse(null);
+        if (latest == null || latest.status() != AgentTurnStatusEnum.QUEUED) {
+            return;
+        }
+        AgentTurnModel current = latest;
+        AgentThreadModel thread = threadStore.findThread(current.userId(), current.threadId()).orElse(null);
         if (thread == null) {
-            finish(persisted, AgentTurnStatusEnum.FAILED, "THREAD_NOT_FOUND");
+            finish(current, AgentTurnStatusEnum.FAILED, "THREAD_NOT_FOUND");
             return;
         }
         ThreadSlot slot = slots.computeIfAbsent(thread.threadId(), ignored -> new ThreadSlot());
         synchronized (slot) {
-            if (slot.active != null && slot.active.turn.turnId().equals(persisted.turnId())) {
+            if (slot.active != null && slot.active.turn.turnId().equals(current.turnId())) {
                 return;
             }
-            if (slot.queue.stream().anyMatch(queued -> queued.turn.turnId().equals(persisted.turnId()))
-                    || slot.deferred.stream().anyMatch(queued -> queued.turn.turnId().equals(persisted.turnId()))) {
+            if (slot.queue.stream().anyMatch(queued -> queued.turn.turnId().equals(current.turnId()))
+                    || slot.deferred.stream().anyMatch(queued -> queued.turn.turnId().equals(current.turnId()))) {
                 return;
             }
             if (slot.queue.size() + slot.deferred.size() >= maxPendingPerThread
                     || pendingGlobal.get() >= maxPendingGlobal) {
-                retryEnqueue(persisted);
+                retryEnqueue(current);
                 return;
             }
             QueuedTurn queued = new QueuedTurn(
-                    persisted, persisted.questionAnswerInput(),
+                    current, current.questionAnswerInput(),
                     new AtomicBoolean(false),
                     new AtomicBoolean(false), new AtomicReference<>());
             slot.queue.addLast(queued);
