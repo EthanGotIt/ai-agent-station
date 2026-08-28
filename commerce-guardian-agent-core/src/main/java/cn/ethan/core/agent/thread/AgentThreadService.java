@@ -16,24 +16,11 @@ public final class AgentThreadService {
     private final AgentThreadStore threads;
     private final AgentItemStore items;
     private final Clock clock;
-    private final AgentThreadArchiveGuard archiveGuard;
 
     public AgentThreadService(AgentThreadStore threads, AgentItemStore items, Clock clock) {
-        this(threads, items, clock, (userId, threadId) -> {
-            // 内存测试和纯 Core 使用没有持久化活动表，保留原有创建边界。
-        });
-    }
-
-    public AgentThreadService(
-            AgentThreadStore threads,
-            AgentItemStore items,
-            Clock clock,
-            AgentThreadArchiveGuard archiveGuard
-    ) {
         this.threads = threads;
         this.items = items;
         this.clock = clock;
-        this.archiveGuard = archiveGuard == null ? (userId, threadId) -> { } : archiveGuard;
     }
 
     public AgentThreadModel create(String userId, String title, String contextType, String contextId) {
@@ -81,14 +68,12 @@ public final class AgentThreadService {
                 .orElseThrow(() -> new AgentThreadNotFoundException(normalizedThreadId));
     }
 
-    public AgentThreadModel update(String userId, String threadId, String title, boolean archive) {
+    public AgentThreadModel update(String userId, String threadId, String title) {
         AgentThreadModel current = get(userId, threadId);
-        if (archive && current.status() == AgentThreadStatusEnum.ACTIVE) {
-            archiveGuard.ensureCanArchive(current.userId(), current.threadId());
-        }
         AgentThreadModel updated = new AgentThreadModel(
                 current.threadId(), current.userId(), title == null ? current.title() : title,
-                archive ? AgentThreadStatusEnum.ARCHIVED : AgentThreadStatusEnum.ACTIVE,
+                // 历史 ARCHIVED 仅允许读取；标题更新不能借机恢复或重新归档 Thread。
+                current.status(),
                 current.contextType(), current.contextId(), current.nextSequence(), current.createdAt(), clock.instant(),
                 current.openQuestionId(), current.openInteractionType(), current.openInteractionId()
         );

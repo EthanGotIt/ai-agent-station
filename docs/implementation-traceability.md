@@ -23,6 +23,7 @@
 ## 当前产品语义裁决（2026-08-28）
 
 - Thread 不再提供回收站、归档/恢复入口；已有 `ARCHIVED` 状态和历史数据仅保留兼容读取，当前工作台只展示可继续使用的 Thread。
+- Thread 更新接口只允许修改标题；历史 `ARCHIVED` Thread 不会因标题更新被恢复，当前产品没有归档写入口。
 - 订单记录只支持退款、催发货和 `DELETE_ORDER` 直接删除；删除通过 `DELETE /orders/{id}` 同步清理可删除物流轨迹且不可恢复。
 - `HIDE_ORDER`/`RESTORE_ORDER`、订单 `/visibility` 写接口和 Agent Tool 的 visibility 参数均已移除；旧枚举、`HIDDEN_AT` 列及历史 Item 仅为迁移/读取兼容，运行时代码不再写入隐藏状态。
 

@@ -104,7 +104,7 @@ public final class AgentThreadController {
             HttpServletRequest request
     ) {
         return AgentThreadDto.from(threads.update(userContext.currentUserId(request), threadId,
-                body.title(), body.archive()));
+                body.title()));
     }
 
     @GetMapping("/threads/{threadId}/items")

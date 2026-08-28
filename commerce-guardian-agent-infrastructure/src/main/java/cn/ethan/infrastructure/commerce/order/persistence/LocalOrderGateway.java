@@ -14,6 +14,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 
@@ -239,6 +240,7 @@ public final class LocalOrderGateway implements OrderGateway, OrderActionGateway
     }
 
     @Override
+    @Transactional
     public OrderActionResult deleteOrder(
             String userId,
             String orderId,

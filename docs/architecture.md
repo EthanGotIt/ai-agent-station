@@ -130,6 +130,6 @@ V6 现场迁移先备份配置库并在一次性克隆库执行；V7 首次运�
 
 本地现场复核可使用 `docs/review-runbook.md` 和 `scripts/review/review-services.ps1`。订单夹具通过 `ORDER_SERVICE_FIXTURE_EXPEDITE_TRANSIENT_FAILURES` 注入有限的催发货可重试失败，并在 `/_fixture/stats` 暴露注入次数；注入只持久化验收故障计数，不写入订单服务幂等记录或业务状态。
 
-## 阶段七验收状态（2026-08-27）
+## 阶段七验收状态（2026-08-28）
 
-本轮本地验收已通过规范检查、脚本测试、运行时确定性门禁、后端全量单测和前端 typecheck/Vitest/生产构建。`mvn verify` 会单独运行真实 HTTP `*IT`；当前 Windows/JDK 环境在 `HttpOrderGatewayIT` 与 `HttpExternalActionExecutorIT` 建立 loopback selector 时返回 `Unable to establish loopback connection`，因此该协议验收必须在支持网络绑定的环境重跑，不能用 Fake Transport 的单测结果替代。数据库副本迁移、真实模型和真实浏览器黄金路径沿用历史现场证据，但在本轮未重新启动，发布前仍需按运行手册复核并关闭所有测试进程。
+本轮本地验收已通过规范检查、脚本测试、运行时确定性门禁、后端全量单测和前端 typecheck/Vitest/生产构建。`mvn verify` 已单独运行真实 HTTP `*IT`，`HttpOrderGatewayIT` 与 `HttpExternalActionExecutorIT` 共 9 项通过；Windows/JDK 的 loopback 环境问题已通过宿主机用户级 Java 临时目录配置恢复，项目未引入协议替代实现。应用加载真实 `.env` 后完成 MySQL、Flyway V9 和 Tomcat 初始化，健康检查为 `200 UP`。数据库副本 V7→V8→V9、真实模型和真实浏览器黄金路径仍需按阶段七运行手册重新复核，不能以历史现场记录替代本轮证据。

@@ -135,8 +135,7 @@ export const threadWorkspaceApi = {
     return requestJson<AgentThread>(`${API}/threads/${encodeURIComponent(threadId)}`, {
       method: "PATCH",
       headers: userHeaders(userId, true),
-      // 后端保留 archive 字段仅用于旧客户端兼容；新工作台不再发送归档动作。
-      body: JSON.stringify({ title, archive: false })
+      body: JSON.stringify({ title })
     });
   }
 };

@@ -45,19 +45,21 @@ class AgentThreadIdentityTest {
     }
 
     @Test
-    void filtersLifecycleAndBlocksArchiveWhenGuardFindsActiveWork() {
+    void filtersLifecycleAndKeepsHistoricalArchiveReadOnlyDuringRename() {
         AgentThreadModel active = thread("active-thread", "user-1");
         AgentThreadModel archived = new AgentThreadModel("archived-thread", "user-1", "old",
                 AgentThreadStatusEnum.ARCHIVED, null, null, 0, Instant.EPOCH, Instant.EPOCH);
         LifecycleThreadStore store = new LifecycleThreadStore(active, archived);
         AgentThreadService service = new AgentThreadService(
-                store, new EmptyItemStore(), java.time.Clock.systemUTC(),
-                (userId, threadId) -> { throw new AgentThreadConflictException("THREAD_HAS_ACTIVE_TURN", "busy"); });
+                store, new EmptyItemStore(), java.time.Clock.systemUTC());
 
         assertEquals(1, service.listPage("user-1", AgentThreadStatusEnum.ACTIVE, 0, 20).total());
         assertEquals(1, service.listPage("user-1", AgentThreadStatusEnum.ARCHIVED, 0, 20).total());
-        assertThrows(AgentThreadConflictException.class,
-                () -> service.update("user-1", "active-thread", null, true));
+
+        AgentThreadModel updated = service.update("user-1", "archived-thread", "renamed");
+        assertEquals("renamed", updated.title());
+        assertEquals(AgentThreadStatusEnum.ARCHIVED, updated.status());
+        assertEquals(1, service.listPage("user-1", AgentThreadStatusEnum.ARCHIVED, 0, 20).total());
     }
 
     private AgentThreadModel thread(String threadId, String userId) {

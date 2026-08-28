@@ -13,7 +13,6 @@ import cn.ethan.core.agent.execution.AgentRuntimeMetrics;
 import cn.ethan.core.agent.action.ExternalActionCommandStore;
 import cn.ethan.core.agent.action.ExternalActionService;
 import cn.ethan.core.agent.thread.AgentThreadService;
-import cn.ethan.core.agent.thread.AgentThreadArchiveGuard;
 import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
 import cn.ethan.core.agent.coordination.AgentOrderActionCoordinator;
 import cn.ethan.core.agent.workflow.AgentQuestionCardStore;
@@ -125,10 +124,9 @@ public class AgentConfiguration {
     public AgentThreadService agentThreadService(
             AgentThreadStore threads,
             AgentItemStore items,
-            Clock clock,
-            AgentThreadArchiveGuard archiveGuard
+            Clock clock
     ) {
-        return new AgentThreadService(threads, items, clock, archiveGuard);
+        return new AgentThreadService(threads, items, clock);
     }
 
     @Bean
