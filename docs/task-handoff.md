@@ -22,9 +22,11 @@ Completed:
 - 2026-08-28 已修复退款/催发货失败：先创建 WorkflowRun 再写 `AGENT_GRAPH_SNAPSHOT`，消除外键顺序错误；MyBatis Saver 改为不受 Spring 持久化代理的组件，由 Workflow Engine 外层事务统一管理，避免 LangGraph 内部锁被 CGLIB 代理破坏。真实退款与催发货均完成并核验，订单状态分别为 `REFUNDED` 与 `EXPEDITE_REQUESTED`；前端同时兼容 Workflow 回执的 `status` 和金额字符串，并让空 Thread 内容轨道与 Composer 对齐。
 - 已完成直接删除订单记录的代码链路：`DELETE_ORDER` 贯通订单卡片、Workflow `AUTHORIZE`、本地/HTTP 网关、外部动作 Worker 和 SQLite 夹具；删除同步清理物流轨迹，重复请求按幂等键返回稳定结果，前端删除后隐藏后续订单动作并显示“记录已删除”。
 - 已移除订单隐藏/恢复的生产写入口、HTTP `/visibility` 夹具端点和 Agent Tool visibility 参数；旧枚举、`HIDDEN_AT`、历史 Item 仅保留读取兼容，历史命令不会再产生隐藏状态变更。
-- 已移除工作台 Thread 回收站/归档操作和前端 archive 调用；旧 `ARCHIVED` 状态仍可由后端读取以兼容历史数据，当前 UI 不提供恢复路径。
+- 已移除工作台 Thread 回收站/归档操作、后端归档保护组件和前端 archive 调用；`PATCH /threads/{threadId}` 只允许改标题，旧 `ARCHIVED` 状态仍可读取但不会被标题更新恢复，当前 UI 不提供恢复路径。
 - 真实启动复核补齐 `HttpOrderGateway` 与 `HttpLogisticsGateway` 的多构造器注入标记；加载 `.env` 后后端连接 MySQL、完成 Flyway V9 并稳定监听 `8090`，订单夹具监听 `18080`，前端监听 `5173`。
 - 现场删除复核使用同一幂等键连续删除夹具订单，首次与重放均返回 `ORDER_DELETED`，订单和物流查询均返回 `404`。
+- 代码评审新增本地删除事务边界；因 Spring CGLIB 代理要求，`LocalOrderGateway` 改为可代理类后重新打包启动成功，避免清理物流后订单删除失败造成半删除状态。
+- 最终 JAR 重启后 MySQL/Flyway V9/Tomcat 健康检查为 `200 UP`；浏览器重载确认无回收站/归档/恢复按钮、订单卡片有“删除记录”入口，控制台无 warning/error。
 
 Decisions:
 
@@ -36,16 +38,16 @@ Decisions:
 
 TODO:
 
-- 阶段七：使用数据库副本完成 V7→V8→V9 迁移核验，运行真实模型配置和前端浏览器黄金路径，补齐最终验收证据。
-- 所有阶段七验收完成后，才覆盖 handoff 为 `status: completed` 快照；当前直接删除/无回收站改动已完成夹具协议复核，仍需浏览器黄金路径复核。
+- 阶段七：使用数据库副本完成 V7→V8→V9 迁移核验，运行真实模型配置和前端浏览器黄金路径，补齐最终验收证据；本轮已完成浏览器界面结构复核，实际不可逆删除点击仍需人工确认后执行。
+- 所有阶段七验收完成后，才覆盖 handoff 为 `status: completed` 快照；当前直接删除/无回收站改动已完成代码、夹具协议和界面入口复核。
 
 Blocked:
 
-- 本地代码门禁、真实 HTTP `*IT` 和订单夹具暂无阻塞；数据库副本、真实模型请求和浏览器黄金路径尚未在本轮重新执行。
+- 本地代码门禁、真实 HTTP `*IT`、订单夹具和浏览器界面结构检查暂无阻塞；数据库副本、真实模型请求尚未在本轮重新执行，浏览器不可逆删除点击需用户在动作前确认。
 
 Next action:
 
-- 当前 `8090`、`18080`、`5173` 已运行；下一步完成人工浏览器黄金路径，重点确认“删除记录”及无回收站界面，再执行数据库副本和真实模型验收。
+- 当前 `8090`、`18080`、`5173` 已运行；下一步在用户确认不可逆删除后完成浏览器黄金路径，再执行数据库副本和真实模型验收。
 
 Validation:
 
@@ -56,6 +58,7 @@ Validation:
 - HTTP Fake Transport 定向测试、LangGraph/QuestionCard/Checkpoint/Continuation 定向测试：通过；本轮额外覆盖提交后取消竞态、过期续跑重试、批准/拒绝 Checkpoint 事实变化和 Agent QuestionCard `runId: null`。
 - 真实 HTTP `*IT` 已在本次环境配置下通过 9 项；此前的 loopback 失败不再复现。前端 typecheck、Vitest 35 项和生产构建：通过。
 - 2026-08-28 宿主机验证：未修改项目代码，`Selector.open()` 返回成功；加载用户级 `.env` 后由 review 脚本启动夹具、前端和应用，Tomcat、MySQL、Flyway V9 和 DeepSeek `HttpClient` 完成装配，`GET /actuator/health` 返回 `200 UP`；直接删除订单记录及同幂等键重放均返回成功，服务当前仍在监听 `8090/18080/5173`。
+- 本轮新增验证：`mvn clean '-DskipTests=false' test`、`mvn verify`（真实 HTTP `*IT` 9 项）、前端 typecheck/Vitest 35 项/build、Python convention/10 项脚本/runtime eval、dependency analyze 均通过；Impeccable detector 返回空问题集；最终服务重启成功且浏览器结构检查无归档入口、无控制台错误。
 
 Preserve:
 
