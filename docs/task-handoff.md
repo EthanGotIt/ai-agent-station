@@ -26,6 +26,7 @@ Completed:
 - 真实启动复核补齐 `HttpOrderGateway` 与 `HttpLogisticsGateway` 的多构造器注入标记；加载 `.env` 后后端连接 MySQL、完成 Flyway V9 并稳定监听 `8090`，订单夹具监听 `18080`，前端监听 `5173`。
 - 现场删除复核使用同一幂等键连续删除夹具订单，首次与重放均返回 `ORDER_DELETED`，订单和物流查询均返回 `404`。
 - 代码评审新增本地删除事务边界；因 Spring CGLIB 代理要求，`LocalOrderGateway` 改为可代理类后重新打包启动成功，避免清理物流后订单删除失败造成半删除状态。
+- 代码评审进一步修复本地删除异常路径：`@Transactional` 方法捕获持久化异常时显式标记回滚，避免以失败结果返回却提交部分清理；`7bc8134` 后 Core/Infrastructure/App 测试与重新打包启动均通过。
 - 最终 JAR 重启后 MySQL/Flyway V9/Tomcat 健康检查为 `200 UP`；浏览器重载确认无回收站/归档/恢复按钮、订单卡片有“删除记录”入口，控制台无 warning/error。
 
 Decisions:
@@ -59,6 +60,7 @@ Validation:
 - 真实 HTTP `*IT` 已在本次环境配置下通过 9 项；此前的 loopback 失败不再复现。前端 typecheck、Vitest 35 项和生产构建：通过。
 - 2026-08-28 宿主机验证：未修改项目代码，`Selector.open()` 返回成功；加载用户级 `.env` 后由 review 脚本启动夹具、前端和应用，Tomcat、MySQL、Flyway V9 和 DeepSeek `HttpClient` 完成装配，`GET /actuator/health` 返回 `200 UP`；直接删除订单记录及同幂等键重放均返回成功，服务当前仍在监听 `8090/18080/5173`。
 - 本轮新增验证：`mvn clean '-DskipTests=false' test`、`mvn verify`（真实 HTTP `*IT` 9 项）、前端 typecheck/Vitest 35 项/build、Python convention/10 项脚本/runtime eval、dependency analyze 均通过；Impeccable detector 返回空问题集；最终服务重启成功且浏览器结构检查无归档入口、无控制台错误。
+- 事务回滚修复后再次运行 `mvn -q test` 与 Infrastructure 定向测试通过；使用最新 JAR 重启后 `GET /actuator/health` 返回 200/UP，`8090`、`18080`、`5173` 持续监听。
 
 Preserve:
 
