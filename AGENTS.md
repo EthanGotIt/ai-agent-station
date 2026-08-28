@@ -4,6 +4,8 @@
 
 ## 任务恢复
 
+`AGENTS.md` 是项目长期协作规范，保留完整的边界、命名、安全、提交和验证规则；优化时只做可审阅的定点调整，不按 `task-handoff.md` 的机制覆盖或压缩它。
+
 用户提出“继续当前任务”或类似请求时，如果 `docs/task-handoff.md` 为 `active`：
 
 1. 阅读 handoff，随后查看 `git status --short` 与 `git diff --stat`。
