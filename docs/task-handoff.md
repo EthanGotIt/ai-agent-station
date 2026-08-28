@@ -18,6 +18,7 @@ Completed:
 - 本轮代码评审已收口续跑重试的过期 Turn 快照、提交后入队取消竞态、批准后事实变化的 Checkpoint 失效/重核验、事实变化时拒绝决策的终态收口、Agent QuestionCard 的空 `runId` 前端解析、重复 Workflow Answer 类型，以及事务代理和 Jackson 决策编解码器的启动装配问题；对应修复已按独立 `fix:`/`refactor:` 提交。
 - 本轮本地验收已通过 convention、脚本 9 项、runtime eval 5 项、`mvn clean '-DskipTests=false' test`（core 48、infrastructure 67、app 17）、前端 typecheck/Vitest 31 项、production build 和无警告的 `mvn dependency:analyze -DskipTests`。
 - 2026-08-28 已确认 Windows/JDK loopback pipe 失败来自宿主机 Java 临时目录继承，而非项目 HTTP 实现；项目兼容代码已完全撤销。用户级 `TEMP/TMP` 恢复为同一用户临时目录，Java 通过宿主机 `jdk.net.unixdomain.tmpdir` 使用短系统临时目录；裸 `Selector.open()` 通过，从干净编译产物启动原始应用后 `8090` 健康状态为 `UP`。
+- 2026-08-28 已修复退款/催发货失败：先创建 WorkflowRun 再写 `AGENT_GRAPH_SNAPSHOT`，消除外键顺序错误；MyBatis Saver 改为不受 Spring 持久化代理的组件，由 Workflow Engine 外层事务统一管理，避免 LangGraph 内部锁被 CGLIB 代理破坏。真实退款与催发货均完成并核验，订单状态分别为 `REFUNDED` 与 `EXPEDITE_REQUESTED`；前端同时兼容 Workflow 回执的 `status` 和金额字符串，并让空 Thread 内容轨道与 Composer 对齐。
 
 Decisions:
 
@@ -45,6 +46,7 @@ Validation:
 - `mvn clean '-DskipTests=false' test`：通过。
 - `mvn dependency:analyze -DskipTests`：通过，Core、Infrastructure、App 均无依赖问题。
 - Python convention、脚本 9 项、runtime eval 5 项：通过。
+- 本轮修复后再次运行 `mvn '-DskipTests=false' test`：Core 48、Infrastructure 68、App 17，合计 133 项通过；前端 typecheck、Vitest 32 项、production build 通过；Impeccable layout detector 返回空问题集；`8090` 健康检查为 `{"groups":["liveness","readiness"],"status":"UP"}`，Vite `5173` 返回 200。
 - HTTP Fake Transport 定向测试、LangGraph/QuestionCard/Checkpoint/Continuation 定向测试：通过；本轮额外覆盖提交后取消竞态、过期续跑重试、批准/拒绝 Checkpoint 事实变化和 Agent QuestionCard `runId: null`。
 - 此前 `mvn verify` 的 8 项真实 `*IT` 失败已定位为同一宿主机 loopback 配置，待停止当前服务后按新环境配置复跑；前端 typecheck、Vitest 31 项和生产构建：通过。
 - 2026-08-28 宿主机验证：未修改项目代码，`Selector.open()` 返回成功；执行 `mvn clean spring-boot:run -pl commerce-guardian-agent-app` 后 Tomcat、MySQL、Flyway V9 和 DeepSeek `HttpClient` 均完成装配，`GET /actuator/health` 返回 `UP`，服务继续监听 `8090` 供人工试用。
