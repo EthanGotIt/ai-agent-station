@@ -163,6 +163,7 @@ function parseInteraction(value: unknown): AgentInteraction | null {
 
 function findOpenInteraction(items: AgentItem[]): AgentInteraction | null {
   let current: AgentInteraction | null = null;
+  const pendingAnswers = new Map<string, string>();
   const ordered = items.every((item, index) => index === 0 || item.sequence >= items[index - 1].sequence)
     ? items
     : [...items].sort((left, right) => left.sequence - right.sequence);
@@ -179,8 +180,12 @@ function findOpenInteraction(items: AgentItem[]): AgentInteraction | null {
     }
     if (item.type === "QUESTION_ANSWER") {
       const answer = parseQuestionAnswer(item.payload);
-      if (answer && current?.type === "QUESTION_CARD"
-        && current.question.questionId === answer.questionId) current = null;
+      if (answer && item.turnId && current?.type === "QUESTION_CARD"
+        && current.question.questionId === answer.questionId) {
+        // 回答 Item 先于执行结果到达；只有对应 Turn 成功完成才关闭问题，
+        // 版本冲突、超时或取消释放回答时仍需让用户看到可重试的 QuestionCard。
+        pendingAnswers.set(answer.questionId, item.turnId);
+      }
       continue;
     }
     if (item.type === "WORKFLOW_DECISION") {
@@ -193,6 +198,34 @@ function findOpenInteraction(items: AgentItem[]): AgentInteraction | null {
       const data = recordValue(item.payload.data);
       const questionId = stringValue(data?.questionId);
       if (questionId && current?.type === "QUESTION_CARD" && current.question.questionId === questionId) current = null;
+      continue;
+    }
+    if (item.type === "WORKFLOW_RESULT") {
+      const data = recordValue(item.payload.data);
+      const resultStatus = stringValue(data?.status);
+      if (current?.type === "QUESTION_CARD"
+        && current.question.resumeTarget === "WORKFLOW"
+        && current.question.runId && resultStatus
+        && ["ANSWERED", "CANCELLED"].includes(resultStatus)
+        && current.question.runId === stringValue(data?.runId)) {
+        current = null;
+      }
+      continue;
+    }
+    if (item.type === "TURN_STATE" && item.payload.kind === "TURN_STATE") {
+      const data = recordValue(item.payload.data);
+      const status = stringValue(data?.status);
+      const questionId = [...pendingAnswers.entries()]
+        .find(([, answerTurnId]) => answerTurnId === item.turnId)?.[0];
+      if (questionId && current?.type === "QUESTION_CARD"
+        && current.question.questionId === questionId
+        && status === "COMPLETED") {
+        current = null;
+        pendingAnswers.delete(questionId);
+      } else if (questionId && status
+        && ["COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"].includes(status)) {
+        pendingAnswers.delete(questionId);
+      }
     }
   }
   return current;

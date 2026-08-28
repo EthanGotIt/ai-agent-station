@@ -594,6 +594,15 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
             if (execution.cancelled.get()) {
                 executionContext.cancel();
             }
+            // Agent QuestionCard 在恢复模型前先消费旧回答，允许同一轮继续提问或启动 Workflow。
+            // Workflow QuestionCard 由 Workflow 自己在恢复事务内关闭，不能在这里提前消费。
+            if (execution.questionAnswer()
+                    && turn.questionAnswerInput().resumeTarget()
+                    == cn.ethan.core.agent.workflow.AgentQuestionCardResumeTargetEnum.AGENT
+                    && !closeQuestionAnswer(active)) {
+                finish(active, AgentTurnStatusEnum.FAILED, "QUESTION_ANSWER_CLOSE_FAILED");
+                return;
+            }
             if (execution.continuation() && !continuationEnabled) {
                 appendItem(active, AgentItemTypeEnum.AGENT_DECISION,
                         AgentTurnItemPayloads.decision(AgentDecisionTypeEnum.FALLBACK,
@@ -933,6 +942,15 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
             return true;
         }
         AgentQuestionAnswerInput input = turn.questionAnswerInput();
+        var current = questionCards.find(turn.userId(), input.questionId()).orElse(null);
+        if (current == null) {
+            return false;
+        }
+        // Agent QuestionCard 可能在模型恢复前已消费；终态且由同一回答 Turn 关闭时保持幂等。
+        if (current.status() != AgentQuestionCardStatusEnum.OPEN
+                && turn.turnId().equals(current.answerTurnId())) {
+            return true;
+        }
         AgentQuestionCardStatusEnum terminal = input.action() == AgentQuestionCardAnswerActionEnum.CANCEL
                 ? AgentQuestionCardStatusEnum.CANCELLED : AgentQuestionCardStatusEnum.ANSWERED;
         return questionCards.closeAnswerTurn(turn.userId(), input.questionId(), input.enqueuedQuestionVersion(),

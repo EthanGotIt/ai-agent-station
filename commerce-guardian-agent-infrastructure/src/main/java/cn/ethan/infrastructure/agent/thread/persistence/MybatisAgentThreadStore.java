@@ -78,19 +78,11 @@ public class MybatisAgentThreadStore implements AgentThreadStore {
     @Override
     @Transactional
     public void updateThread(AgentThreadModel thread) {
-        // 元数据更新不得覆盖 Item Store 在行锁内维护的 NEXT_SEQUENCE
+        // 标题更新不得覆盖 Item Store 和交互 Store 在行锁/CAS 内维护的运行时事实。
         mapper.update(null, new UpdateWrapper<AgentThreadEntity>()
                 .eq("THREAD_ID", thread.threadId())
                 .eq("USER_ID", thread.userId())
                 .set("TITLE", thread.title())
-                .set("STATUS", thread.status().name())
-                .set("CONTEXT_TYPE", thread.contextType())
-                .set("CONTEXT_ID", thread.contextId())
-                // MyBatis-Plus 默认忽略 null 字段；显式 set 才能关闭已回答 Question 指针
-                .set("OPEN_QUESTION_ID", thread.openQuestionId())
-                .set("OPEN_INTERACTION_TYPE", thread.openInteractionType() == null
-                        ? null : thread.openInteractionType().name())
-                .set("OPEN_INTERACTION_ID", thread.openInteractionId())
                 .set("UPDATED_AT", thread.updatedAt()));
     }
 

@@ -1,6 +1,7 @@
 package cn.ethan.infrastructure.agent.coordination.springai;
 
 import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
+import cn.ethan.core.agent.coordination.AgentDecisionTypeEnum;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.execution.AgentRuntimeMetrics;
 import cn.ethan.core.agent.execution.AgentExecutionCancelledException;
@@ -147,6 +148,21 @@ class SpringAiAgentTurnCoordinatorTest {
         assertEquals(Map.of(), received.get());
     }
 
+    @Test
+    void cancellationAnswerClosesAgentQuestionWithoutCallingModel() {
+        CapturingEvents events = new CapturingEvents();
+        SpringAiAgentTurnCoordinator coordinator = coordinator(
+                new StreamingModel(Flux.error(new AssertionError("model must not be called")), false),
+                events);
+
+        AgentTurnCoordinator.AgentCoordinatorResult result = coordinator.run(
+                thread(), agentCancellationTurn(), List.of(), Map.of());
+
+        assertEquals("本次问题已取消。", result.assistantMessage());
+        assertEquals(AgentDecisionTypeEnum.FINISH, result.decision());
+        assertEquals("QUESTION_CANCELLED", result.decisionCode());
+    }
+
     private SpringAiAgentTurnCoordinator coordinator(ChatModel model, CapturingEvents events) {
         return coordinator(model, events, new AgentWorkflowEngine() {
             @Override
@@ -207,6 +223,15 @@ class SpringAiAgentTurnCoordinatorTest {
         return new AgentTurnModel(
                 "turn-1", "thread-1", "user-1", "request-1", "结束本次操作",
                 AgentTurnStatusEnum.ACTIVE, 0, "run-1", null, NOW, NOW, null, answer);
+    }
+
+    private AgentTurnModel agentCancellationTurn() {
+        AgentQuestionAnswerInput answer = new AgentQuestionAnswerInput(
+                "question-1", null, AgentQuestionCardResumeTargetEnum.AGENT, 2L, Map.of(),
+                AgentQuestionCardAnswerActionEnum.CANCEL);
+        return new AgentTurnModel(
+                "turn-1", "thread-1", "user-1", "request-1", "结束当前问题",
+                AgentTurnStatusEnum.ACTIVE, 0, null, null, NOW, NOW, null, answer);
     }
 
     private ChatResponse response(String content) {

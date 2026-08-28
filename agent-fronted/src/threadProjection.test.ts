@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeItem, rebuildTurns } from "./threadProjection";
+import { findOpenInteraction, normalizeItem, rebuildTurns } from "./threadProjection";
 import { findOrderAction, projectOrderAction } from "./orderActionProjection";
 import type { AgentItemWire, AgentItemType } from "./threadTypes";
 
@@ -93,5 +93,39 @@ describe("thread projection", () => {
       actionType: "DELETE_ORDER", orderId: "ORDER-DELETE-1"
     });
     expect(projectOrderAction(turn, request!)).toMatchObject({ state: "done", deleted: true });
+  });
+
+  it("keeps an Agent QuestionCard visible when its answer fails", () => {
+    const items = [
+      item("QUESTION_CARD", 1, "owner-turn", {
+        questionId: "question-1", runId: null, resumeTarget: "AGENT",
+        title: "补充订单号", prompt: "请补充订单号", fields: []
+      }),
+      item("QUESTION_ANSWER", 2, "answer-turn", {
+        questionId: "question-1", runId: null, resumeTarget: "AGENT", action: "SUBMIT"
+      }),
+      item("TURN_STATE", 3, "answer-turn", { status: "FAILED" }),
+      item("WORKFLOW_RESULT", 4, "workflow-turn", { runId: null, status: "CANCELLED" })
+    ].map(normalizeItem);
+
+    expect(findOpenInteraction(items)).toMatchObject({
+      type: "QUESTION_CARD", question: { questionId: "question-1" }
+    });
+  });
+
+  it("closes a QuestionCard only after its answer Turn completes", () => {
+    const items = [
+      item("QUESTION_CARD", 1, "owner-turn", {
+        questionId: "question-1", runId: "run-1", resumeTarget: "WORKFLOW",
+        title: "补充订单号", prompt: "请补充订单号", fields: []
+      }),
+      item("QUESTION_ANSWER", 2, "answer-turn", {
+        questionId: "question-1", runId: "run-1", resumeTarget: "WORKFLOW", action: "CANCEL"
+      }),
+      item("WORKFLOW_RESULT", 3, "answer-turn", { runId: "run-1", status: "CANCELLED" }),
+      item("TURN_STATE", 4, "answer-turn", { status: "COMPLETED" })
+    ].map(normalizeItem);
+
+    expect(findOpenInteraction(items)).toBeNull();
   });
 });

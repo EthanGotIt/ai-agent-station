@@ -86,7 +86,11 @@ export function useThreadWorkspace(userId: string) {
     const derivedInteraction = findOpenInteraction(next);
     const hasInteractionMutation = incoming.some((value) => {
       const type = typeof value.payload === "string" ? value.type : value.payload.kind;
-      return ["QUESTION_CARD", "QUESTION_ANSWER", "WORKFLOW_CHECKPOINT", "WORKFLOW_DECISION"].includes(type);
+      // 回答 Item 到达时仍保留卡片，待对应 Turn 的终态/Workflow 回执到达后再收敛。
+      return [
+        "QUESTION_CARD", "QUESTION_ANSWER", "WORKFLOW_CHECKPOINT", "WORKFLOW_DECISION",
+        "WORKFLOW_ANSWER", "WORKFLOW_RESULT", "TURN_STATE"
+      ].includes(type);
     });
     if (derivedInteraction || hasInteractionMutation || interactionRef.current === null) {
       updateInteraction(derivedInteraction);

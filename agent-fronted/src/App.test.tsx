@@ -521,6 +521,60 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     streamControl.closeStream?.();
   });
 
+  it("QuestionCard 只在回答 Turn 成功结束后从实时工作区收敛", async () => {
+    const thread = threadRecord("thread-1", "QuestionCard 回答恢复 Thread");
+    const encoder = new TextEncoder();
+    const streamControl: { pushEvent: ((value: string) => void) | null; closeStream: (() => void) | null } = {
+      pushEvent: null,
+      closeStream: null
+    };
+    const liveResponse = new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        streamControl.pushEvent = (value) => controller.enqueue(encoder.encode(value));
+        streamControl.closeStream = () => controller.close();
+      }
+    }));
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      if (url.includes("/threads/thread-1/items")) return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(liveResponse);
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await waitFor(() => expect(streamControl.pushEvent).not.toBeNull());
+    streamControl.pushEvent?.(itemEvent("item-live-answer-question", "thread-1", "turn-1", "QUESTION_CARD", 1, {
+      schemaVersion: 1, kind: "QUESTION_CARD", data: {
+        runId: null, questionId: "question-live-answer", resumeTarget: "AGENT", version: 1,
+        title: "补充订单号", prompt: "请填写订单号。", fields: []
+      }
+    }));
+    expect(await screen.findByRole("heading", { name: "补充订单号" })).not.toBeNull();
+
+    streamControl.pushEvent?.(itemEvent("item-live-answer", "thread-1", "turn-answer", "QUESTION_ANSWER", 2, {
+      schemaVersion: 1, kind: "QUESTION_ANSWER", data: {
+        questionId: "question-live-answer", runId: null, resumeTarget: "AGENT", action: "SUBMIT"
+      }
+    }));
+    streamControl.pushEvent?.(itemEvent("item-live-answer-failed", "thread-1", "turn-answer", "TURN_STATE", 3, {
+      schemaVersion: 1, kind: "TURN_STATE", data: { status: "FAILED" }
+    }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "补充订单号" })).not.toBeNull());
+
+    streamControl.pushEvent?.(itemEvent("item-live-answer-retry", "thread-1", "turn-answer-retry", "QUESTION_ANSWER", 4, {
+      schemaVersion: 1, kind: "QUESTION_ANSWER", data: {
+        questionId: "question-live-answer", runId: null, resumeTarget: "AGENT", action: "SUBMIT"
+      }
+    }));
+    streamControl.pushEvent?.(itemEvent("item-live-answer-completed", "thread-1", "turn-answer-retry", "TURN_STATE", 5, {
+      schemaVersion: 1, kind: "TURN_STATE", data: { status: "COMPLETED" }
+    }));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "补充订单号" })).toBeNull());
+    streamControl.closeStream?.();
+  });
+
   it("确认卡片打开时点击查物流会说明阻塞原因，而不是静默无响应", async () => {
     const thread = threadRecord("thread-1", "确认中的订单 Thread");
     const events = [

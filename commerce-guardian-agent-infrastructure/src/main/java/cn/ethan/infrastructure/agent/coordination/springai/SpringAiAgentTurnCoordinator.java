@@ -11,6 +11,7 @@ import cn.ethan.core.agent.workflow.AgentWorkflowEngine;
 import cn.ethan.core.agent.workflow.AgentQuestionCardModel;
 import cn.ethan.core.agent.workflow.AgentQuestionCardStore;
 import cn.ethan.core.agent.workflow.AgentQuestionCardResumeTargetEnum;
+import cn.ethan.core.agent.workflow.AgentQuestionCardAnswerActionEnum;
 import cn.ethan.core.agent.workflow.AgentQuestionFieldModel;
 import cn.ethan.core.agent.execution.AgentTurnItemPayloads;
 import tools.jackson.databind.JsonNode;
@@ -168,6 +169,14 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                     AgentDecisionTypeEnum.FINISH, resumed.resultStatus(),
                     resumed.questionCard(), resumed.checkpoint()
             );
+        }
+        // Agent QuestionCard 的取消只关闭当前问题，不应再次调用模型或产生新的业务动作。
+        if (turn.questionAnswerInput() != null
+                && turn.questionAnswerInput().resumeTarget() == AgentQuestionCardResumeTargetEnum.AGENT
+                && turn.questionAnswerInput().action() == AgentQuestionCardAnswerActionEnum.CANCEL) {
+            return new AgentCoordinatorResult(
+                    "本次问题已取消。", List.of(), null, false,
+                    AgentDecisionTypeEnum.FINISH, "QUESTION_CANCELLED", null, null);
         }
         if (turn.workflowDecisionInput() != null) {
             AgentWorkflowEngine.ResumeResult resumed = workflowEngine.resume(thread, turn, Map.of());

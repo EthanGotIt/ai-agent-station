@@ -6,9 +6,11 @@ import cn.ethan.core.agent.context.AgentContextSnapshotStore;
 import cn.ethan.core.agent.coordination.AgentContinuationInput;
 import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
 import cn.ethan.core.agent.coordination.AgentOrderActionTypeEnum;
+import cn.ethan.core.agent.coordination.AgentDecisionTypeEnum;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemStore;
+import cn.ethan.core.agent.thread.AgentQuestionAnswerInput;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import cn.ethan.core.agent.thread.AgentThreadStore;
@@ -18,6 +20,12 @@ import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowOwnerRecoveryCandidate;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
+import cn.ethan.core.agent.workflow.AgentQuestionCardAnswerEnqueueStatusEnum;
+import cn.ethan.core.agent.workflow.AgentQuestionCardModel;
+import cn.ethan.core.agent.workflow.AgentQuestionCardResumeTargetEnum;
+import cn.ethan.core.agent.workflow.AgentQuestionCardStatusEnum;
+import cn.ethan.core.agent.workflow.AgentQuestionCardStore;
+import cn.ethan.core.agent.workflow.AgentQuestionFieldModel;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 
@@ -30,6 +38,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -340,6 +349,55 @@ class AgentTurnRuntimeServiceTest {
         scheduler.shutdownNow();
     }
 
+    @Test
+    void consumesAgentQuestionBeforeModelCanAskOrStartAnotherInteraction() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "Agent 问题恢复", null, null);
+        AgentQuestionFieldModel field = new AgentQuestionFieldModel(
+                "answer", true, 2000, List.of(), true);
+        AgentQuestionCardModel question = new AgentQuestionCardModel(
+                "question-1", null, thread.threadId(), "owner-turn", "user-1",
+                AgentQuestionCardResumeTargetEnum.AGENT, 0, 2,
+                "补充信息", "请补充信息", "[{\"name\":\"answer\"}]",
+                AgentQuestionCardStatusEnum.OPEN, NOW, null, "answer-turn",
+                AgentQuestionCardAnswerEnqueueStatusEnum.ENQUEUED, List.of(field));
+        persistence.questionCard = question;
+        AgentQuestionAnswerInput input = new AgentQuestionAnswerInput(
+                question.questionId(), null, AgentQuestionCardResumeTargetEnum.AGENT, 2,
+                Map.of("answer", "继续"),
+                cn.ethan.core.agent.workflow.AgentQuestionCardAnswerActionEnum.SUBMIT);
+        AgentTurnModel answerTurn = new AgentTurnModel(
+                "answer-turn", thread.threadId(), "user-1", "answer-request", "回答问题",
+                AgentTurnStatusEnum.QUEUED, 1, null, null, NOW, null, null, input);
+        persistence.createTurn(answerTurn);
+
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        AgentContextAssembler context = new AgentContextAssembler(
+                persistence, persistence, clock, 2_000, 1_000, 256, 128);
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, threads, context,
+                (current, turn, history, answer) -> {
+                    assertEquals(AgentQuestionCardStatusEnum.ANSWERED, persistence.questionCard.status(),
+                            "Agent 恢复模型前必须先消费旧 QuestionCard");
+                    return new AgentTurnCoordinator.AgentCoordinatorResult(
+                            "还需要一项信息", List.of(), null, true,
+                            AgentDecisionTypeEnum.ASK_USER, "QUESTION_CARD_CREATED", null, null);
+                }, new RecordingEvents(), executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256,
+                AgentRuntimeMetrics.noop(), null, false, 3, persistence, null);
+
+        runtime.enqueuePersisted(answerTurn);
+        executor.runAll();
+
+        AgentTurnModel completed = persistence.findTurn("user-1", answerTurn.turnId()).orElseThrow();
+        assertEquals(AgentTurnStatusEnum.COMPLETED, completed.status());
+        assertEquals(AgentQuestionCardStatusEnum.ANSWERED, persistence.questionCard.status());
+        scheduler.shutdownNow();
+    }
+
     private static final class ManualExecutor implements java.util.concurrent.Executor {
         private final List<Runnable> tasks = new ArrayList<>();
 
@@ -365,7 +423,7 @@ class AgentTurnRuntimeServiceTest {
     }
 
     private static final class InMemoryPersistence implements AgentThreadStore, AgentTurnStore,
-            AgentItemStore, AgentContextSnapshotStore {
+            AgentItemStore, AgentContextSnapshotStore, AgentQuestionCardStore {
         private final Map<String, AgentThreadModel> threads = new HashMap<>();
         private final Map<String, AgentTurnModel> turns = new HashMap<>();
         private final List<AgentItemModel> items = new ArrayList<>();
@@ -373,6 +431,7 @@ class AgentTurnRuntimeServiceTest {
         private List<AgentWorkflowOwnerRecoveryCandidate> ownerRecoveryCandidates = List.of();
         private String retryReadTurnId;
         private CountDownLatch retryReadLatch;
+        private AgentQuestionCardModel questionCard;
 
         @Override
         public void createThread(AgentThreadModel thread) {
@@ -474,6 +533,60 @@ class AgentTurnRuntimeServiceTest {
         @Override
         public void saveSnapshot(AgentContextSnapshotModel snapshot) {
             throw new UnsupportedOperationException("test does not persist snapshots");
+        }
+
+        @Override
+        public Optional<AgentQuestionCardModel> find(String userId, String questionId) {
+            return Optional.ofNullable(questionCard)
+                    .filter(question -> question.userId().equals(userId))
+                    .filter(question -> question.questionId().equals(questionId));
+        }
+
+        @Override
+        public Optional<AgentQuestionCardModel> findOpen(String userId, String threadId) {
+            return Optional.ofNullable(questionCard)
+                    .filter(question -> question.userId().equals(userId))
+                    .filter(question -> question.threadId().equals(threadId))
+                    .filter(question -> question.status() == AgentQuestionCardStatusEnum.OPEN);
+        }
+
+        @Override
+        public void create(AgentQuestionCardModel question) {
+            questionCard = question;
+        }
+
+        @Override
+        public OptionalLong reserveAnswerTurn(String userId, String questionId, long expectedVersion,
+                                              String answerTurnId) {
+            return OptionalLong.empty();
+        }
+
+        @Override
+        public OptionalLong markAnswerTurnEnqueued(String userId, String questionId, long expectedVersion,
+                                                   String answerTurnId) {
+            return OptionalLong.empty();
+        }
+
+        @Override
+        public boolean releaseAnswerTurn(String userId, String questionId, long expectedVersion,
+                                         String answerTurnId) {
+            return false;
+        }
+
+        @Override
+        public boolean closeAnswerTurn(String userId, String questionId, long expectedVersion,
+                                       String answerTurnId, AgentQuestionCardStatusEnum terminalStatus,
+                                       Instant answeredAt) {
+            if (questionCard == null || !questionCard.userId().equals(userId)
+                    || !questionCard.questionId().equals(questionId)
+                    || questionCard.version() != expectedVersion
+                    || !answerTurnId.equals(questionCard.answerTurnId())
+                    || questionCard.status() != AgentQuestionCardStatusEnum.OPEN) {
+                return false;
+            }
+            questionCard = terminalStatus == AgentQuestionCardStatusEnum.CANCELLED
+                    ? questionCard.cancel(answeredAt) : questionCard.answer(answeredAt);
+            return true;
         }
     }
 }
