@@ -2,6 +2,7 @@ package cn.ethan.infrastructure.commerce.order.http;
 
 import cn.ethan.core.commerce.order.LogisticsEventModel;
 import cn.ethan.core.commerce.order.LogisticsGateway;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.ParameterizedTypeReference;
@@ -37,6 +38,7 @@ public final class HttpLogisticsGateway implements LogisticsGateway {
 
     private final RestClient client;
 
+    @Autowired
     public HttpLogisticsGateway(
             RestClient.Builder builder,
             @Value("${ai-agent.order.base-url:http://localhost:18080}") String baseUrl,

@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -37,15 +38,21 @@ public final class LocalOrderGateway implements OrderGateway, OrderActionGateway
     private static final Logger LOGGER = LoggerFactory.getLogger(LocalOrderGateway.class);
 
     private final DemoOrderMapper mapper;
+    private final DemoLogisticsEventMapper logisticsMapper;
     private final Clock clock;
 
     public LocalOrderGateway(DemoOrderMapper mapper) {
-        this(mapper, Clock.systemUTC());
+        this(mapper, null, Clock.systemUTC());
+    }
+
+    public LocalOrderGateway(DemoOrderMapper mapper, Clock clock) {
+        this(mapper, null, clock);
     }
 
     @Autowired
-    public LocalOrderGateway(DemoOrderMapper mapper, Clock clock) {
+    public LocalOrderGateway(DemoOrderMapper mapper, DemoLogisticsEventMapper logisticsMapper, Clock clock) {
         this.mapper = mapper;
+        this.logisticsMapper = logisticsMapper;
         this.clock = clock == null ? Clock.systemUTC() : clock;
     }
 
@@ -232,59 +239,40 @@ public final class LocalOrderGateway implements OrderGateway, OrderActionGateway
     }
 
     @Override
-    public OrderActionResult setVisibility(
+    public OrderActionResult deleteOrder(
             String userId,
             String orderId,
-            OrderVisibilityEnum visibility,
             String idempotencyKey,
             Instant now
     ) {
-        if (userId == null || userId.isBlank() || orderId == null || orderId.isBlank()
-                || visibility == null || visibility == OrderVisibilityEnum.ALL || now == null) {
-            return OrderActionResult.failed(false, "VISIBILITY_ARGUMENT_INVALID", "订单历史操作参数不完整");
+        if (userId == null || userId.isBlank() || orderId == null || orderId.isBlank() || now == null) {
+            return OrderActionResult.failed(false, "DELETE_ARGUMENT_INVALID", "删除订单参数不完整");
         }
         try {
             String normalizedUserId = userId.strip();
             String normalizedOrderId = orderId.strip();
             DemoOrderEntity current = mapper.selectById(normalizedOrderId);
             if (current == null) {
-                return OrderActionResult.failed(false, "ORDER_NOT_FOUND", "订单不存在");
+                // Worker 可能在远程删除成功后重启；将缺失视为幂等成功，避免再次制造失败状态。
+                return OrderActionResult.succeeded("ALREADY_DELETED", "订单记录已删除");
             }
             if (!normalizedUserId.equals(current.getUserId())) {
                 return OrderActionResult.failed(false, "ORDER_NOT_OWNED", "订单不属于当前用户");
             }
-            boolean hidden = current.getHiddenAt() != null;
-            boolean shouldHide = visibility == OrderVisibilityEnum.HIDDEN;
-            if (hidden == shouldHide) {
-                return OrderActionResult.succeeded(
-                        shouldHide ? "ALREADY_HIDDEN" : "ALREADY_VISIBLE",
-                        shouldHide ? "订单已在隐藏记录中" : "订单已恢复到订单记录");
+            if (logisticsMapper != null) {
+                logisticsMapper.delete(new QueryWrapper<DemoLogisticsEventEntity>()
+                        .eq("ORDER_ID", normalizedOrderId));
             }
-            var update = new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<DemoOrderEntity>()
+            int deleted = mapper.delete(new QueryWrapper<DemoOrderEntity>()
                     .eq("ORDER_ID", normalizedOrderId)
-                    .eq("USER_ID", normalizedUserId);
-            if (shouldHide) {
-                update.isNull("HIDDEN_AT").set("HIDDEN_AT", now);
-            } else {
-                update.isNotNull("HIDDEN_AT").set("HIDDEN_AT", null);
+                    .eq("USER_ID", normalizedUserId));
+            if (deleted == 1 || mapper.selectById(normalizedOrderId) == null) {
+                return OrderActionResult.succeeded("ORDER_DELETED", "订单记录已删除");
             }
-            int updated = mapper.update(null, update.set("UPDATED_AT", now));
-            if (updated == 1) {
-                return OrderActionResult.succeeded(
-                        shouldHide ? "ORDER_HIDDEN" : "ORDER_RESTORED",
-                        shouldHide ? "订单已移入隐藏记录" : "订单已恢复到订单记录");
-            }
-            DemoOrderEntity after = mapper.selectById(normalizedOrderId);
-            boolean afterHidden = after != null && after.getHiddenAt() != null;
-            if (after != null && afterHidden == shouldHide) {
-                return OrderActionResult.succeeded(
-                        shouldHide ? "ALREADY_HIDDEN" : "ALREADY_VISIBLE",
-                        shouldHide ? "订单已在隐藏记录中" : "订单已恢复到订单记录");
-            }
-            return OrderActionResult.failed(true, "VISIBILITY_STATE_RACE", "订单记录正在变化，请稍后重试");
+            return OrderActionResult.failed(true, "DELETE_STATE_RACE", "订单记录正在变化，请稍后重试");
         } catch (RuntimeException failure) {
-            LOGGER.warn("本地订单历史更新暂时失败，exception={}", failure.getClass().getSimpleName());
-            return OrderActionResult.failed(true, "ORDER_STORE_TEMPORARY_FAILURE", "订单历史暂时无法更新");
+            LOGGER.warn("本地订单删除暂时失败，exception={}", failure.getClass().getSimpleName());
+            return OrderActionResult.failed(true, "ORDER_STORE_TEMPORARY_FAILURE", "订单记录暂时无法删除");
         }
     }
 

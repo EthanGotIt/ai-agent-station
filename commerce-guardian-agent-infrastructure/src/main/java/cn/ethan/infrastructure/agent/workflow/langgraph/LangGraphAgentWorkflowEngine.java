@@ -93,6 +93,8 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
     private static final String ORDER_SERVICE = "ORDER_SERVICE";
     private static final String REFUND = "REFUND";
     private static final String EXPEDITE = "EXPEDITE";
+    private static final String DELETE_ORDER = "DELETE_ORDER";
+    /** 历史 Workflow 兼容值；新入口不再创建隐藏/恢复动作。 */
     private static final String HIDE_ORDER = "HIDE_ORDER";
     private static final String RESTORE_ORDER = "RESTORE_ORDER";
     private static final int MAX_REASON_LENGTH = 512;
@@ -221,6 +223,11 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         WorkflowRequest request = WorkflowRequest.from(operation, arguments);
         if (request.intent().isBlank()) {
             throw new AgentThreadConflictException("WORKFLOW_INTENT_REQUIRED", "订单 Workflow 缺少售后意图");
+        }
+        String normalizedIntent = normalizeIntent(request.intent());
+        if (HIDE_ORDER.equals(normalizedIntent) || RESTORE_ORDER.equals(normalizedIntent)) {
+            throw new AgentThreadConflictException("ORDER_HISTORY_ACTION_REMOVED",
+                    "订单隐藏/恢复功能已移除，请直接删除订单记录");
         }
         ResolvedCandidates candidates = resolveCandidates(request, thread.userId());
         SelectedOrder selected = selectCandidate(request, candidates, thread.userId());
@@ -634,6 +641,7 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         String impact = switch (request.intent()) {
             case REFUND -> "将提交订单退款动作";
             case EXPEDITE -> "将提交催发货请求";
+            case DELETE_ORDER -> "将永久删除订单记录及其物流轨迹，删除后不可恢复";
             case HIDE_ORDER -> "只从订单历史中隐藏，不删除交易或物流事实";
             case RESTORE_ORDER -> "将订单恢复到订单历史列表";
             default -> "将提交订单动作";
@@ -747,8 +755,9 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         return switch (normalizeIntent(intent)) {
             case REFUND -> ExternalActionTypeEnum.REFUND;
             case EXPEDITE -> ExternalActionTypeEnum.EXPEDITE;
-            case HIDE_ORDER -> ExternalActionTypeEnum.HIDE_ORDER;
-            case RESTORE_ORDER -> ExternalActionTypeEnum.RESTORE_ORDER;
+            case DELETE_ORDER -> ExternalActionTypeEnum.DELETE_ORDER;
+            case HIDE_ORDER, RESTORE_ORDER -> throw new AgentThreadConflictException(
+                    "ORDER_HISTORY_ACTION_REMOVED", "订单隐藏/恢复功能已移除，请直接删除订单记录");
             default -> throw new AgentThreadConflictException("WORKFLOW_INTENT_INVALID", "售后操作类型无效");
         };
     }
@@ -976,6 +985,7 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         return switch (normalizeIntent(intent)) {
             case REFUND -> "退款";
             case EXPEDITE -> "催发货";
+            case DELETE_ORDER -> "删除订单记录";
             case HIDE_ORDER -> "隐藏订单记录";
             case RESTORE_ORDER -> "恢复订单记录";
             default -> "订单操作";
@@ -1038,6 +1048,7 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         return switch (value.trim().toUpperCase(Locale.ROOT)) {
             case "REFUND", "退款" -> REFUND;
             case "EXPEDITE", "催发货", "催单" -> EXPEDITE;
+            case "DELETE_ORDER", "DELETE", "删除订单", "删除订单记录", "删除" -> DELETE_ORDER;
             case "HIDE_ORDER", "HIDE", "隐藏订单", "隐藏" -> HIDE_ORDER;
             case "RESTORE_ORDER", "RESTORE", "恢复订单", "恢复" -> RESTORE_ORDER;
             default -> value.trim().toUpperCase(Locale.ROOT);
@@ -1058,7 +1069,7 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             return normalizeIntent(explicit);
         }
         String normalized = normalizeIntent(operation);
-        return List.of(REFUND, EXPEDITE, HIDE_ORDER, RESTORE_ORDER).contains(normalized) ? normalized : "";
+        return List.of(REFUND, EXPEDITE, DELETE_ORDER, HIDE_ORDER, RESTORE_ORDER).contains(normalized) ? normalized : "";
     }
 
     private static Instant parseBoundary(String name, String value, boolean endOfDay) {

@@ -7,7 +7,6 @@ import cn.ethan.core.agent.action.ExternalActionResultStatusEnum;
 import cn.ethan.core.agent.action.ExternalActionResultStore;
 import cn.ethan.core.agent.action.ExternalActionTypeEnum;
 import cn.ethan.core.commerce.order.OrderActionGateway;
-import cn.ethan.core.commerce.order.OrderVisibilityEnum;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -113,8 +112,9 @@ public final class LocalExternalActionExecutor implements ExternalActionExecutor
                     command.idempotencyKey(), clock.instant());
             case EXPEDITE -> orderActions.expedite(command.userId(), payload.orderId(),
                     command.idempotencyKey(), clock.instant());
-            case HIDE_ORDER -> visibilityMutation(command, payload, OrderVisibilityEnum.HIDDEN);
-            case RESTORE_ORDER -> visibilityMutation(command, payload, OrderVisibilityEnum.ACTIVE);
+            case DELETE_ORDER -> orderActions.deleteOrder(command.userId(), payload.orderId(),
+                    command.idempotencyKey(), clock.instant());
+            case HIDE_ORDER, RESTORE_ORDER -> removedVisibilityAction();
         };
         if (!mutation.success()) {
             return new ExternalActionResult(false, mutation.retryable(), mutation.code(), mutation.message());
@@ -128,17 +128,9 @@ public final class LocalExternalActionExecutor implements ExternalActionExecutor
         return new ExternalActionResult(true, false, mutation.code(), mutation.message());
     }
 
-    private OrderActionGateway.OrderActionResult visibilityMutation(
-            ExternalActionCommandModel command,
-            ActionPayload payload,
-            OrderVisibilityEnum expected
-    ) {
-        if (!payload.visibility().isBlank() && !expected.name().equalsIgnoreCase(payload.visibility())) {
-            return OrderActionGateway.OrderActionResult.failed(false,
-                    "ACTION_PAYLOAD_INVALID", "订单历史操作方向无效");
-        }
-        return orderActions.setVisibility(command.userId(), payload.orderId(), expected,
-                command.idempotencyKey(), clock.instant());
+    private OrderActionGateway.OrderActionResult removedVisibilityAction() {
+        return OrderActionGateway.OrderActionResult.failed(false,
+                "ORDER_HISTORY_ACTION_REMOVED", "订单隐藏/恢复功能已移除，请直接删除订单记录");
     }
 
     private ActionPayload parsePayload(String payloadJson) {
@@ -146,8 +138,7 @@ public final class LocalExternalActionExecutor implements ExternalActionExecutor
             JsonNode root = objectMapper.readTree(payloadJson == null ? "{}" : payloadJson);
             String orderId = root.path("orderId").asString("").trim();
             String reason = root.path("reason").asString("").trim();
-            String visibility = root.path("visibility").asString("").trim();
-            return orderId.isBlank() ? null : new ActionPayload(orderId, reason, visibility);
+            return orderId.isBlank() ? null : new ActionPayload(orderId, reason);
         } catch (RuntimeException failure) {
             return null;
         }
@@ -157,6 +148,6 @@ public final class LocalExternalActionExecutor implements ExternalActionExecutor
         return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    private record ActionPayload(String orderId, String reason, String visibility) {
+    private record ActionPayload(String orderId, String reason) {
     }
 }

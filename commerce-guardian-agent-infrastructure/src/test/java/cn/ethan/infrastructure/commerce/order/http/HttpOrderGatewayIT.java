@@ -147,7 +147,7 @@ class HttpOrderGatewayIT {
     }
 
     @Test
-    void sendsExpediteAndVisibilityActionsToOrderServiceContract() {
+    void sendsExpediteRefundAndDeleteActionsToOrderServiceContract() {
         responseBody = """
                 {
                   "success": true,
@@ -165,10 +165,18 @@ class HttpOrderGatewayIT {
                 "action-refund", Instant.now()).code());
         assertTrue(requestUri.get().contains("/orders/ORDER-001/refund"));
         assertEquals("action-refund", requestIdempotencyKey.get());
-        assertEquals("OK", gateway.setVisibility("user-1", "ORDER-001",
-                OrderVisibilityEnum.HIDDEN, "action-hide", Instant.now()).code());
-        assertTrue(requestUri.get().contains("/orders/ORDER-001/visibility"));
-        assertEquals("action-hide", requestIdempotencyKey.get());
+        responseBody = """
+                {
+                  "success": true,
+                  "retryable": false,
+                  "code": "ORDER_DELETED",
+                  "message": "deleted"
+                }
+                """;
+        assertEquals("ORDER_DELETED", gateway.deleteOrder("user-1", "ORDER-001",
+                "action-delete", Instant.now()).code());
+        assertTrue(requestUri.get().contains("/orders/ORDER-001"));
+        assertEquals("action-delete", requestIdempotencyKey.get());
     }
 
     @Test
@@ -188,8 +196,7 @@ class HttpOrderGatewayIT {
         assertEquals("IDEMPOTENCY_KEY_INVALID",
                 gateway.refund("user-1", "ORDER-001", "商品不符", "bad key", Instant.now()).code());
         assertEquals("IDEMPOTENCY_KEY_INVALID",
-                gateway.setVisibility("user-1", "ORDER-001", OrderVisibilityEnum.HIDDEN,
-                        "bad\nkey", Instant.now()).code());
+                gateway.deleteOrder("user-1", "ORDER-001", "bad\nkey", Instant.now()).code());
         assertNull(requestUri.get());
         assertNull(requestIdempotencyKey.get());
     }

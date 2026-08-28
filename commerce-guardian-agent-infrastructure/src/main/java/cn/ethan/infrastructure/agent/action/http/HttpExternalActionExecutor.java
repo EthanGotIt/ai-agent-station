@@ -7,7 +7,6 @@ import cn.ethan.core.agent.action.ExternalActionResultStatusEnum;
 import cn.ethan.core.agent.action.ExternalActionResultStore;
 import cn.ethan.core.agent.action.ExternalActionTypeEnum;
 import cn.ethan.core.commerce.order.OrderActionGateway;
-import cn.ethan.core.commerce.order.OrderVisibilityEnum;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
@@ -53,7 +52,6 @@ public final class HttpExternalActionExecutor implements ExternalActionExecutor 
             JsonNode root = objectMapper.readTree(command.payloadJson());
             String orderId = root.path("orderId").asString("").trim();
             String reason = root.path("reason").asString("").trim();
-            String visibility = root.path("visibility").asString("").trim();
             if (orderId.isBlank() || (command.type() == ExternalActionTypeEnum.REFUND && reason.isBlank())) {
                 return new ExternalActionResult(false, false, "ACTION_PAYLOAD_INVALID", "外部动作参数无效");
             }
@@ -62,10 +60,9 @@ public final class HttpExternalActionExecutor implements ExternalActionExecutor 
                         command.idempotencyKey(), clock.instant());
                 case EXPEDITE -> orderActions.expedite(command.userId(), orderId,
                         command.idempotencyKey(), clock.instant());
-                case HIDE_ORDER -> visibilityMutation(
-                        command, orderId, visibility, OrderVisibilityEnum.HIDDEN);
-                case RESTORE_ORDER -> visibilityMutation(
-                        command, orderId, visibility, OrderVisibilityEnum.ACTIVE);
+                case DELETE_ORDER -> orderActions.deleteOrder(command.userId(), orderId,
+                        command.idempotencyKey(), clock.instant());
+                case HIDE_ORDER, RESTORE_ORDER -> removedVisibilityAction();
             };
             if (!mutation.success()) {
                 return new ExternalActionResult(false, mutation.retryable(), mutation.code(), mutation.message());
@@ -80,18 +77,9 @@ public final class HttpExternalActionExecutor implements ExternalActionExecutor 
         }
     }
 
-    private OrderActionGateway.OrderActionResult visibilityMutation(
-            ExternalActionCommandModel command,
-            String orderId,
-            String payloadVisibility,
-            OrderVisibilityEnum expected
-    ) {
-        if (!payloadVisibility.isBlank() && !expected.name().equalsIgnoreCase(payloadVisibility)) {
-            return OrderActionGateway.OrderActionResult.failed(false,
-                    "ACTION_PAYLOAD_INVALID", "订单历史操作方向无效");
-        }
-        return orderActions.setVisibility(command.userId(), orderId, expected,
-                command.idempotencyKey(), clock.instant());
+    private OrderActionGateway.OrderActionResult removedVisibilityAction() {
+        return OrderActionGateway.OrderActionResult.failed(false,
+                "ORDER_HISTORY_ACTION_REMOVED", "订单隐藏/恢复功能已移除，请直接删除订单记录");
     }
 
     private static String escape(String value) {

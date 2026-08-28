@@ -336,7 +336,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                     });
         }
 
-        @Tool(name = "search_orders", description = "按可选条件搜索当前用户的订单，只读。可按创建时间、金额、状态、商品关键词或物流停滞天数筛选；不记得订单号时优先使用此工具。默认只搜索未隐藏订单，最多返回 20 条。日期使用 YYYY-MM-DD 或 ISO-8601，金额使用数字，状态可为 PAID、SHIPPED、DELIVERED、CANCELLED、REFUNDED 的逗号分隔值。")
+        @Tool(name = "search_orders", description = "按可选条件搜索当前用户的订单，只读。可按创建时间、金额、状态、商品关键词或物流停滞天数筛选；不记得订单号时优先使用此工具。订单记录删除后不再返回，最多返回 20 条。日期使用 YYYY-MM-DD 或 ISO-8601，金额使用数字，状态可为 PAID、SHIPPED、DELIVERED、CANCELLED、REFUNDED 的逗号分隔值。")
         public String searchOrders(
                 @ToolParam(description = "可选，创建时间起点，YYYY-MM-DD 或 ISO-8601；无需筛选时留空") String createdFrom,
                 @ToolParam(description = "可选，创建时间终点，YYYY-MM-DD 或 ISO-8601；无需筛选时留空") String createdTo,
@@ -344,17 +344,15 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 @ToolParam(description = "可选，最高实付金额；无需筛选时留空") String maxAmount,
                 @ToolParam(description = "可选，订单状态；多个状态使用逗号分隔") String statuses,
                 @ToolParam(description = "可选，订单号、商品摘要或物流状态关键词") String keyword,
-                @ToolParam(description = "可选，物流连续多少天未更新；无需筛选时留空或传空字符串") String logisticsStalledDays,
-                @ToolParam(description = "可选，可填写 ACTIVE、HIDDEN 或 ALL；默认 ACTIVE") String visibility
+                @ToolParam(description = "可选，物流连续多少天未更新；无需筛选时留空或传空字符串") String logisticsStalledDays
         ) {
             OrderSearchCriteria criteria = SpringAiOrderToolSupport.parseSearchCriteria(createdFrom, createdTo, minAmount, maxAmount,
-                    statuses, keyword, logisticsStalledDays, visibility);
+                    statuses, keyword, logisticsStalledDays);
             return invoke("search_orders", Map.of(
                             "createdFrom", value(createdFrom), "createdTo", value(createdTo),
                             "minAmount", value(minAmount), "maxAmount", value(maxAmount),
                             "statuses", value(statuses), "keyword", value(keyword),
-                            "logisticsStalledDays", value(logisticsStalledDays),
-                            "visibility", value(visibility)),
+                            "logisticsStalledDays", value(logisticsStalledDays)),
                     () -> {
                         OrderSearchResultModel result = orders.searchOrders(criteria, userId);
                         invocation.recordStructured("ORDER_LIST", SpringAiOrderToolSupport.renderOrderSearch(result));
@@ -432,9 +430,9 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             this.maxAgentCycles = Math.max(1, Math.min(maxAgentCycles, 5));
         }
 
-        @Tool(name = "start_order_service_workflow", description = "统一订单售后 Workflow 入口。可按意图、订单号、时间、金额、状态、关键词或物流停滞条件找订单；支持退款、催发货以及订单历史隐藏/恢复。订单不明确或原因缺失时由确定性流程展示 QuestionCard，涉及外部写操作时展示独立执行确认卡，确认前不会执行订单动作")
+        @Tool(name = "start_order_service_workflow", description = "统一订单售后 Workflow 入口。可按意图、订单号、时间、金额、状态、关键词或物流停滞条件找订单；支持退款、催发货以及直接删除订单记录。订单不明确或原因缺失时由确定性流程展示 QuestionCard，涉及外部写操作时展示独立执行确认卡，确认前不会执行订单动作")
         public String startOrderService(
-                @ToolParam(description = "可选，售后意图，使用 REFUND 退款、EXPEDITE 催发货、HIDE_ORDER 隐藏记录或 RESTORE_ORDER 恢复记录；不确定时留空") String intent,
+                @ToolParam(description = "可选，售后意图，使用 REFUND 退款、EXPEDITE 催发货或 DELETE_ORDER 删除订单记录；不确定时留空") String intent,
                 @ToolParam(description = "可选，订单号；不记得时留空并使用筛选条件") String orderId,
                 @ToolParam(description = "可选，创建时间起点，YYYY-MM-DD 或 ISO-8601") String createdFrom,
                 @ToolParam(description = "可选，创建时间终点，YYYY-MM-DD 或 ISO-8601") String createdTo,
@@ -443,7 +441,6 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 @ToolParam(description = "可选，订单状态，多个状态使用逗号分隔") String statuses,
                 @ToolParam(description = "可选，订单号、商品摘要或物流状态关键词") String keyword,
                 @ToolParam(description = "可选，物流连续多少天未更新") String logisticsStalledDays,
-                @ToolParam(description = "可选，订单历史可见性，ACTIVE、HIDDEN 或 ALL") String visibility,
                 @ToolParam(description = "可选，退款原因；缺失时由 QuestionCard 补充") String reason
         ) {
             Map<String, String> arguments = new LinkedHashMap<>();
@@ -456,7 +453,6 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             put(arguments, "statuses", statuses);
             put(arguments, "keyword", keyword);
             put(arguments, "logisticsStalledDays", logisticsStalledDays);
-            put(arguments, "visibility", visibility);
             put(arguments, "reason", reason);
             return start(arguments);
         }
@@ -473,7 +469,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             String invocationId = invocation.recordCall(toolName, arguments);
             if (arguments.getOrDefault("intent", "").isBlank()) {
                 // 意图不明确时只进行一次无副作用的普通澄清，不创建空意图 Workflow 或 QuestionCard。
-                String message = "请说明要处理的订单事项，例如退款、催发货、隐藏或恢复订单记录。";
+                String message = "请说明要处理的订单事项，例如退款、催发货或删除订单记录。";
                 invocation.recordDecision(AgentDecisionTypeEnum.ASK_USER, "INTENT_REQUIRED", message);
                 invocation.recordResult(invocationId, toolName, "WAITING_USER_INPUT", "INTENT_REQUIRED");
                 return message;

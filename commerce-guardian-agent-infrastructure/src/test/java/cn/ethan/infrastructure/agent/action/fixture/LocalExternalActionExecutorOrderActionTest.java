@@ -6,7 +6,6 @@ import cn.ethan.core.agent.action.ExternalActionResultStore;
 import cn.ethan.core.agent.action.ExternalActionStatusEnum;
 import cn.ethan.core.agent.action.ExternalActionTypeEnum;
 import cn.ethan.core.commerce.order.OrderActionGateway;
-import cn.ethan.core.commerce.order.OrderVisibilityEnum;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -21,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 类型职责：验证本地订单动作执行器对催发货、隐藏和恢复的分派与幂等回放。
+ * 类型职责：验证本地订单动作执行器对催发货、删除动作的分派与幂等回放。
  *
  * @author ethan
  * @date 2026-08-23
@@ -38,16 +37,43 @@ class LocalExternalActionExecutorOrderActionTest {
                 results, actions, Clock.fixed(NOW, ZoneOffset.UTC));
 
         assertTrue(executor.execute(command(ExternalActionTypeEnum.EXPEDITE, "{}", "expedite")).success());
-        assertTrue(executor.execute(command(ExternalActionTypeEnum.HIDE_ORDER,
-                "{\"visibility\":\"HIDDEN\"}", "hide")).success());
-        assertTrue(executor.execute(command(ExternalActionTypeEnum.RESTORE_ORDER,
-                "{\"visibility\":\"ACTIVE\"}", "restore")).success());
         assertTrue(executor.execute(command(ExternalActionTypeEnum.EXPEDITE, "{}", "expedite")).success());
 
         assertEquals(1, actions.expediteCalls.get());
-        assertEquals(1, actions.hideCalls.get());
-        assertEquals(1, actions.restoreCalls.get());
-        assertEquals(3, results.values.size());
+        assertEquals(1, results.values.size());
+    }
+
+    @Test
+    void dispatchesDirectDeleteAction() {
+        InMemoryResults results = new InMemoryResults();
+        RecordingOrderActions actions = new RecordingOrderActions();
+        LocalExternalActionExecutor executor = new LocalExternalActionExecutor(
+                results, actions, Clock.fixed(NOW, ZoneOffset.UTC));
+
+        assertTrue(executor.execute(command(ExternalActionTypeEnum.DELETE_ORDER, "{}", "delete")).success());
+        assertTrue(executor.execute(command(ExternalActionTypeEnum.DELETE_ORDER, "{}", "delete")).success());
+
+        assertEquals(1, actions.deleteCalls.get());
+        assertEquals(1, results.values.size());
+    }
+
+    @Test
+    void rejectsRemovedVisibilityActionsWithoutMutatingOrder() {
+        InMemoryResults results = new InMemoryResults();
+        RecordingOrderActions actions = new RecordingOrderActions();
+        LocalExternalActionExecutor executor = new LocalExternalActionExecutor(
+                results, actions, Clock.fixed(NOW, ZoneOffset.UTC));
+
+        var hidden = executor.execute(command(ExternalActionTypeEnum.HIDE_ORDER,
+                "{\"visibility\":\"HIDDEN\"}", "hide-removed"));
+        var restored = executor.execute(command(ExternalActionTypeEnum.RESTORE_ORDER,
+                "{\"visibility\":\"ACTIVE\"}", "restore-removed"));
+
+        assertEquals("ORDER_HISTORY_ACTION_REMOVED", hidden.code());
+        assertEquals("ORDER_HISTORY_ACTION_REMOVED", restored.code());
+        assertEquals(0, actions.expediteCalls.get());
+        assertEquals(0, actions.deleteCalls.get());
+        assertTrue(results.values.isEmpty());
     }
 
     private static ExternalActionCommandModel command(
@@ -67,8 +93,7 @@ class LocalExternalActionExecutorOrderActionTest {
 
     private static final class RecordingOrderActions implements OrderActionGateway {
         private final AtomicInteger expediteCalls = new AtomicInteger();
-        private final AtomicInteger hideCalls = new AtomicInteger();
-        private final AtomicInteger restoreCalls = new AtomicInteger();
+        private final AtomicInteger deleteCalls = new AtomicInteger();
 
         @Override
         public OrderActionResult refund(
@@ -84,20 +109,16 @@ class LocalExternalActionExecutorOrderActionTest {
         }
 
         @Override
-        public OrderActionResult setVisibility(
+        public OrderActionResult deleteOrder(
                 String userId,
                 String orderId,
-                OrderVisibilityEnum visibility,
                 String idempotencyKey,
                 Instant now
         ) {
-            if (visibility == OrderVisibilityEnum.HIDDEN) {
-                hideCalls.incrementAndGet();
-            } else {
-                restoreCalls.incrementAndGet();
-            }
-            return OrderActionResult.succeeded("OK", "ok");
+            deleteCalls.incrementAndGet();
+            return OrderActionResult.succeeded("ORDER_DELETED", "ok");
         }
+
     }
 
     private static final class InMemoryResults implements ExternalActionResultStore {

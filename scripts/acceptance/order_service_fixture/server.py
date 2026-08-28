@@ -485,6 +485,8 @@ class OrderService:
         body: dict[str, object],
     ) -> tuple[int, dict[str, object], bool]:
         if row is None:
+            if action_name == "delete":
+                return self._with_mutation(self._succeeded("ALREADY_DELETED", "订单记录已删除"), False)
             return 404, {
                 "success": False,
                 "retryable": False,
@@ -532,34 +534,10 @@ class OrderService:
                 ("EXPEDITE_REQUESTED", now, order_id),
             )
             return self._with_mutation(self._succeeded("EXPEDITED", "已记录催发货请求"), True)
-        if action_name == "visibility":
-            visibility = body.get("visibility")
-            if visibility not in {"HIDDEN", "ACTIVE"}:
-                return self._with_mutation(
-                    self._failed("VISIBILITY_ARGUMENT_INVALID", "订单历史操作参数不完整"), False
-                )
-            hidden_at = row["HIDDEN_AT"]
-            if visibility == "HIDDEN":
-                if hidden_at is not None:
-                    return self._with_mutation(
-                        self._succeeded("ALREADY_HIDDEN", "订单已隐藏"), False
-                    )
-                next_hidden_at = format_instant(self.clock())
-                code = "HIDDEN"
-                message = "订单已从历史记录隐藏"
-            else:
-                if hidden_at is None:
-                    return self._with_mutation(
-                        self._succeeded("ALREADY_VISIBLE", "订单已在历史记录中显示"), False
-                    )
-                next_hidden_at = None
-                code = "RESTORED"
-                message = "订单已恢复到历史记录"
-            connection.execute(
-                "UPDATE ORDERS SET HIDDEN_AT = ? WHERE ORDER_ID = ?",
-                (next_hidden_at, order_id),
-            )
-            return self._with_mutation(self._succeeded(code, message), True)
+        if action_name == "delete":
+            connection.execute("DELETE FROM LOGISTICS_EVENTS WHERE ORDER_ID = ?", (order_id,))
+            connection.execute("DELETE FROM ORDERS WHERE ORDER_ID = ?", (order_id,))
+            return self._with_mutation(self._succeeded("ORDER_DELETED", "订单记录已删除"), True)
         return self._with_mutation(self._failed("ACTION_UNSUPPORTED", "不支持的订单操作"), False)
 
     def _maybe_inject_expedite_failure(
@@ -710,7 +688,7 @@ def create_server(
                 self._send_json(404, {"code": "NOT_FOUND", "message": "接口不存在"})
                 return
             action_name = path_parts[2]
-            if action_name not in {"refund", "expedite", "visibility"}:
+            if action_name not in {"refund", "expedite"}:
                 self._send_json(404, {"code": "NOT_FOUND", "message": "接口不存在"})
                 return
             body = self._read_json_body()
@@ -723,6 +701,25 @@ def create_server(
                 action_name,
                 self.headers.get("Idempotency-Key"),
                 body,
+            )
+            self._send_json(status, response)
+
+        def do_DELETE(self) -> None:  # noqa: N802 - stdlib handler contract
+            parsed = urlsplit(self.path)
+            user_id = self._user_id()
+            if not user_id:
+                self._send_json(401, {"code": "USER_REQUIRED", "message": "缺少 X-User-Id"})
+                return
+            path_parts = [unquote(part) for part in parsed.path.split("/") if part]
+            if len(path_parts) != 2 or path_parts[0] != "orders":
+                self._send_json(404, {"code": "NOT_FOUND", "message": "接口不存在"})
+                return
+            status, response = service.action(
+                user_id,
+                path_parts[1],
+                "delete",
+                self.headers.get("Idempotency-Key"),
+                {},
             )
             self._send_json(status, response)
 

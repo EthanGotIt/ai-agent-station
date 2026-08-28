@@ -6,7 +6,6 @@ import cn.ethan.core.agent.action.ExternalActionResultModel;
 import cn.ethan.core.agent.action.ExternalActionResultStore;
 import cn.ethan.core.agent.action.ExternalActionTypeEnum;
 import cn.ethan.core.commerce.order.OrderActionGateway;
-import cn.ethan.core.commerce.order.OrderVisibilityEnum;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
@@ -86,12 +85,11 @@ class HttpExternalActionExecutorTest {
         }
 
         @Override
-        public OrderActionResult setVisibility(String userId, String orderId, OrderVisibilityEnum visibility,
-                                               String idempotencyKey, Instant now) {
-            keys.put(visibility == OrderVisibilityEnum.HIDDEN
-                    ? ExternalActionTypeEnum.HIDE_ORDER : ExternalActionTypeEnum.RESTORE_ORDER, idempotencyKey);
+        public OrderActionResult deleteOrder(String userId, String orderId, String idempotencyKey, Instant now) {
+            keys.put(ExternalActionTypeEnum.DELETE_ORDER, idempotencyKey);
             return OrderActionResult.succeeded("OK", "done");
         }
+
     }
 
     private static final class InMemoryResults implements ExternalActionResultStore {

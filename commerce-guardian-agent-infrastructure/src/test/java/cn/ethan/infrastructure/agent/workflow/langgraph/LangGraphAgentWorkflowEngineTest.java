@@ -97,6 +97,31 @@ class LangGraphAgentWorkflowEngineTest {
     }
 
     @Test
+    void directDeleteUsesAuthorizeCheckpointAndCreatesDeleteCommandAfterApproval() {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-DELETE-1")));
+        AgentWorkflowEngine.StartResult started = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "DELETE_ORDER", "orderId", "ORDER-DELETE-1"));
+
+        assertNull(started.questionCard());
+        assertNotNull(started.checkpoint());
+        assertEquals("DELETE_ORDER", started.checkpoint().actionType());
+        assertTrue(started.checkpoint().impactSummary().contains("不可恢复"));
+        assertEquals(0, fixture.commands.values.size());
+
+        fixture.checkpoints.decide("user-1", started.checkpoint().checkpointId(), 0,
+                AgentWorkflowDecisionEnum.APPROVE, started.checkpoint().factsFingerprint());
+        AgentWorkflowEngine.ResumeResult resumed = fixture.engine.resume(
+                fixture.thread, decisionTurn(started), Map.of());
+
+        assertEquals("APPROVED", resumed.resultStatus());
+        assertNotNull(resumed.command());
+        assertEquals(cn.ethan.core.agent.action.ExternalActionTypeEnum.DELETE_ORDER,
+                resumed.command().type());
+        assertTrue(resumed.command().payloadJson().contains("ORDER-DELETE-1"));
+        assertFalse(resumed.command().payloadJson().contains("visibility"));
+    }
+
+    @Test
     void createsWorkflowRunBeforePersistingGraphSnapshot() {
         Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-1")), true);
 

@@ -3,6 +3,7 @@ package cn.ethan.infrastructure.agent.action.worker;
 import cn.ethan.core.agent.action.ExternalActionCommandModel;
 import cn.ethan.core.agent.action.ExternalActionCommandStore;
 import cn.ethan.core.agent.action.ExternalActionExecutor;
+import cn.ethan.core.agent.action.ExternalActionTypeEnum;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.execution.AgentRuntimeMetrics;
 import cn.ethan.core.agent.thread.AgentItemModel;
@@ -237,6 +238,11 @@ public final class ExternalActionWorker implements DisposableBean {
         }
         try {
             OrderLookupResultModel lookup = orders.findOrder(orderId, command.userId());
+            if (command.type() == ExternalActionTypeEnum.DELETE_ORDER
+                    && lookup != null && lookup.status() == OrderLookupStatusEnum.NOT_FOUND) {
+                return ExternalActionOutcomeManager.Verification.fromFacts(
+                        null, List.of(), true, "订单记录已删除", verifiedAt);
+            }
             if (lookup == null || lookup.status() != OrderLookupStatusEnum.FOUND || lookup.order() == null) {
                 return ExternalActionOutcomeManager.Verification.unavailable(
                         "操作已受理、最新状态暂未核验", verifiedAt);

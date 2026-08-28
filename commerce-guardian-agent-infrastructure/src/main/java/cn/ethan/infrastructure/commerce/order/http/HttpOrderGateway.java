@@ -8,7 +8,7 @@ import cn.ethan.core.commerce.order.OrderGateway;
 import cn.ethan.core.commerce.order.OrderSearchCriteria;
 import cn.ethan.core.commerce.order.OrderSearchResultModel;
 import cn.ethan.core.commerce.order.OrderSearchStatusEnum;
-import cn.ethan.core.commerce.order.OrderVisibilityEnum;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
@@ -46,6 +46,7 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
 
     private final RestClient client;
 
+    @Autowired
     public HttpOrderGateway(
             RestClient.Builder builder,
             @Value("${ai-agent.order.base-url:http://localhost:18080}") String baseUrl,
@@ -244,23 +245,35 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
     }
 
     @Override
-    public OrderActionResult setVisibility(
-            String userId,
-            String orderId,
-            OrderVisibilityEnum visibility,
-            String idempotencyKey,
-            Instant now
-    ) {
-        if (userId == null || userId.isBlank() || orderId == null || orderId.isBlank()
-                || visibility == null || visibility == OrderVisibilityEnum.ALL) {
-            return OrderActionResult.failed(false, "VISIBILITY_ARGUMENT_INVALID", "订单历史操作参数不完整");
+    public OrderActionResult deleteOrder(String userId, String orderId, String idempotencyKey, Instant now) {
+        if (userId == null || userId.isBlank() || orderId == null || orderId.isBlank()) {
+            return OrderActionResult.failed(false, "DELETE_ARGUMENT_INVALID", "删除订单参数不完整");
         }
         String normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
         if (normalizedIdempotencyKey == null) {
             return invalidIdempotencyKey();
         }
-        return invokeAction(userId, orderId, "/visibility", Map.of("visibility", visibility.name()),
-                normalizedIdempotencyKey);
+        try {
+            HttpOrderActionResponse response = client.delete()
+                    .uri(uri -> uri.path("/orders/{id}").build(orderId.strip()))
+                    .header("X-User-Id", userId.strip())
+                    .header("Idempotency-Key", normalizedIdempotencyKey)
+                    .retrieve()
+                    .body(HttpOrderActionResponse.class);
+            if (response == null) {
+                return OrderActionResult.failed(true, "ORDER_ACTION_EMPTY_RESPONSE", "订单服务未返回删除结果");
+            }
+            return new OrderActionResult(Boolean.TRUE.equals(response.success()),
+                    Boolean.TRUE.equals(response.retryable()), response.code(), response.message());
+        } catch (HttpClientErrorException.NotFound notFound) {
+            // 删除接口应按幂等键返回 200；旧服务返回 404 时仍明确报告订单不存在。
+            return OrderActionResult.failed(false, "ORDER_NOT_FOUND", "订单不存在");
+        } catch (HttpClientErrorException.Forbidden forbidden) {
+            return OrderActionResult.failed(false, "ORDER_NOT_OWNED", "订单不属于当前用户");
+        } catch (RuntimeException temporaryFailure) {
+            LOGGER.warn("HTTP 删除订单调用暂时失败，exception={}", temporaryFailure.getClass().getSimpleName());
+            return OrderActionResult.failed(true, "ORDER_ACTION_TEMPORARY_FAILURE", "订单服务暂时不可用");
+        }
     }
 
     private OrderActionResult invokeAction(

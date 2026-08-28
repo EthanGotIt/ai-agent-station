@@ -29,15 +29,14 @@ public interface OrderActionGateway {
         return OrderActionResult.failed(false, "ACTION_NOT_SUPPORTED", "当前订单服务不支持催发货");
     }
 
-    /** 使用外部命令幂等键更新订单历史可见性；只改变用户历史视图。 */
-    default OrderActionResult setVisibility(
+    /** 使用外部命令幂等键直接删除订单记录及其可删除的履约轨迹。 */
+    default OrderActionResult deleteOrder(
             String userId,
             String orderId,
-            OrderVisibilityEnum visibility,
             String idempotencyKey,
             Instant now
     ) {
-        return OrderActionResult.failed(false, "ACTION_NOT_SUPPORTED", "当前订单服务不支持订单历史管理");
+        return OrderActionResult.failed(false, "ACTION_NOT_SUPPORTED", "当前订单服务不支持删除订单记录");
     }
 
     record OrderActionResult(boolean success, boolean retryable, String code, String message) {

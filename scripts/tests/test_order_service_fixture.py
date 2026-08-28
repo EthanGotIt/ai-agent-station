@@ -81,27 +81,43 @@ class OrderServiceFixtureTest(unittest.TestCase):
         self.assertEqual(1, stats["idempotencyRecords"])
         self.assertEqual(1, stats["businessMutations"])
 
-    def test_visibility_action_requires_key_and_is_user_scoped(self):
+    def test_visibility_action_is_removed(self):
         status, response = self.request(
             "POST",
             "/orders/ORDER-EXT-TODAY-001/visibility",
             {"visibility": "HIDDEN"},
+            {"Idempotency-Key": "fixture-hide-removed"},
         )
-        self.assertEqual(400, status)
-        self.assertEqual("IDEMPOTENCY_KEY_INVALID", response["code"])
+        self.assertEqual(404, status)
+        self.assertEqual("NOT_FOUND", response["code"])
 
-        status, response = self.request(
-            "POST",
-            "/orders/ORDER-EXT-TODAY-001/visibility",
-            {"visibility": "HIDDEN"},
-            {"Idempotency-Key": "fixture-hide-once"},
+    def test_delete_removes_order_and_logistics_once(self):
+        key = "fixture-delete-once"
+        status, first = self.request(
+            "DELETE",
+            "/orders/ORDER-EXT-TODAY-001",
+            headers={"Idempotency-Key": key},
         )
         self.assertEqual(200, status)
-        self.assertEqual("HIDDEN", response["code"])
+        self.assertEqual("ORDER_DELETED", first["code"])
 
-        status, hidden = self.request("GET", "/orders/search?visibility=HIDDEN")
+        status, second = self.request(
+            "DELETE",
+            "/orders/ORDER-EXT-TODAY-001",
+            headers={"Idempotency-Key": key},
+        )
         self.assertEqual(200, status)
-        self.assertEqual(["ORDER-EXT-TODAY-001"], [order["orderId"] for order in hidden])
+        self.assertEqual(first, second)
+        status, missing = self.request("GET", "/orders/ORDER-EXT-TODAY-001")
+        self.assertEqual(404, status)
+        self.assertEqual("ORDER_NOT_FOUND", missing["code"])
+        status, logistics = self.request("GET", "/orders/ORDER-EXT-TODAY-001/logistics")
+        self.assertEqual(404, status)
+        self.assertEqual([], logistics)
+        status, stats = self.request("GET", "/_fixture/stats")
+        self.assertEqual(200, status)
+        self.assertEqual(1, stats["idempotencyRecords"])
+        self.assertEqual(1, stats["businessMutations"])
 
     def test_expedite_transient_failures_do_not_create_idempotency_or_mutate(self):
         service = OrderService(

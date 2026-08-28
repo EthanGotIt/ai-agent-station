@@ -156,8 +156,7 @@ public final class SpringAiOrderToolSupport {
             String maxAmount,
             String statuses,
             String keyword,
-            String logisticsStalledDays,
-            String visibility
+            String logisticsStalledDays
     ) {
         Set<OrderStatusEnum> parsedStatuses = statuses == null || statuses.isBlank()
                 ? Set.of()
@@ -166,15 +165,12 @@ public final class SpringAiOrderToolSupport {
                 .filter(value -> !value.isEmpty())
                 .map(value -> OrderStatusEnum.valueOf(value.toUpperCase()))
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
-        OrderVisibilityEnum parsedVisibility = visibility == null || visibility.isBlank()
-                ? OrderVisibilityEnum.ACTIVE
-                : OrderVisibilityEnum.valueOf(visibility.trim().toUpperCase());
         return new OrderSearchCriteria(
                 parseBoundary("createdFrom", createdFrom, false),
                 parseBoundary("createdTo", createdTo, true),
                 parseAmount("minAmount", minAmount),
                 parseAmount("maxAmount", maxAmount),
-                parsedStatuses, keyword, parseStalledDays(logisticsStalledDays), parsedVisibility);
+                parsedStatuses, keyword, parseStalledDays(logisticsStalledDays), OrderVisibilityEnum.ACTIVE);
     }
 
     public static BigDecimal parseAmount(String name, String value) {

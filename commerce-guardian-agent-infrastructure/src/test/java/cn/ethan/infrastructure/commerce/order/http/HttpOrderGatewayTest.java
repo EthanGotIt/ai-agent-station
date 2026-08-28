@@ -92,6 +92,20 @@ class HttpOrderGatewayTest {
     }
 
     @Test
+    void sendsDirectDeleteWithIdempotencyKey() {
+        FakeClientHttpRequestFactoryTest transport = new FakeClientHttpRequestFactoryTest(request ->
+                FakeClientHttpRequestFactoryTest.Response.json(200,
+                        "{\"success\":true,\"retryable\":false,\"code\":\"ORDER_DELETED\",\"message\":\"deleted\"}"));
+
+        var result = gateway(transport).deleteOrder("user-1", "ORDER-001", "delete-1", NOW);
+
+        assertTrue(result.success());
+        assertEquals("DELETE", transport.requests().get(0).method().name());
+        assertEquals("/orders/ORDER-001", transport.requests().get(0).uri().getPath());
+        assertEquals("delete-1", transport.requests().get(0).headers().getFirst("Idempotency-Key"));
+    }
+
+    @Test
     void mapsTransportFailureToTemporaryFailure() {
         FakeClientHttpRequestFactoryTest transport = new FakeClientHttpRequestFactoryTest(request -> {
             throw new IOException("simulated transport failure");

@@ -393,6 +393,10 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         if (thread.status() == AgentThreadStatusEnum.ARCHIVED) {
             throw new AgentThreadConflictException("THREAD_ARCHIVED", "归档 Thread 不接受订单动作");
         }
+        if (actionType != null && actionType.removed()) {
+            throw new AgentThreadConflictException("ORDER_HISTORY_ACTION_REMOVED",
+                    "订单隐藏/恢复功能已移除，请直接删除订单记录");
+        }
         String normalizedRequestId = AgentTurnInputValidator.requireClientRequestId(requestId);
         AgentOrderActionInput action = new AgentOrderActionInput(sourceTurnId, orderId, actionType);
         Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(ownerId, normalizedRequestId);

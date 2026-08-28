@@ -6,7 +6,6 @@ import cn.ethan.core.agent.action.ExternalActionResultStore;
 import cn.ethan.core.agent.action.ExternalActionStatusEnum;
 import cn.ethan.core.agent.action.ExternalActionTypeEnum;
 import cn.ethan.core.commerce.order.OrderActionGateway;
-import cn.ethan.core.commerce.order.OrderVisibilityEnum;
 import cn.ethan.infrastructure.commerce.order.http.HttpOrderGateway;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -41,7 +40,7 @@ class HttpExternalActionExecutorIT {
     private static final Instant NOW = Instant.parse("2026-08-23T00:00:00Z");
 
     @Test
-    void forwardsIdempotencyKeyForEveryOrderAction() {
+    void forwardsIdempotencyKeyForSupportedOrderActions() {
         RecordingActions actions = new RecordingActions();
         HttpExternalActionExecutor executor = new HttpExternalActionExecutor(
                 new InMemoryResults(), actions, Clock.fixed(NOW, ZoneOffset.UTC), new ObjectMapper());
@@ -50,12 +49,18 @@ class HttpExternalActionExecutorIT {
             String key = "order-action-key-" + type.name();
             String payload = switch (type) {
                 case REFUND -> "{\"orderId\":\"ORDER-001\",\"reason\":\"商品不符\"}";
-                case HIDE_ORDER -> "{\"orderId\":\"ORDER-001\",\"visibility\":\"HIDDEN\"}";
-                case RESTORE_ORDER -> "{\"orderId\":\"ORDER-001\",\"visibility\":\"ACTIVE\"}";
+                case DELETE_ORDER -> "{\"orderId\":\"ORDER-001\"}";
+                case HIDE_ORDER, RESTORE_ORDER -> "{\"orderId\":\"ORDER-001\"}";
                 case EXPEDITE -> "{\"orderId\":\"ORDER-001\"}";
             };
-            assertTrue(executor.execute(command(type, key, payload)).success());
-            assertEquals(key, actions.keys.get(type));
+            var result = executor.execute(command(type, key, payload));
+            if (type == ExternalActionTypeEnum.HIDE_ORDER || type == ExternalActionTypeEnum.RESTORE_ORDER) {
+                assertFalse(result.success());
+                assertEquals("ORDER_HISTORY_ACTION_REMOVED", result.code());
+            } else {
+                assertTrue(result.success());
+                assertEquals(key, actions.keys.get(type));
+            }
         }
     }
 
@@ -145,17 +150,11 @@ class HttpExternalActionExecutorIT {
         }
 
         @Override
-        public OrderActionResult setVisibility(
-                String userId,
-                String orderId,
-                OrderVisibilityEnum visibility,
-                String idempotencyKey,
-                Instant now
-        ) {
-            keys.put(visibility == OrderVisibilityEnum.HIDDEN
-                    ? ExternalActionTypeEnum.HIDE_ORDER : ExternalActionTypeEnum.RESTORE_ORDER, idempotencyKey);
+        public OrderActionResult deleteOrder(String userId, String orderId, String idempotencyKey, Instant now) {
+            keys.put(ExternalActionTypeEnum.DELETE_ORDER, idempotencyKey);
             return OrderActionResult.succeeded("OK", "done");
         }
+
     }
 
     private static class InMemoryResults implements ExternalActionResultStore {
