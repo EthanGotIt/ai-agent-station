@@ -23,6 +23,8 @@ export type OrderActionProjection = {
   error: string | null;
   rejected: boolean;
   retryable: boolean;
+  /** 直接删除成功后，来源卡片仍可作为历史回执展示，但不应继续提供订单操作。 */
+  deleted: boolean;
 };
 
 export const ACTION_LABELS: Record<OrderActionType, string> = {
@@ -30,6 +32,8 @@ export const ACTION_LABELS: Record<OrderActionType, string> = {
   REFRESH_ORDER: "刷新订单",
   REFUND: "申请退款",
   EXPEDITE: "催发货",
+  DELETE_ORDER: "删除记录",
+  // 历史 Item 兼容标签；新界面不再创建隐藏/恢复动作。
   HIDE_ORDER: "隐藏记录",
   RESTORE_ORDER: "恢复记录"
 };
@@ -119,6 +123,7 @@ export function projectOrderAction(turn: ThreadViewTurn, request: OrderActionReq
   let error: string | null = null;
   let rejected = false;
   let retryable = false;
+  let deleted = false;
   let hasBusinessFact = false;
   for (const item of actionItems) {
     const data = itemData(item);
@@ -137,6 +142,10 @@ export function projectOrderAction(turn: ThreadViewTurn, request: OrderActionReq
       retryable = data.status === "MANUAL_RETRY_REQUIRED";
       runId = stringValue(data.runId) ?? runId;
       receipt = { ...(receipt ?? {}), ...externalReceipt(data) };
+      if (request.actionType === "DELETE_ORDER"
+        && ["ORDER_DELETED", "ALREADY_DELETED"].includes(stringValue(data.code) ?? "")) {
+        deleted = true;
+      }
     } else if (item.type === "ERROR") {
       state = "error";
       error = typeof item.payload.data === "string" ? item.payload.data : "订单动作未完成";
@@ -145,5 +154,5 @@ export function projectOrderAction(turn: ThreadViewTurn, request: OrderActionReq
     }
   }
   if (hasBusinessFact && (request.actionType === "QUERY_LOGISTICS" || request.actionType === "REFRESH_ORDER")) state = "done";
-  return { request, state, receipt, runId, error, rejected, retryable };
+  return { request, state, receipt, runId, error, rejected, retryable, deleted };
 }

@@ -188,6 +188,8 @@ export type OrderActionType =
   | "REFRESH_ORDER"
   | "REFUND"
   | "EXPEDITE"
+  | "DELETE_ORDER"
+  /** 历史 Item 兼容值；新界面不再发起隐藏/恢复。 */
   | "HIDE_ORDER"
   | "RESTORE_ORDER";
 

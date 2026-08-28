@@ -32,13 +32,11 @@ function id(prefix: string) {
 /** 从服务端 Item 和 SSE 事实恢复单一 Thread 工作区。 */
 export function useThreadWorkspace(userId: string) {
   const [threads, setThreads] = useState<AgentThread[]>([]);
-  const [archivedThreads, setArchivedThreads] = useState<AgentThread[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [items, setItems] = useState<AgentItem[]>([]);
   const [interaction, setInteraction] = useState<AgentInteraction | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [archiveLoading, setArchiveLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cursorRef = useRef(0);
   const itemsRef = useRef<AgentItem[]>([]);
@@ -300,24 +298,11 @@ export function useThreadWorkspace(userId: string) {
     void loadThread(nextThreadId, generation);
   }, [loadThread, updateInteraction]);
 
-  const loadArchivedThreads = useCallback(async () => {
-    setArchiveLoading(true);
-    try {
-      const page = await threadWorkspaceApi.listThreads(userId, "ARCHIVED");
-      setArchivedThreads(page.items);
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "回收站加载失败");
-    } finally {
-      setArchiveLoading(false);
-    }
-  }, [userId]);
-
   useEffect(() => {
     let cancelled = false;
     async function loadThreads() {
       setLoading(true);
       setError(null);
-      setArchivedThreads([]);
       try {
         const page = await threadWorkspaceApi.listThreads(userId);
         if (cancelled) return;
@@ -356,40 +341,6 @@ export function useThreadWorkspace(userId: string) {
       setError(failure instanceof Error ? failure.message : "Thread 创建失败");
     }
   }, [selectThread, userId]);
-
-  const archiveThread = useCallback(async (nextThreadId: string) => {
-    const target = threads.find((thread) => thread.threadId === nextThreadId);
-    if (!target || target.status !== "ACTIVE") return false;
-    try {
-      const updated = await threadWorkspaceApi.updateThread(userId, nextThreadId, target.title, true);
-      setThreads((current) => current.filter((thread) => thread.threadId !== updated.threadId));
-      setArchivedThreads((current) => [updated, ...current.filter((thread) => thread.threadId !== updated.threadId)]);
-      if (threadIdRef.current === updated.threadId) {
-        const fallback = threads.find((thread) => thread.threadId !== updated.threadId);
-        if (fallback) selectThread(fallback.threadId);
-        else await createThread();
-      }
-      return true;
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "对话暂时不能归档");
-      return false;
-    }
-  }, [createThread, selectThread, threads, userId]);
-
-  const restoreThread = useCallback(async (nextThreadId: string) => {
-    const target = archivedThreads.find((thread) => thread.threadId === nextThreadId);
-    if (!target || target.status !== "ARCHIVED") return false;
-    try {
-      const updated = await threadWorkspaceApi.updateThread(userId, nextThreadId, target.title, false);
-      setArchivedThreads((current) => current.filter((thread) => thread.threadId !== updated.threadId));
-      setThreads((current) => [updated, ...current.filter((thread) => thread.threadId !== updated.threadId)]);
-      selectThread(updated.threadId);
-      return true;
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "对话恢复失败");
-      return false;
-    }
-  }, [archivedThreads, selectThread, userId]);
 
   const send = useCallback(async (message: string) => {
     const currentThread = threads.find((thread) => thread.threadId === threadId);
@@ -556,29 +507,24 @@ export function useThreadWorkspace(userId: string) {
   }, [applyItems, turns, userId]);
 
   const rename = useCallback(async (nextThreadId: string, title: string) => {
-    const target = threads.find((thread) => thread.threadId === nextThreadId)
-      ?? archivedThreads.find((thread) => thread.threadId === nextThreadId);
+    const target = threads.find((thread) => thread.threadId === nextThreadId);
     if (!target || !title.trim()) return false;
     try {
       const updated = await threadWorkspaceApi.updateThread(
-        userId, nextThreadId, title.trim(), target.status === "ARCHIVED"
+        userId, nextThreadId, title.trim()
       );
       setThreads((current) => current.map((thread) => thread.threadId === updated.threadId ? updated : thread));
-      setArchivedThreads((current) => current.map((thread) => thread.threadId === updated.threadId ? updated : thread));
       return true;
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Thread 重命名失败");
       return false;
     }
-  }, [archivedThreads, threads, userId]);
+  }, [threads, userId]);
 
   return {
     answer,
     checkpoint,
     decideCheckpoint,
-    archiveLoading,
-    archiveThread,
-    archivedThreads,
     busy,
     cancel,
     createThread,
@@ -586,13 +532,11 @@ export function useThreadWorkspace(userId: string) {
     executionReplayStates,
     loadExecution,
     items,
-    loadArchivedThreads,
     loading,
     orderAction,
     interaction,
     question,
     rename,
-    restoreThread,
     retry,
     retryingRunId,
     selectThread,

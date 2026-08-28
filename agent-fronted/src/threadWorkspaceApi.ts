@@ -21,9 +21,9 @@ function userHeaders(userId: string, json = false): HeadersInit {
 
 /** 工作台 HTTP 边界：集中协议路径和请求体，Hook 只负责生命周期与状态。 */
 export const threadWorkspaceApi = {
-  listThreads(userId: string, status?: "ACTIVE" | "ARCHIVED") {
-    const suffix = status ? `&status=${status}` : "";
-    return requestJson<AgentThreadPage>(`${API}/threads?page=0&size=100${suffix}`, {
+  listThreads(userId: string) {
+    // 后端默认只返回 ACTIVE Thread；不暴露回收站筛选参数。
+    return requestJson<AgentThreadPage>(`${API}/threads?page=0&size=100`, {
       headers: userHeaders(userId)
     });
   },
@@ -131,11 +131,12 @@ export const threadWorkspaceApi = {
     );
   },
 
-  updateThread(userId: string, threadId: string, title: string, archive: boolean) {
+  updateThread(userId: string, threadId: string, title: string) {
     return requestJson<AgentThread>(`${API}/threads/${encodeURIComponent(threadId)}`, {
       method: "PATCH",
       headers: userHeaders(userId, true),
-      body: JSON.stringify({ title, archive })
+      // 后端保留 archive 字段仅用于旧客户端兼容；新工作台不再发送归档动作。
+      body: JSON.stringify({ title, archive: false })
     });
   }
 };

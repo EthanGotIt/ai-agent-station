@@ -24,6 +24,7 @@ function statusCopy(view: OrderActionProjection) {
     }
     return view.error ?? "操作未完成，可查看运行详情";
   }
+  if (view.request.actionType === "DELETE_ORDER" && view.deleted) return "订单记录已删除";
   return view.request.actionType === "QUERY_LOGISTICS" || view.request.actionType === "REFRESH_ORDER"
     ? "最新订单事实已更新"
     : "业务操作已完成";

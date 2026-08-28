@@ -127,10 +127,6 @@ textarea { min-height: 84px; resize: vertical; line-height: 1.55; }
 .sidebar-heading h2 { margin: 0; font-size: 1rem; letter-spacing: -.015em; }
 .sidebar-heading-actions { display: flex; gap: 5px; }
 .mobile-sidebar-close, .mobile-thread-toggle, .thread-sidebar-backdrop { display: none; }
-.thread-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin-top: 11px; padding: 3px; border-radius: 8px; background: var(--surface-muted); }
-.thread-tabs button { display: flex; align-items: center; justify-content: center; gap: 4px; border: 1px solid transparent; border-radius: 6px; padding: 7px 4px; color: var(--muted); background: transparent; font-size: .7rem; box-shadow: none; }
-.thread-tabs button:hover, .thread-tabs button.selected { border-color: var(--line-strong); color: var(--ink); background: var(--surface); box-shadow: none; transform: none; }
-.thread-tabs span { min-width: 17px; border-radius: 999px; padding: 2px 5px; color: var(--route-strong); background: var(--route-soft); font-size: .62rem; }
 .thread-search { display: flex; align-items: center; gap: 8px; margin-top: 12px; border: 1px solid var(--line-strong); border-radius: 7px; padding: 0 9px; color: var(--quiet); background: var(--surface); }
 .thread-search svg { width: 15px; height: 15px; flex: 0 0 auto; }
 .thread-search input { min-width: 0; border: 0; border-radius: 0; padding: 8px 0; background: transparent; font-size: .72rem; }
@@ -193,6 +189,7 @@ textarea { min-height: 84px; resize: vertical; line-height: 1.55; }
 .status-active, .status-completed { color: var(--success); background: var(--success-soft); }
 .status-queued, .status-waiting_user_input, .status-waiting_external_action { color: var(--amber); background: var(--amber-soft); }
 .status-cancelled, .status-timed_out, .status-failed, .status-archived { color: var(--danger); background: var(--danger-soft); }
+.status-deleted { color: var(--muted); background: var(--surface-muted); }
 .turn-response-meta { align-items: center; }
 .detail-trigger { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; border: 1px solid var(--line); border-radius: 999px; padding: 4px 8px; color: var(--muted); background: transparent; font-size: .66rem; font-weight: 750; box-shadow: none; }
 .detail-trigger:hover { color: var(--route-strong); background: var(--route-soft); box-shadow: none; transform: none; }
@@ -239,6 +236,8 @@ textarea { min-height: 84px; resize: vertical; line-height: 1.55; }
 .order-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
 .order-card-actions button { display: inline-flex; align-items: center; gap: 5px; min-height: 34px; padding: 7px 9px; font-size: .72rem; }
 .order-card-actions button[aria-busy="true"] { color: var(--route-strong); border-color: var(--route); background: var(--route-soft); }
+.order-card-actions button.danger-action { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--line-strong)); }
+.order-card-actions button.danger-action:not(:disabled):hover { color: var(--surface); border-color: var(--danger); background: var(--danger); }
 .order-card-actions svg { width: 14px; height: 14px; }
 .logistics-timeline { display: grid; gap: 8px; margin: 12px 0 0; padding: 0 0 0 4px; list-style: none; }
 .logistics-timeline li { position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 8px; }
@@ -346,11 +345,6 @@ textarea { min-height: 84px; resize: vertical; line-height: 1.55; }
 .question-modal .question-card { width: 100%; max-height: min(720px, calc(100dvh - 64px - 172px - 24px)); margin: 0; overflow: auto; overscroll-behavior: contain; box-shadow: none; }
 .question-modal-close { position: absolute; z-index: 2; top: 11px; right: 11px; }
 .question-modal .decision-heading { padding-right: 38px; }
-.composer-readonly { display: flex; align-items: center; gap: 9px; color: var(--muted); }
-.composer-readonly > svg { width: 19px; flex: 0 0 auto; color: var(--route); }
-.composer-readonly > div { display: grid; flex: 1; gap: 3px; }
-.composer-readonly strong { color: var(--ink); font-size: .78rem; }
-.composer-readonly span { font-size: .68rem; }
 
 .item-inspector { position: sticky; top: 64px; display: flex; min-width: 0; height: calc(100dvh - 64px); flex-direction: column; overflow: hidden; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: var(--surface); color: var(--ink); box-shadow: none; }
 .inspector-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 20px 18px 16px; border-bottom: 1px solid var(--line); }
@@ -442,7 +436,7 @@ textarea { min-height: 84px; resize: vertical; line-height: 1.55; }
 }
 
 @media (pointer: coarse) {
-  .compact-icon, .thread-tabs button { min-height: 40px; }
+  .compact-icon { min-height: 40px; }
   .thread-row-action { width: 40px; height: 40px; }
   .detail-trigger { min-height: 40px; padding-inline: 10px; }
   .order-card-actions button, .actions button { min-height: 40px; }

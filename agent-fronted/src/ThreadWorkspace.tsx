@@ -1,7 +1,5 @@
 import { Fragment, useEffect, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import {
-  Archive,
-  ArchiveRestore,
   Bot,
   Check,
   CheckCircle2,
@@ -16,6 +14,7 @@ import {
   Send,
   ShieldCheck,
   Square,
+  Trash2,
   Truck,
   Undo2,
   X
@@ -28,7 +27,6 @@ import type {
   OrderCard,
   QuestionCardState,
   QuestionField,
-  ThreadStatus,
   ThreadViewTurn,
   WorkflowCheckpointState
 } from "./threadTypes";
@@ -102,17 +100,18 @@ function OrderResults({ turn, disabled, pendingAction, retryingRunId, onRetry, o
       const action = findOrderAction(turn, order.orderId);
       const pending = pendingAction?.sourceTurnId === turn.turnId && pendingAction.orderId === order.orderId ? { ...pendingAction, turnId: "__pending__" } : null;
       const actionView = action ? projectOrderAction(turn, action) : pending ? projectOrderAction(turn, pending) : null;
+      const deleted = actionView?.deleted === true;
       return <article className="order-card" key={order.orderId}>
-        <div className="order-card-heading"><div><strong>{order.itemSummary ?? "订单商品"}</strong><span>{order.orderId}</span></div><span className={`status status-${order.status.toLowerCase()}`}>{orderStatus(order.status)}</span></div>
-        <div className="order-card-meta"><span>{amount(order)}</span><span>下单 {dateTime(order.createdAt)}</span><span>{order.visibility === "HIDDEN" ? "已隐藏" : order.logisticsStatus ?? "暂无物流状态"}</span></div>
+        <div className="order-card-heading"><div><strong>{order.itemSummary ?? "订单商品"}</strong><span>{order.orderId}</span></div><span className={`status ${deleted ? "status-deleted" : `status-${order.status.toLowerCase()}`}`}>{deleted ? "记录已删除" : orderStatus(order.status)}</span></div>
+        <div className="order-card-meta"><span>{amount(order)}</span><span>下单 {dateTime(order.createdAt)}</span><span>{deleted ? "记录已删除" : order.logisticsStatus ?? "暂无物流状态"}</span></div>
         {actionView ? <OrderActionStatus view={actionView} disabled={disabled} retrying={retryingRunId === actionView.runId} onRetry={onRetry} onRefresh={(nextOrderId) => onAction(turn.turnId, nextOrderId, "REFRESH_ORDER")} /> : null}
         {timeline ? <LogisticsTimelineView timeline={timeline} /> : null}
-        <div className="order-card-actions" aria-label={`${order.orderId} 可用操作`}>
+        {!deleted ? <div className="order-card-actions" aria-label={`${order.orderId} 可用操作`}>
           <button type="button" className="secondary" disabled={disabled} aria-busy={disabled} onClick={() => onAction(turn.turnId, order.orderId, "QUERY_LOGISTICS")}><Truck aria-hidden="true" />查物流</button>
           {order.status !== "REFUNDED" && order.status !== "CANCELLED" ? <button type="button" className="secondary" disabled={disabled} aria-busy={disabled} onClick={() => onAction(turn.turnId, order.orderId, "REFUND")}><Undo2 aria-hidden="true" />申请退款</button> : null}
           {order.status === "PAID" ? <button type="button" className="secondary" disabled={disabled} aria-busy={disabled} onClick={() => onAction(turn.turnId, order.orderId, "EXPEDITE")}><PackageSearchIcon />催发货</button> : null}
-          {order.visibility === "HIDDEN" ? <button type="button" className="secondary" disabled={disabled} aria-busy={disabled} onClick={() => onAction(turn.turnId, order.orderId, "RESTORE_ORDER")}><ArchiveRestore aria-hidden="true" />恢复记录</button> : <button type="button" className="secondary" disabled={disabled} aria-busy={disabled} onClick={() => onAction(turn.turnId, order.orderId, "HIDE_ORDER")}><Archive aria-hidden="true" />隐藏记录</button>}
-        </div>
+          <button type="button" className="secondary danger-action" disabled={disabled} aria-busy={disabled} onClick={() => onAction(turn.turnId, order.orderId, "DELETE_ORDER")}><Trash2 aria-hidden="true" />删除记录</button>
+        </div> : null}
       </article>;
     })}</div> : null}
     {orphanTimelines.map((timeline) => {
@@ -137,7 +136,8 @@ function QuestionCard({ value, disabled, onSubmit, onCancel }: { value: Question
   const [customValues, setCustomValues] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [invalidField, setInvalidField] = useState<string | null>(null);
-  useEffect(() => { setAnswers({}); setCustomValues({}); setFormError(null); setInvalidField(null); }, [value.questionId, value.version, value.fields]);
+  // 字段结构由问题版本标识；避免每个 SSE Item 重新解析出新数组时清空用户正在填写的答案。
+  useEffect(() => { setAnswers({}); setCustomValues({}); setFormError(null); setInvalidField(null); }, [value.questionId, value.version]);
   const submit = () => {
     const next: Record<string, string> = {};
     for (const field of value.fields) {
@@ -218,6 +218,7 @@ function workflowActionLabel(actionType: string) {
   return ({
     REFUND: "申请退款",
     EXPEDITE: "催发货",
+    DELETE_ORDER: "删除订单记录",
     HIDE_ORDER: "隐藏订单",
     RESTORE_ORDER: "恢复订单"
   } as Record<string, string>)[actionType] ?? actionType;
@@ -397,7 +398,6 @@ function ItemInspector({ turn, replayStatus, onClose }: { turn: ThreadViewTurn |
 
 export function ThreadWorkspace({ workspace, userId }: Props) {
   const [message, setMessage] = useState("");
-  const [threadView, setThreadView] = useState<ThreadStatus>("ACTIVE");
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [threadQuery, setThreadQuery] = useState("");
@@ -405,16 +405,14 @@ export function ThreadWorkspace({ workspace, userId }: Props) {
   const [inspectedTurnId, setInspectedTurnId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingOrderAction | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
-  const allThreads = [...workspace.threads, ...workspace.archivedThreads];
-  const currentThread = allThreads.find((item) => item.threadId === workspace.threadId);
-  const visibleThreads = threadView === "ACTIVE" ? workspace.threads : workspace.archivedThreads;
+  const currentThread = workspace.threads.find((item) => item.threadId === workspace.threadId);
+  const visibleThreads = workspace.threads;
   const normalizedThreadQuery = threadQuery.trim().toLocaleLowerCase();
   const filteredThreads = normalizedThreadQuery ? visibleThreads.filter((item) => `${item.title} ${item.contextId ?? ""}`.toLocaleLowerCase().includes(normalizedThreadQuery)) : visibleThreads;
   const interaction = workspace.interaction;
   const question = interaction?.type === "QUESTION_CARD" ? interaction.question : null;
   const checkpoint = interaction?.type === "WORKFLOW_CHECKPOINT" ? interaction.checkpoint : null;
-  const readOnly = currentThread?.status === "ARCHIVED";
-  const inputDisabled = workspace.busy || Boolean(interaction) || readOnly || !workspace.threadId;
+  const inputDisabled = workspace.busy || Boolean(interaction) || !workspace.threadId;
   const inspectedTurn = workspace.turns.find((turn) => turn.turnId === inspectedTurnId) ?? null;
   useEffect(() => {
     if (!workspace.busy) setPendingAction(null);
@@ -426,32 +424,28 @@ export function ThreadWorkspace({ workspace, userId }: Props) {
   };
   const submit = (event: FormEvent) => { event.preventDefault(); const next = message.trim(); if (!next) return; void workspace.send(next); setMessage(""); };
   const keyboard = (event: KeyboardEvent<HTMLTextAreaElement>) => { if (event.nativeEvent.isComposing) return; if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } };
-  const chooseView = (nextView: ThreadStatus) => { setThreadView(nextView); setEditingThreadId(null); if (nextView === "ARCHIVED") void workspace.loadArchivedThreads(); };
   const chooseThread = (nextThreadId: string) => { setEditingThreadId(null); setMobileSidebarOpen(false); setInspectedTurnId(null); workspace.selectThread(nextThreadId); };
   const startRename = (item: { threadId: string; title: string }) => { setEditingThreadId(item.threadId); setDraftTitle(item.title); };
   const cancelRename = () => { setEditingThreadId(null); setDraftTitle(""); };
   const saveRename = async () => { if (!editingThreadId || !draftTitle.trim()) { cancelRename(); return; } if (await workspace.rename(editingThreadId, draftTitle)) cancelRename(); };
-  const archive = async (nextThreadId: string) => { setEditingThreadId(null); await workspace.archiveThread(nextThreadId); };
-  const restore = async (nextThreadId: string) => { setEditingThreadId(null); await workspace.restoreThread(nextThreadId); setThreadView("ACTIVE"); setMobileSidebarOpen(false); };
-  const create = async () => { setThreadView("ACTIVE"); setMobileSidebarOpen(false); await workspace.createThread(); };
+  const create = async () => { setMobileSidebarOpen(false); await workspace.createThread(); };
   return <section className={`thread-workspace ${inspectedTurn ? "has-inspector" : ""}`} aria-label="订单调度台">
     <div className="thread-layout">
       {mobileSidebarOpen ? <button className="thread-sidebar-backdrop" type="button" aria-label="关闭对话列表" onClick={() => setMobileSidebarOpen(false)} /> : null}
       <aside className={`thread-sidebar ${mobileSidebarOpen ? "mobile-open" : ""}`} aria-label="对话列表">
         <div className="sidebar-heading"><div><span className="eyebrow">THREADS</span><h2>对话记录</h2></div><div className="sidebar-heading-actions"><button className="secondary compact-icon" type="button" onClick={() => void create()} aria-label="新建对话"><ListPlus aria-hidden="true" /></button><button className="secondary compact-icon mobile-sidebar-close" type="button" onClick={() => setMobileSidebarOpen(false)} aria-label="关闭对话列表"><X aria-hidden="true" /></button></div></div>
-        <div className="thread-tabs" role="tablist" aria-label="对话状态"><button type="button" role="tab" aria-selected={threadView === "ACTIVE"} className={threadView === "ACTIVE" ? "selected" : ""} onClick={() => chooseView("ACTIVE")}>进行中 <span>{workspace.threads.length}</span></button><button type="button" role="tab" aria-selected={threadView === "ARCHIVED"} className={threadView === "ARCHIVED" ? "selected" : ""} onClick={() => chooseView("ARCHIVED")}>回收站 <span>{workspace.archivedThreads.length}</span></button></div>
         <div className="thread-search"><Search aria-hidden="true" /><input type="search" aria-label="搜索对话" value={threadQuery} onChange={(event) => setThreadQuery(event.target.value)} placeholder="搜索对话" /></div>
-        <div className="thread-list">{workspace.archiveLoading && threadView === "ARCHIVED" ? <p className="thread-list-empty">正在读取回收站…</p> : null}{!workspace.archiveLoading && filteredThreads.length === 0 ? <p className="thread-list-empty">{normalizedThreadQuery ? "没有匹配的对话。" : threadView === "ACTIVE" ? "还没有进行中的对话。" : "回收站还是空的。"}</p> : null}{filteredThreads.map((item) => <div className={`thread-row ${item.threadId === workspace.threadId ? "selected" : ""}`} key={item.threadId}>
+        <div className="thread-list">{filteredThreads.length === 0 ? <p className="thread-list-empty">{normalizedThreadQuery ? "没有匹配的对话。" : "还没有对话记录。"}</p> : null}{filteredThreads.map((item) => <div className={`thread-row ${item.threadId === workspace.threadId ? "selected" : ""}`} key={item.threadId}>
           {editingThreadId === item.threadId ? <input className="thread-row-title-input" aria-label={`重命名 ${item.title}`} autoFocus value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} onBlur={cancelRename} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === "Escape") { event.preventDefault(); cancelRename(); } if (event.key === "Enter") { event.preventDefault(); void saveRename(); } }} /> : <button type="button" className="thread-row-select" onClick={() => chooseThread(item.threadId)}><span><strong>{item.title}</strong><small>{item.contextId ?? "订单售后"}</small></span></button>}
-          <div className="thread-row-side"><span className={`status status-${item.status.toLowerCase()}`}>{item.status === "ACTIVE" ? "进行中" : "已归档"}</span><div className="thread-row-actions">{editingThreadId !== item.threadId ? <button className="thread-row-action" type="button" aria-label="重命名对话" onClick={() => startRename(item)}><Pencil aria-hidden="true" /></button> : null}{item.status === "ACTIVE" ? <button className="thread-row-action archive-action" type="button" aria-label="归档对话" disabled={workspace.busy || Boolean(interaction)} onClick={() => void archive(item.threadId)}><Archive aria-hidden="true" /></button> : <button className="thread-row-action" type="button" aria-label="恢复对话" onClick={() => void restore(item.threadId)}><ArchiveRestore aria-hidden="true" /></button>}</div></div>
+          <div className="thread-row-side"><span className={`status status-${item.status.toLowerCase()}`}>{item.status === "ACTIVE" ? "进行中" : "历史"}</span><div className="thread-row-actions">{editingThreadId !== item.threadId ? <button className="thread-row-action" type="button" aria-label="重命名对话" onClick={() => startRename(item)}><Pencil aria-hidden="true" /></button> : null}</div></div>
         </div>)}</div>
-        <div className="thread-sidebar-note"><GitBranch aria-hidden="true" /><p>订单事实、确认记录和处理结果会留在对应 Turn；归档只收起记录。</p></div>
+        <div className="thread-sidebar-note"><GitBranch aria-hidden="true" /><p>订单事实、确认记录和处理结果会留在对应 Turn；对话记录按 Thread 持续保留。</p></div>
       </aside>
       <main className="thread-main">
-        <div className="thread-context-bar"><div><span className="eyebrow">CURRENT THREAD</span><strong>{currentThread?.title ?? "加载中…"}</strong><span className="thread-context-summary">{currentThread?.contextId ?? "订单售后"} · {workspace.turns.length} 个请求</span></div><div className="thread-context-actions"><button className="secondary icon-button mobile-thread-toggle" type="button" onClick={() => setMobileSidebarOpen(true)}><Menu aria-hidden="true" />对话列表</button><span className={`status status-${currentThread?.status?.toLowerCase() ?? "active"}`}>{readOnly ? "已归档" : "进行中"}</span>{readOnly && currentThread ? <button className="secondary compact-action" type="button" onClick={() => void restore(currentThread.threadId)}><ArchiveRestore aria-hidden="true" />恢复对话</button> : <span className="account-chip">{userId}</span>}</div></div>
+        <div className="thread-context-bar"><div><span className="eyebrow">CURRENT THREAD</span><strong>{currentThread?.title ?? "加载中…"}</strong><span className="thread-context-summary">{currentThread?.contextId ?? "订单售后"} · {workspace.turns.length} 个请求</span></div><div className="thread-context-actions"><button className="secondary icon-button mobile-thread-toggle" type="button" onClick={() => setMobileSidebarOpen(true)}><Menu aria-hidden="true" />对话列表</button><span className={`status status-${currentThread?.status?.toLowerCase() ?? "active"}`}>进行中</span><span className="account-chip">{userId}</span></div></div>
         {workspace.error ? <p className="workspace-alert" role="alert"><CircleAlert aria-hidden="true" />{workspace.error}</p> : null}
         <div className="thread-records">{workspace.loading ? <div className="conversation-empty"><Bot aria-hidden="true" /><h2>正在恢复对话</h2><p>正在读取订单事实和历史结果。</p></div> : workspace.turns.length === 0 ? <div className="conversation-empty"><ShieldCheck aria-hidden="true" /><h2>直接输入请求</h2><p>可以直接输入订单号、物流问题或售后诉求。</p></div> : <>{workspace.turns.map((turn) => <Turn key={turn.turnId} turn={turn} busy={workspace.busy} pendingAction={pendingAction} retryingRunId={workspace.retryingRunId} onRetry={workspace.retry} onInspect={inspect} onAction={executeOrderAction} />)}</>}</div>
-        {readOnly && currentThread ? <div className="composer composer-readonly"><ArchiveRestore aria-hidden="true" /><div><strong>这段对话已归档</strong><span>恢复后才能继续查询订单或发起售后操作。</span></div><button className="secondary" type="button" onClick={() => void restore(currentThread.threadId)}>恢复对话</button></div> : <form className="composer" onSubmit={submit}><label htmlFor="thread-message">输入请求</label><textarea ref={composerRef} id="thread-message" value={message} disabled={inputDisabled} onKeyDown={keyboard} onChange={(event) => setMessage(event.target.value)} placeholder="输入订单号、物流问题或售后诉求…" /><div className="composer-actions"><span>Enter 发送 · Shift + Enter 换行</span>{workspace.busy ? <button className="secondary icon-button" type="button" onClick={() => void workspace.cancel()}><Square aria-hidden="true" />取消处理</button> : <button className="icon-button" type="submit" disabled={!message.trim() || inputDisabled}><Send aria-hidden="true" />发送</button>}</div></form>}
+        <form className="composer" onSubmit={submit}><label htmlFor="thread-message">输入请求</label><textarea ref={composerRef} id="thread-message" value={message} disabled={inputDisabled} onKeyDown={keyboard} onChange={(event) => setMessage(event.target.value)} placeholder="输入订单号、物流问题或售后诉求…" /><div className="composer-actions"><span>Enter 发送 · Shift + Enter 换行</span>{workspace.busy ? <button className="secondary icon-button" type="button" onClick={() => void workspace.cancel()}><Square aria-hidden="true" />取消处理</button> : <button className="icon-button" type="submit" disabled={!message.trim() || inputDisabled}><Send aria-hidden="true" />发送</button>}</div></form>
       </main>
       {question ? <QuestionModal value={question} disabled={workspace.busy} onSubmit={(answers) => void workspace.answer(answers)} onCancel={() => void workspace.answer({}, "CANCEL")} /> : null}
       {checkpoint ? <WorkflowCheckpointModal value={checkpoint} disabled={workspace.busy} onDecision={(decision) => void workspace.decideCheckpoint(decision)} /> : null}

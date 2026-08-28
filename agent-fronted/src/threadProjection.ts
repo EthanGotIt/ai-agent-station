@@ -365,7 +365,7 @@ function parseOrderAction(item: AgentItem): { sourceTurnId: string; orderId: str
   const orderId = stringValue(data?.orderId);
   const actionType = stringValue(data?.actionType);
   if (!sourceTurnId || !orderId || !actionType
-    || !["QUERY_LOGISTICS", "REFRESH_ORDER", "REFUND", "EXPEDITE", "HIDE_ORDER", "RESTORE_ORDER"].includes(actionType)) {
+    || !["QUERY_LOGISTICS", "REFRESH_ORDER", "REFUND", "EXPEDITE", "DELETE_ORDER", "HIDE_ORDER", "RESTORE_ORDER"].includes(actionType)) {
     return null;
   }
   return { sourceTurnId, orderId, actionType: actionType as OrderActionType };
