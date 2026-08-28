@@ -283,13 +283,17 @@ function stringValue(value: unknown): string | null {
 }
 
 function numberValue(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string" || value.trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function parseOrderCard(value: unknown): OrderCard | null {
   const data = recordValue(value);
   const orderId = stringValue(data?.orderId);
-  const status = stringValue(data?.orderStatus);
+  // 订单搜索适配器使用 orderStatus，Workflow 回执使用 status；两者都属于同一受控订单事实。
+  const status = stringValue(data?.orderStatus) ?? stringValue(data?.status);
   if (!orderId || !status) return null;
   return {
     orderId,

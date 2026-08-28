@@ -34,6 +34,7 @@
   --ui-size: 13px;
   --title-size: 16px;
   --card-title-size: 15px;
+  --thread-content-width: 820px;
   --thread-rail-width: clamp(280px, 23.5vw, 376px);
   --inspector-width: clamp(340px, 27.5vw, 440px);
 }
@@ -168,12 +169,11 @@ textarea { min-height: 84px; resize: vertical; line-height: 1.55; }
 .workspace-alert { display: flex; flex: 0 0 auto; align-items: flex-start; gap: 7px; margin: 14px 0 0; border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line)); border-radius: 8px; padding: 9px 10px; color: var(--danger); background: var(--danger-soft); font-size: .77rem; line-height: 1.45; }
 .workspace-alert svg { width: 15px; flex: 0 0 auto; margin-top: 1px; }
 .thread-records { min-height: 0; flex: 1 1 auto; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
-.thread-records { padding-inline: clamp(0px, 1.8vw, 18px); }
-.conversation-empty { display: grid; max-width: 500px; place-items: start; padding: 78px 16px 70px; color: var(--muted); }
+.conversation-empty { display: grid; width: min(100%, var(--thread-content-width)); margin-inline: auto; place-items: start; padding: 78px 16px 70px; color: var(--muted); }
 .conversation-empty svg { width: 28px; height: 28px; margin-bottom: 16px; color: var(--route); }
 .conversation-empty h2 { margin: 0; color: var(--ink); font-size: var(--title-size); letter-spacing: -.02em; }
 .conversation-empty p { max-width: 50ch; margin: 8px 0 0; font-size: .92rem; line-height: 1.55; }
-.conversation-turn { position: relative; width: min(100%, 820px); margin-inline: auto; padding: 22px 0; border-bottom: 1px solid var(--line); animation: reveal-turn 220ms var(--ease) both; }
+.conversation-turn { position: relative; width: min(100%, var(--thread-content-width)); margin-inline: auto; padding: 22px 0; border-bottom: 1px solid var(--line); animation: reveal-turn 220ms var(--ease) both; }
 .turn-request, .turn-response { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; }
 .turn-response { margin-top: 16px; }
 .turn-avatar { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; font-size: .7rem; font-weight: 800; }
@@ -334,7 +334,7 @@ textarea { min-height: 84px; resize: vertical; line-height: 1.55; }
 .legacy-question-fields li { border: 1px solid var(--line); border-radius: 999px; padding: 3px 6px; color: var(--muted); font-size: .64rem; }
 .legacy-question-note { margin: 9px 0 0; color: var(--muted); font-size: .66rem; line-height: 1.4; }
 
-.composer { position: static; z-index: 5; min-width: 0; width: min(100%, 820px); flex: 0 0 auto; margin: 16px auto 0; border: 1px solid var(--line-strong); border-radius: 14px; padding: 12px 14px; background: var(--surface); box-shadow: var(--shadow-close); }
+.composer { position: static; z-index: 5; min-width: 0; width: min(100%, var(--thread-content-width)); flex: 0 0 auto; margin: 16px auto 0; border: 1px solid var(--line-strong); border-radius: 14px; padding: 12px 14px; background: var(--surface); box-shadow: var(--shadow-close); }
 .composer > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .composer textarea { min-height: 70px; border: 0; padding: 6px 7px; background: transparent; font-size: var(--body-size); line-height: 1.5; }
 .composer textarea:focus-visible { outline-offset: -3px; }
