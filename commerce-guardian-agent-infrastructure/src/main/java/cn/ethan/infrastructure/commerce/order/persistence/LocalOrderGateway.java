@@ -15,6 +15,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 
@@ -274,6 +276,10 @@ public class LocalOrderGateway implements OrderGateway, OrderActionGateway {
             }
             return OrderActionResult.failed(true, "DELETE_STATE_RACE", "订单记录正在变化，请稍后重试");
         } catch (RuntimeException failure) {
+            // 事务内捕获异常后仍会按正常返回提交；明确标记回滚，避免物流已清理而订单删除失败。
+            if (TransactionSynchronizationManager.isActualTransactionActive()) {
+                TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+            }
             LOGGER.warn("本地订单删除暂时失败，exception={}", failure.getClass().getSimpleName());
             return OrderActionResult.failed(true, "ORDER_STORE_TEMPORARY_FAILURE", "订单记录暂时无法删除");
         }
