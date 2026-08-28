@@ -17,28 +17,28 @@ Completed:
 - 已修复规范门禁发现的 persistence 包、Clock 注入和测试命名问题；阶段六整改与该独立修复均已提交。
 - 本轮代码评审已收口续跑重试的过期 Turn 快照、提交后入队取消竞态、批准后事实变化的 Checkpoint 失效/重核验、事实变化时拒绝决策的终态收口、Agent QuestionCard 的空 `runId` 前端解析、重复 Workflow Answer 类型，以及事务代理和 Jackson 决策编解码器的启动装配问题；对应修复已按独立 `fix:`/`refactor:` 提交。
 - 本轮本地验收已通过 convention、脚本 9 项、runtime eval 5 项、`mvn clean '-DskipTests=false' test`（core 48、infrastructure 67、app 17）、前端 typecheck/Vitest 31 项、production build 和无警告的 `mvn dependency:analyze -DskipTests`。
-- 2026-08-28 实际启动检查中，先通过 `mvn -pl commerce-guardian-agent-app -am install -DskipTests` 刷新三模块本地产物；随后应用完成 Tomcat `8090` 初始化、MySQL 连接及 Flyway V7→V8→V9，最终仅在创建 DeepSeek JDK `HttpClient` 时触发 Windows/JDK 内部 loopback pipe 错误并自动关闭，未留下监听进程。
+- 2026-08-28 已确认 Windows/JDK loopback pipe 失败来自宿主机 Java 临时目录继承，而非项目 HTTP 实现；项目兼容代码已完全撤销。用户级 `TEMP/TMP` 恢复为同一用户临时目录，Java 通过宿主机 `jdk.net.unixdomain.tmpdir` 使用短系统临时目录；裸 `Selector.open()` 通过，从干净编译产物启动原始应用后 `8090` 健康状态为 `UP`。
 
 Decisions:
 
 - 本文件是“最新状态快照 + 唯一下一步指针”，不累计提交列表或过程日志；历史提交以 Git 历史为准，详细证据进入实施追踪和验收文档。
 - 业务 WorkflowRun、QuestionCard、Workflow Checkpoint 和 ExternalActionCommand 是事实源；LangGraph 快照只保存可重建技术状态。
 - 旧数据库表/列和旧 Item 只读保留到迁移/数据保留期结束，运行时代码不得访问或创建旧授权 QuestionCard。
-- 按当前验收范围保留 `JdkClientHttpRequestFactory`；本次启动已证明应用初始化和数据库迁移路径可达，Windows/JDK 内部 loopback pipe 报错只作为环境限制记录，不为其引入 `SimpleClientHttpRequestFactory` 生产规避。
+- 保留 `JdkClientHttpRequestFactory`，不为宿主机 Windows/JDK loopback 问题引入 `SimpleClientHttpRequestFactory` 或项目启动兼容代码；该问题只在用户级 Java 运行环境配置中处理。
 - 当前用户授权本计划创建阶段性 Git commit，不执行 push。
 
 TODO:
 
-- 阶段七：在支持网络绑定的环境重跑真实 `*IT`，使用数据库副本完成 V7→V8→V9 迁移核验，运行真实配置/订单夹具/前端黄金路径，补齐最终验收证据。
+- 阶段七：在当前已恢复 loopback 的环境重跑真实 `*IT`，使用数据库副本完成 V7→V8→V9 迁移核验，运行真实配置/订单夹具/前端黄金路径，补齐最终验收证据。
 - 所有阶段七验收完成后，才覆盖 handoff 为 `status: completed` 快照。
 
 Blocked:
 
-- 本地代码门禁暂无阻塞；此前 `mvn verify` 的 8 项真实 HTTP `*IT` 因当前 Windows/JDK 无法建立 loopback selector 未通过，按本轮范围忽略该环境限制。真实数据库副本、模型服务和浏览器黄金路径也尚未在本轮重新执行。
+- 本地代码门禁与 loopback selector 暂无阻塞；真实数据库副本、模型服务、HTTP `*IT` 和浏览器黄金路径尚未在本轮重新执行。
 
 Next action:
 
-- 在可绑定 loopback 的环境重跑真实 `*IT`，再按运行手册执行数据库副本、真实模型/订单夹具/浏览器黄金路径验收，并据此覆盖本快照。
+- 先在当前运行中的 `8090` 服务完成人工黄金路径试用；随后停止服务并重跑真实 `*IT`，再执行数据库副本、真实模型/订单夹具/浏览器黄金路径验收。
 
 Validation:
 
@@ -46,8 +46,8 @@ Validation:
 - `mvn dependency:analyze -DskipTests`：通过，Core、Infrastructure、App 均无依赖问题。
 - Python convention、脚本 9 项、runtime eval 5 项：通过。
 - HTTP Fake Transport 定向测试、LangGraph/QuestionCard/Checkpoint/Continuation 定向测试：通过；本轮额外覆盖提交后取消竞态、过期续跑重试、批准/拒绝 Checkpoint 事实变化和 Agent QuestionCard `runId: null`。
-- `mvn verify` 已进入真实 `*IT`，但 8 项 loopback selector 错误待支持网络绑定的环境复核；前端 typecheck、Vitest 31 项和生产构建：通过。
-- 2026-08-28 启动检查：Tomcat 监听初始化和 MySQL/Flyway V9 迁移成功；DeepSeek `HttpClient` 初始化因 Windows/JDK loopback pipe 失败，服务已退出且 `8090` 无残留监听。该错误按环境限制处理。
+- 此前 `mvn verify` 的 8 项真实 `*IT` 失败已定位为同一宿主机 loopback 配置，待停止当前服务后按新环境配置复跑；前端 typecheck、Vitest 31 项和生产构建：通过。
+- 2026-08-28 宿主机验证：未修改项目代码，`Selector.open()` 返回成功；执行 `mvn clean spring-boot:run -pl commerce-guardian-agent-app` 后 Tomcat、MySQL、Flyway V9 和 DeepSeek `HttpClient` 均完成装配，`GET /actuator/health` 返回 `UP`，服务继续监听 `8090` 供人工试用。
 
 Preserve:
 
