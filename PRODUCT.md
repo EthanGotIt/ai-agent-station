@@ -12,7 +12,7 @@ web
 
 ## Product Purpose
 
-Commerce Guardian Agent 将订单售后请求转换为可恢复的 Thread → Turn → Item 执行记录。只读查询直接返回结构化业务事实；退款、催发货、隐藏和恢复订单记录通过持久化 QuestionCard、确定性 Workflow 与幂等外部动作完成。成功标准是业务结果清楚、授权边界明确、刷新或断线后仍能恢复事实和状态。
+Commerce Guardian Agent 将订单售后请求转换为可恢复的 Thread → Turn → Item 执行记录。只读查询直接返回结构化业务事实；退款、催发货和直接删除订单记录通过持久化 QuestionCard、确定性 Workflow 与幂等外部动作完成。外部动作完成后，受控 Agent continuation Turn 可以读取最新结果，决定结束、等待用户或启动下一次已有 Workflow；自动决策最多连续 3 轮。成功标准是业务结果清楚、授权边界明确、刷新或断线后仍能恢复事实和状态。
 
 ## Positioning
 
@@ -24,7 +24,7 @@ Commerce Guardian Agent 将订单售后请求转换为可恢复的 Thread → Tu
 
 ## Capabilities and Constraints
 
-- 支持订单搜索、订单详情、物流时间线、退款、催发货、订单历史隐藏与恢复。
+- 支持订单搜索、订单详情、物流时间线、退款、催发货和直接删除订单记录；删除同步清理可删除的物流轨迹，且不提供隐藏/恢复或回收站入口。
 - 外部写操作必须经过确定性 Workflow 的 `AUTHORIZE` Checkpoint，不能由模型直接产生副作用；缺少订单号或退款原因时才使用 QuestionCard 提问。
 - 每个 Thread 最多一个开放交互；QuestionCard 只收集受控字段，Workflow Checkpoint 只确认动作、对象、影响和事实版本，拒绝/取消不创建外部命令。
 - Workflow 节点、Agent 决策和续跑触发事实均以受控 Item 持久化；续跑失败不得改写已成功的订单事实。

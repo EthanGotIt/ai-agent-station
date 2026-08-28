@@ -89,13 +89,13 @@ RESOLVE_ORDER → VERIFY_FACTS → SWITCH_REQUIREMENTS → AUTHORIZE
 
 QuestionCard 回答使用 `POST /questions/{questionId}/answers`，请求体携带 `clientRequestId + expectedVersion + answers`，按 QuestionCard 的 `resumeTarget=AGENT|WORKFLOW` 恢复并作为同一 Thread 的新 Turn 进入 FIFO。Workflow Checkpoint 决策使用 `POST /workflow-runs/{runId}/checkpoints/{checkpointId}/decisions`，只接受批准或拒绝；批准时重新校验事实指纹，事实变化则标记 `SUPERSEDED` 并回到 `VERIFY_FACTS`。启动、交互创建和版本关闭受本地事务约束；同一 Thread 同时最多一个开放交互。退款仅允许 PAID/SHIPPED/DELIVERED，催发货仅允许 PAID；原始模型思考内容不进入 API、SSE、数据库或日志。
 
-订单卡片使用确定性动作入口 `POST /threads/{threadId}/order-actions`。查询/刷新动作直接调用订单端口并追加结构化 `ORDER_*`/`LOGISTICS_TIMELINE` Item；退款、催发货、隐藏和恢复只启动已有 `ORDER_SERVICE` Workflow，确认前不创建外部动作命令、不调用模型。动作请求同时保存在 Turn 的 `INPUT_KIND=ORDER_ACTION`、`ORDER_ACTION_JSON` 和 `ORDER_ACTION_REQUEST` Item 中，按 `clientRequestId` 幂等并校验来源 Turn、订单归属和 Thread FIFO。Workflow 回答子 Turn 通过 `sourceTurnId`/`runId` 折回来源 Turn，技术 Turn 仅在 Item 检查器中展开。
+订单卡片使用确定性动作入口 `POST /threads/{threadId}/order-actions`。查询/刷新动作直接调用订单端口并追加结构化 `ORDER_*`/`LOGISTICS_TIMELINE` Item；退款、催发货和直接删除订单记录只启动已有 `ORDER_SERVICE` Workflow，确认前不创建外部动作命令、不调用模型。删除动作通过订单端口的 `DELETE /orders/{id}` 同步清理可删除物流轨迹且不可恢复；隐藏/恢复写入口已移除，旧隐藏字段仅可读兼容。动作请求同时保存在 Turn 的 `INPUT_KIND=ORDER_ACTION`、`ORDER_ACTION_JSON` 和 `ORDER_ACTION_REQUEST` Item 中，按 `clientRequestId` 幂等并校验来源 Turn、订单归属和 Thread FIFO。Workflow 回答子 Turn 通过 `sourceTurnId`/`runId` 折回来源 Turn，技术 Turn 仅在 Item 检查器中展开。
 
 ## Runtime 可靠性
 
 队列键是 Thread：同一 Thread 严格 FIFO、任意时刻一个 ACTIVE Turn；不同 Thread 可并行。Turn 持久状态通过 `VERSION_NO` 条件更新执行 CAS，版本竞争或终态重写会丢弃后续事实写入。排队 Turn 可直接取消，ACTIVE Turn 通过运行上下文协作取消；已提交的外部副作用不会回滚。队列等待、Turn、工具、外部动作和 SSE 流/心跳均可独立配置。
 
-外部命令以 `(userId, idempotencyKey)` 唯一。Worker 先在本地事务中原子 Claim Lease，再在事务外调用远程系统；PENDING、RETRY_WAIT 和过期 PROCESSING 都可被领取。仅瞬时错误按指数退避，永久错误直接进入人工重试；动作超时也会形成可分类结果。订单 HTTP 适配器必须把命令的 `idempotencyKey` 作为 `Idempotency-Key` 请求头传给退款、催发货和隐藏/恢复接口，由订单服务按该键去重；本地演示执行器则在同一本地事务中完成订单状态 CAS 和幂等回执写入。人工重试沿用原命令和幂等键，重复回答、重复 Claim 和重启恢复不会产生第二次业务写入。
+外部命令以 `(userId, idempotencyKey)` 唯一。Worker 先在本地事务中原子 Claim Lease，再在事务外调用远程系统；PENDING、RETRY_WAIT 和过期 PROCESSING 都可被领取。仅瞬时错误按指数退避，永久错误直接进入人工重试；动作超时也会形成可分类结果。订单 HTTP 适配器必须把命令的 `idempotencyKey` 作为 `Idempotency-Key` 请求头传给退款、催发货和删除接口，由订单服务按该键去重；本地演示执行器则在同一本地事务中完成订单状态 CAS、订单/物流删除和幂等回执写入。人工重试沿用原命令和幂等键，重复回答、重复 Claim 和重启恢复不会产生第二次业务写入。
 
 ## HTTP 和事件
 

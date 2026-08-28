@@ -6,6 +6,7 @@ updated: 2026-08-28
 Goal:
 
 - 完成 V7 整改与 Workflow 框架迁移：Spring AI 负责模型与 Tool Calling，LangGraph4j 负责确定性订单 Workflow；QuestionCard 只提问，Workflow Checkpoint 独立承载执行确认，并清理旧运行时路径。
+- 当前产品裁决：Thread 不提供回收站/归档恢复入口；订单不再隐藏或恢复，只提供经 Workflow 确认的 `DELETE_ORDER` 直接删除记录。
 
 Completed:
 
@@ -16,9 +17,14 @@ Completed:
 - 已清理生产代码、迁移说明、架构/运行手册和脚本中的旧前端与旧授权运行时引用。
 - 已修复规范门禁发现的 persistence 包、Clock 注入和测试命名问题；阶段六整改与该独立修复均已提交。
 - 本轮代码评审已收口续跑重试的过期 Turn 快照、提交后入队取消竞态、批准后事实变化的 Checkpoint 失效/重核验、事实变化时拒绝决策的终态收口、Agent QuestionCard 的空 `runId` 前端解析、重复 Workflow Answer 类型，以及事务代理和 Jackson 决策编解码器的启动装配问题；对应修复已按独立 `fix:`/`refactor:` 提交。
-- 本轮本地验收已通过 convention、脚本 9 项、runtime eval 5 项、`mvn clean '-DskipTests=false' test`（core 48、infrastructure 67、app 17）、前端 typecheck/Vitest 31 项、production build 和无警告的 `mvn dependency:analyze -DskipTests`。
+- 本轮本地验收已通过 convention、脚本 10 项、runtime eval 5 项、`mvn clean '-DskipTests=false' test`（core 48、infrastructure 72、app 17）、`mvn verify` 真实 HTTP `*IT` 9 项、前端 typecheck/Vitest 35 项、production build 和无警告的 `mvn dependency:analyze -DskipTests`。
 - 2026-08-28 已确认 Windows/JDK loopback pipe 失败来自宿主机 Java 临时目录继承，而非项目 HTTP 实现；项目兼容代码已完全撤销。用户级 `TEMP/TMP` 恢复为同一用户临时目录，Java 通过宿主机 `jdk.net.unixdomain.tmpdir` 使用短系统临时目录；裸 `Selector.open()` 通过，从干净编译产物启动原始应用后 `8090` 健康状态为 `UP`。
 - 2026-08-28 已修复退款/催发货失败：先创建 WorkflowRun 再写 `AGENT_GRAPH_SNAPSHOT`，消除外键顺序错误；MyBatis Saver 改为不受 Spring 持久化代理的组件，由 Workflow Engine 外层事务统一管理，避免 LangGraph 内部锁被 CGLIB 代理破坏。真实退款与催发货均完成并核验，订单状态分别为 `REFUNDED` 与 `EXPEDITE_REQUESTED`；前端同时兼容 Workflow 回执的 `status` 和金额字符串，并让空 Thread 内容轨道与 Composer 对齐。
+- 已完成直接删除订单记录的代码链路：`DELETE_ORDER` 贯通订单卡片、Workflow `AUTHORIZE`、本地/HTTP 网关、外部动作 Worker 和 SQLite 夹具；删除同步清理物流轨迹，重复请求按幂等键返回稳定结果，前端删除后隐藏后续订单动作并显示“记录已删除”。
+- 已移除订单隐藏/恢复的生产写入口、HTTP `/visibility` 夹具端点和 Agent Tool visibility 参数；旧枚举、`HIDDEN_AT`、历史 Item 仅保留读取兼容，历史命令不会再产生隐藏状态变更。
+- 已移除工作台 Thread 回收站/归档操作和前端 archive 调用；旧 `ARCHIVED` 状态仍可由后端读取以兼容历史数据，当前 UI 不提供恢复路径。
+- 真实启动复核补齐 `HttpOrderGateway` 与 `HttpLogisticsGateway` 的多构造器注入标记；加载 `.env` 后后端连接 MySQL、完成 Flyway V9 并稳定监听 `8090`，订单夹具监听 `18080`，前端监听 `5173`。
+- 现场删除复核使用同一幂等键连续删除夹具订单，首次与重放均返回 `ORDER_DELETED`，订单和物流查询均返回 `404`。
 
 Decisions:
 
@@ -30,26 +36,26 @@ Decisions:
 
 TODO:
 
-- 阶段七：在当前已恢复 loopback 的环境重跑真实 `*IT`，使用数据库副本完成 V7→V8→V9 迁移核验，运行真实配置/订单夹具/前端黄金路径，补齐最终验收证据。
-- 所有阶段七验收完成后，才覆盖 handoff 为 `status: completed` 快照。
+- 阶段七：使用数据库副本完成 V7→V8→V9 迁移核验，运行真实模型配置和前端浏览器黄金路径，补齐最终验收证据。
+- 所有阶段七验收完成后，才覆盖 handoff 为 `status: completed` 快照；当前直接删除/无回收站改动仍需真实夹具和浏览器黄金路径复核。
 
 Blocked:
 
-- 本地代码门禁与 loopback selector 暂无阻塞；真实数据库副本、模型服务、HTTP `*IT` 和浏览器黄金路径尚未在本轮重新执行。
+- 本地代码门禁、真实 HTTP `*IT` 和订单夹具暂无阻塞；数据库副本、真实模型请求和浏览器黄金路径尚未在本轮重新执行。
 
 Next action:
 
-- 先在当前运行中的 `8090` 服务完成人工黄金路径试用；随后停止服务并重跑真实 `*IT`，再执行数据库副本、真实模型/订单夹具/浏览器黄金路径验收。
+- 当前 `8090`、`18080`、`5173` 已运行；下一步完成人工浏览器黄金路径，重点确认“删除记录”及无回收站界面，再执行数据库副本和真实模型验收。
 
 Validation:
 
 - `mvn clean '-DskipTests=false' test`：通过。
 - `mvn dependency:analyze -DskipTests`：通过，Core、Infrastructure、App 均无依赖问题。
-- Python convention、脚本 9 项、runtime eval 5 项：通过。
-- 本轮修复后再次运行 `mvn '-DskipTests=false' test`：Core 48、Infrastructure 68、App 17，合计 133 项通过；前端 typecheck、Vitest 32 项、production build 通过；Impeccable layout detector 返回空问题集；`8090` 健康检查为 `{"groups":["liveness","readiness"],"status":"UP"}`，Vite `5173` 返回 200。
+- Python convention、脚本 10 项、runtime eval 5 项：通过。
+- 本轮修复后 `mvn clean '-DskipTests=false' test`：Core 48、Infrastructure 72、App 17，合计 137 项通过；`mvn verify` 另通过真实 HTTP `*IT` 9 项；前端 typecheck、Vitest 35 项、production build 通过；Impeccable layout detector 返回空问题集；当前服务健康检查为 `200 UP`。
 - HTTP Fake Transport 定向测试、LangGraph/QuestionCard/Checkpoint/Continuation 定向测试：通过；本轮额外覆盖提交后取消竞态、过期续跑重试、批准/拒绝 Checkpoint 事实变化和 Agent QuestionCard `runId: null`。
-- 此前 `mvn verify` 的 8 项真实 `*IT` 失败已定位为同一宿主机 loopback 配置，待停止当前服务后按新环境配置复跑；前端 typecheck、Vitest 31 项和生产构建：通过。
-- 2026-08-28 宿主机验证：未修改项目代码，`Selector.open()` 返回成功；执行 `mvn clean spring-boot:run -pl commerce-guardian-agent-app` 后 Tomcat、MySQL、Flyway V9 和 DeepSeek `HttpClient` 均完成装配，`GET /actuator/health` 返回 `UP`，服务继续监听 `8090` 供人工试用。
+- 真实 HTTP `*IT` 已在本次环境配置下通过 9 项；此前的 loopback 失败不再复现。前端 typecheck、Vitest 35 项和生产构建：通过。
+- 2026-08-28 宿主机验证：未修改项目代码，`Selector.open()` 返回成功；加载用户级 `.env` 后由 review 脚本启动夹具、前端和应用，Tomcat、MySQL、Flyway V9 和 DeepSeek `HttpClient` 完成装配，`GET /actuator/health` 返回 `200 UP`；直接删除订单记录及同幂等键重放均返回成功，服务当前仍在监听 `8090/18080/5173`。
 
 Preserve:
 
