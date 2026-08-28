@@ -322,7 +322,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         String ownerId = thread.userId();
         String ownerThreadId = thread.threadId();
         if (thread.status() == AgentThreadStatusEnum.ARCHIVED) {
-            throw new AgentThreadConflictException("THREAD_ARCHIVED", "归档 Thread 不接受新消息");
+            throw new AgentThreadConflictException("THREAD_ARCHIVED", "历史归档 Thread 不接受新消息");
         }
         String normalizedRequestId = AgentTurnInputValidator.requireClientRequestId(requestId);
         String normalizedMessage = AgentTurnInputValidator.requireText(message, "message");
@@ -391,7 +391,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         String ownerId = thread.userId();
         String ownerThreadId = thread.threadId();
         if (thread.status() == AgentThreadStatusEnum.ARCHIVED) {
-            throw new AgentThreadConflictException("THREAD_ARCHIVED", "归档 Thread 不接受订单动作");
+            throw new AgentThreadConflictException("THREAD_ARCHIVED", "历史归档 Thread 不接受订单动作");
         }
         if (actionType != null && actionType.removed()) {
             throw new AgentThreadConflictException("ORDER_HISTORY_ACTION_REMOVED",

@@ -8,5 +8,6 @@ package cn.ethan.core.agent.thread;
  */
 public enum AgentThreadStatusEnum {
     ACTIVE,
+    /** 历史兼容状态：仅允许读取，不再提供归档或恢复写操作。 */
     ARCHIVED
 }

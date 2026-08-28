@@ -100,7 +100,7 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
             throw new IllegalStateException("Thread 不存在：" + turn.threadId());
         }
         if (!"ACTIVE".equals(thread.getStatus())) {
-            throw new AgentThreadConflictException("THREAD_ARCHIVED", "回收站中的对话不能继续接收新消息");
+            throw new AgentThreadConflictException("THREAD_ARCHIVED", "历史归档 Thread 不接受新消息");
         }
         mapper.insert(toEntity(turn));
         long sequence = thread.getNextSequence() == null || thread.getNextSequence() < 1
