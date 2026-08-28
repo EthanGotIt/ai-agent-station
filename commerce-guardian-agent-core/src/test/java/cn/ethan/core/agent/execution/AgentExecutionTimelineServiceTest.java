@@ -55,10 +55,34 @@ class AgentExecutionTimelineServiceTest {
                 .map(AgentItemModel::itemId).toList());
     }
 
+    @Test
+    void stopsWhenTheStoreRepeatsAFullPageWithoutNewSequences() {
+        TimelinePersistence persistence = new TimelinePersistence();
+        AgentThreadModel thread = new AgentThreadModel("thread-1", "user-1", "Thread",
+                AgentThreadStatusEnum.ACTIVE, null, null, 3, NOW, NOW);
+        persistence.threads.add(thread);
+        AgentTurnModel turn = new AgentTurnModel("turn-1", thread.threadId(), thread.userId(), "request-1",
+                "查询", AgentTurnStatusEnum.COMPLETED, 1, null, null, NOW, NOW, NOW);
+        persistence.turns.add(turn);
+        for (int sequence = 1; sequence <= 500; sequence++) {
+            persistence.repeatedPage.add(new AgentItemModel("item-" + sequence, thread.threadId(),
+                    turn.turnId(), sequence, AgentItemTypeEnum.ASSISTANT_MESSAGE, "item", NOW));
+        }
+
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, Clock.fixed(NOW, ZoneOffset.UTC));
+        AgentExecutionTimelineModel timeline = new AgentExecutionTimelineService(persistence, threads)
+                .get("user-1", "turn-1");
+
+        assertEquals(500, timeline.items().size());
+        assertEquals(2, persistence.listItemCalls);
+    }
+
     private static final class TimelinePersistence implements AgentThreadStore, AgentTurnStore, AgentItemStore {
         private final List<AgentThreadModel> threads = new ArrayList<>();
         private final List<AgentTurnModel> turns = new ArrayList<>();
         private final List<AgentItemModel> items = new ArrayList<>();
+        private final List<AgentItemModel> repeatedPage = new ArrayList<>();
+        private int listItemCalls;
 
         @Override
         public void createThread(AgentThreadModel thread) { threads.add(thread); }
@@ -103,6 +127,8 @@ class AgentExecutionTimelineServiceTest {
 
         @Override
         public List<AgentItemModel> listItems(String userId, String threadId, long afterSequence, int limit) {
+            listItemCalls++;
+            if (!repeatedPage.isEmpty()) return repeatedPage;
             return items.stream().filter(value -> value.threadId().equals(threadId)
                     && value.sequence() > afterSequence).toList();
         }

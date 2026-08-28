@@ -33,10 +33,18 @@ public final class AgentExecutionTimelineService {
         long cursor = 0L;
         for (;;) {
             List<AgentItemModel> page = threads.listItems(userId, turn.threadId(), cursor, 500);
-            if (page.isEmpty()) break;
-            all.addAll(page);
-            cursor = page.get(page.size() - 1).sequence();
-            if (page.size() < 500) break;
+            if (page == null || page.isEmpty()) break;
+            long beforeCursor = cursor;
+            long nextCursor = cursor;
+            for (AgentItemModel item : page) {
+                if (item == null || item.sequence() <= cursor) continue;
+                all.add(item);
+                nextCursor = Math.max(nextCursor, item.sequence());
+            }
+            // 持久化适配器应按游标推进；对重复、乱序或无效页做防御，
+            // 避免时间线接口因坏页永久循环或把 null 传入排序器。
+            if (nextCursor <= beforeCursor || page.size() < 500) break;
+            cursor = nextCursor;
         }
         return new AgentExecutionTimelineModel(turn,
                 all.stream()

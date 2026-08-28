@@ -14,6 +14,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -82,6 +83,26 @@ class AgentThreadEventStreamTest {
         stream.attachSubscription(() -> closed.set(true));
 
         assertTrue(closed.get());
+    }
+
+    @Test
+    void repeatedFullBacklogPageCannotKeepReplayLooping() {
+        List<String> delivered = new ArrayList<>();
+        AgentThreadEventStream stream = new AgentThreadEventStream(
+                "thread-1", 0, event -> delivered.add(event.eventId()));
+        List<AgentItemModel> repeatedPage = new ArrayList<>();
+        for (int index = 0; index < 500; index++) {
+            repeatedPage.add(item("item-3", 3));
+        }
+        AtomicInteger loaderCalls = new AtomicInteger();
+
+        stream.replay(after -> {
+            loaderCalls.incrementAndGet();
+            return repeatedPage;
+        }, () -> ready("ready-1"));
+
+        assertEquals(2, loaderCalls.get());
+        assertEquals(List.of("item-3", "ready-1"), delivered);
     }
 
     private AgentThreadEventGateway.AgentThreadEvent itemEvent(String eventId, long sequence) {

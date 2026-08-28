@@ -12,6 +12,7 @@ import {
 import { threadWorkspaceApi } from "./threadWorkspaceApi";
 import type {
   AgentItem,
+  AgentItemPage,
   AgentItemWire,
   AgentInteraction,
   AgentThread,
@@ -24,6 +25,37 @@ import type {
 const API = "/api/agent";
 const SSE_READ_IDLE_TIMEOUT_MS = 45_000;
 type ExecutionReplayStatus = "idle" | "loading" | "loaded" | "failed";
+
+function isReplayItem(value: unknown): value is AgentItemWire {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Partial<AgentItemWire>;
+  return typeof item.itemId === "string" && item.itemId.trim().length > 0
+    && typeof item.type === "string" && item.type.trim().length > 0
+    && typeof item.sequence === "number" && Number.isFinite(item.sequence) && item.sequence >= 0
+    && typeof item.payload === "string";
+}
+
+/** 防止服务端异常游标或重复页让历史恢复循环无法收口。 */
+export function replayPageProgress(page: AgentItemPage | null | undefined, afterSequence: number) {
+  const safeAfterSequence = Number.isFinite(afterSequence) ? Math.max(0, afterSequence) : 0;
+  const rawItems = Array.isArray(page?.items) ? page.items : [];
+  const pageItems = rawItems.filter(isReplayItem);
+  const invalidPage = pageItems.length !== rawItems.length;
+  const pageMaxSequence = pageItems.reduce((max, item) => {
+    const sequence = item.sequence;
+    return Number.isFinite(sequence) ? Math.max(max, sequence) : max;
+  }, safeAfterSequence);
+  const responseCursor = Number(page?.nextAfterSequence);
+  const nextAfterSequence = Number.isFinite(responseCursor)
+    ? Math.max(safeAfterSequence, responseCursor, pageMaxSequence)
+    : pageMaxSequence;
+  return {
+    items: pageItems,
+    nextAfterSequence,
+    hasMore: !invalidPage && Boolean(page?.hasMore)
+      && pageItems.length > 0 && nextAfterSequence > safeAfterSequence
+  };
+}
 
 function id(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
@@ -255,9 +287,10 @@ export function useThreadWorkspace(userId: string) {
         const page = await threadWorkspaceApi.listItems(userId, nextThreadId, afterSequence, controller.signal);
         if (controller.signal.aborted || generationRef.current !== generation
           || threadIdRef.current !== nextThreadId) return;
-        recovered.push(...page.items);
-        hasMore = page.hasMore && page.items.length > 0;
-        afterSequence = page.nextAfterSequence;
+        const progress = replayPageProgress(page, afterSequence);
+        recovered.push(...progress.items);
+        hasMore = progress.hasMore;
+        afterSequence = progress.nextAfterSequence;
       }
       if (controller.signal.aborted || generationRef.current !== generation
         || threadIdRef.current !== nextThreadId) return;

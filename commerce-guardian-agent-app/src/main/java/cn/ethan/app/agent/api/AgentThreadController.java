@@ -1,11 +1,13 @@
 package cn.ethan.app.agent.api;
 
+import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import cn.ethan.core.agent.thread.AgentThreadStatusEnum;
 import cn.ethan.core.agent.workflow.AgentQuestionCardStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStore;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,8 +16,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.http.ResponseEntity;
 
+import java.util.Comparator;
 import java.util.Locale;
 
 /**
@@ -115,10 +117,19 @@ public final class AgentThreadController {
             HttpServletRequest request
     ) {
         int safeLimit = Math.max(1, Math.min(limit, 500));
-        var items = threads.listItems(userContext.currentUserId(request), threadId, afterSequence, safeLimit + 1);
-        var page = items.stream().limit(safeLimit).toList();
-        long next = page.isEmpty() ? Math.max(0, afterSequence) : page.get(page.size() - 1).sequence();
+        long safeAfterSequence = Math.max(0, afterSequence);
+        var loaded = threads.listItems(userContext.currentUserId(request), threadId,
+                safeAfterSequence, safeLimit + 1);
+        var items = loaded == null ? java.util.List.<AgentItemModel>of() : loaded;
+        var ordered = items.stream()
+                .filter(item -> item != null && item.sequence() > safeAfterSequence)
+                .sorted(Comparator.comparingLong(AgentItemModel::sequence))
+                .toList();
+        var page = ordered.stream().limit(safeLimit).toList();
+        long next = page.stream().mapToLong(AgentItemModel::sequence)
+                .max().orElse(safeAfterSequence);
+        boolean hasMore = ordered.size() > safeLimit && next > safeAfterSequence;
         return new AgentItemPageResponseDto(page.stream().map(AgentItemDto::from).toList(),
-                Math.max(0, afterSequence), next, items.size() > safeLimit);
+                safeAfterSequence, next, hasMore);
     }
 }

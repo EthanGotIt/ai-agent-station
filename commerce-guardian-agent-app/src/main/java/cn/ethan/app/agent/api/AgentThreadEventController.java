@@ -64,21 +64,34 @@ public final class AgentThreadEventController {
         SseEmitter emitter = new SseEmitter(properties.streamTimeoutMillis());
         AgentThreadEventStream stream = new AgentThreadEventStream(
                 threadId, afterSequence, event -> send(emitter, event));
-        AutoCloseable subscription = events.subscribe(stream::accept);
-        stream.attachSubscription(subscription);
-        emitter.onCompletion(stream::close);
-        emitter.onTimeout(stream::close);
-        emitter.onError(failure -> stream.close());
-        stream.replay(
-                after -> threads.listItems(userId, threadId, after, 500),
-                () -> new AgentThreadEventDto("ready-" + UUID.randomUUID(), threadId, null, null,
-                        "ready", "{\"afterSequence\":" + stream.currentCursor() + "}",
-                        stream.currentCursor(), clock.instant()));
-        ScheduledFuture<?> heartbeat = scheduler.scheduleAtFixedRate(() -> stream.publishControl(
-                        new AgentThreadEventDto("heartbeat-" + UUID.randomUUID(), threadId, null, null,
-                                "heartbeat", "{\"afterSequence\":" + stream.currentCursor() + "}",
-                                stream.currentCursor(), clock.instant())),
-                properties.heartbeatInterval().toSeconds(), properties.heartbeatInterval().toSeconds(), TimeUnit.SECONDS);
+        try {
+            AutoCloseable subscription = events.subscribe(stream::accept);
+            stream.attachSubscription(subscription);
+            emitter.onCompletion(stream::close);
+            emitter.onTimeout(stream::close);
+            emitter.onError(failure -> stream.close());
+            stream.replay(
+                    after -> threads.listItems(userId, threadId, after, 500),
+                    () -> new AgentThreadEventDto("ready-" + UUID.randomUUID(), threadId, null, null,
+                            "ready", "{\"afterSequence\":" + stream.currentCursor() + "}",
+                            stream.currentCursor(), clock.instant()));
+        } catch (RuntimeException failure) {
+            // 回放失败时控制器尚未把 Emitter 交给容器，必须主动释放已建立的订阅。
+            stream.close();
+            throw failure;
+        }
+        ScheduledFuture<?> heartbeat;
+        try {
+            heartbeat = scheduler.scheduleAtFixedRate(() -> stream.publishControl(
+                            new AgentThreadEventDto("heartbeat-" + UUID.randomUUID(), threadId, null, null,
+                                    "heartbeat", "{\"afterSequence\":" + stream.currentCursor() + "}",
+                                    stream.currentCursor(), clock.instant())),
+                    properties.heartbeatInterval().toSeconds(), properties.heartbeatInterval().toSeconds(), TimeUnit.SECONDS);
+        } catch (RuntimeException failure) {
+            // 心跳调度失败时也要释放已建立的事件订阅，避免孤儿订阅继续占用 Thread 资源。
+            stream.close();
+            throw failure;
+        }
         stream.attachHeartbeat(heartbeat);
         return emitter;
     }

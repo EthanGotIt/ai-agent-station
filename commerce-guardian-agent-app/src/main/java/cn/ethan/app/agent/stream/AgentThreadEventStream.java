@@ -78,7 +78,8 @@ public final class AgentThreadEventStream implements AutoCloseable {
             throw new IllegalArgumentException("SSE 回放器和 ready 事件不能为空");
         }
         for (;;) {
-            List<AgentItemModel> backlog = backlogLoader.apply(currentCursor());
+            long beforeCursor = currentCursor();
+            List<AgentItemModel> backlog = backlogLoader.apply(beforeCursor);
             if (backlog == null || backlog.isEmpty()) {
                 break;
             }
@@ -90,7 +91,10 @@ public final class AgentThreadEventStream implements AutoCloseable {
                     deliverItemLocked(item);
                 }
             }
-            if (backlog.size() < BACKLOG_PAGE_SIZE) {
+            long afterCursor = currentCursor();
+            // Store 返回重复满页或全部为旧序列时，游标不会前进；必须收口，
+            // 否则 SSE 连接会在回放阶段无限调用同一页而永远不发送 ready。
+            if (backlog.size() < BACKLOG_PAGE_SIZE || afterCursor <= beforeCursor) {
                 break;
             }
         }
@@ -174,7 +178,7 @@ public final class AgentThreadEventStream implements AutoCloseable {
     }
 
     private void deliverItemLocked(AgentItemModel item) {
-        if (item == null || !threadId.equals(item.threadId())) {
+        if (item == null || !threadId.equals(item.threadId()) || item.type() == null || item.sequence() < 0) {
             return;
         }
         deliverLocked(new AgentThreadEventDto(
