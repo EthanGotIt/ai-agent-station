@@ -89,7 +89,9 @@ public class MybatisAgentWorkflowCheckpointStore implements AgentWorkflowCheckpo
             return false;
         }
         AgentThreadEntity thread = threadMapper.selectForUpdate(checkpoint.getThreadId());
-        if (thread == null || !checkpointId.equals(thread.getOpenInteractionId())) {
+        if (thread == null
+                || !checkpointId.equals(thread.getOpenInteractionId())
+                || !AgentInteractionTypeEnum.WORKFLOW_CHECKPOINT.name().equals(thread.getOpenInteractionType())) {
             return false;
         }
         Instant now = clock.instant();
@@ -102,8 +104,10 @@ public class MybatisAgentWorkflowCheckpointStore implements AgentWorkflowCheckpo
                     .set("STATUS", AgentWorkflowCheckpointStatusEnum.SUPERSEDED.name())
                     .set("DECIDED_AT", now).set("VERSION_NO", expectedVersion + 1));
             if (superseded == 1) {
-                threadMapper.clearOpenInteraction(checkpoint.getThreadId(), userId,
-                        AgentInteractionTypeEnum.WORKFLOW_CHECKPOINT.name(), checkpointId, now);
+                if (threadMapper.clearOpenInteraction(checkpoint.getThreadId(), userId,
+                        AgentInteractionTypeEnum.WORKFLOW_CHECKPOINT.name(), checkpointId, now) != 1) {
+                    throw new IllegalStateException("Workflow Checkpoint 已失效但 Thread 开放指针未清理");
+                }
             }
             return false;
         }
@@ -141,9 +145,11 @@ public class MybatisAgentWorkflowCheckpointStore implements AgentWorkflowCheckpo
                 .setSql("DECISION = NULL")
                 .set("DECIDED_AT", now).set("VERSION_NO", expectedVersion + 1));
         if (updated == 1) {
-            if (checkpoint.getStatus().equals(AgentWorkflowCheckpointStatusEnum.OPEN)) {
-                threadMapper.clearOpenInteraction(checkpoint.getThreadId(), userId,
-                        AgentInteractionTypeEnum.WORKFLOW_CHECKPOINT.name(), checkpointId, now);
+            if (AgentWorkflowCheckpointStatusEnum.OPEN.name().equals(checkpoint.getStatus())) {
+                if (threadMapper.clearOpenInteraction(checkpoint.getThreadId(), userId,
+                        AgentInteractionTypeEnum.WORKFLOW_CHECKPOINT.name(), checkpointId, now) != 1) {
+                    throw new IllegalStateException("Workflow Checkpoint 已失效但 Thread 开放指针未清理");
+                }
             }
         }
         return updated == 1;

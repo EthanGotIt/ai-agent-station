@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -56,6 +57,18 @@ class MybatisAgentWorkflowCheckpointStoreTest {
     }
 
     @Test
+    void changedFactsCannotSucceedWhenOpenPointerClearFails() {
+        State state = state(checkpointEntity("OPEN", 0, null), thread("checkpoint-1"), 1);
+        state.clearResult = 0;
+        MybatisAgentWorkflowCheckpointStore store = store(state);
+
+        assertThrows(IllegalStateException.class,
+                () -> store.decide("user-1", "checkpoint-1", 0,
+                        AgentWorkflowDecisionEnum.APPROVE, "facts-v2"));
+        assertEquals(1, state.pointerClears.get());
+    }
+
+    @Test
     void matchingFactsApproveOrRejectWithCas() {
         State state = state(checkpointEntity("OPEN", 0, null), thread("checkpoint-1"), 1, 1);
         MybatisAgentWorkflowCheckpointStore store = store(state);
@@ -88,6 +101,18 @@ class MybatisAgentWorkflowCheckpointStoreTest {
     }
 
     @Test
+    void differentOpenInteractionTypeCannotDecideCheckpoint() {
+        State state = state(checkpointEntity("OPEN", 0, null), thread("checkpoint-1"), 1);
+        state.thread.setOpenInteractionType(AgentInteractionTypeEnum.QUESTION_CARD.name());
+        MybatisAgentWorkflowCheckpointStore store = store(state);
+
+        assertFalse(store.decide("user-1", "checkpoint-1", 0,
+                AgentWorkflowDecisionEnum.APPROVE, "facts-v1"));
+        assertEquals(0, state.updates.size());
+        assertEquals(0, state.pointerClears.get());
+    }
+
+    @Test
     void approvedCheckpointCanBeSupersededWithoutClearingAlreadyClosedPointer() {
         State state = state(checkpointEntity("APPROVED", 1, "APPROVE"), thread(null), 1);
         MybatisAgentWorkflowCheckpointStore store = store(state);
@@ -97,6 +122,17 @@ class MybatisAgentWorkflowCheckpointStoreTest {
         assertTrue(state.updates.get(0).getParamNameValuePairs().containsValue("SUPERSEDED"));
         assertTrue(state.updates.get(0).getSqlSet().contains("DECISION = NULL"));
         assertEquals(0, state.pointerClears.get());
+    }
+
+    @Test
+    void openCheckpointCannotBeSupersededWhenOpenPointerClearFails() {
+        State state = state(checkpointEntity("OPEN", 0, null), thread("checkpoint-1"), 1);
+        state.clearResult = 0;
+        MybatisAgentWorkflowCheckpointStore store = store(state);
+
+        assertThrows(IllegalStateException.class,
+                () -> store.supersede("user-1", "checkpoint-1", 0));
+        assertEquals(1, state.pointerClears.get());
     }
 
     private AgentWorkflowCheckpointModel checkpoint() {
@@ -191,7 +227,7 @@ class MybatisAgentWorkflowCheckpointStoreTest {
                     case "clearOpenInteraction" -> {
                         state.calls.add("thread.clear");
                         state.pointerClears.incrementAndGet();
-                        yield 1;
+                        yield state.clearResult;
                     }
                     case "toString" -> "AgentThreadMapperTestProxy";
                     default -> defaultValue(method.getReturnType());
@@ -213,5 +249,6 @@ class MybatisAgentWorkflowCheckpointStoreTest {
         private final List<String> calls = new ArrayList<>();
         private final AtomicInteger inserts = new AtomicInteger();
         private final AtomicInteger pointerClears = new AtomicInteger();
+        private int clearResult = 1;
     }
 }

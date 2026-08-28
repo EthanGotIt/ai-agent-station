@@ -146,7 +146,9 @@ public class MybatisAgentQuestionCardStore implements AgentQuestionCardStore {
             return false;
         }
         AgentThreadEntity thread = threadMapper.selectForUpdate(question.getThreadId());
-        if (thread == null || !questionId.equals(thread.getOpenInteractionId())) {
+        if (thread == null
+                || !questionId.equals(thread.getOpenInteractionId())
+                || !AgentInteractionTypeEnum.QUESTION_CARD.name().equals(thread.getOpenInteractionType())) {
             return false;
         }
         int updated = mapper.update(null, new UpdateWrapper<AgentQuestionCardEntity>()
