@@ -14,7 +14,7 @@ Completed:
 - `DELETE_ORDER` 已贯通订单卡片、Workflow `AUTHORIZE`、本地/HTTP 网关、Worker 和夹具；隐藏/恢复与 Thread 归档/回收站只保留历史只读兼容。
 - Windows/JDK loopback 适配已撤销，保留 `JdkClientHttpRequestFactory`；宿主机临时目录配置可使应用和真实 HTTP IT 正常启动。
 - 本轮代码评审修复并提交 `9abaa2b`：Agent QuestionCard 回答/取消生命周期、Thread 重命名运行时事实隔离、前端实时失败/重试恢复。
-- `.hooks` 未纳入仓库且 `core.hooksPath` 指向 `.githooks`；本地没有 GitHub/GitCode PR 审查工作流，远端规则需在推送后验证。
+- 当前工作区将 `core.hooksPath` 配置为 `.hooks`，`.hooks/pre-commit` 已通过 `git hook run pre-commit`，只执行工程规范检查；本地没有 GitHub/GitCode PR 审查工作流，远端规则需在推送后验证。
 
 Decisions:
 
@@ -23,7 +23,7 @@ Decisions:
 - 业务 WorkflowRun、QuestionCard、Workflow Checkpoint 和 ExternalActionCommand 是事实源；LangGraph 快照只保存可重建技术状态。
 - 旧数据库表/列和旧 Item 只读保留到迁移/数据保留期结束，运行时代码不得访问或创建旧授权 QuestionCard。
 - 保留 `JdkClientHttpRequestFactory`，不为宿主机 Windows/JDK loopback 问题引入 `SimpleClientHttpRequestFactory` 或项目启动兼容代码；该问题只在用户级 Java 运行环境配置中处理。
-- 当前用户授权本计划创建阶段性 Git commit，不执行 push；`.hooks`、`.githooks`、`.idea`、deployment、Docker 及其他无关改动不纳入本阶段。
+- 当前用户授权本计划创建阶段性 Git commit，不执行 push；`.hooks`、`.githooks`、`.idea`、deployment、Docker 及其他无关改动不纳入本阶段。`core.hooksPath` 是本机 Git 配置，不写入项目代码。
 
 TODO:
 
