@@ -6,8 +6,7 @@ import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.checkpoint.AbstractCheckpointSaver;
 import org.bsc.langgraph4j.checkpoint.BaseCheckpointSaver;
 import org.bsc.langgraph4j.checkpoint.Checkpoint;
-import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.stereotype.Component;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
@@ -29,10 +28,13 @@ import java.util.UUID;
  * <p>快照按 runId 作为 graph thread ID 存储；缺少业务版本或指纹时只记录可重建的
  * 保守值，恢复流程必须重新读取 WorkflowRun，而不能据此批准外部动作。</p>
  *
+ * <p>事务由 Workflow Engine 的外层 {@code TransactionTemplate} 提供；此类不声明
+ * Spring 事务代理，否则代理 LangGraph {@code AbstractCheckpointSaver} 会绕过其内部锁的初始化。</p>
+ *
  * @author ethan
  * @date 2026-08-27
  */
-@Repository
+@Component
 public class MybatisLangGraphCheckpointSaver extends AbstractCheckpointSaver {
 
     private static final TypeReference<Map<String, Object>> STATE_TYPE = new TypeReference<>() { };
@@ -60,14 +62,12 @@ public class MybatisLangGraphCheckpointSaver extends AbstractCheckpointSaver {
     }
 
     @Override
-    @Transactional
     protected void insertedCheckpoint(RunnableConfig config, LinkedList<Checkpoint> checkpoints,
                                        Checkpoint checkpoint) {
         save(config, checkpoint, null);
     }
 
     @Override
-    @Transactional
     protected void updatedCheckpoint(RunnableConfig config, LinkedList<Checkpoint> checkpoints,
                                      Checkpoint checkpoint) {
         AgentGraphSnapshotEntity existing = mapper.selectByGraphThreadAndCheckpoint(

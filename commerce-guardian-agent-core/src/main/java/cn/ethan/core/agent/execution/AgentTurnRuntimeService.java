@@ -46,6 +46,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * 类型职责：以 Thread 为队列键，负责 Turn 生命周期、持久化 Item 和可恢复 HITL。
@@ -56,6 +58,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class AgentTurnRuntimeService implements AgentTurnQueue {
 
     private static final String SAFE_EXECUTION_ERROR = "Agent 执行失败";
+    private static final Logger LOGGER = Logger.getLogger(AgentTurnRuntimeService.class.getName());
 
     private final AgentThreadStore threadStore;
     private final AgentTurnStore turns;
@@ -690,6 +693,9 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
             }
             finish(active, AgentTurnStatusEnum.COMPLETED, null);
         } catch (RuntimeException failure) {
+            LOGGER.log(Level.WARNING, "Agent turn failed: turnId=" + active.turnId()
+                    + ", inputKind=" + active.inputKind().name()
+                    + ", failureType=" + failure.getClass().getName());
             boolean timedOut = failure instanceof AgentExecutionTimeoutException || execution.timedOut.get();
             boolean cancelled = timedOut
                     || failure instanceof AgentExecutionCancelledException

@@ -153,6 +153,25 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
                 questionCards, checkpoints, null, null, 32, false);
     }
 
+    /** 测试边界：注入技术快照 Saver，验证业务 Run 与图快照的持久化顺序。 */
+    LangGraphAgentWorkflowEngine(
+            Clock clock,
+            ExternalActionCommandStore commands,
+            ObjectMapper objectMapper,
+            AgentWorkflowRunStore workflowRuns,
+            OrderGateway orders,
+            LogisticsGateway logistics,
+            AgentItemStore items,
+            AgentTurnStore turns,
+            AgentThreadEventGateway events,
+            AgentQuestionCardStore questionCards,
+            AgentWorkflowCheckpointStore checkpoints,
+            BaseCheckpointSaver saver
+    ) {
+        this(clock, commands, objectMapper, workflowRuns, orders, logistics, items, turns, events,
+                questionCards, checkpoints, null, saver, 32, false);
+    }
+
     private LangGraphAgentWorkflowEngine(
             Clock clock,
             ExternalActionCommandStore commands,
@@ -217,7 +236,6 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         graphState.put("factsDecision", "READY");
         graphState.put("workflowVersion", 0L);
         graphState.put("factsFingerprint", factsFingerprint);
-        Map<String, Object> pausedState = runGraph(runId, graphState, 0L, factsFingerprint, false);
 
         boolean missingOrder = selected == null;
         boolean missingReason = !missingOrder && isReasonMissing(request);
@@ -228,7 +246,7 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
                 runId, thread.threadId(), turn.turnId(), thread.userId(), AgentWorkflowTypeEnum.ORDER_SERVICE,
                 AgentWorkflowStatusEnum.WAITING_USER_INPUT, 0L,
                 steps(activeNode, missingOrder || missingReason ? "WAITING" : "WAITING"),
-                writeJson(withGraphState(businessState, pausedState, factsFingerprint, 0L)), now, now);
+                writeJson(withGraphState(businessState, null, factsFingerprint, 0L)), now, now);
 
         AgentQuestionCardModel question = missingOrder || missingReason
                 ? questionCard(run, turn, request, candidates, selected, missingOrder, now)
@@ -236,7 +254,8 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         AgentWorkflowCheckpointModel checkpoint = question == null
                 ? checkpoint(run, turn, request, selected, factsFingerprint, now)
                 : null;
-        return inTransaction(() -> persistStart(thread, turn, run, candidates, selected, question, checkpoint, now));
+        return inTransaction(() -> persistStart(
+                thread, turn, run, candidates, selected, question, checkpoint, graphState, factsFingerprint, now));
     }
 
     private StartResult persistStart(
@@ -247,6 +266,8 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             SelectedOrder selected,
             AgentQuestionCardModel question,
             AgentWorkflowCheckpointModel checkpoint,
+            Map<String, Object> graphState,
+            String factsFingerprint,
             Instant now
     ) {
         if (questionCards.findOpen(thread.userId(), thread.threadId()).isPresent()
@@ -254,6 +275,8 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             throw new AgentThreadConflictException("THREAD_WORKFLOW_ACTIVE", "当前 Thread 已有开放交互");
         }
         workflowRuns.create(run);
+        // AGENT_GRAPH_SNAPSHOT.RUN_ID 受 WorkflowRun 外键约束，必须在首个技术快照之前创建业务 Run。
+        runGraph(run.runId(), graphState, run.version(), factsFingerprint, false);
         appendItem(thread, turn, AgentItemTypeEnum.WORKFLOW_STARTED,
                 writeJson(Map.of("runId", run.runId(), "workflowType", ORDER_SERVICE)), now);
         appendOrderFacts(thread, turn, candidates.orders(), selected, now);

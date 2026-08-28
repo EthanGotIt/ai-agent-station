@@ -30,6 +30,10 @@ import cn.ethan.core.commerce.order.OrderSearchCriteria;
 import cn.ethan.core.commerce.order.OrderSearchResultModel;
 import cn.ethan.core.commerce.order.OrderSnapshotModel;
 import cn.ethan.core.commerce.order.OrderStatusEnum;
+import org.bsc.langgraph4j.RunnableConfig;
+import org.bsc.langgraph4j.checkpoint.AbstractCheckpointSaver;
+import org.bsc.langgraph4j.checkpoint.BaseCheckpointSaver;
+import org.bsc.langgraph4j.checkpoint.Checkpoint;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
@@ -39,6 +43,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -89,6 +94,17 @@ class LangGraphAgentWorkflowEngineTest {
         assertEquals(ExternalActionStatusEnum.PENDING, resumed.command().status());
         assertEquals(AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, fixture.runs.current.status());
         assertEquals(1, fixture.commands.values.size());
+    }
+
+    @Test
+    void createsWorkflowRunBeforePersistingGraphSnapshot() {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-1")), true);
+
+        AgentWorkflowEngine.StartResult started = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "REFUND", "orderId", "ORDER-1", "reason", "商品不符"));
+
+        assertNotNull(started.checkpoint());
+        assertTrue(fixture.saver.allWritesObservedRun);
     }
 
     @Test
@@ -194,6 +210,7 @@ class LangGraphAgentWorkflowEngineTest {
         private final FakeCommands commands = new FakeCommands();
         private final FakeItems items = new FakeItems();
         private final FakeOrders orders;
+        private final RecordingSaver saver;
         private final AgentThreadModel thread = new AgentThreadModel(
                 "thread-1", "user-1", "售后", AgentThreadStatusEnum.ACTIVE,
                 null, null, 0, NOW, NOW);
@@ -204,10 +221,51 @@ class LangGraphAgentWorkflowEngineTest {
         private final LangGraphAgentWorkflowEngine engine;
 
         private Fixture(List<OrderSnapshotModel> values) {
+            this(values, false);
+        }
+
+        private Fixture(List<OrderSnapshotModel> values, boolean recordSnapshotOrder) {
             orders = new FakeOrders(values);
-            engine = new LangGraphAgentWorkflowEngine(
+            saver = recordSnapshotOrder ? new RecordingSaver(runs) : null;
+            engine = saver == null
+                    ? new LangGraphAgentWorkflowEngine(
                     Clock.fixed(NOW, ZoneOffset.UTC), commands, new ObjectMapper(), runs, orders,
-                    null, items, null, null, questions, checkpoints);
+                    null, items, null, null, questions, checkpoints)
+                    : new LangGraphAgentWorkflowEngine(
+                    Clock.fixed(NOW, ZoneOffset.UTC), commands, new ObjectMapper(), runs, orders,
+                    null, items, null, null, questions, checkpoints, saver);
+        }
+    }
+
+    private static final class RecordingSaver extends AbstractCheckpointSaver {
+        private final FakeRuns runs;
+        private boolean allWritesObservedRun = true;
+
+        private RecordingSaver(FakeRuns runs) {
+            this.runs = runs;
+        }
+
+        @Override
+        protected LinkedList<Checkpoint> loadCheckpoints(RunnableConfig config) {
+            return new LinkedList<>();
+        }
+
+        @Override
+        protected void insertedCheckpoint(
+                RunnableConfig config, LinkedList<Checkpoint> checkpoints, Checkpoint checkpoint) {
+            allWritesObservedRun &= runs.current != null;
+        }
+
+        @Override
+        protected void updatedCheckpoint(
+                RunnableConfig config, LinkedList<Checkpoint> checkpoints, Checkpoint checkpoint) {
+            allWritesObservedRun &= runs.current != null;
+        }
+
+        @Override
+        protected BaseCheckpointSaver.Tag releaseCheckpoints(
+                RunnableConfig config, LinkedList<Checkpoint> checkpoints) {
+            return new BaseCheckpointSaver.Tag(config.threadId().orElse(""), List.copyOf(checkpoints));
         }
     }
 
