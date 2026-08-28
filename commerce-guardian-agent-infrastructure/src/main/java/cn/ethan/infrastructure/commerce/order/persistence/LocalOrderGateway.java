@@ -34,7 +34,8 @@ import java.util.List;
         havingValue = "local",
         matchIfMissing = true
 )
-public final class LocalOrderGateway implements OrderGateway, OrderActionGateway {
+// 删除订单同时清理物流记录，需要由 Spring 事务代理包裹该适配器。
+public class LocalOrderGateway implements OrderGateway, OrderActionGateway {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LocalOrderGateway.class);
 
