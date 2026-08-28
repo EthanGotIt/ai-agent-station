@@ -311,6 +311,40 @@ function turnStatusForExternalAction(status: ExternalActionStatus): AgentTurnSta
   return null;
 }
 
+function workflowResultRawStatus(value: unknown): string | null {
+  const data = recordValue(value);
+  return stringValue(data?.status) ?? (typeof value === "string" ? stringValue(value) : null);
+}
+
+/** 将 Workflow 的业务回执映射为 Turn 状态，避免子 Turn 的完成状态覆盖真实失败或等待。 */
+function workflowResultTurnStatus(value: unknown): AgentTurnStatus {
+  const status = workflowResultRawStatus(value);
+  switch (status) {
+    case "FAILED":
+    case "MANUAL_RETRY_REQUIRED":
+    case "ORDER_NOT_FOUND":
+    case "ORDER_NOT_OWNED":
+    case "ORDER_TEMPORARY_FAILURE":
+    case "ORDER_FACTS_UNAVAILABLE":
+    case "FACTS_CHANGED_ACTION_NOT_ALLOWED":
+      return "FAILED";
+    case "WAITING_USER_INPUT":
+    case "FACTS_CHANGED":
+      return "WAITING_USER_INPUT";
+    case "WAITING_EXTERNAL_ACTION":
+    case "APPROVED":
+      return "WAITING_EXTERNAL_ACTION";
+    case "CANCELLED":
+    case "REJECTED":
+    case "ANSWERED":
+    case "COMPLETED":
+      return "COMPLETED";
+    default:
+      // 旧版 WORKFLOW_RESULT 可能只是展示文案，沿用历史“已完成”投影。
+      return "COMPLETED";
+  }
+}
+
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
@@ -462,24 +496,45 @@ function workflowRunFromItem(item: AgentItem): string | null {
 }
 
 function buildActivities(items: AgentItem[]): BusinessProgress[] {
-  let externalSucceededSequence: number | null = null;
+  const externalSucceededTurns = new Set<string>();
+  const externalSucceededRuns = new Set<string>();
+  const continuationRuns = new Map<string, string>();
+  const workflowResultStatuses = new Map<string, AgentTurnStatus>();
   return items
     .map((item): BusinessProgress | null => {
       const data = recordValue(item.payload.data);
-      if (item.type === "EXTERNAL_ACTION_STATUS" && data?.status === "SUCCEEDED") {
-        externalSucceededSequence = item.sequence;
+      if (item.type === "AGENT_CONTINUATION" && item.turnId) {
+        const continuation = parseContinuation(item);
+        if (continuation) continuationRuns.set(item.turnId, continuation.triggerRunId);
       }
+      if (item.type === "EXTERNAL_ACTION_STATUS" && data?.status === "SUCCEEDED") {
+        if (item.turnId) externalSucceededTurns.add(item.turnId);
+        const runId = stringValue(data?.runId);
+        if (runId) externalSucceededRuns.add(runId);
+        // 外部动作成功是对先前 APPROVED/WAITING 回执的更新，允许最终
+        // TURN_STATE=COMPLETED 收敛，不被旧的 Workflow 结果挡住。
+        if (item.turnId) workflowResultStatuses.delete(item.turnId);
+      }
+      const runId = stringValue(data?.runId)
+        ?? (item.turnId ? continuationRuns.get(item.turnId) ?? null : null);
+      const externalSucceeded = (item.turnId ? externalSucceededTurns.has(item.turnId) : false)
+        || (runId !== null && externalSucceededRuns.has(runId));
       if ((item.type === "ERROR"
         || (item.type === "TURN_STATE" && data?.status === "FAILED"))
-        && externalSucceededSequence !== null && item.sequence > externalSucceededSequence) {
+        && externalSucceeded) {
         return { id: `${item.itemId}-continuation`, label: "业务操作已完成", detail: "后续 Agent 续接未完成", status: "DONE", sequence: item.sequence };
       }
       if (item.type === "TURN_STATE" && typeof data?.status === "string") {
         const status = data.status;
-        const state = status === "WAITING_USER_INPUT" || status === "WAITING_EXTERNAL_ACTION"
+        const workflowResultStatus = item.turnId
+          ? workflowResultStatuses.get(item.turnId) : undefined;
+        const effectiveStatus = status === "COMPLETED"
+          && workflowResultStatus && workflowResultStatus !== "COMPLETED"
+          ? workflowResultStatus : status;
+        const state = effectiveStatus === "WAITING_USER_INPUT" || effectiveStatus === "WAITING_EXTERNAL_ACTION"
           ? "WAITING"
-          : status === "COMPLETED" ? "DONE"
-            : ["FAILED", "CANCELLED", "TIMED_OUT"].includes(status) ? "ERROR" : "ACTIVE";
+          : effectiveStatus === "COMPLETED" ? "DONE"
+            : ["FAILED", "CANCELLED", "TIMED_OUT"].includes(effectiveStatus) ? "ERROR" : "ACTIVE";
         const label = ({
           QUEUED: "请求已排队",
           ACTIVE: "正在分析请求",
@@ -489,7 +544,7 @@ function buildActivities(items: AgentItem[]): BusinessProgress[] {
           CANCELLED: "请求已取消",
           TIMED_OUT: "请求处理超时",
           FAILED: "请求未能完成"
-        } as Record<string, string>)[status] ?? "正在处理请求";
+        } as Record<string, string>)[effectiveStatus] ?? "正在处理请求";
         return { id: `${item.itemId}-state`, label, detail: null, status: state, sequence: item.sequence };
       }
       if (item.type === "EXECUTION_EVENT") {
@@ -536,9 +591,17 @@ function buildActivities(items: AgentItem[]): BusinessProgress[] {
         return decision ? { id: `${item.itemId}-workflow-decision`, label: decision.decision === "APPROVE" ? "已确认执行" : "已拒绝执行", detail: decision.decision, status: decision.decision === "APPROVE" ? "DONE" : "ERROR", sequence: item.sequence } : null;
       }
       if (item.type === "WORKFLOW_RESULT") {
-        const resultStatus = typeof data?.status === "string" ? data.status : typeof item.payload.data === "string" ? item.payload.data : "COMPLETED";
-        const rejected = resultStatus === "REJECTED";
-        return { id: `${item.itemId}-result`, label: rejected ? "已取消业务操作" : "售后流程已完成", detail: null, status: rejected ? "DONE" : "DONE", sequence: item.sequence };
+        const resultStatus = workflowResultRawStatus(item.payload.data);
+        const mapped = workflowResultTurnStatus(item.payload.data);
+        if (item.turnId) workflowResultStatuses.set(item.turnId, mapped);
+        const rejected = resultStatus === "REJECTED" || resultStatus === "CANCELLED";
+        const waiting = mapped === "WAITING_USER_INPUT" || mapped === "WAITING_EXTERNAL_ACTION";
+        const failed = mapped === "FAILED";
+        const label = failed ? "售后流程未完成"
+          : waiting ? (mapped === "WAITING_USER_INPUT" ? "等待补充信息" : "等待外部系统处理")
+            : rejected ? "已取消业务操作" : "售后流程已完成";
+        return { id: `${item.itemId}-result`, label, detail: null,
+          status: failed ? "ERROR" : waiting ? "WAITING" : "DONE", sequence: item.sequence };
       }
       if (item.type === "EXTERNAL_ACTION_STATUS" && typeof data?.status === "string") {
         const status = data.status;
@@ -595,7 +658,10 @@ function buildActivities(items: AgentItem[]): BusinessProgress[] {
 
 function buildTurn(turnId: string, sourceItems: AgentItem[]): ThreadViewTurn {
   const orderedItems = [...sourceItems].sort((left, right) => left.sequence - right.sequence);
-  let externalSucceededSequence: number | null = null;
+  const externalSucceededTurns = new Set<string>();
+  const externalSucceededRuns = new Set<string>();
+  const continuationRuns = new Map<string, string>();
+  const workflowResultStatuses = new Map<string, AgentTurnStatus>();
   const current: ThreadViewTurn = {
     turnId,
     userMessage: "",
@@ -654,6 +720,7 @@ function buildTurn(turnId: string, sourceItems: AgentItem[]): ThreadViewTurn {
       const continuation = parseContinuation(item);
       if (continuation) {
         current.continuation = continuation;
+        if (item.turnId) continuationRuns.set(item.turnId, continuation.triggerRunId);
         current.sourceTurnId = continuation.rootTurnId;
         current.inputKind = "AGENT_CONTINUATION";
       }
@@ -667,7 +734,12 @@ function buildTurn(turnId: string, sourceItems: AgentItem[]): ThreadViewTurn {
       if (decision) current.decisions.push(decision);
     }
     if (item.type === "ERROR") {
-      if (externalSucceededSequence !== null && item.sequence > externalSucceededSequence) {
+      const data = recordValue(item.payload.data);
+      const runId = stringValue(data?.runId)
+        ?? (item.turnId ? continuationRuns.get(item.turnId) ?? null : null);
+      const externalSucceeded = (item.turnId ? externalSucceededTurns.has(item.turnId) : false)
+        || (runId !== null && externalSucceededRuns.has(runId));
+      if (externalSucceeded) {
         current.continuationWarning = "业务操作已完成，后续 Agent 续接未完成；可以继续提问或稍后查看。";
       } else {
         current.error = payloadText(item.payload);
@@ -676,17 +748,28 @@ function buildTurn(turnId: string, sourceItems: AgentItem[]): ThreadViewTurn {
       }
     }
     if (item.type === "TURN_STATE" && item.payload.kind === "TURN_STATE") {
-        const state = item.payload.data;
-        if (state && typeof state === "object" && "status" in state && typeof state.status === "string") {
-          const status = state.status as AgentTurnStatus;
-          if (status === "FAILED" && externalSucceededSequence !== null && item.sequence > externalSucceededSequence) {
-            current.continuationWarning = "业务操作已完成，后续 Agent 续接未完成；可以继续提问或稍后查看。";
-          } else {
-            current.status = status;
-            if (terminal(status)) current.finishedAt = item.createdAt;
-          }
+      const state = item.payload.data;
+      if (state && typeof state === "object" && "status" in state && typeof state.status === "string") {
+        const status = state.status as AgentTurnStatus;
+        const stateData = recordValue(item.payload.data);
+        const runId = stringValue(stateData?.runId)
+          ?? (item.turnId ? continuationRuns.get(item.turnId) ?? null : null);
+        const externalSucceeded = (item.turnId ? externalSucceededTurns.has(item.turnId) : false)
+          || (runId !== null && externalSucceededRuns.has(runId));
+        if (status === "FAILED" && externalSucceeded) {
+          current.continuationWarning = "业务操作已完成，后续 Agent 续接未完成；可以继续提问或稍后查看。";
+        } else {
+          const workflowResultStatus = item.turnId
+            ? workflowResultStatuses.get(item.turnId) : undefined;
+          // Workflow 引擎完成回答子 Turn 后仍会写入 TURN_STATE=COMPLETED；
+          // 该技术状态不能覆盖同一 Turn 已记录的 FAILED/WAITING 回执。
+          current.status = status === "COMPLETED"
+            && workflowResultStatus && workflowResultStatus !== "COMPLETED"
+            ? workflowResultStatus : status;
+          if (terminal(status)) current.finishedAt = item.createdAt;
         }
       }
+    }
     if (item.type === "QUESTION_CARD") {
       const question = parseQuestion(item.payload);
       if (question) {
@@ -721,12 +804,21 @@ function buildTurn(turnId: string, sourceItems: AgentItem[]): ThreadViewTurn {
         current.workflowRunId = action.runId ?? current.workflowRunId;
         current.externalActionStatus = action.status;
         current.externalActionReceipt = { ...(current.externalActionReceipt ?? {}), ...action.receipt };
-        if (action.status === "SUCCEEDED") externalSucceededSequence = item.sequence;
+        if (action.status === "SUCCEEDED") {
+          if (item.turnId) externalSucceededTurns.add(item.turnId);
+          if (action.runId) externalSucceededRuns.add(action.runId);
+          if (item.turnId) workflowResultStatuses.delete(item.turnId);
+        }
         const nextStatus = turnStatusForExternalAction(action.status);
         if (nextStatus && !terminal(current.status)) current.status = nextStatus;
       }
     }
-    if (item.type === "WORKFLOW_RESULT" && !terminal(current.status)) current.status = "COMPLETED";
+    if (item.type === "WORKFLOW_RESULT") {
+      const resultStatus = workflowResultTurnStatus(item.payload.data);
+      if (item.turnId) workflowResultStatuses.set(item.turnId, resultStatus);
+      current.status = resultStatus;
+      if (terminal(resultStatus)) current.finishedAt = item.createdAt;
+    }
   }
   return {
     ...current,
@@ -807,6 +899,8 @@ export {
   rebuildTurns,
   recordValue,
   terminal,
+  workflowResultRawStatus,
+  workflowResultTurnStatus,
   workflowRunFromItem,
   findOpenInteraction
 };

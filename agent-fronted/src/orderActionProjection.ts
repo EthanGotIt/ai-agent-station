@@ -114,6 +114,16 @@ function stateFromTurnStatus(status: unknown): OrderActionViewState | null {
   return null;
 }
 
+function stateFromWorkflowResult(status: unknown): OrderActionViewState {
+  if (["FAILED", "MANUAL_RETRY_REQUIRED", "ORDER_NOT_FOUND", "ORDER_NOT_OWNED",
+    "ORDER_TEMPORARY_FAILURE", "ORDER_FACTS_UNAVAILABLE", "FACTS_CHANGED_ACTION_NOT_ALLOWED"].includes(String(status))) {
+    return "error";
+  }
+  if (["WAITING_USER_INPUT", "FACTS_CHANGED"].includes(String(status))) return "waiting";
+  if (["WAITING_EXTERNAL_ACTION", "APPROVED"].includes(String(status))) return "active";
+  return "done";
+}
+
 /** 将一个动作 Turn 的技术 Item 投影为订单卡片可读的状态，不引入第二份全局运行状态。 */
 export function projectOrderAction(turn: ThreadViewTurn, request: OrderActionRequest): OrderActionProjection {
   const actionItems = turn.items.filter((item) => item.turnId === request.turnId);
@@ -125,20 +135,27 @@ export function projectOrderAction(turn: ThreadViewTurn, request: OrderActionReq
   let retryable = false;
   let deleted = false;
   let hasBusinessFact = false;
+  let workflowResultState: OrderActionViewState | null = null;
   for (const item of actionItems) {
     const data = itemData(item);
     if (item.type === "TURN_STATE") {
       const next = stateFromTurnStatus(data?.status);
-      if (next) state = next;
+      if (next) {
+        // 回答/决策 Turn 的技术完成状态不能覆盖同一 Turn 的失败或等待回执。
+        state = data?.status === "COMPLETED" && workflowResultState
+          && workflowResultState !== "done" ? workflowResultState : next;
+      }
     } else if (["QUESTION_CARD", "WORKFLOW_CHECKPOINT", "WORKFLOW_QUESTION"].includes(item.type)) {
       state = "waiting";
       runId = stringValue(data?.runId) ?? runId;
     } else if (item.type === "WORKFLOW_RESULT") {
-      rejected = data?.status === "REJECTED";
-      state = rejected ? "done" : "done";
+      rejected = data?.status === "REJECTED" || data?.status === "CANCELLED";
+      workflowResultState = stateFromWorkflowResult(data?.status ?? item.payload.data);
+      state = workflowResultState;
       runId = stringValue(data?.runId) ?? runId;
     } else if (item.type === "EXTERNAL_ACTION_STATUS" && data && externalStatus(data.status)) {
       state = data.status === "SUCCEEDED" ? "done" : data.status === "MANUAL_RETRY_REQUIRED" ? "error" : "active";
+      if (data.status === "SUCCEEDED") workflowResultState = "done";
       retryable = data.status === "MANUAL_RETRY_REQUIRED";
       runId = stringValue(data.runId) ?? runId;
       receipt = { ...(receipt ?? {}), ...externalReceipt(data) };

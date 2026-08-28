@@ -128,4 +128,112 @@ describe("thread projection", () => {
 
     expect(findOpenInteraction(items)).toBeNull();
   });
+
+  it("preserves a failed Workflow result after the decision Turn closes", () => {
+    const ownerTurnId = "owner-turn";
+    const decisionTurnId = "decision-turn";
+    const items = [
+      item("USER_MESSAGE", 1, ownerTurnId, "申请退款"),
+      item("WORKFLOW_CHECKPOINT", 2, ownerTurnId, {
+        checkpointId: "checkpoint-1", runId: "run-1", nodeId: "AUTHORIZE",
+        actionType: "REFUND", orderId: "ORDER-1", impactSummary: "提交退款",
+        factsFingerprint: "facts-1", status: "OPEN", version: 0
+      }),
+      item("WORKFLOW_DECISION", 3, decisionTurnId, {
+        runId: "run-1", checkpointId: "checkpoint-1", expectedVersion: 0,
+        decision: "APPROVE", factsFingerprint: "facts-1"
+      }),
+      item("WORKFLOW_RESULT", 4, decisionTurnId, { runId: "run-1", status: "FAILED" }),
+      item("TURN_STATE", 5, decisionTurnId, { status: "COMPLETED" })
+    ].map(normalizeItem);
+
+    const [turn] = rebuildTurns(items);
+
+    expect(turn.status).toBe("FAILED");
+    expect(turn.activities).toContainEqual(expect.objectContaining({
+      label: "售后流程未完成", status: "ERROR"
+    }));
+  });
+
+  it("keeps a facts-changed Workflow result waiting for a new confirmation", () => {
+    const ownerTurnId = "owner-turn";
+    const decisionTurnId = "decision-turn";
+    const items = [
+      item("USER_MESSAGE", 1, ownerTurnId, "申请退款"),
+      item("WORKFLOW_CHECKPOINT", 2, ownerTurnId, {
+        checkpointId: "checkpoint-1", runId: "run-1", nodeId: "AUTHORIZE",
+        actionType: "REFUND", orderId: "ORDER-1", impactSummary: "提交退款",
+        factsFingerprint: "facts-1", status: "OPEN", version: 0
+      }),
+      item("WORKFLOW_DECISION", 3, decisionTurnId, {
+        runId: "run-1", checkpointId: "checkpoint-1", expectedVersion: 0,
+        decision: "APPROVE", factsFingerprint: "facts-1"
+      }),
+      item("WORKFLOW_RESULT", 4, decisionTurnId, { runId: "run-1", status: "FACTS_CHANGED" }),
+      item("TURN_STATE", 5, decisionTurnId, { status: "COMPLETED" })
+    ].map(normalizeItem);
+
+    const [turn] = rebuildTurns(items);
+
+    expect(turn.status).toBe("WAITING_USER_INPUT");
+    expect(turn.activities).toContainEqual(expect.objectContaining({
+      label: "等待补充信息", status: "WAITING"
+    }));
+  });
+
+  it("does not mark a failed order action as done when its Turn closes", () => {
+    const items = [
+      item("ORDER_ACTION_REQUEST", 1, "action-turn", {
+        sourceTurnId: "source-turn", orderId: "ORDER-1", actionType: "REFUND"
+      }),
+      item("WORKFLOW_RESULT", 2, "action-turn", { runId: "run-1", status: "FAILED" }),
+      item("TURN_STATE", 3, "action-turn", { status: "COMPLETED" })
+    ].map(normalizeItem);
+    const [turn] = rebuildTurns(items);
+    const request = findOrderAction(turn, "ORDER-1");
+
+    expect(request).not.toBeNull();
+    expect(projectOrderAction(turn, request!)).toMatchObject({ state: "error" });
+  });
+
+  it("lets external action success close an approved Workflow result", () => {
+    const items = [
+      item("ORDER_ACTION_REQUEST", 1, "action-turn", {
+        sourceTurnId: "source-turn", orderId: "ORDER-1", actionType: "REFUND"
+      }),
+      item("WORKFLOW_RESULT", 2, "action-turn", { runId: "run-1", status: "APPROVED" }),
+      item("EXTERNAL_ACTION_STATUS", 3, "action-turn", {
+        runId: "run-1", status: "SUCCEEDED", orderId: "ORDER-1", actionType: "REFUND"
+      }),
+      item("TURN_STATE", 4, "action-turn", { status: "COMPLETED" })
+    ].map(normalizeItem);
+    const [turn] = rebuildTurns(items);
+    const request = findOrderAction(turn, "ORDER-1");
+
+    expect(turn.status).toBe("COMPLETED");
+    expect(projectOrderAction(turn, request!)).toMatchObject({ state: "done" });
+  });
+
+  it("does not treat a different folded action failure as a continuation warning", () => {
+    const items = [
+      item("USER_MESSAGE", 1, "source-turn", "处理订单"),
+      item("ORDER_ACTION_REQUEST", 2, "action-a", {
+        sourceTurnId: "source-turn", orderId: "ORDER-A", actionType: "REFUND"
+      }),
+      item("EXTERNAL_ACTION_STATUS", 3, "action-a", {
+        runId: "run-a", status: "SUCCEEDED", orderId: "ORDER-A", actionType: "REFUND"
+      }),
+      item("ORDER_ACTION_REQUEST", 4, "action-b", {
+        sourceTurnId: "source-turn", orderId: "ORDER-B", actionType: "EXPEDITE"
+      }),
+      item("ERROR", 5, "action-b", "催发货失败"),
+      item("TURN_STATE", 6, "action-b", { status: "FAILED" })
+    ].map(normalizeItem);
+
+    const [turn] = rebuildTurns(items);
+
+    expect(turn.status).toBe("FAILED");
+    expect(turn.continuationWarning).toBeNull();
+    expect(turn.error).toBe("催发货失败");
+  });
 });
