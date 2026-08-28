@@ -14,7 +14,7 @@ Completed:
 - `DELETE_ORDER` 已贯通订单卡片、Workflow `AUTHORIZE`、本地/HTTP 网关、Worker 和夹具；隐藏/恢复与 Thread 归档/回收站只保留历史只读兼容。
 - Windows/JDK loopback 适配已撤销，保留 `JdkClientHttpRequestFactory`；宿主机临时目录配置可使应用和真实 HTTP IT 正常启动。
 - 本轮代码评审修复并提交 `9abaa2b`：Agent QuestionCard 回答/取消生命周期、Thread 重命名运行时事实隔离、前端实时失败/重试恢复。
-- 当前工作区将 `core.hooksPath` 配置为 `.hooks`，`.hooks/pre-commit` 已通过 `git hook run pre-commit`，只执行工程规范检查；本地没有 GitHub/GitCode PR 审查工作流，远端规则需在推送后验证。
+- 本地 `.hooks`/`.githooks` 审查入口已停用；`core.hooksPath` 未设置，规范检查只通过显式命令和 CI 执行。仓库已有 `github` 远端，并将本机 `remote.pushDefault` 设为 `github`；不在本地自动 push。
 
 Decisions:
 
@@ -23,18 +23,18 @@ Decisions:
 - 业务 WorkflowRun、QuestionCard、Workflow Checkpoint 和 ExternalActionCommand 是事实源；LangGraph 快照只保存可重建技术状态。
 - 旧数据库表/列和旧 Item 只读保留到迁移/数据保留期结束，运行时代码不得访问或创建旧授权 QuestionCard。
 - 保留 `JdkClientHttpRequestFactory`，不为宿主机 Windows/JDK loopback 问题引入 `SimpleClientHttpRequestFactory` 或项目启动兼容代码；该问题只在用户级 Java 运行环境配置中处理。
-- 当前用户授权本计划创建阶段性 Git commit，不执行 push；`.hooks`、`.githooks`、`.idea`、deployment、Docker 及其他无关改动不纳入本阶段。`core.hooksPath` 是本机 Git 配置，不写入项目代码。
+- 当前用户授权本计划创建阶段性 Git commit，后续推送目标为 GitHub；本轮不执行 push。`.hooks`、`.githooks`、`.idea`、deployment、Docker 及其他无关改动不纳入本阶段；本机 `core.hooksPath` 和 `remote.pushDefault` 均为 Git 本地配置，不写入项目代码。
 
 TODO:
 
 - 阶段七：使用数据库副本完成 V7→V8→V9 迁移核验，运行真实模型配置和前端浏览器黄金路径，补齐最终验收证据。
-- 浏览器不可逆删除点击须在动作前取得用户确认；远端 PR 审查须在用户明确 push 或创建 PR 后单独验证。
+- 浏览器不可逆删除点击须在动作前取得用户确认；GitHub PR/Codex 审查须在用户明确 push 或创建 PR 后单独验证。
 - 阶段七全部完成后，覆盖本文件为 `status: completed` 快照。
 
 Blocked:
 
 - 本地代码门禁、真实 HTTP `*IT`、订单夹具和浏览器结构检查暂无阻塞。
-- 数据库副本与真实模型尚未在本轮重新执行；不可逆删除点击和远端 PR 审查分别等待用户确认/推送。
+- 数据库副本与真实模型尚未在本轮重新执行；不可逆删除点击和 GitHub PR/Codex 审查分别等待用户确认/推送。
 
 Next action:
 
@@ -45,7 +45,7 @@ Validation:
 - Maven：`mvn clean '-DskipTests=false' test` 通过，Core 49、Infrastructure 74、App 17，共 140 项；`mvn verify` 通过真实 HTTP `*IT` 9 项；`mvn dependency:analyze -DskipTests` 通过。
 - 前端：typecheck、Vitest 38 项、production build 通过。
 - Python：convention check、scripts tests 10 项和 runtime eval 通过。
-- 最近一次浏览器结构复核无回收站/归档/恢复入口、订单删除入口存在、控制台无 warning/error；实际删除动作尚未点击。
+- 最近一次浏览器结构复核无回收站/归档/恢复入口、订单删除入口存在、控制台无 warning/error；实际删除动作尚未点击。GitHub 远端可读，当前分支尚未推送。
 
 Preserve:
 

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import argparse
 import re
-import stat
-import subprocess
 import sys
 import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
@@ -95,7 +93,7 @@ class CheckIssue:
     line: int | None = None
 
     def format(self) -> str:
-        """生成适合终端和 Git Hook 展示的稳定文本。"""
+        """生成适合终端和自动化检查展示的稳定文本。"""
 
         location = f"{self.path}:{self.line}" if self.line else self.path
         return f"[{self.code}] {location} - {self.message}"
@@ -444,40 +442,9 @@ class ConventionChecker:
 
 
 def check_repository(root: Path) -> tuple[CheckIssue, ...]:
-    """检查指定仓库，便于 CLI、Hook 和单元测试复用同一实现。"""
+    """检查指定仓库，便于 CLI 和自动化测试复用同一实现。"""
 
     return ConventionChecker(root).run()
-
-
-def install_hook(root: Path) -> int:
-    """将仓库内版本化 Hook 目录配置为当前仓库的 Git hooksPath。"""
-
-    hook = root / ".githooks/pre-commit"
-    if not hook.exists():
-        print("未找到 .githooks/pre-commit，无法安装 Hook。", file=sys.stderr)
-        return 2
-    hook.chmod(
-        hook.stat().st_mode
-        | stat.S_IXUSR
-        | stat.S_IXGRP
-        | stat.S_IXOTH
-    )
-    try:
-        subprocess.run(
-            ["git", "config", "core.hooksPath", ".githooks"],
-            cwd=root,
-            check=True,
-        )
-        subprocess.run(
-            ["git", "config", "hooks.conventionPython", sys.executable],
-            cwd=root,
-            check=True,
-        )
-    except (OSError, subprocess.CalledProcessError) as exception:
-        print(f"安装 Git Hook 失败：{exception}", file=sys.stderr)
-        return 2
-    print(f"Git pre-commit Hook 已启用，Python：{sys.executable}")
-    return 0
 
 
 def _repository_root(candidate: Path) -> Path:
@@ -493,7 +460,6 @@ def main(arguments: Sequence[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(description="检查 Commerce Guardian Agent 工程规范")
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="仓库根目录")
-    parser.add_argument("--install-hook", action="store_true", help="启用版本化 pre-commit Hook")
     options = parser.parse_args(arguments)
 
     try:
@@ -501,11 +467,6 @@ def main(arguments: Sequence[str] | None = None) -> int:
     except FileNotFoundError as exception:
         print(str(exception), file=sys.stderr)
         return 2
-
-    if options.install_hook:
-        install_result = install_hook(root)
-        if install_result != 0:
-            return install_result
 
     issues = check_repository(root)
     if issues:
