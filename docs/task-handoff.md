@@ -1,5 +1,5 @@
 status: active
-updated: 2026-08-29
+updated: 2026-08-30
 
 # Task Handoff
 
@@ -17,29 +17,29 @@ Completed:
 - 在只读源库 `COMMERCE_GUARDIAN_AGENT` 的一次性克隆 `COMMERCE_GUARDIAN_AGENT_MIGRATION_20260829` 中回退 V7 形态并重放 V8、V9；历史业务表计数/校验和和 Thread/Turn 的 V9 前投影保持不变，V8 未回填历史图快照。
 - `e4e8dd6` 已在 `codex/demo-baseline` 增加确定性 GitHub Actions 和三条 Code Review Rules 并推送；Actions `deterministic-ci #1` 的 Maven、前端通过，Python 门禁因已提交旧 `docker-compose.yml` 的两个禁用字符串失败。
 - Week 1 PR #2 已创建并保持 Open/非 Draft，base=`codex/commerce-guardian-agent`、head=`codex/demo-baseline`；创建时 2 项检查通过、Python 规范门禁失败，未合并或关闭。
-- `a851b40` 已在 Week 1 分支移除废弃的 Docker 编排文件；本地规范检查与脚本 9 项测试通过。远端运行 #6/#7 仍基于此前含旧禁用文本的交接提交，需等待本次文档修正后的 CI。
+- `a851b40` 已在 Week 1 分支移除废弃的 Docker 编排文件，`7e0745b` 修正文档禁用文本；本地规范检查与脚本 9 项测试通过，GitHub Actions `deterministic-ci #8`（push）和 `#9`（pull_request）全部成功。
+- Week 1 PR #2 的 Codex 自动审查未发现 P0/P1，另有一条 P2 建议要求 `git diff --check` 使用显式 base/head 范围；该建议尚未处理，不阻塞本周门禁。
 
 Decisions:
 
 - 后续周 PR 只合入 `codex/commerce-guardian-agent`；不更新 GitHub `master`，不 force push，不改变 GitCode upstream。
 - 每周一个前后端闭环垂直切片；真实模型只用于本机质量报告，不进入稳定 CI；外部写操作继续由 Workflow、Checkpoint 和 ExternalActionCommand 控制。
-- 不导入原工作区的 dirty Docker/deployment/脚本修改来“修复”周分支；CI 失败原因必须以独立提交和可审阅证据处理。
+- 不导入原工作区的 dirty Docker/deployment/脚本修改；旧 Docker 配置已在 Week 1 分支用独立提交移除，原工作区仍保持不变。
 - 临时迁移脚本不提交；迁移克隆库保留在本机供复核，源库不改写。
 
 TODO:
 
-- 确认 `a851b40` 与交接文档修正后的最新 Python CI 全绿，同时保留原工作区 Docker 删除改动不变。
 - 按运行手册补跑真实模型和四尺寸浏览器黄金路径；完成后再进入第 2 周 `codex/agent-quality-eval`，然后依次推进决策契约和演示验收。
+- 评估并在需要时单独修正 Codex 提出的 CI whitespace P2；不得让它覆盖业务门禁或引入无关改动。
 - 第 2～4 周的场景格式、确定性 runner、`AGENT_DECISION_MISSING` 收口和验收文档尚未实现。
 
 Blocked:
 
-- 最新远端 CI 尚未验证 `a851b40` 加上交接文档修正后的完整结果；此前 #6/#7 的 Python job 失败属于旧提交快照，不用跳过检查掩盖。
 - 真实模型请求和当前环境的浏览器黄金路径尚未重跑。
 
 Next action:
 
-- 先推送交接文档修正并重跑 Actions，确认 PR #2 的 Python/Maven/前端检查后再进入真实模型和浏览器验收；不合并。
+- 先按运行手册补跑真实模型和浏览器黄金路径，再决定是否处理 whitespace P2；PR #2 保持 Open，不合并。
 
 Validation:
 
@@ -47,7 +47,7 @@ Validation:
 - Maven：Core 50、Infrastructure 77、App 19 的 `clean test` 通过；`verify` 的真实 HTTP `*IT` 9 项通过；依赖分析无问题。
 - 前端：`npm ci`、typecheck、Vitest、组件测试和 production build 通过。
 - 数据库：V7→V8→V9 临时克隆重放通过；旧业务事实、校验和与 V9 前 Thread/Turn 投影未改写，V8 图快照未回填。
-- GitHub：17 个分支和审查基线已推送；PR #1 Codex 自动审查为 👍、无 P0/P1；Week 1 PR #2 已创建；此前 `deterministic-ci` 运行的 Maven/前端成功、Python 失败，最新修复等待重跑。
+- GitHub：17 个分支和审查基线已推送；PR #1 Codex 自动审查为 👍、无 P0/P1；Week 1 PR #2 已创建；`deterministic-ci #8`/`#9` 的 Python、Maven、前端检查全部成功。
 
 Preserve:
 

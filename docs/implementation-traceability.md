@@ -61,9 +61,10 @@
 
 - `e4e8dd6`（分支 `codex/demo-baseline`）新增确定性 GitHub Actions，分别执行 Python 规范/脚本单测、Maven 单测/集成测试/依赖分析，以及前端 typecheck/Vitest/组件测试/production build；工作流不调用真实模型或数据库副本。
 - 根目录 `AGENTS.md` 新增三条 Code Review Rules：外部写操作必须经过持久化 Workflow/Checkpoint/ExternalActionCommand；`WORKFLOW_RESULT`/`EXTERNAL_ACTION_STATUS` 优先于 Turn 完成态；分页与 SSE 游标必须严格前进并在异常时安全收口。
-- GitHub Actions `deterministic-ci #1` 已完成：Maven 和前端通过，Python 规范门禁因已提交的旧 `docker-compose.yml` 中两个禁用字符串失败；该分支未带入原工作区的 Docker、部署或其他未提交文件。
-- Week 1 PR #2 已创建并保持 Open/非 Draft，base=`codex/commerce-guardian-agent`、head=`codex/demo-baseline`；创建时检查状态为 2 项通过、Python 规范门禁失败，未合并或关闭。
-- `a851b40` 已从 Week 1 分支移除废弃的 Docker 编排文件；本地 `convention_check` 与脚本 9 项测试均已通过。此前远端运行仍使用包含旧禁用文本的交接提交，需以本次文档修正后的最新 CI 为准。
+- GitHub Actions `deterministic-ci #1`/`#2` 的失败已定位为 committed 旧 `docker-compose.yml` 和交接文本中的禁用内容；这些历史运行未带入原工作区的 Docker、部署或其他未提交文件。
+- Week 1 PR #2 已创建并保持 Open/非 Draft，base=`codex/commerce-guardian-agent`、head=`codex/demo-baseline`，当前包含 5 个提交/5 个文件，未合并或关闭。
+- `a851b40` 已从 Week 1 分支移除废弃的 Docker 编排文件，`7e0745b` 修正文档禁用文本；本地 `convention_check` 与脚本 9 项测试通过，GitHub Actions `deterministic-ci #8`（push）和 `#9`（pull_request）全部成功。
+- Codex 自动审查未发现 P0/P1；另有一条 P2 建议指出 CI 的 `git diff --check` 需要比较显式 base/head 范围，暂不影响本周三项门禁通过。
 
 ## 追踪矩阵
 
