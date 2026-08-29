@@ -17,6 +17,7 @@ Completed:
 - 在只读源库 `COMMERCE_GUARDIAN_AGENT` 的一次性克隆 `COMMERCE_GUARDIAN_AGENT_MIGRATION_20260829` 中回退 V7 形态并重放 V8、V9；历史业务表计数/校验和和 Thread/Turn 的 V9 前投影保持不变，V8 未回填历史图快照。
 - `e4e8dd6` 已在 `codex/demo-baseline` 增加确定性 GitHub Actions 和三条 Code Review Rules 并推送；Actions `deterministic-ci #1` 的 Maven、前端通过，Python 门禁因已提交旧 `docker-compose.yml` 的两个禁用字符串失败。
 - Week 1 PR #2 已创建并保持 Open/非 Draft，base=`codex/commerce-guardian-agent`、head=`codex/demo-baseline`；创建时 2 项检查通过、Python 规范门禁失败，未合并或关闭。
+- `a851b40` 已在 Week 1 分支移除废弃的 Docker 编排文件；本地规范检查与脚本 9 项测试通过。远端运行 #6/#7 仍基于此前含旧禁用文本的交接提交，需等待本次文档修正后的 CI。
 
 Decisions:
 
@@ -27,26 +28,26 @@ Decisions:
 
 TODO:
 
-- 处理并重新验证 Python CI 的旧 `docker-compose.yml` 规范门禁阻塞，同时保留原工作区 Docker 删除改动不变。
+- 确认 `a851b40` 与交接文档修正后的最新 Python CI 全绿，同时保留原工作区 Docker 删除改动不变。
 - 按运行手册补跑真实模型和四尺寸浏览器黄金路径；完成后再进入第 2 周 `codex/agent-quality-eval`，然后依次推进决策契约和演示验收。
 - 第 2～4 周的场景格式、确定性 runner、`AGENT_DECISION_MISSING` 收口和验收文档尚未实现。
 
 Blocked:
 
-- `deterministic-ci #1` 的 Python job 仍因 committed `docker-compose.yml` 中 `AGENT_MEMORY` 与旧项目名禁用文本失败；不能用跳过检查或引入 dirty worktree 文件掩盖。
+- 最新远端 CI 尚未验证 `a851b40` 加上交接文档修正后的完整结果；此前 #6/#7 的 Python job 失败属于旧提交快照，不用跳过检查掩盖。
 - 真实模型请求和当前环境的浏览器黄金路径尚未重跑。
 
 Next action:
 
-- 先处理 Python CI 阻塞并重跑 Actions，保持 PR #2 的检查与审查记录可追踪；不合并。
+- 先推送交接文档修正并重跑 Actions，确认 PR #2 的 Python/Maven/前端检查后再进入真实模型和浏览器验收；不合并。
 
 Validation:
 
-- 干净克隆：`git diff --check`、对象/秘密扫描通过；Python convention 发现 2 个旧 `docker-compose.yml` 禁用字符串，脚本测试 9 项中 1 项因此失败。
+- 干净克隆：`git diff --check`、对象/秘密扫描通过；移除废弃 Docker 编排文件并修正文档后，Python convention 与脚本测试 9 项本地通过。
 - Maven：Core 50、Infrastructure 77、App 19 的 `clean test` 通过；`verify` 的真实 HTTP `*IT` 9 项通过；依赖分析无问题。
 - 前端：`npm ci`、typecheck、Vitest、组件测试和 production build 通过。
 - 数据库：V7→V8→V9 临时克隆重放通过；旧业务事实、校验和与 V9 前 Thread/Turn 投影未改写，V8 图快照未回填。
-- GitHub：17 个分支和审查基线已推送；PR #1 Codex 自动审查为 👍、无 P0/P1；Week 1 PR #2 已创建；`deterministic-ci #1`/`#2` Maven/前端成功、Python 失败。
+- GitHub：17 个分支和审查基线已推送；PR #1 Codex 自动审查为 👍、无 P0/P1；Week 1 PR #2 已创建；此前 `deterministic-ci` 运行的 Maven/前端成功、Python 失败，最新修复等待重跑。
 
 Preserve:
 
