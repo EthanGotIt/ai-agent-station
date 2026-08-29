@@ -85,6 +85,12 @@
 - Item 历史分页和 SSE 回放只有在游标严格前进时才继续；服务端或客户端遇到重复、乱序、无效页必须收口，不能因 `hasMore` 失真而无限请求。
 - 用户身份只从认证上下文取得，不能信任请求体中的 `userId`；演示 Header 也必须在统一边界解析，Controller 不直接拼装身份。
 
+## Code Review Rules
+
+- 外部写操作必须由持久化 Workflow、Checkpoint 和 ExternalActionCommand 授权与执行；模型文本或只读 Tool 结果不得直接产生退款、催发货、删除等副作用。
+- `WORKFLOW_RESULT` 与 `EXTERNAL_ACTION_STATUS` 是业务结果的权威投影；任何 `TURN_STATE=COMPLETED` 都不能把失败、事实变化或等待状态覆盖成成功。
+- Item 分页与 SSE 回放的游标必须严格前进；重复、乱序、无效或不前进的页必须安全收口，不能因 `hasMore` 失真而无限重试。
+
 ## Git 提交守则（硬约束）
 
 - 只有用户在当前任务中明确要求创建提交时才执行暂存或提交；未授权时只按可独立验证、可回滚的阶段组织改动，不自行执行 `git add` 或 `git commit`。
