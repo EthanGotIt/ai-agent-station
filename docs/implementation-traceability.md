@@ -1,7 +1,7 @@
 # Commerce Guardian Agent 实现追踪矩阵
 
 > 状态：`active`
-> 更新日期：2026-08-28
+> 更新日期：2026-08-31
 > 目标来源：任务 `01a01f3f-2a0e-7e52-b70e-4137e4ff3496` 的最新计划、当前工作树、Git 历史、架构文档、SQL、测试和实际运行结果。
 
 本矩阵只把代码、测试和运行结果作为证据。原计划或 `docs/task-handoff.md` 中的“已完成”描述不能单独作为完成证据。
@@ -56,6 +56,14 @@
 - `mvn verify` 的真实 HTTP `*IT` 9 项已在当前环境通过；Fake Transport 单测与真实 HTTP 协议验收均已覆盖。
 - 数据库副本 V7→V8→V9、真实模型/订单夹具/浏览器黄金路径本轮未重跑，历史现场记录需按发布前运行手册再次确认。
 - 当前工作树仍包含用户既有的 `.idea`、部署、Docker、Hook、脚本和配置改动；本阶段未覆盖或混入这些改动。
+
+## 第 2 周 Agent 质量评测基线（2026-08-31）
+
+- 在隔离克隆中从 `codex/commerce-guardian-agent` 创建 `codex/agent-quality-eval`，审阅并吸收原工作区未提交的 `scripts/runtime_eval`，未覆盖原工作区。
+- 新增内部 `EvalScenario` 格式，固定字段为 `id`、`prompt`、`setup`、`expectedDecision`、`requiredItems`、`forbiddenItems`、`maxOpenInteractions` 和 `expectedMutationCount`；该格式不进入 Core 或 HTTP DTO。
+- 固定 12 个场景覆盖精确订单、今日订单、停滞物流、物流详情、退款缺订单、退款缺原因、退款拒绝/批准、催发货失败/人工重试、删除拒绝/批准。
+- 确定性 runner 默认执行 12 场景 × 3 次，验证安全边界、幂等和路由/终止决策；本地结果为安全 36/36、路由 36/36。GitHub Actions 只调用该 runner 和定向单测，不连接真实模型、数据库或订单服务。
+- 本机 `live_runner` 只接受已脱敏结构化观察结果，报告仅保留决策、Item 类型、开放交互数、变更数和通过状态；输出写入忽略目录，拒绝 Prompt、Thinking、原始响应、密钥和请求头字段。
 
 ## 追踪矩阵
 
