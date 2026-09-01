@@ -15,6 +15,7 @@ Completed:
 - `scripts/tests/test_acceptance.py` 覆盖无开放交互重读、交互替换拒绝、游标错误、订单动作重放和删除开关；独立 SQLite 订单夹具 HTTP 冒烟已通过物流、退款、催发货重试，未授权删除返回 `delete-gated`。
 - README、架构、现场复核手册和追踪矩阵已补充 Week 4 runner 用法、浏览器四尺寸记录项、外部证据边界和敏感信息约束。
 - 从 `codex/agent-quality-eval@6c7e82f` 重跑确定性评测 12 场景 × 3 次：安全不变量 36/36，路由与终止 36/36；该 runner 不连接真实模型。
+- `codex/demo-acceptance` 已推送到 GitHub 并复核远端引用；未更新集成分支、`master` 或 GitCode upstream。
 
 Decisions:
 
@@ -29,7 +30,7 @@ TODO:
 - 在可用的真实模型凭据下运行 12 场景 × 3 次，生成忽略提交的脱敏 JSON/Markdown，并与 36/36 确定性基线比较。
 - 运行 V7→V8→V9 一次性数据库副本，保留历史业务事实和记录数校验；完成四个视口、深浅主题、键盘/Esc、reduced-motion、SSE 重连和刷新恢复浏览器记录。
 - 重新执行完整 Python/Maven/前端门禁；待 Week 1 PR #2 移除集成基线废弃 Docker 编排后，重跑 Python convention 和 GitHub CI。
-- 提交本分支的独立 `test:`/`docs:` commits，推送 `codex/demo-acceptance`；创建 Week 4 PR 前取得用户确认。
+- 创建 Week 4 PR 前取得用户确认；PR 目标保持 `codex/commerce-guardian-agent`，不自动合并或关闭。
 
 Blocked:
 
@@ -39,7 +40,7 @@ Blocked:
 
 Next action:
 
-- 先完成代码/文档门禁和分阶段提交，再推送 `codex/demo-acceptance`；外部环境可用后按本 handoff 的 TODO 顺序补齐证据，最后再请求创建 PR。
+- 先取得用户对 Week 4 PR 的确认；外部环境可用后按本 handoff 的 TODO 顺序补齐证据。
 
 Validation:
 
