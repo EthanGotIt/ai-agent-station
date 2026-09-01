@@ -16,6 +16,7 @@ import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
 import cn.ethan.core.commerce.order.LogisticsEventModel;
+import cn.ethan.core.commerce.order.OrderLookupResultModel;
 import cn.ethan.core.commerce.order.OrderSnapshotModel;
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -159,6 +160,41 @@ class ExternalActionWorkerTest {
         assertTrue(items.appended.get(0).payloadJson().contains("\"verificationStatus\":\"VERIFIED\""));
         assertTrue(items.appended.stream().anyMatch(item -> item.type().name().equals("ORDER_DETAIL")));
         assertTrue(items.appended.stream().anyMatch(item -> item.type().name().equals("LOGISTICS_TIMELINE")));
+    }
+
+    @Test
+    void successfulActionDoesNotClaimVerificationWhenFactsDoNotMatch() {
+        ExternalActionCommandModel claimed = claimed("{\"orderId\":\"order-1\"}");
+        AcceptingCommandStore commands = new AcceptingCommandStore(claimed);
+        CountingItemStore items = new CountingItemStore();
+        AgentTurnModel waitingTurn = new AgentTurnModel(
+                "turn-1", "thread-1", "user-1", "request-1", "refund",
+                cn.ethan.core.agent.thread.AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION, 0,
+                "run-1", null, NOW.minusSeconds(10), NOW.minusSeconds(5), null);
+        CountingTurnStore turns = new CountingTurnStore(waitingTurn);
+        AgentWorkflowRunModel waitingRun = new AgentWorkflowRunModel(
+                "run-1", "thread-1", "turn-1", "user-1", AgentWorkflowTypeEnum.REFUND,
+                AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, 0, NOW.minusSeconds(10), NOW.minusSeconds(5));
+        CountingWorkflowRunStore workflowRuns = new CountingWorkflowRunStore(waitingRun);
+        OrderSnapshotModel order = new OrderSnapshotModel("order-1", "user-1", "PAID", 0);
+        ExternalActionWorker worker = new ExternalActionWorker(
+                commands, command -> new ExternalActionExecutor.ExternalActionResult(
+                        true, false, "ORDER_REFUNDED", "订单已退款"), items, turns,
+                event -> { }, Clock.fixed(NOW, ZoneOffset.UTC), workflowRuns,
+                Duration.ofSeconds(30), Duration.ofSeconds(5), Duration.ofSeconds(5), AgentRuntimeMetrics.noop(),
+                (orderId, userId) -> OrderLookupResultModel.found(order),
+                (orderId, userId) -> List.of());
+
+        try {
+            assertEquals(1, worker.runOnce(1, Duration.ofSeconds(30)));
+        } finally {
+            worker.destroy();
+        }
+
+        assertTrue(items.appended.stream().anyMatch(item ->
+                item.payloadJson().contains("\"verificationStatus\":\"PENDING\"")));
+        assertTrue(items.appended.stream().anyMatch(item ->
+                item.payloadJson().contains("\"verificationMessage\":\"操作已受理、最新状态暂未核验\"")));
     }
 
     @Test

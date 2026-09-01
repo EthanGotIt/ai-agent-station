@@ -458,8 +458,14 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             throw new AgentThreadConflictException("CHECKPOINT_VERSION_CONFLICT", "Workflow Checkpoint 决策状态不一致");
         }
         WorkflowRequest request = requestFromRun(run);
-        OrderSnapshotModel order = lookupSelected(checkpoint.orderId(), thread.userId());
-        SelectedOrder selected = selectedOrder(order, thread.userId());
+        OrderSnapshotModel order;
+        SelectedOrder selected;
+        try {
+            order = lookupSelected(checkpoint.orderId(), thread.userId());
+            selected = selectedOrder(order, thread.userId());
+        } catch (RuntimeException factsFailure) {
+            return failDecisionAfterFactsUnavailable(thread, decisionTurn, run, checkpoint, factsFailure, now);
+        }
         String fingerprint = factsFingerprint(request, new ResolvedCandidates(List.of(order), true), selected);
         if (!checkpoint.factsFingerprint().equals(input.factsFingerprint())
                 || !checkpoint.factsFingerprint().equals(fingerprint)) {
@@ -488,8 +494,14 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             Instant now
     ) {
         WorkflowRequest request = requestFromRun(run);
-        OrderSnapshotModel latest = lookupSelected(superseded.orderId(), thread.userId());
-        SelectedOrder selected = selectedOrder(latest, thread.userId());
+        OrderSnapshotModel latest;
+        SelectedOrder selected;
+        try {
+            latest = lookupSelected(superseded.orderId(), thread.userId());
+            selected = selectedOrder(latest, thread.userId());
+        } catch (RuntimeException factsFailure) {
+            return failDecisionAfterFactsUnavailable(thread, decisionTurn, run, superseded, factsFailure, now);
+        }
         String fingerprint = factsFingerprint(request, new ResolvedCandidates(List.of(latest), true), selected);
         Map<String, Object> latestState = state(request.withOrderId(latest.orderId()), List.of(latest), selected,
                 request.reason());
@@ -529,6 +541,38 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
                     "订单事实已更新，请重新确认执行内容。", now);
             return new ResumeResult("订单事实已更新，请重新确认执行内容。", "FACTS_CHANGED", null,
                     null, next);
+        });
+    }
+
+    /**
+     * 批准后的事实查询失败时必须收口 Workflow，不能让已批准但已清空开放指针的 Checkpoint
+     * 永久停留在 WAITING_USER_INPUT。该分支不创建外部命令，用户可重新发起订单操作。
+     */
+    private ResumeResult failDecisionAfterFactsUnavailable(
+            AgentThreadModel thread,
+            AgentTurnModel decisionTurn,
+            AgentWorkflowRunModel run,
+            AgentWorkflowCheckpointModel checkpoint,
+            RuntimeException failure,
+            Instant now
+    ) {
+        String code = failure instanceof AgentThreadConflictException conflict
+                ? conflict.code() : "ORDER_FACTS_UNAVAILABLE";
+        String message = switch (code) {
+            case "ORDER_NOT_FOUND", "ORDER_NOT_OWNED" ->
+                    "订单事实已变化，当前订单不可用，未执行外部动作。";
+            default -> "订单事实暂时无法核验，未执行外部动作，请重新发起操作。";
+        };
+        AgentWorkflowRunModel failed = run.status(AgentWorkflowStatusEnum.FAILED,
+                steps(LangGraphWorkflowGraphFactory.VERIFY_FACTS, "FAILED"), run.stateJson(), now);
+        return inTransaction(() -> {
+            supersedeApprovedCheckpoint(checkpoint, thread.userId());
+            workflowRuns.update(failed);
+            appendAnswerResult(thread, decisionTurn, run.runId(), code, now);
+            appendWorkflowStep(thread, decisionTurn, run.runId(), LangGraphWorkflowGraphFactory.VERIFY_FACTS,
+                    "FAILED", code, now);
+            projectOwner(thread, run, AgentTurnStatusEnum.FAILED, message, now);
+            return new ResumeResult(message, "FAILED", null, null, null);
         });
     }
 

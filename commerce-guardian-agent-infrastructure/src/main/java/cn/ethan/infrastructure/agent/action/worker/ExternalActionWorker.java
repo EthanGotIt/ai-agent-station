@@ -14,6 +14,8 @@ import cn.ethan.core.commerce.order.LogisticsGateway;
 import cn.ethan.core.commerce.order.OrderGateway;
 import cn.ethan.core.commerce.order.OrderLookupResultModel;
 import cn.ethan.core.commerce.order.OrderLookupStatusEnum;
+import cn.ethan.core.commerce.order.OrderSnapshotModel;
+import cn.ethan.core.commerce.order.OrderStatusEnum;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
@@ -249,13 +251,33 @@ public final class ExternalActionWorker implements DisposableBean {
             }
             var trace = logistics == null ? List.<cn.ethan.core.commerce.order.LogisticsEventModel>of()
                     : logistics.findTrace(orderId, command.userId());
-            return ExternalActionOutcomeManager.Verification.found(lookup.order(), trace, verifiedAt);
+            boolean verified = outcomeMatches(command.type(), lookup.order());
+            return ExternalActionOutcomeManager.Verification.fromFacts(
+                    lookup.order(), trace, verified,
+                    verified ? "最新订单状态已核验" : "操作已受理、最新状态暂未核验", verifiedAt);
         } catch (RuntimeException failure) {
             LOGGER.warn("外部动作成功但后置订单核验失败，commandId={}, errorType={}",
                     command.commandId(), failure.getClass().getSimpleName());
             return ExternalActionOutcomeManager.Verification.unavailable(
                     "操作已受理、最新状态暂未核验", verifiedAt);
         }
+    }
+
+    /**
+     * 外部执行器的成功回执只代表请求被接受；只有重新读取到与动作一致的业务事实，
+     * 才能把 VERIFY_OUTCOME 标记为已完成。状态尚未传播时保留事实并交给续跑处理。
+     */
+    private boolean outcomeMatches(ExternalActionTypeEnum type, OrderSnapshotModel order) {
+        if (type == null || order == null) {
+            return false;
+        }
+        return switch (type) {
+            case REFUND -> order.status() == OrderStatusEnum.REFUNDED;
+            case EXPEDITE -> "EXPEDITE_REQUESTED".equalsIgnoreCase(order.logisticsStatus());
+            case DELETE_ORDER -> false;
+            case HIDE_ORDER -> order.hiddenAt() != null;
+            case RESTORE_ORDER -> order.hiddenAt() == null;
+        };
     }
 
     private String orderId(String payloadJson) {

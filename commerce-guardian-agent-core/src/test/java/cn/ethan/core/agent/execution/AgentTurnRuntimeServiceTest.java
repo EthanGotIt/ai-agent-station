@@ -12,6 +12,7 @@ import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.thread.AgentQuestionAnswerInput;
 import cn.ethan.core.agent.thread.AgentThreadModel;
+import cn.ethan.core.agent.thread.AgentThreadConflictException;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import cn.ethan.core.agent.thread.AgentThreadStore;
 import cn.ethan.core.agent.thread.AgentTurnInputKindEnum;
@@ -172,7 +173,7 @@ class AgentTurnRuntimeServiceTest {
         ManualExecutor executor = new ManualExecutor();
         ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
         AgentTurnModel raced = new AgentTurnModel(
-                "raced-turn", thread.threadId(), "user-1", "request-1", "已存在",
+                "raced-turn", thread.threadId(), "user-1", "request-1", "新请求",
                 AgentTurnStatusEnum.QUEUED, 1, null, null, NOW, null, null);
         persistence.raceOnCreation = raced;
         AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
@@ -189,6 +190,37 @@ class AgentTurnRuntimeServiceTest {
                 " user-1 ", thread.threadId(), " request-1 ", "新请求");
 
         assertEquals(raced.turnId(), result.turnId());
+        scheduler.shutdownNow();
+    }
+
+    @Test
+    void rejectsMessageRequestIdReuseWithDifferentThreadOrPayload() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel firstThread = threads.create("user-1", "第一条 Thread", null, null);
+        AgentThreadModel secondThread = threads.create("user-1", "第二条 Thread", null, null);
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence,
+                threads,
+                new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
+                (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
+                        "完成", List.of(), null, false,
+                        AgentDecisionTypeEnum.FINISH, "TEST_FINISH"),
+                new RecordingEvents(), executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256
+        );
+
+        runtime.submitTurn("user-1", firstThread.threadId(), "shared-request", "原始消息");
+
+        AgentThreadConflictException changedMessage = assertThrows(AgentThreadConflictException.class,
+                () -> runtime.submitTurn("user-1", firstThread.threadId(), "shared-request", "修改消息"));
+        assertEquals("CLIENT_REQUEST_CONFLICT", changedMessage.code());
+        AgentThreadConflictException changedThread = assertThrows(AgentThreadConflictException.class,
+                () -> runtime.submitTurn("user-1", secondThread.threadId(), "shared-request", "原始消息"));
+        assertEquals("CLIENT_REQUEST_CONFLICT", changedThread.code());
         scheduler.shutdownNow();
     }
 

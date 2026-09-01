@@ -328,7 +328,10 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         String normalizedRequestId = AgentTurnInputValidator.requireClientRequestId(requestId);
         String normalizedMessage = AgentTurnInputValidator.requireText(message, "message");
         Optional<AgentTurnModel> duplicate = turns.findTurnByRequest(ownerId, normalizedRequestId);
-        if (duplicate.isPresent()) return duplicate.get();
+        if (duplicate.isPresent()) {
+            return requireMatchingMessageDuplicate(
+                    duplicate.get(), ownerId, ownerThreadId, normalizedMessage);
+        }
         if (hasOpenInteraction(ownerId, ownerThreadId)) {
             throw new AgentThreadConflictException("THREAD_AWAITING_ANSWER", "当前 Thread 正在等待 QuestionCard 回答");
         }
@@ -337,7 +340,8 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         synchronized (slot) {
             Optional<AgentTurnModel> duplicateAfterLock = turns.findTurnByRequest(ownerId, normalizedRequestId);
             if (duplicateAfterLock.isPresent()) {
-                return duplicateAfterLock.get();
+                return requireMatchingMessageDuplicate(
+                        duplicateAfterLock.get(), ownerId, ownerThreadId, normalizedMessage);
             }
             if (slot.queue.size() + slot.deferred.size() >= maxPendingPerThread) {
                 throw new AgentThreadConflictException("THREAD_QUEUE_FULL", "当前 Thread 排队请求已满");
@@ -358,7 +362,10 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                 initialSequence = turns.createTurnWithInitialItem(turn, initialItem);
             } catch (RuntimeException creationFailure) {
                 Optional<AgentTurnModel> raced = turns.findTurnByRequest(ownerId, normalizedRequestId);
-                if (raced.isPresent()) return raced.get();
+                if (raced.isPresent()) {
+                    return requireMatchingMessageDuplicate(
+                            raced.get(), ownerId, ownerThreadId, normalizedMessage);
+                }
                 throw creationFailure;
             }
             if (initialSequence <= 0) {
@@ -949,6 +956,27 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         if (!matches) {
             throw new AgentThreadConflictException(
                     "CLIENT_REQUEST_CONFLICT", "clientRequestId 已用于不同的订单动作");
+        }
+        return existing;
+    }
+
+    /**
+     * 消息 Turn 的 clientRequestId 只能幂等重放同一 Thread、同一内容的请求，
+     * 避免请求 ID 被跨 Thread 或跨消息复用后返回错误的历史 Turn。
+     */
+    private AgentTurnModel requireMatchingMessageDuplicate(
+            AgentTurnModel existing,
+            String userId,
+            String threadId,
+            String message
+    ) {
+        boolean matches = existing.userId().equals(userId)
+                && existing.threadId().equals(threadId)
+                && existing.inputKind() == AgentTurnInputKindEnum.MESSAGE
+                && existing.input().equals(message);
+        if (!matches) {
+            throw new AgentThreadConflictException(
+                    "CLIENT_REQUEST_CONFLICT", "clientRequestId 已用于不同的消息请求");
         }
         return existing;
     }

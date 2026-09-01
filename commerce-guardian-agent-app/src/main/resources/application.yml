@@ -51,6 +51,8 @@ ai-agent:
   runtime:
     stream-timeout: ${AI_AGENT_STREAM_TIMEOUT:PT245S}
     heartbeat-interval: ${AI_AGENT_SSE_HEARTBEAT_INTERVAL:PT15S}
+    continuation-enabled: ${AI_AGENT_CONTINUATION_ENABLED:true}
+    max-agent-cycles: ${AI_AGENT_MAX_CYCLES:3}
     queue:
       max-pending-per-thread: ${AI_AGENT_QUEUE_MAX_PENDING_PER_THREAD:4}
       max-pending-global: ${AI_AGENT_QUEUE_MAX_PENDING_GLOBAL:256}

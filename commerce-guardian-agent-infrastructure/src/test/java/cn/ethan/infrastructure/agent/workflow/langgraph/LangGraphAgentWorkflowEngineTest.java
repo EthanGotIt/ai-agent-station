@@ -186,6 +186,25 @@ class LangGraphAgentWorkflowEngineTest {
     }
 
     @Test
+    void missingOrderAfterApprovalFailsAndSupersedesCheckpoint() {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-1")));
+        AgentWorkflowEngine.StartResult started = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "REFUND", "orderId", "ORDER-1", "reason", "商品不符"));
+        fixture.orders.values.clear();
+        assertTrue(fixture.checkpoints.decide("user-1", started.checkpoint().checkpointId(), 0,
+                AgentWorkflowDecisionEnum.APPROVE, started.checkpoint().factsFingerprint()));
+
+        AgentWorkflowEngine.ResumeResult resumed = fixture.engine.resume(
+                fixture.thread, decisionTurn(started), Map.of());
+
+        assertEquals("FAILED", resumed.resultStatus());
+        assertEquals(AgentWorkflowCheckpointStatusEnum.SUPERSEDED,
+                fixture.checkpoints.values.get(started.checkpoint().checkpointId()).status());
+        assertEquals(AgentWorkflowStatusEnum.FAILED, fixture.runs.current.status());
+        assertEquals(0, fixture.commands.values.size());
+    }
+
+    @Test
     void rejectionRemainsTerminalWhenFactsChange() {
         Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-1")));
         AgentWorkflowEngine.StartResult started = fixture.engine.start(fixture.thread, fixture.owner,
