@@ -25,17 +25,17 @@ export function normalizeRegistry(value) {
   try {
     url = new URL(value.trim());
   } catch {
-    throw new Error(`registry 地址无效: ${value}`);
+    throw new Error("registry 地址无效");
   }
 
   if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new Error(`registry 只支持 HTTP(S): ${value}`);
+    throw new Error("registry 只支持 HTTP(S)");
   }
   if (url.username || url.password) {
     throw new Error("registry 地址不得包含用户名或密码");
   }
   if (url.search || url.hash) {
-    throw new Error(`registry 地址不得包含 query 或 hash: ${value}`);
+    throw new Error("registry 地址不得包含 query 或 hash");
   }
 
   if (!url.pathname.endsWith("/")) {

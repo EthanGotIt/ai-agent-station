@@ -16,6 +16,17 @@ test("registry 列表规范化并去重", () => {
   assert.throws(() => normalizeRegistry("ftp://registry.example.com"), /只支持 HTTP/);
 });
 
+test("registry 校验失败时不回显敏感 URL", () => {
+  assert.throws(
+    () => normalizeRegistry("https://registry.example.com/?token=secret-value"),
+    (error) => {
+      assert.match(error.message, /query 或 hash/);
+      assert.doesNotMatch(error.message, /secret-value/);
+      return true;
+    },
+  );
+});
+
 test("npm ci 参数按当前 registry 重写 lockfile host", () => {
   assert.deepEqual(buildNpmCiArgs("https://registry.npmjs.org/"), [
     "ci",
