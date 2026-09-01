@@ -52,6 +52,13 @@ build/
 .DS_Store
 /commerce-guardian-agent-app/.env
 
+### Retired deployment secrets and local fixture data ###
+/deployment/.env
+/deployment/certs/*.pem
+/deployment/certs/*.key
+/deployment/backups/
+/.runtime/
+
 ### Local tooling artifacts ###
 /output/
 /.playwright-cli/
