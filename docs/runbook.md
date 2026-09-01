@@ -2,6 +2,8 @@
 
 ## 配置
 
+本地与 CI 工具链保持一致：Python 3.14、Node.js 24、JDK 17；订单服务夹具由 Python 3.14 进程运行。项目只维护 CI 与本地验收，不提供 CD 部署资产。
+
 敏感配置只通过环境变量注入：`MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` 和 `DEEPSEEK_API_KEY`。DeepSeek 请求固定使用 `deepseek-v4-pro` thinking 模式；`DEEPSEEK_BASE_URL`、输出上限、重试次数、模型 HTTP 超时、Thread 上下文预算、队列容量、各层超时、SSE 心跳（`AI_AGENT_SSE_HEARTBEAT_INTERVAL`）和 Worker 轮询参数均在 `application.yml` 中以环境变量覆盖。受控闭环默认开启（`AI_AGENT_CONTINUATION_ENABLED=true`），最多自动续跑 3 轮（`AI_AGENT_MAX_CYCLES=3`）；Windows/JDK 17 本地验收默认使用 Reactor Netty 与 Tomcat NIO2，协议可用 `AI_AGENT_TOMCAT_PROTOCOL` 覆盖。当前 Codex Windows 沙箱仍可能在实际 DeepSeek 请求时阻断 Netty selector loopback；出现“Agent 执行失败”时先在普通 Windows 终端复核网络/JDK，再判断模型或业务问题。需要隔离验证时可将这些变量显式注入启动进程。Spring Boot 不会自动读取被 Git 忽略的 `.env` 文件；使用该文件时必须先把它加载到当前启动进程，旧的 `AI_AGENT_MODEL_*` 变量不会被当前应用读取。
 
 订单适配器默认使用本地 `local` 实现；验收外部订单服务时设置 `AI_AGENT_ORDER_GATEWAY=http`、`AI_AGENT_ORDER_BASE_URL` 和可选的 `AI_AGENT_ORDER_HTTP_TIMEOUT`。HTTP 订单服务必须按 `/orders/search`、`/orders/{id}`、`/orders/{id}/refund`、`/orders/{id}/expedite` 和 `DELETE /orders/{id}` 契约提供 JSON 响应；应用会发送 `X-User-Id`，所有写操作还会发送 `Idempotency-Key`。订单隐藏/恢复接口已移除，历史 `HIDDEN_AT` 仅为旧数据读取兼容，不得再写入。仓库没有约定额外的外部鉴权环境变量，启用真实服务前需取得其服务端鉴权和响应契约；不要把凭据写入文档或提交。
@@ -24,7 +26,7 @@ Thread 的 `PATCH /api/agent/threads/{threadId}` 只允许更新标题；历史 
    mvn spring-boot:run -pl commerce-guardian-agent-app
    ```
 
-4. 运行前端 `cd agent-fronted; npm run dev`。
+4. 运行前端前，在仓库根目录执行 `node scripts/npm_ci_fallback.mjs`；脚本默认按 npmmirror → npmjs 顺序尝试，也可用 `NPM_REGISTRIES` 覆盖顺序，然后执行 `cd agent-fronted; npm run dev`。
 
 本地演示身份通过 `X-User-Id: demo-user-1` 传递；真实部署应在网关完成认证并由应用认证适配器提供用户 ID。
 

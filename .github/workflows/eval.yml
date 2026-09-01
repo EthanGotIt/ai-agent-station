@@ -1,4 +1,4 @@
-name: deterministic-agent-quality-eval
+name: eval
 
 on:
   pull_request:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: deterministic-agent-quality-eval-${{ github.workflow }}-${{ github.ref }}
+  group: eval-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -21,11 +21,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: '3.14'
       - name: Run fixed scenarios three times
         run: python -m scripts.runtime_eval --repetitions 3
       - name: Run runtime evaluation tests

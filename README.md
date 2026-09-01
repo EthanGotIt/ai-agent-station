@@ -17,12 +17,12 @@ Commerce Guardian Agent 是一个 Agent-first 执行平台：业务订单、物�
 - `commerce-guardian-agent-app`：Spring Boot 启动、配置和唯一 `/api/agent` HTTP/SSE 契约。
 - `agent-fronted`：React + TypeScript + Vite Thread 工作区。
 
-准备 JDK 17、Maven、Node.js 和 MySQL 后，先执行 `docs/dev-ops/mysql/commerce-guardian-agent.sql`，再启动：
+准备 Python 3.14、JDK 17、Maven、Node.js 24 和 MySQL 后，先执行 `docs/dev-ops/mysql/commerce-guardian-agent.sql`，再启动：
 
 ```text
 mvn spring-boot:run -pl commerce-guardian-agent-app
+node scripts/npm_ci_fallback.mjs
 cd agent-fronted
-npm install
 npm run dev
 ```
 
