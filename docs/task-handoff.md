@@ -16,6 +16,7 @@ Completed:
 - README、架构、现场复核手册和追踪矩阵已补充 Week 4 runner 用法、浏览器四尺寸记录项、外部证据边界和敏感信息约束。
 - 第 2 周确定性评测 12 场景 × 3 次保持安全 36/36、路由与终止 36/36；该 runner 不连接真实模型。
 - 第 1 周 PR #2、Week 2 PR #3、Week 3 PR #4 已按顺序合入 `codex/commerce-guardian-agent`，合并提交分别为 `4742e253`、`2ee1f062`、`1ef78fc`；`master` 仍为 `2106978`，GitCode upstream 未改动。
+- 合入 #2→#4 后全量门禁通过：Python convention、脚本 19 项、Maven Core 53/Infrastructure 80/App 19、HTTP `*IT` 9 项、依赖分析、前端 typecheck、Vitest 49 项、组件测试 25 项和 production build；前端总测单独重跑后 49/49 通过。
 - 原工作区已有 `.idea`、deployment、Docker、Hook、脚本和其他 dirty 资产未从隔离工作树导入；未 force push。
 
 Decisions:
@@ -27,11 +28,10 @@ Decisions:
 
 TODO:
 
-- 重新执行合入 #2→#4 基线后的完整 Python/Maven/前端门禁，并更新本 handoff 的验证数字。
 - 在具备 Agent、前端和订单夹具进程后执行完整 `python -m scripts.acceptance ...`；一次性夹具删除可按既有授权执行并清理。
 - 在可用的真实模型凭据下运行 12 场景 × 3 次，生成忽略提交的脱敏 JSON/Markdown，并与 36/36 确定性基线比较。
 - 完成四个视口、深浅主题、键盘/Esc、reduced-motion、SSE 重连和刷新恢复浏览器记录；真实 Agent 黄金路径仍需现场复核。
-- 更新 PR #5 后等待 GitHub 检查/Codex 审查结果，再按用户已授权顺序合入；保留 PR #1、审查基线和所有远端分支。
+- 推送更新后的 PR #5，等待 GitHub 检查/Codex 审查结果后按用户已授权顺序合入；保留 PR #1、审查基线和所有远端分支。
 
 Blocked:
 
@@ -39,13 +39,13 @@ Blocked:
 
 Next action:
 
-- 检查并提交已解决的文档冲突，运行 Week4 全量门禁和一次性夹具验收，推送 `codex/demo-acceptance` 并观察 PR #5；检查全部成功后合入。
+- 提交验收文档更新，推送 `codex/demo-acceptance` 并观察 PR #5；检查全部成功后合入。
 
 Validation:
 
-- 合并前已通过：`python -m unittest scripts.tests.test_acceptance` 5 项；独立 SQLite 夹具 `logistics`、`refund-idempotency`、`expedite-retry`、`delete-idempotency`；确定性评测安全 36/36、路由 36/36。
-- 合入 #2→#4 后需重跑：`python -m scripts.convention_check`、`python -m unittest discover -s scripts/tests -p "test_*.py"`、Maven `clean test`/`verify`/依赖分析，以及前端 typecheck/Vitest/组件测试/build。
-- PR #5 当前 head 为 `6f00516`，base 为 `codex/commerce-guardian-agent`；更新后等待新 head 的 GitHub workflow。
+- 合入 #2→#4 后通过：`python -m scripts.convention_check`；`python -m unittest discover -s scripts/tests -p "test_*.py"`（19 项）；`python -m scripts.runtime_eval --repetitions 3`（安全 36/36、路由与终止 36/36）；`python -m unittest scripts.tests.test_acceptance`（5 项）；Maven `clean test`（Core 53、Infrastructure 80、App 19）、`verify`（HTTP `*IT` 9 项）和依赖分析；前端 typecheck、Vitest 49 项（单独重跑）、组件测试 25 项和 production build。
+- 合入后独立临时 SQLite 夹具完整验收通过：`logistics`、`refund-idempotency`、`expedite-retry`、`delete-idempotency`；统计 `idempotencyRecords=3`、`businessMutations=3`、`injectedFailures=3`，临时目录已清理。
+- PR #5 当前 head 为本地基线合并提交 `f739203`，base 为 `codex/commerce-guardian-agent`；推送文档更新后等待新 head 的 GitHub workflow。
 
 Preserve:
 

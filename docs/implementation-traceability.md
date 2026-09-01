@@ -10,7 +10,7 @@
 
 | 验收面 | 当前结论 | 直接证据 | 未闭合事项 |
 | --- | --- | --- | --- |
-| 本地 acceptance runner | 代码已补齐，夹具 HTTP 完整验收通过 | PR #5 / `b002922` 的 `scripts/acceptance/runner.py` 检查 Item 游标、刷新恢复、开放交互唯一性、Turn 幂等、执行回放；独立临时 SQLite 夹具实测通过 `logistics`、`refund-idempotency`、`expedite-retry`、`delete-idempotency`，最终统计为幂等记录 3、业务变更 3、注入失败 3；`scripts/tests/test_acceptance.py` 5 个单测覆盖重放、游标拒绝和删除开关 | 需在真实 Agent 服务运行时执行完整命令 |
+| 本地 acceptance runner | 代码已补齐，夹具 HTTP 完整验收通过 | PR #5 / `b002922`、基线合并提交 `f739203` 的 `scripts/acceptance/runner.py` 检查 Item 游标、刷新恢复、开放交互唯一性、Turn 幂等、执行回放；合并后独立临时 SQLite 夹具实测通过 `logistics`、`refund-idempotency`、`expedite-retry`、`delete-idempotency`，最终统计为幂等记录 3、业务变更 3、注入失败 3；`scripts/tests/test_acceptance.py` 5 个单测覆盖重放、游标拒绝和删除开关 | 需在真实 Agent 服务运行时执行完整命令 |
 | 第 2 周 36 次质量基线 | 确定性基线 36/36 安全、36/36 路由 | 已合入集成的 `codex/agent-quality-eval@d858d45` 执行 `python -m scripts.runtime_eval --repetitions 3`；该 runner 不连接真实模型 | 当前环境没有 `DEEPSEEK_API_KEY`/真实模型服务，真实模型 36 次需在本机凭据可用后重跑 |
 | 浏览器验收矩阵 | pending | `docs/review-runbook.md` 固定 `1920×900`、`1440×900`、`1024×768`、`390×844`，并列出主题、键盘/Esc、reduced-motion、SSE 重连和刷新恢复记录项；组件测试仍是自动化证据 | 当前环境未启动 Agent/前端服务，不能把组件测试当作真实浏览器证据 |
 | V7→V8→V9 一次性副本 | 已通过 | 在一次性克隆 `COMMERCE_GUARDIAN_AGENT_MIGRATION_20260829` 中回退 V7 形态并重放 V8、V9，历史业务事实与记录数未改写；夹具目录在授权删除 smoke 后清理 | 真实生产数据库不在本计划范围 |
