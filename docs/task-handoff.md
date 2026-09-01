@@ -1,4 +1,4 @@
-status: active
+status: completed
 updated: 2026-09-01
 
 # Task Handoff
@@ -11,8 +11,9 @@ Goal:
 Completed:
 
 - 已从主力分支 `38b971b` 创建同步分支，并保留以下独立阶段提交：工作流 `ci`/`eval` 命名、Python 3.14/Node 24/JDK 17 对齐、npm registry fallback、deployment/Docker 打包清理、分支治理、已授权 `.idea` 项目设置和 hook/根 Docker 忽略文件移除。
-- 已推送 `codex/integration-sync-20260901`，并创建 GitHub PR #8（base=`codex/commerce-guardian-agent`，非 Draft）。
+- 已推送 `codex/integration-sync-20260901`，并通过 GitHub PR #8（base=`codex/commerce-guardian-agent`，非 Draft）以普通 merge commit `b4cf244` 合入主力。
 - GitHub 默认分支已是 `codex/commerce-guardian-agent`；`master` 保持 `93ff0b3`，未合并、未改写。
+- 同步分支仍保留在远端 `df1998a`；`codex/commerce-review-base` 仍固定在 `d660f64`，归档分支未改变。
 - `ChatGPT Codex Connector` 已连接 EthanGotIt，目标仓库的 Codex 云端环境存在；PR #8 的自动 Codex Review 已返回建议。
 - 订单服务夹具继续作为独立 Python 进程承担本地 HTTP 验收，已移除 Docker 打包和 deployment/CD 资产。
 
@@ -24,17 +25,16 @@ Decisions:
 
 TODO:
 
-- 推送本轮 Review 修正提交，确认 P0/P1 已收口，再以普通 merge commit 合入 PR #8。
-- 合并后刷新本 handoff 为完成状态，并核对主力分支、`master` SHA、归档分支和本地 stash。
-- 在确认分支规则方案后，为主力和 `master` 配置不允许 force push/删除的 GitHub ruleset。
+- 后续新功能从 `codex/commerce-guardian-agent` 创建分支并回到主力；需要发布里程碑时再创建 `codex/milestone-*` promotion PR。
+- 分支 ruleset 仍待用户确认具体必需检查与审批人数后配置；本轮未改变现有保护设置。
 
 Blocked:
 
-- 当前没有代码或推送权限阻塞；GitHub Codex P1 是对提交分阶段的审查意见，需以实际提交记录回复核对；Docker 引擎不可用不再是阻塞，因为 Docker 打包已移除。
+- 当前无代码、审查或推送阻塞；Docker 引擎不可用不再是阻塞，因为 Docker 打包已移除。
 
 Next action:
 
-- 完成本地 Review 修正的最小测试，按明确路径提交并推送同步分支，随后重新检查 PR #8。
+- 等待下一项主力分支迭代；恢复任务时先核对主力远端 SHA、工作区 dirty 资产和本 handoff。
 
 Validation:
 
@@ -42,6 +42,7 @@ Validation:
 - npm fallback 测试、官方源优先安装、前端 typecheck、Vitest 49/49、组件测试 25/25、production build 通过。
 - Maven clean test：Core 54、Infrastructure 82、App 19；`verify` 集成测试 9 项；dependency analyze 无问题。
 - `git diff --check` 和 Git 对象连通性检查通过；未运行 Docker 构建，因本 PR 已删除 Docker 打包。
+- GitHub PR #8 的 8 项 `ci`/`eval` 检查全部通过；Codex 第二轮 Review 针对 `df1998a5af` 返回“未发现重大问题”，旧 P1/P2 线程已处理并关闭。
 
 Preserve:
 
