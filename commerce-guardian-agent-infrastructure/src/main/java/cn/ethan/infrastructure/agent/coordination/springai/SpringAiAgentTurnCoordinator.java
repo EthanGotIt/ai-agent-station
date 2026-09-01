@@ -130,7 +130,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             List<AgentItemModel> context,
             Map<String, String> answer
     ) {
-        return runInternal(thread, turn, context, answer, null);
+        return runInternal(thread, turn, context, answer, null, false);
     }
 
     @Override
@@ -141,7 +141,19 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             Map<String, String> answer,
             AgentExecutionContext executionContext
     ) {
-        return runInternal(thread, turn, context, answer, executionContext);
+        return runInternal(thread, turn, context, answer, executionContext, false);
+    }
+
+    @Override
+    public AgentCoordinatorResult run(
+            AgentThreadModel thread,
+            AgentTurnModel turn,
+            List<AgentItemModel> context,
+            Map<String, String> answer,
+            AgentExecutionContext executionContext,
+            boolean correctionAttempt
+    ) {
+        return runInternal(thread, turn, context, answer, executionContext, correctionAttempt);
     }
 
     private AgentCoordinatorResult runInternal(
@@ -149,7 +161,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             AgentTurnModel turn,
             List<AgentItemModel> context,
             Map<String, String> answer,
-            AgentExecutionContext executionContext
+            AgentExecutionContext executionContext,
+            boolean correctionAttempt
     ) {
         if (executionContext != null) executionContext.checkActive();
         // Workflow QuestionCard 的回答即使是 CANCEL 也必须恢复图；不能因为答案为空而重新进入模型。
@@ -195,21 +208,28 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 executionContext, clock, metrics, thread, turn, items, events);
         try {
             StringBuilder content = new StringBuilder();
-            Flux<String> contentStream = chatClient.prompt()
-                    .system("""
+            String systemPrompt = """
                             你是 Commerce Guardian Agent 的协调 Agent。
                             当前 UTC 日期时间：%s。
                             只读订单和物流问题必须调用只读 Tool 获取事实；记不清订单号时，使用 search_orders 按时间、金额、状态、关键词或物流停滞条件搜索。
-                             退款、催发货等外部写操作只能调用 Workflow Tool 启动确定性流程，不能声称已完成。
-                             如果这是一次续跑，请先读取上下文中的 Workflow 和外部动作事实；最多只做当前轮允许的一个后续决策。
-                             每轮结束前必须调用 complete_agent_cycle（FINISH 或 ASK_USER），或调用一个需要执行确认的 Workflow Tool；不要输出不可验证的执行承诺。
+                            退款、催发货等外部写操作只能调用 Workflow Tool 启动确定性流程，不能声称已完成。
+                            如果这是一次续跑，请先读取上下文中的 Workflow 和外部动作事实；最多只做当前轮允许的一个后续决策。
+                             每轮结束前必须调用 complete_agent_cycle（仅 FINISH），或调用 request_user_input 创建持久化问题卡，或调用一个需要执行确认的 Workflow Tool；不要输出不可验证的执行承诺。
                              回复简洁、可验证，只引用 Tool 返回的订单事实，不输出原始思考过程。
                             订单与物流结构化事实由界面卡片展示；不要重复字段，不要输出 Markdown 表格。
-                            """.formatted(clock.instant()))
+                            """.formatted(clock.instant());
+            if (correctionAttempt) {
+                systemPrompt += """
+
+                        这是同一 Turn 内唯一一次纠正调用。上一轮没有形成受控终止决策；本次必须通过 complete_agent_cycle(FINISH)、request_user_input 或 Workflow Tool 收口，不能仅输出自由文本。不要重复任何外部写操作；只读 Tool 可以按需重试。
+                        """;
+            }
+            Flux<String> contentStream = chatClient.prompt()
+                    .system(systemPrompt)
                     .user(renderContext(context, turn))
                     .tools(
                             new ReadOnlyTools(thread.userId(), orders, logistics, invocation),
-                            new WorkflowTools(thread, turn, workflowEngine, invocation, maxAgentCycles),
+                            new WorkflowTools(thread, turn, workflowEngine, invocation, maxAgentCycles, questionCards),
                             new RequestUserInputTools(thread, turn, questionCards, invocation),
                             new ControlTools(invocation)
                     )
@@ -234,7 +254,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                                 ? "我已启动订单处理流程，请在执行确认卡中确认。" : invocation.decisionMessage,
                         List.of(), result.runId(), true,
                         AgentDecisionTypeEnum.START_WORKFLOW, invocation.decisionCode,
-                        result.questionCard(), result.checkpoint()
+                        result.questionCard(), result.checkpoint(), correctionAttempt
                 );
             }
             if (invocation.questionCard != null) {
@@ -242,25 +262,24 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                         invocation.decisionMessage == null || invocation.decisionMessage.isBlank()
                                 ? "需要补充信息后继续。" : invocation.decisionMessage,
                         List.of(), null, true, AgentDecisionTypeEnum.ASK_USER,
-                        invocation.decisionCode, invocation.questionCard);
+                        invocation.decisionCode, invocation.questionCard, null, correctionAttempt);
+            }
+            if (invocation.decision != null) {
+                String controlledMessage = invocation.decisionMessage == null
+                        || invocation.decisionMessage.isBlank()
+                        ? "本轮处理已收口。" : invocation.decisionMessage;
+                return new AgentCoordinatorResult(
+                        controlledMessage, List.of(), null,
+                        invocation.decision == AgentDecisionTypeEnum.ASK_USER,
+                        invocation.decision, invocation.decisionCode, null, null, correctionAttempt);
             }
             if (content.isEmpty() || content.toString().isBlank()) {
-                if (invocation.decision != null) {
-                    return new AgentCoordinatorResult(
-                        invocation.decisionMessage, List.of(), null,
-                        invocation.decision == AgentDecisionTypeEnum.ASK_USER,
-                            invocation.decision, invocation.decisionCode);
-                }
-                throw new IllegalStateException("模型未返回可用的 Agent 消息");
+                return new AgentCoordinatorResult("", List.of(), null, false,
+                        null, null, null, null, correctionAttempt);
             }
-            String message = content.toString().trim();
-            AgentDecisionTypeEnum decision = invocation.decision == null
-                    ? AgentDecisionTypeEnum.FINISH : invocation.decision;
-            String decisionCode = invocation.decisionCode == null
-                    ? "MODEL_TEXT_FALLBACK" : invocation.decisionCode;
-            return new AgentCoordinatorResult(message, List.of(), null,
-                    decision == AgentDecisionTypeEnum.ASK_USER,
-                    decision, decisionCode);
+            // 自由文本只作为诊断结果返回；Runtime 会要求一次显式纠正，不能把文本当作完成态。
+            return new AgentCoordinatorResult(content.toString().trim(), List.of(), null, false,
+                    null, null, null, null, correctionAttempt);
         } catch (RuntimeException failure) {
             if (causedByTimeout(failure)) {
                 LOGGER.warn("Agent 模型流式调用超时，threadId={}, turnId={}", thread.threadId(), turn.turnId());
@@ -415,6 +434,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         private final AgentWorkflowEngine engine;
         private final WorkflowInvocation invocation;
         private final int maxAgentCycles;
+        private final AgentQuestionCardStore questionCards;
 
         public WorkflowTools(
                 AgentThreadModel thread,
@@ -422,7 +442,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 AgentWorkflowEngine engine,
                 WorkflowInvocation invocation
         ) {
-            this(thread, turn, engine, invocation, 3);
+            this(thread, turn, engine, invocation, 3, null);
         }
 
         public WorkflowTools(
@@ -432,11 +452,23 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 WorkflowInvocation invocation,
                 int maxAgentCycles
         ) {
+            this(thread, turn, engine, invocation, maxAgentCycles, null);
+        }
+
+        public WorkflowTools(
+                AgentThreadModel thread,
+                AgentTurnModel turn,
+                AgentWorkflowEngine engine,
+                WorkflowInvocation invocation,
+                int maxAgentCycles,
+                AgentQuestionCardStore questionCards
+        ) {
             this.thread = thread;
             this.turn = turn;
             this.engine = engine;
             this.invocation = invocation;
             this.maxAgentCycles = Math.max(1, Math.min(maxAgentCycles, 5));
+            this.questionCards = questionCards;
         }
 
         @Tool(name = "start_order_service_workflow", description = "统一订单售后 Workflow 入口。可按意图、订单号、时间、金额、状态、关键词或物流停滞条件找订单；支持退款、催发货以及直接删除订单记录。订单不明确或原因缺失时由确定性流程展示 QuestionCard，涉及外部写操作时展示独立执行确认卡，确认前不会执行订单动作")
@@ -468,6 +500,14 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
 
         private String start(Map<String, String> arguments) {
             invocation.checkActive();
+            // Tool Calling 可能在模型看到前一个 Tool 结果后再次发起相同工具；同一
+            // WorkflowInvocation 已有持久化事实时只返回受控提示，不能创建第二个 Run。
+            if (invocation.result != null) {
+                return "订单售后 Workflow 已启动，正在核验候选订单。";
+            }
+            if (invocation.questionCard != null || invocation.decision != null) {
+                return "Agent 决策已记录。";
+            }
             if (turn != null && turn.continuationInput() != null
                     && turn.continuationInput().cycleNo() > maxAgentCycles) {
                 invocation.recordDecision(AgentDecisionTypeEnum.STOP_LIMIT,
@@ -477,9 +517,15 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             String toolName = "start_order_service_workflow";
             String invocationId = invocation.recordCall(toolName, arguments);
             if (arguments.getOrDefault("intent", "").isBlank()) {
-                // 意图不明确时只进行一次无副作用的普通澄清，不创建空意图 Workflow 或 QuestionCard。
+                // 意图不明确时仍必须通过持久化 QuestionCard 询问，不能以自由文本伪造 ASK_USER。
+                if (questionCards == null) {
+                    invocation.recordResult(invocationId, toolName, "FAILED", "QUESTION_CARD_STORE_UNAVAILABLE");
+                    throw new IllegalStateException("QuestionCard Store 未装配");
+                }
                 String message = "请说明要处理的订单事项，例如退款、催发货或删除订单记录。";
-                invocation.recordDecision(AgentDecisionTypeEnum.ASK_USER, "INTENT_REQUIRED", message);
+                new RequestUserInputTools(thread, turn, questionCards, invocation).requestUserInput(
+                        "需要说明订单事项", message,
+                        "[{\"name\":\"intent\",\"required\":true,\"maxLength\":32,\"allowCustom\":true}]");
                 invocation.recordResult(invocationId, toolName, "WAITING_USER_INPUT", "INTENT_REQUIRED");
                 return message;
             }
@@ -537,6 +583,13 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 @ToolParam(description = "受控回答字段 JSON；没有 schema 时可传空数组") String fieldsJson
         ) {
             invocation.checkActive();
+            // 已经创建问题卡或 Workflow 后，后续模型重复发起提问只能复用当前受控结果。
+            if (invocation.questionCard != null) {
+                return "已向用户提出问题，等待回答。";
+            }
+            if (invocation.result != null || invocation.decision != null) {
+                return "Agent 决策已记录。";
+            }
             if (questions == null) {
                 throw new IllegalStateException("QuestionCard Store 未装配");
             }
@@ -621,16 +674,18 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             this.invocation = invocation;
         }
 
-        @Tool(name = "complete_agent_cycle", description = "结束当前 Agent 决策轮。outcome 只能是 FINISH 或 ASK_USER；该工具没有外部副作用。")
+        @Tool(name = "complete_agent_cycle", description = "结束当前 Agent 决策轮。outcome 只能是 FINISH；需要用户补充信息时必须先调用 request_user_input 创建持久化 QuestionCard。该工具没有外部副作用。")
         public String completeAgentCycle(
-                @ToolParam(description = "FINISH 或 ASK_USER") String outcome,
+                @ToolParam(description = "只能填写 FINISH") String outcome,
                 @ToolParam(description = "面向用户的简短结果或需要补充的信息") String message
         ) {
+            if (invocation.decision != null) {
+                return "Agent 决策已记录。";
+            }
             String normalized = outcome == null ? "" : outcome.trim().toUpperCase();
             AgentDecisionTypeEnum decision = switch (normalized) {
                 case "FINISH" -> AgentDecisionTypeEnum.FINISH;
-                case "ASK_USER" -> AgentDecisionTypeEnum.ASK_USER;
-                default -> throw new IllegalArgumentException("Agent 轮次 outcome 只能是 FINISH 或 ASK_USER");
+                default -> throw new IllegalArgumentException("Agent 轮次 outcome 只能是 FINISH");
             };
             invocation.recordDecision(decision, "CONTROL_TOOL", message);
             return "Agent 决策已记录。";

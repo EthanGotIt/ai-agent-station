@@ -26,6 +26,7 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import reactor.core.publisher.Flux;
 
 import java.time.Clock;
@@ -38,6 +39,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
@@ -61,7 +63,23 @@ class SpringAiAgentTurnCoordinatorTest {
                 thread(), turn(), List.of(), null);
 
         assertEquals("你好！", result.assistantMessage());
+        assertNull(result.decision());
         assertEquals(List.of(), events.published);
+    }
+
+    @Test
+    void usesControlledTerminalMessageWhenModelAddsTextAfterFinishTool() {
+        CapturingEvents events = new CapturingEvents();
+        ToolCallModel model = new ToolCallModel();
+        SpringAiAgentTurnCoordinator coordinator = coordinator(model, events);
+
+        AgentTurnCoordinator.AgentCoordinatorResult result = coordinator.run(
+                thread(), turn(), List.of(), null);
+
+        assertEquals(2, model.calls);
+        assertEquals(AgentDecisionTypeEnum.FINISH, result.decision());
+        assertEquals("受控终止", result.assistantMessage());
+        assertEquals("CONTROL_TOOL", result.decisionCode());
     }
 
     @Test
@@ -258,6 +276,40 @@ class SpringAiAgentTurnCoordinatorTest {
         @Override
         public Flux<ChatResponse> stream(Prompt prompt) {
             return responses;
+        }
+    }
+
+    private static final class ToolCallModel implements ChatModel {
+        private int calls;
+
+        @Override
+        public ToolCallingChatOptions getOptions() {
+            return ToolCallingChatOptions.builder().build();
+        }
+
+        @Override
+        public ChatResponse call(Prompt prompt) {
+            throw new AssertionError("test model only supports streaming");
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(Prompt prompt) {
+            calls++;
+            if (calls == 1) {
+                AssistantMessage.ToolCall terminal = new AssistantMessage.ToolCall(
+                        "call-1", "function", "complete_agent_cycle",
+                        "{\"outcome\":\"FINISH\",\"message\":\"受控终止\"}");
+                AssistantMessage assistant = AssistantMessage.builder()
+                        .content("模型不应成为最终消息")
+                        .toolCalls(List.of(terminal))
+                        .build();
+                return Flux.just(new ChatResponse(List.of(new Generation(assistant))));
+            }
+            return Flux.just(response("模型追加自由文本"));
+        }
+
+        private ChatResponse response(String content) {
+            return new ChatResponse(List.of(new Generation(new AssistantMessage(content))));
         }
     }
 
