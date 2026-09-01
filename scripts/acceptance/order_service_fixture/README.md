@@ -26,6 +26,8 @@
 python scripts/acceptance/order_service_fixture/server.py
 ```
 
+直接运行时默认监听 `127.0.0.1:18080`，数据库写入仓库根目录下的 `.runtime/order-service.db`；如需临时调整，可通过 `ORDER_SERVICE_HOST`、`ORDER_SERVICE_PORT` 和 `ORDER_SERVICE_DATABASE_PATH` 覆盖。
+
 ## Agent 配置
 
 不要把真实凭据写入仓库。启动 Agent 前，在当前 PowerShell 进程设置：
