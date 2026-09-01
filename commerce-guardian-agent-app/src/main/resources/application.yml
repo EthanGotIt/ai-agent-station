@@ -1,0 +1,80 @@
+server:
+  port: ${SERVER_PORT:8090}
+
+spring:
+  application:
+    name: commerce-guardian-agent
+  flyway:
+    enabled: ${AI_AGENT_DB_MIGRATIONS_ENABLED:true}
+    baseline-on-migrate: ${AI_AGENT_DB_BASELINE_ON_MIGRATE:true}
+    baseline-version: 0
+    locations: classpath:db/migration
+  datasource:
+    url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3306/COMMERCE_GUARDIAN_AGENT?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      minimum-idle: 2
+      maximum-pool-size: 10
+      connection-timeout: 30000
+      max-lifetime: 1800000
+  ai:
+    model:
+      chat: deepseek
+    deepseek:
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      api-key: ${DEEPSEEK_API_KEY:}
+      chat:
+        model: ${ai-agent.model.name}
+        temperature: 0
+        max-tokens: ${ai-agent.model.max-output-tokens}
+        thinking:
+          type: enabled
+        reasoning-effort: max
+    retry:
+      max-attempts: ${ai-agent.model.max-attempts}
+      on-client-errors: false
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+
+ai-agent:
+  model:
+    name: ${DEEPSEEK_MODEL:deepseek-v4-pro}
+    max-output-tokens: ${DEEPSEEK_MAX_OUTPUT_TOKENS:1024}
+    max-attempts: ${DEEPSEEK_MAX_ATTEMPTS:1}
+    http-timeout: ${DEEPSEEK_HTTP_TIMEOUT:PT30S}
+  runtime:
+    stream-timeout: ${AI_AGENT_STREAM_TIMEOUT:PT245S}
+    heartbeat-interval: ${AI_AGENT_SSE_HEARTBEAT_INTERVAL:PT15S}
+    queue:
+      max-pending-per-thread: ${AI_AGENT_QUEUE_MAX_PENDING_PER_THREAD:4}
+      max-pending-global: ${AI_AGENT_QUEUE_MAX_PENDING_GLOBAL:256}
+      wait-timeout: ${AI_AGENT_QUEUE_WAIT_TIMEOUT:PT2M}
+    executor:
+      core-pool-size: ${AI_AGENT_EXECUTOR_CORE_POOL_SIZE:4}
+      max-pool-size: ${AI_AGENT_EXECUTOR_MAX_POOL_SIZE:16}
+      queue-capacity: ${AI_AGENT_EXECUTOR_QUEUE_CAPACITY:256}
+      await-termination: ${AI_AGENT_EXECUTOR_AWAIT_TERMINATION:PT10S}
+  thread:
+    context-max-estimated-tokens: ${AI_AGENT_THREAD_CONTEXT_MAX_ESTIMATED_TOKENS:12000}
+    snapshot-trigger-estimated-tokens: ${AI_AGENT_THREAD_SNAPSHOT_TRIGGER_ESTIMATED_TOKENS:9000}
+    tool-result-max-characters: ${AI_AGENT_THREAD_TOOL_RESULT_MAX_CHARACTERS:8000}
+    output-reserve-estimated-tokens: ${AI_AGENT_THREAD_OUTPUT_RESERVE_ESTIMATED_TOKENS:1500}
+    turn-timeout: ${AI_AGENT_THREAD_TURN_TIMEOUT:PT4M}
+  order:
+    gateway: ${AI_AGENT_ORDER_GATEWAY:local}
+    base-url: ${AI_AGENT_ORDER_BASE_URL:http://127.0.0.1:18080}
+    http-timeout: ${AI_AGENT_ORDER_HTTP_TIMEOUT:PT5S}
+  worker:
+    lease-duration: ${AI_AGENT_WORKER_LEASE_DURATION:PT30S}
+    retry-base-delay: ${AI_AGENT_WORKER_RETRY_BASE_DELAY:PT5S}
+    action-timeout: ${AI_AGENT_WORKER_ACTION_TIMEOUT:PT30S}
+
+logging:
+  level:
+    cn.ethan: INFO

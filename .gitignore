@@ -1,8 +1,16 @@
 target/
+test-results/
+__pycache__/
+*.py[cod]
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
 .kotlin
+
+### React console ###
+/agent-console/node_modules/
+/agent-console/dist/
+*.tsbuildinfo
 
 ### IntelliJ IDEA ###
 .idea/modules.xml
@@ -35,6 +43,21 @@ build/
 ### VS Code ###
 .vscode/
 
+### Local agent and upgrade state ###
+.agents/
+.codex/
+.github/modernize/
+
 ### Mac OS ###
 .DS_Store
-/ai-agent-station-app/data/
+/commerce-guardian-agent-app/.env
+
+### Deployment secrets and TLS material ###
+/deployment/.env
+/deployment/certs/*.pem
+/deployment/certs/*.key
+/deployment/backups/
+
+### Local tooling artifacts ###
+/output/
+/.playwright-cli/
