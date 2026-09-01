@@ -1,4 +1,4 @@
-name: deterministic-agent-quality-eval
+name: eval
 
 on:
   pull_request:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: deterministic-agent-quality-eval-${{ github.workflow }}-${{ github.ref }}
+  group: eval-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
