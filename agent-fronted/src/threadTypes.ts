@@ -223,10 +223,11 @@ export type AgentContinuationFact = {
 };
 
 export type AgentDecisionFact = {
-  decision: "FINISH" | "START_WORKFLOW" | "WAIT_USER" | "STOP_LIMIT" | "FALLBACK" | string;
+  decision: "FINISH" | "START_WORKFLOW" | "ASK_USER" | "WAIT_USER" | "STOP_LIMIT" | "FALLBACK" | string;
   cycleNo?: number;
   runId?: string | null;
   code?: string | null;
+  correctionAttempt?: boolean;
 };
 
 export type OrderCard = {
@@ -261,6 +262,7 @@ export type ThreadViewTurn = {
   content: string;
   status: AgentTurnStatus;
   error: string | null;
+  errorCode: string | null;
   /** 外部业务成功后，后续 Agent 续接失败只作为非阻断提示。 */
   continuationWarning: string | null;
   startedAt: string;

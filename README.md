@@ -8,6 +8,7 @@ Commerce Guardian Agent 是一个 Agent-first 执行平台：业务订单、物�
 2. ReAct / Workflow 混合编排：Spring AI 协调 Agent 只调用只读工具或启动 Workflow，关键写操作由 Java 显式状态机负责。
 3. QuestionCard + Checkpoint：确认、拒绝和结构化参数持久化到 MySQL，可跨刷新、断线和重启恢复。
 4. Reliable Agent Runtime：同 Thread FIFO、取消、分层超时、SSE 实时投影、幂等命令、Lease、退避重试和人工恢复。
+5. Explicit Agent Decision Contract：终止只接受受控 Tool 决策；缺失决策最多纠正一次，仍失败以 `AGENT_DECISION_MISSING` 安全收口，前端只允许创建新 Turn 重试。
 
 ## 模块和启动
 

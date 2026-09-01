@@ -73,7 +73,8 @@ class AgentTurnRuntimeServiceTest {
                 persistence, persistence, persistence,
                 threads, context,
                 (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
-                        "完成：" + turn.input(), List.of(), null, false),
+                        "完成：" + turn.input(), List.of(), null, false,
+                        AgentDecisionTypeEnum.FINISH, "TEST_FINISH"),
                 events, executor, scheduler, clock,
                 4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256
         );
@@ -142,7 +143,8 @@ class AgentTurnRuntimeServiceTest {
                 persistence, persistence, persistence,
                 threads, context,
                 (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
-                        "完成", List.of(), null, false),
+                        "完成", List.of(), null, false,
+                        AgentDecisionTypeEnum.FINISH, "TEST_FINISH"),
                 new RecordingEvents(), executor, scheduler, clock,
                 4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256
         );
@@ -177,7 +179,8 @@ class AgentTurnRuntimeServiceTest {
                 persistence, persistence, persistence,
                 threads, context,
                 (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
-                        "完成", List.of(), null, false),
+                        "完成", List.of(), null, false,
+                        AgentDecisionTypeEnum.FINISH, "TEST_FINISH"),
                 new RecordingEvents(), executor, scheduler, clock,
                 4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256
         );
@@ -208,7 +211,8 @@ class AgentTurnRuntimeServiceTest {
                 threads,
                 new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
                 (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
-                        "完成", List.of(), null, false),
+                        "完成", List.of(), null, false,
+                        AgentDecisionTypeEnum.FINISH, "TEST_FINISH"),
                 new RecordingEvents(), executor, scheduler, clock,
                 4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256
         );
@@ -237,7 +241,8 @@ class AgentTurnRuntimeServiceTest {
                 persistence, persistence, persistence, threads, context,
                 (current, turn, history, answer) -> {
                     coordinatorCalls.incrementAndGet();
-                    return new AgentTurnCoordinator.AgentCoordinatorResult("完成", List.of(), null, false);
+                    return new AgentTurnCoordinator.AgentCoordinatorResult("完成", List.of(), null, false,
+                            AgentDecisionTypeEnum.FINISH, "TEST_FINISH");
                 }, new RecordingEvents(), executor, scheduler, clock,
                 1, 4, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256);
 
@@ -279,7 +284,8 @@ class AgentTurnRuntimeServiceTest {
                 new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
                 (current, turn, history, answer) -> {
                     coordinatorCalls.incrementAndGet();
-                    return new AgentTurnCoordinator.AgentCoordinatorResult("完成", List.of(), null, false);
+                    return new AgentTurnCoordinator.AgentCoordinatorResult("完成", List.of(), null, false,
+                            AgentDecisionTypeEnum.FINISH, "TEST_FINISH");
                 }, new RecordingEvents(), executor, scheduler, clock,
                 4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256);
         AgentTurnModel turn = new AgentTurnModel(
@@ -383,8 +389,8 @@ class AgentTurnRuntimeServiceTest {
                     assertEquals(AgentQuestionCardStatusEnum.ANSWERED, persistence.questionCard.status(),
                             "Agent 恢复模型前必须先消费旧 QuestionCard");
                     return new AgentTurnCoordinator.AgentCoordinatorResult(
-                            "还需要一项信息", List.of(), null, true,
-                            AgentDecisionTypeEnum.ASK_USER, "QUESTION_CARD_CREATED", null, null);
+                            "已收到补充信息", List.of(), null, false,
+                            AgentDecisionTypeEnum.FINISH, "TEST_FINISH");
                 }, new RecordingEvents(), executor, scheduler, clock,
                 4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256,
                 AgentRuntimeMetrics.noop(), null, false, 3, persistence, null);
@@ -395,6 +401,110 @@ class AgentTurnRuntimeServiceTest {
         AgentTurnModel completed = persistence.findTurn("user-1", answerTurn.turnId()).orElseThrow();
         assertEquals(AgentTurnStatusEnum.COMPLETED, completed.status());
         assertEquals(AgentQuestionCardStatusEnum.ANSWERED, persistence.questionCard.status());
+        scheduler.shutdownNow();
+    }
+
+    @Test
+    void performsOneCorrectionCallAndPersistsOnlyControlledResult() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "纠正成功 Thread", null, null);
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        AtomicInteger calls = new AtomicInteger();
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, threads,
+                new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
+                (current, turn, history, answer) -> {
+                    if (calls.incrementAndGet() == 1) {
+                        return new AgentTurnCoordinator.AgentCoordinatorResult(
+                                "第一轮自由文本", List.of(), null, false);
+                    }
+                    return new AgentTurnCoordinator.AgentCoordinatorResult(
+                            "受控终止消息", List.of(), null, false,
+                            AgentDecisionTypeEnum.FINISH, "CONTROL_TOOL", null, null, true);
+                }, new RecordingEvents(), executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256);
+
+        AgentTurnModel turn = runtime.submitTurn("user-1", thread.threadId(), "correction-request", "查询订单");
+        executor.runAll();
+
+        AgentTurnModel completed = persistence.findTurn("user-1", turn.turnId()).orElseThrow();
+        assertEquals(AgentTurnStatusEnum.COMPLETED, completed.status());
+        assertEquals(2, calls.get());
+        List<AgentItemModel> turnItems = persistence.items.stream()
+                .filter(item -> turn.turnId().equals(item.turnId())).toList();
+        assertTrue(turnItems.stream().anyMatch(item -> item.type() == cn.ethan.core.agent.thread.AgentItemTypeEnum.ASSISTANT_MESSAGE
+                && item.payload().contains("受控终止消息")));
+        assertTrue(turnItems.stream().noneMatch(item -> item.payload().contains("第一轮自由文本")));
+        assertTrue(turnItems.stream().anyMatch(item -> item.type() == cn.ethan.core.agent.thread.AgentItemTypeEnum.AGENT_DECISION
+                && item.payload().contains("\"correctionAttempt\":true")));
+        scheduler.shutdownNow();
+    }
+
+    @Test
+    void failsSafelyAfterSecondCallStillOmitsDecision() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "纠正失败 Thread", null, null);
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        AtomicInteger calls = new AtomicInteger();
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, threads,
+                new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
+                (current, turn, history, answer) -> {
+                    calls.incrementAndGet();
+                    return new AgentTurnCoordinator.AgentCoordinatorResult(
+                            "不可验证文本", List.of(), null, false);
+                }, new RecordingEvents(), executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256);
+
+        AgentTurnModel turn = runtime.submitTurn("user-1", thread.threadId(), "missing-decision-request", "查询订单");
+        executor.runAll();
+
+        AgentTurnModel failed = persistence.findTurn("user-1", turn.turnId()).orElseThrow();
+        assertEquals(AgentTurnStatusEnum.FAILED, failed.status());
+        assertEquals("AGENT_DECISION_MISSING", failed.errorCode());
+        assertEquals(2, calls.get());
+        assertTrue(persistence.items.stream().anyMatch(item -> item.turnId().equals(turn.turnId())
+                && item.type() == cn.ethan.core.agent.thread.AgentItemTypeEnum.ERROR
+                && item.payload().contains("AGENT_DECISION_MISSING")));
+        assertTrue(persistence.items.stream().noneMatch(item -> item.turnId().equals(turn.turnId())
+                && item.type() == cn.ethan.core.agent.thread.AgentItemTypeEnum.ASSISTANT_MESSAGE));
+        assertEquals(null, persistence.questionCard, "决策缺失不得留下孤立 QuestionCard");
+        scheduler.shutdownNow();
+    }
+
+    @Test
+    void doesNotRepeatAfterCoordinatorReturnsMalformedWorkflowDecision() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "非法流程决策 Thread", null, null);
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        AtomicInteger calls = new AtomicInteger();
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, threads,
+                new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
+                (current, turn, history, answer) -> {
+                    calls.incrementAndGet();
+                    return new AgentTurnCoordinator.AgentCoordinatorResult(
+                            "流程已启动", List.of(), "run-without-checkpoint", true,
+                            AgentDecisionTypeEnum.START_WORKFLOW, "WORKFLOW_STARTED", null, null);
+                }, new RecordingEvents(), executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256);
+
+        AgentTurnModel turn = runtime.submitTurn("user-1", thread.threadId(), "malformed-workflow-request", "申请退款");
+        executor.runAll();
+
+        AgentTurnModel failed = persistence.findTurn("user-1", turn.turnId()).orElseThrow();
+        assertEquals(AgentTurnStatusEnum.FAILED, failed.status());
+        assertEquals("AGENT_DECISION_MISSING", failed.errorCode());
+        assertEquals(1, calls.get(), "已有 Workflow 决策事实时不得再次调用模型");
         scheduler.shutdownNow();
     }
 

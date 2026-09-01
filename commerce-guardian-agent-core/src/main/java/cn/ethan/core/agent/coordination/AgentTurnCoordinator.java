@@ -38,6 +38,21 @@ public interface AgentTurnCoordinator {
         return result;
     }
 
+    /**
+     * 在同一 Turn 内执行一次受控纠正调用。默认实现保持旧协调器兼容，
+     * 具体模型适配器可据此追加“必须形成终止决策”的纠正提示。
+     */
+    default AgentCoordinatorResult run(
+            AgentThreadModel thread,
+            AgentTurnModel turn,
+            List<AgentItemModel> context,
+            Map<String, String> answer,
+            AgentExecutionContext executionContext,
+            boolean correctionAttempt
+    ) {
+        return run(thread, turn, context, answer, executionContext);
+    }
+
     record AgentCoordinatorResult(
             String assistantMessage,
             List<AgentItemDraft> items,
@@ -46,7 +61,8 @@ public interface AgentTurnCoordinator {
             AgentDecisionTypeEnum decision,
             String decisionCode,
             AgentQuestionCardModel questionCard,
-            AgentWorkflowCheckpointModel workflowCheckpoint
+            AgentWorkflowCheckpointModel workflowCheckpoint,
+            boolean correctionAttempt
     ) {
         /** 保留旧协调器实现的构造边界；没有显式控制 Tool 时由 Runtime 兼容处理。 */
         public AgentCoordinatorResult(
@@ -81,7 +97,22 @@ public interface AgentTurnCoordinator {
                 AgentQuestionCardModel questionCard
         ) {
             this(assistantMessage, items, workflowRunId, waitingUserInput,
-                    decision, decisionCode, questionCard, null);
+                    decision, decisionCode, questionCard, null, false);
+        }
+
+        /** 保留八参数构造边界；纠正标志只在协调器显式提供时写入。 */
+        public AgentCoordinatorResult(
+                String assistantMessage,
+                List<AgentItemDraft> items,
+                String workflowRunId,
+                boolean waitingUserInput,
+                AgentDecisionTypeEnum decision,
+                String decisionCode,
+                AgentQuestionCardModel questionCard,
+                AgentWorkflowCheckpointModel workflowCheckpoint
+        ) {
+            this(assistantMessage, items, workflowRunId, waitingUserInput,
+                    decision, decisionCode, questionCard, workflowCheckpoint, false);
         }
 
         public AgentCoordinatorResult {

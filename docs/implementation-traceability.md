@@ -6,6 +6,16 @@
 
 本矩阵只把代码、测试和运行结果作为证据。原计划或 `docs/task-handoff.md` 中的“已完成”描述不能单独作为完成证据。
 
+## 第三周：显式 Agent 决策收口（已实现，PR #4 待验收）
+
+| 计划项 | 当前结论 | 直接证据 | 未闭合事项 |
+| --- | --- | --- | --- |
+| `complete_agent_cycle` 仅允许 `FINISH` | 已完成 | `SpringAiAgentTurnCoordinator.ControlTools` 拒绝其它 outcome；`SpringAiAgentToolBoundaryTest.completeAgentCycleAcceptsOnlyFinish` 通过 | PR #4/Codex 审查待验收 |
+| `ASK_USER` / `START_WORKFLOW` 受结构化事实约束 | 已完成 | `request_user_input` 先持久化 Agent QuestionCard；Workflow Tool 才能返回 `START_WORKFLOW`；Runtime 校验 QuestionCard、Checkpoint、Run 和等待状态 | 真实模型黄金路径需重新跑 |
+| 终止消息与自由文本收口 | 已完成 | `SpringAiAgentTurnCoordinatorTest.usesControlledTerminalMessageWhenModelAddsTextAfterFinishTool` 通过，Tool 消息优先且追加文本被忽略 | 真实模型结果纳入本地质量报告 |
+| 缺失决策纠正与安全失败 | 已完成 | Runtime 最多一次纠正调用；`AgentTurnRuntimeServiceTest` 覆盖纠正成功、二次缺失和非法 Workflow 决策不重复调用；失败码为 `AGENT_DECISION_MISSING` | 不进入稳定 CI 的真实模型门禁 |
+| 前端重试投影 | 已完成 | `threadProjection.test.ts` 与 `App.test.tsx` 覆盖错误码投影、无开放交互、仅新 Turn/requestId 重试；`npm` typecheck/Vitest/build 通过 | 真实浏览器再次确认 |
+
 ## V7 整改与 Workflow 框架迁移追踪（进行中）
 
 | 阶段 | 当前结论 | 直接证据 | 未闭合事项 |

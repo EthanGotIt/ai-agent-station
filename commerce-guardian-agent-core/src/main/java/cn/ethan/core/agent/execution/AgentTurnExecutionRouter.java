@@ -38,6 +38,20 @@ public final class AgentTurnExecutionRouter {
             Map<String, String> answers,
             AgentExecutionContext executionContext
     ) {
+        return route(thread, turn, context, answers, executionContext, false);
+    }
+
+    /**
+     * 路由同一 Turn 的模型调用，并把一次性纠正标记传给协调器；确定性订单动作不重复调用模型。
+     */
+    public AgentTurnCoordinator.AgentCoordinatorResult route(
+            AgentThreadModel thread,
+            AgentTurnModel turn,
+            List<AgentItemModel> context,
+            Map<String, String> answers,
+            AgentExecutionContext executionContext,
+            boolean correctionAttempt
+    ) {
         executionContext.checkActive();
         if (turn.inputKind() == AgentTurnInputKindEnum.ORDER_ACTION
                 && turn.orderActionInput() != null) {
@@ -48,7 +62,7 @@ public final class AgentTurnExecutionRouter {
                     turn.orderActionInput(), executionContext);
         }
         AgentTurnCoordinator.AgentCoordinatorResult result = conversationCoordinator.run(
-                thread, turn, context, answers, executionContext);
+                thread, turn, context, answers, executionContext, correctionAttempt);
         executionContext.checkActive();
         return result;
     }

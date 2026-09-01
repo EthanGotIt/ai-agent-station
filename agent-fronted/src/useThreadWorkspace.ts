@@ -399,6 +399,31 @@ export function useThreadWorkspace(userId: string) {
     }
   }, [busy, question, threadId, threads, userId]);
 
+  /** 仅重新提交形成 AGENT_DECISION_MISSING 的用户请求；每次都创建新的 Turn/requestId。 */
+  const retryTurn = useCallback(async (turnId: string) => {
+    const source = turns.find((turn) => turn.turnId === turnId);
+    const currentThread = threads.find((thread) => thread.threadId === threadId);
+    if (!source || source.errorCode !== "AGENT_DECISION_MISSING" || !threadId
+      || !currentThread || currentThread.status !== "ACTIVE" || busy || question) return;
+    const requestThreadId = threadId;
+    const generation = generationRef.current;
+    setBusy(true);
+    setError(null);
+    try {
+      const accepted = await threadWorkspaceApi.submitMessage(
+        userId, requestThreadId, id("turn-retry"), source.userMessage
+      );
+      if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
+        activeTurnRef.current = accepted.turnId;
+      }
+    } catch (failure) {
+      if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
+        setBusy(false);
+        setError(failure instanceof Error ? failure.message : "再次尝试提交失败");
+      }
+    }
+  }, [busy, question, threadId, threads, turns, userId]);
+
   const orderAction = useCallback(async (
     sourceTurnId: string,
     orderId: string,
@@ -575,6 +600,7 @@ export function useThreadWorkspace(userId: string) {
     question,
     rename,
     retry,
+    retryTurn,
     retryingRunId,
     selectThread,
     send,

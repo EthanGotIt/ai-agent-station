@@ -58,6 +58,7 @@ import java.util.logging.Logger;
 public final class AgentTurnRuntimeService implements AgentTurnQueue {
 
     private static final String SAFE_EXECUTION_ERROR = "Agent 执行失败";
+    private static final String AGENT_DECISION_MISSING = "AGENT_DECISION_MISSING";
     private static final Logger LOGGER = Logger.getLogger(AgentTurnRuntimeService.class.getName());
 
     private final AgentThreadStore threadStore;
@@ -649,6 +650,19 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                 appendItem(active, AgentItemTypeEnum.EXECUTION_EVENT, AgentTurnItemPayloads.context(assembly.report()));
                 result = executionRouter.route(
                         thread, active, assembly.items(), execution.answers(), executionContext);
+                if (requiresDecisionCorrection(result)) {
+                    // 第一次没有终止决策且没有留下结构化事实时只允许一次完整纠正调用；
+                    // 首次自由文本不会进入持久化事实，已产生 Workflow/QuestionCard 的结果绝不重复调用。
+                    executionContext.checkActive();
+                    result = executionRouter.route(
+                            thread, active, assembly.items(), execution.answers(), executionContext, true);
+                }
+                if (!hasUsableDecision(result)) {
+                    appendItem(active, AgentItemTypeEnum.ERROR, AGENT_DECISION_MISSING);
+                    metrics.observeFailure(AGENT_DECISION_MISSING);
+                    finish(active, AgentTurnStatusEnum.FAILED, AGENT_DECISION_MISSING);
+                    return;
+                }
             }
             if (execution.cancelled.get() || executionContext.cancelled()) {
                 finish(active, execution.timedOut.get() ? AgentTurnStatusEnum.TIMED_OUT : AgentTurnStatusEnum.CANCELLED,
@@ -789,7 +803,38 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         int cycleNo = turn.continuationInput() == null ? 0 : turn.continuationInput().cycleNo();
         String runId = result.workflowRunId() == null ? turn.workflowRunId() : result.workflowRunId();
         appendItem(turn, AgentItemTypeEnum.AGENT_DECISION,
-                AgentTurnItemPayloads.decision(result.decision(), cycleNo, runId, result.decisionCode()));
+                AgentTurnItemPayloads.decision(result.decision(), cycleNo, runId, result.decisionCode(),
+                        result.correctionAttempt()));
+    }
+
+    /**
+     * 校验协调器是否返回可验证的受控终止；ASK_USER 和 START_WORKFLOW 必须伴随持久化事实。
+     */
+    private boolean hasUsableDecision(AgentTurnCoordinator.AgentCoordinatorResult result) {
+        if (result == null || result.decision() == null) {
+            return false;
+        }
+        return switch (result.decision()) {
+            case ASK_USER -> result.questionCard() != null && result.waitingUserInput();
+            case START_WORKFLOW -> result.workflowRunId() != null && result.waitingUserInput()
+                    && (result.questionCard() != null || result.workflowCheckpoint() != null);
+            default -> true;
+        };
+    }
+
+    /** 只有完全没有终止决策或结构化副作用时才安全重试模型；避免重复 Workflow/QuestionCard。 */
+    private boolean requiresDecisionCorrection(AgentTurnCoordinator.AgentCoordinatorResult result) {
+        return result == null
+                || (result.decision() == null
+                && result.questionCard() == null
+                && result.workflowCheckpoint() == null
+                && result.workflowRunId() == null
+                && !result.waitingUserInput()
+                && result.items().stream().noneMatch(item -> item != null
+                && ("QUESTION_CARD".equals(item.type())
+                || "WORKFLOW_CHECKPOINT".equals(item.type())
+                || "WORKFLOW_STARTED".equals(item.type())
+                || "EXTERNAL_ACTION_STATUS".equals(item.type()))));
     }
 
     private void appendItem(AgentItemModel item) {

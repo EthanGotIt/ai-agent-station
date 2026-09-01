@@ -47,6 +47,7 @@ Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8090/api/agent/threads/$thr
 - `429 THREAD_QUEUE_FULL` / `AGENT_QUEUE_FULL`：等待现有 Turn 完成或取消排队请求。
 - SSE 断线：先请求 Items API，使用返回的 `nextAfterSequence` 重新订阅 events；最终状态以持久化 Item 为准。
 - `MANUAL_RETRY_REQUIRED`：确认外部系统没有成功写入后调用 `/api/agent/workflow-runs/{runId}/retry`，接口保持原幂等键。
+- `AGENT_DECISION_MISSING`：模型两次未形成受控终止决策；页面只显示“再次尝试”，该操作通过原请求内容创建新的 Turn 和 `clientRequestId`，不会自动重放旧 Turn 或复用旧请求 ID。
 - `RUNTIME_RESTARTED`：重启时 ACTIVE Turn 会失败收敛，排队 Turn、QuestionCard 和外部命令继续恢复。
 
 ## 验证命令
