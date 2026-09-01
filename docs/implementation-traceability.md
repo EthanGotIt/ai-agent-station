@@ -1,7 +1,7 @@
 # Commerce Guardian Agent 实现追踪矩阵
 
 > 状态：`active`
-> 更新日期：2026-08-28
+> 更新日期：2026-08-29
 > 目标来源：任务 `01a01f3f-2a0e-7e52-b70e-4137e4ff3496` 的最新计划、当前工作树、Git 历史、架构文档、SQL、测试和实际运行结果。
 
 本矩阵只把代码、测试和运行结果作为证据。原计划或 `docs/task-handoff.md` 中的“已完成”描述不能单独作为完成证据。
@@ -16,7 +16,7 @@
 | 4. 加固 V7 Continuation | 已完成 | `AgentContinuationGateway`、`TransactionalAgentContinuationGateway`；`AgentContinuationInput.idempotencyKey()` 覆盖根/父 Turn、Run、Command、状态、结果 Sequence 和 cycle；事务内首事实持久化、提交后入队、重复/并发 admission、STOP_LIMIT 和配置边界测试通过；`ExternalActionOutcomeManager` 已移除本地续跑创建并改用统一 Gateway；`e289bcb` 使队列暂满后的续跑重试重新读取持久化 Turn 状态，`ba0e248` 使提交后入队入口也先重读 Turn，避免取消竞态执行过期快照 | 真实重启恢复、外部动作黄金路径纳入阶段七验收 |
 | 5. 前端交互与状态投影 | 已完成 | `agent-fronted` 已统一目录/package；`QUESTION_CARD`、`QUESTION_ANSWER`、`WORKFLOW_CHECKPOINT`、`WORKFLOW_DECISION` 投影与三条新 API；QuestionCard/Checkpoint 独立卡片、历史 `WORKFLOW_QUESTION` 只读展示、七节点 Graph 状态、Continuation 提示、外部成功后的非阻断告警和 Sequence 追加快路径；订单卡片已改为 `DELETE_ORDER` 直接删除记录，Thread 列表不再展示回收站；`e94eb4b` 修正 Agent QuestionCard 合法的 `runId: null`，并覆盖真实 payload；typecheck、Vitest 和 production build 通过 | 真实浏览器四尺寸与黄金路径纳入阶段七 |
 | 6. 遗留代码和测试环境清理 | 已完成 | `e7c18c8` 删除旧 Question/Answer 模型、admission、事务 Workflow 引擎、旧 API DTO、Mapper/Store 和旧授权配置；`96b2e27` 删除无生产引用的重复 Workflow Answer 类型，历史 `WORKFLOW_ANSWER` 仍仅按消息标记读取；`01ad541` 修复规范门禁发现的 persistence 包、Clock 注入和测试命名问题。`FakeClientHttpRequestFactoryTest` 覆盖 HTTP 单测，真实 loopback 契约移至 `HttpOrderGatewayIT`/`HttpExternalActionExecutorIT`，Surefire 与 Failsafe 分离；`rg` 未发现旧生产入口或旧前端目录引用；`833765c` 清理依赖分析警告 | 阶段七外部环境和黄金路径验收 |
-| 7. 完整验收与交接 | 本地门禁通过，外部环境待复核 | 2026-08-27 本轮 `convention_check`、脚本 10 项、runtime eval 5 项、Maven Core 48/Infrastructure 72/App 17、前端 typecheck/Vitest/build 和无警告 `dependency:analyze` 均通过；`bd0fe9a` 收口 Checkpoint 恢复状态与 Spring Bean 装配，`a7e99b3` 收口事实变化时拒绝终态，`ba0e248` 收口提交后入队取消竞态；本轮修复两个 HTTP 网关多构造器注入标记后，加载用户级 `.env` 启动 Tomcat `8090`、MySQL、Flyway V9、订单夹具 `18080` 和前端 `5173`，健康检查 `200 UP`；`mvn verify` 真实 HTTP `*IT` 9 项通过；本轮直接删除订单记录的本地/HTTP/夹具协议、幂等重放和前端投影测试通过 | 数据库副本 V7→V8→V9、真实模型和浏览器黄金路径仍需复核 |
+| 7. 完整验收与交接 | 本地门禁通过，外部环境待复核 | 2026-08-27 本轮 `convention_check`、脚本 10 项、runtime eval 5 项、Maven Core 48/Infrastructure 72/App 17、前端 typecheck/Vitest/build 和无警告 `dependency:analyze` 均通过；`bd0fe9a` 收口 Checkpoint 恢复状态与 Spring Bean 装配，`a7e99b3` 收口事实变化时拒绝终态，`ba0e248` 收口提交后入队取消竞态；本轮修复两个 HTTP 网关多构造器注入标记后，加载用户级 `.env` 启动 Tomcat `8090`、MySQL、Flyway V9、订单夹具 `18080` 和前端 `5173`，健康检查 `200 UP`；`mvn verify` 真实 HTTP `*IT` 9 项通过；本轮直接删除订单记录的本地/HTTP/夹具协议、幂等重放和前端投影测试通过；2026-08-29 在只读源库 `COMMERCE_GUARDIAN_AGENT` 的一次性克隆 `COMMERCE_GUARDIAN_AGENT_MIGRATION_20260829` 中回退 V7 形态并重放 V8、V9，历史业务表计数与校验和未变化，V8 快照未回填 | 真实模型和浏览器黄金路径仍需复核 |
 
 阶段二的兼容边界：旧 `AGENT_WORKFLOW_QUESTION`、旧 Turn 列和旧 `WORKFLOW_ANSWER` Item 仅由 V9 迁移脚本或前端历史投影读取；新的生产入口只写独立 QuestionCard/Checkpoint 表和 `QUESTION_ANSWER`/`WORKFLOW_DECISION` Turn。运行时代码不再提供旧 API、旧模型或旧 Workflow admission。详细执行日志不写入 handoff。
 
@@ -34,7 +34,7 @@
 | 1. 数据库与状态基线 | 已验证（P2 运维差异已接受） | `5532463`；当前配置库与专用校准库实际启动到 Flyway 版本 5，`OPEN_QUESTION_ID`、Turn Workflow 字段、ExternalAction 版本/重试字段、结果表和幂等索引均存在。早于 V5 的已确认 V4 前备份导入专用克隆库 `COMMERCE_GUARDIAN_AGENT_V5_MIGRATION_20260823`，应用实际从版本 3 执行 V4、V5，保留 9 条订单、6 条物流事件并启动到版本 5；当前库和校准库另有 V5 后恢复快照 | 未单独生成 V5 命名的迁移前备份；已有前置备份覆盖 V5 前状态且克隆迁移/恢复快照已验证，作为 P2 运维差异记录，不影响本地数据完整性 |
 | 2. QuestionCard 与实时交互收口 | 已验证完成 | `b1fc6bc`；动态字段、最多三选项、其他输入、Enter/Shift+Enter/IME、Escape、显式授权空默认值、受限 Markdown 表格、业务进度聚合和 SSE 断线恢复均有测试；真实浏览器刷新后 QuestionCard 恢复，未出现孤立 Waiting 或原始 delta | 无 |
 | 3. 订单发现、物流诊断与 V4 Pro 契约 | 已验证完成 | `13500ba`、`56b631e`、`fcec19d`、`80c5ca9`；真实 DeepSeek V4 Pro 查询“列出今天最新订单”和“查物流三天没更新的订单”均完成并产生结构化 `ORDER_LIST`，浏览器展示订单卡片、物流时间线、业务进度和受限 Markdown 表格；独立 HTTP 订单服务的同类查询和物流时间线也已现场返回；最新 jar 的可选物流停滞参数空值/有值 Tool 回归均完成 | 无；第三方生产订单平台鉴权按部署环境另行验收 |
-| 4. 统一 `ORDER_SERVICE` Workflow | 已验证（独立 HTTP 边界完成） | `49311ca`、`6d40351`、`7029122`、`22eb4de`、`80c5ca9`；历史浏览器证据覆盖退款拒绝、隐藏/恢复和催发货，隐藏/恢复结果现仅作为旧数据兼容参考；当前代码新增 `DELETE_ORDER` 的候选核验、`AUTHORIZE` Checkpoint、HTTP DELETE 适配器和本地/夹具幂等测试；独立 HTTP 订单服务真实响应“今天订单”查询，Agent 真实 QuestionCard 授权退款将远程订单更新为 `REFUNDED` | 数据库副本、真实模型/订单夹具/浏览器黄金路径和第三方生产鉴权仍属阶段七验收；V5 前置备份差异按 P2 接受并记录 |
+| 4. 统一 `ORDER_SERVICE` Workflow | 已验证（独立 HTTP 边界完成） | `49311ca`、`6d40351`、`7029122`、`22eb4de`、`80c5ca9`；历史浏览器证据覆盖退款拒绝、隐藏/恢复和催发货，隐藏/恢复结果现仅作为旧数据兼容参考；当前代码新增 `DELETE_ORDER` 的候选核验、`AUTHORIZE` Checkpoint、HTTP DELETE 适配器和本地/夹具幂等测试；独立 HTTP 订单服务真实响应“今天订单”查询，Agent 真实 QuestionCard 授权退款将远程订单更新为 `REFUNDED`；2026-08-29 V7→V8→V9 临时克隆重放保持历史业务事实与旧投影不变 | 真实模型/订单夹具/浏览器黄金路径和第三方生产鉴权仍属阶段七验收；V5 前置备份差异按 P2 接受并记录 |
 | 5. 能力集与产品化收尾 | 已验证完成 | `fcec19d`、`b1fc6bc`；历史 Thread 行内重命名、ACTIVE/ARCHIVED 恢复证据保留在历史记录；当前工作台移除回收站/归档入口，订单卡片提供直接删除记录动作，移动端抽屉、订单卡片上下文动作和聚合进度继续保留；当前 typecheck、Vitest、production build 通过 | 真实浏览器需重新确认删除动作和无回收站界面 |
 
 ## 本轮阶段七代码评审验收（2026-08-28）
@@ -47,15 +47,24 @@
 - 代码评审回归：提交后入队和过期 Continuation 重试均重新读取最新 Turn；批准 Checkpoint 的事实变化会先失效并重核验，动作不再允许时安全失败且不创建命令，拒绝决策仍直接终止；Agent QuestionCard 允许 `runId: null`；无引用的旧 Workflow Answer 类型已删除；QuestionCard/Checkpoint Store 可被事务代理，Workflow Decision codec 已注册为 Bean。
 - `mvn verify` 已按配置进入真实 `*IT`；`HttpOrderGatewayIT` 7 项与 `HttpExternalActionExecutorIT` 2 项全部通过，未再出现 loopback 错误。
 - 本轮实际启动检查：第一次使用未加载 `.env` 的脚本时因 MySQL 空密码失败；随后修复两个 HTTP 网关的多构造器注入标记并从用户级 `.env` 注入数据库配置，应用完成 Tomcat `8090` 初始化、MySQL 连接和 V7→V8→V9 迁移，`GET /actuator/health` 返回 `200 UP`。订单夹具直接删除同一订单两次均返回 `ORDER_DELETED`，订单和物流查询均为 `404`；未修改项目代码以规避 Windows/JDK loopback。
-- 本轮仍未重新运行数据库副本、真实模型请求和浏览器黄金路径；下方历史现场证据继续保留，但不替代本轮重跑。
+- 本轮已重新运行数据库副本 V7→V8→V9；真实模型请求和浏览器黄金路径仍未重跑，下方历史现场证据继续保留，但不替代本轮重跑。
 
 ## 基线结论
 
 - 本地代码门禁已通过：规范检查、脚本 10 项、runtime eval 5 项、Maven Core 48/Infrastructure 72/App 17，以及前端 typecheck、Vitest 35 项和 production build。
 - `mvn dependency:analyze -DskipTests` 构建通过且无依赖问题。
 - `mvn verify` 的真实 HTTP `*IT` 9 项已在当前环境通过；Fake Transport 单测与真实 HTTP 协议验收均已覆盖。
-- 数据库副本 V7→V8→V9、真实模型/订单夹具/浏览器黄金路径本轮未重跑，历史现场记录需按发布前运行手册再次确认。
+- 数据库副本 V7→V8→V9 已在只读源库的临时克隆中重跑并通过；真实模型/订单夹具/浏览器黄金路径本轮仍未重跑，历史现场记录需按发布前运行手册再次确认。
 - 当前工作树仍包含用户既有的 `.idea`、部署、Docker、Hook、脚本和配置改动；本阶段未覆盖或混入这些改动。
+
+## 第 1 周发布基线（2026-08-29）
+
+- `e4e8dd6`（分支 `codex/demo-baseline`）新增确定性 GitHub Actions，分别执行 Python 规范/脚本单测、Maven 单测/集成测试/依赖分析，以及前端 typecheck/Vitest/组件测试/production build；工作流不调用真实模型或数据库副本。
+- 根目录 `AGENTS.md` 新增三条 Code Review Rules：外部写操作必须经过持久化 Workflow/Checkpoint/ExternalActionCommand；`WORKFLOW_RESULT`/`EXTERNAL_ACTION_STATUS` 优先于 Turn 完成态；分页与 SSE 游标必须严格前进并在异常时安全收口。
+- GitHub Actions `deterministic-ci #1`/`#2` 的失败已定位为 committed 旧 `docker-compose.yml` 和交接文本中的禁用内容；这些历史运行未带入原工作区的 Docker、部署或其他未提交文件。
+- Week 1 PR #2 已创建并保持 Open/非 Draft，base=`codex/commerce-guardian-agent`、head=`codex/demo-baseline`，当前包含 5 个提交/5 个文件，未合并或关闭。
+- `a851b40` 已从 Week 1 分支移除废弃的 Docker 编排文件，`7e0745b` 修正文档禁用文本；本地 `convention_check` 与脚本 9 项测试通过，GitHub Actions `deterministic-ci #8`（push）和 `#9`（pull_request）全部成功。
+- Codex 自动审查未发现 P0/P1；另有一条 P2 建议指出 CI 的 `git diff --check` 需要比较显式 base/head 范围，暂不影响本周三项门禁通过。
 
 ## 追踪矩阵
 
@@ -78,7 +87,7 @@
 
 ## 当前里程碑边界
 
-阶段一至六已由 `d74bc79`、`fa834b5`、`dbf4aa5`、`ebada3f`、`db73491`、`e7c18c8` 和 `01ad541` 完成并分别可回滚。本轮阶段七已闭合本地代码门禁、真实 HTTP `*IT` 和订单夹具直接删除验收，但数据库副本 V7→V8→V9、真实模型请求和浏览器黄金路径尚未在当前环境重新执行；因此本矩阵和 handoff 保持 `active`，不能写成最终 `completed`。历史现场证据仍保留在下方，但必须与本轮结果区分。
+阶段一至六已由 `d74bc79`、`fa834b5`、`dbf4aa5`、`ebada3f`、`db73491`、`e7c18c8` 和 `01ad541` 完成并分别可回滚。本轮阶段七已闭合本地代码门禁、真实 HTTP `*IT`、订单夹具直接删除验收和 V7→V8→V9 临时克隆重放；真实模型请求和浏览器黄金路径仍未在当前环境重新执行，因此本矩阵和 handoff 保持 `active`，不能写成最终 `completed`。历史现场证据仍保留在下方，但必须与本轮结果区分。
 
 ## 历史外部验证边界（不替代本轮阶段七重跑）
 
