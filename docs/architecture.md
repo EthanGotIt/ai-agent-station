@@ -130,6 +130,12 @@ V6 现场迁移先备份配置库并在一次性克隆库执行；V7 首次运�
 
 本地现场复核可使用 `docs/review-runbook.md` 和 `scripts/review/review-services.ps1`。订单夹具通过 `ORDER_SERVICE_FIXTURE_EXPEDITE_TRANSIENT_FAILURES` 注入有限的催发货可重试失败，并在 `/_fixture/stats` 暴露注入次数；注入只持久化验收故障计数，不写入订单服务幂等记录或业务状态。
 
+## Week 4 演示验收边界（2026-09）
+
+`scripts.acceptance` 是本机验收工具，不是生产流量回放器。它先通过 `/api/agent` 验证 Thread → Turn → Item 的恢复、游标、开放交互、Turn 幂等和执行轨迹回放，再可选连接独立 SQLite 订单夹具验证物流、退款、催发货重试和显式授权的删除。夹具动作通过唯一 `Idempotency-Key` 重放并对照 `/_fixture/stats`；删除开关默认关闭，只允许在操作者确认数据库可丢弃后作用于固定演示订单。该工具不保存模型原文、Thinking、密钥或完整订单响应，也不改变现有 HTTP、SSE 或 V9 数据结构。
+
+Week 4 的真实模型质量报告、数据库副本迁移和四尺寸浏览器矩阵属于外部验收证据，不能由确定性 runner 或前端组件测试推断完成；缺少对应服务、凭据或操作者确认时应明确记录为 pending。
+
 ## 阶段七验收状态（2026-08-28）
 
 本轮本地验收已通过规范检查、脚本测试、运行时确定性门禁、后端全量单测和前端 typecheck/Vitest/生产构建。`mvn verify` 已单独运行真实 HTTP `*IT`，`HttpOrderGatewayIT` 与 `HttpExternalActionExecutorIT` 共 9 项通过；Windows/JDK 的 loopback 环境问题已通过宿主机用户级 Java 临时目录配置恢复，项目未引入协议替代实现。应用加载真实 `.env` 后完成 MySQL、Flyway V9 和 Tomcat 初始化，健康检查为 `200 UP`。数据库副本 V7→V8→V9、真实模型和真实浏览器黄金路径仍需按阶段七运行手册重新复核，不能以历史现场记录替代本轮证据。

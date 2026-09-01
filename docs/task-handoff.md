@@ -1,54 +1,55 @@
 status: active
-updated: 2026-08-28
+updated: 2026-09-01
 
 # Task Handoff
 
 Goal:
 
-- 完成 V7 整改与 Workflow 框架迁移：Spring AI 负责模型与 Tool Calling，LangGraph4j 负责确定性订单 Workflow；QuestionCard 只提问，Workflow Checkpoint 独立承载执行确认。
-- 当前产品边界：Thread 不提供回收站/归档恢复入口；订单不隐藏或恢复，只提供经 Workflow 确认的 `DELETE_ORDER` 直接删除记录。
+- 完成 Week 4 `codex/demo-acceptance`：把本地验收 runner、订单夹具幂等边界、浏览器矩阵记录和四周交接文档收口到可审阅状态。
+- 保持 Commerce Guardian Agent 的 Thread → Turn → Item、确定性 Workflow、持久化事实和现有 HTTP/SSE/V9 契约；本阶段不部署、不生产化、不替换 GitHub `master`。
 
 Completed:
 
-- 阶段一至六已完成：LangGraph 基础门禁、QuestionCard/Checkpoint 拆分、七节点 Workflow、Continuation 加固、双卡片前端交互和旧运行时清理。
-- `DELETE_ORDER` 已贯通订单卡片、Workflow `AUTHORIZE`、本地/HTTP 网关、Worker 和夹具；隐藏/恢复与 Thread 归档/回收站只保留历史只读兼容。
-- Windows/JDK loopback 适配已撤销，保留 `JdkClientHttpRequestFactory`；宿主机临时目录和 Java 运行参数只在用户环境处理，不在项目代码中绕过。
-- 本轮代码评审已修复：Workflow 业务失败/事实变化不会被决策 Turn 的 `COMPLETED` 覆盖；多个订单动作按 Turn/Run 隔离；历史分页、时间线和 SSE 回放在重复/乱序/无效页时收口；SSE 订阅/心跳调度失败会释放资源；Checkpoint 决策校验交互类型并保证开放指针 CAS 清理；QuestionCard 关闭校验交互类型。
-- 本轮修复已按独立意图提交：前端业务结果投影、执行历史回放保护、Checkpoint 指针一致性。
-- `.hooks`/`.githooks` 审查入口已停用；代码审查和合并门禁由推送后的 GitHub PR/CI 负责，本地不自动 push。
+- `scripts.acceptance` 已扩展为检查 Item 游标严格前进、刷新恢复、开放交互唯一性、Turn `clientRequestId` 幂等和执行轨迹回放；可选运行物流、退款幂等、催发货临时失败重试和删除场景。
+- 删除动作默认 gated；只有显式 `--allow-destructive-fixture-actions` 才会访问一次性夹具订单 `ORDER-EXT-DELIVERED-001`，并验证重放及订单/物流 404 清理。
+- `scripts/tests/test_acceptance.py` 覆盖无开放交互重读、交互替换拒绝、游标错误、订单动作重放和删除开关；独立 SQLite 订单夹具 HTTP 冒烟已通过物流、退款、催发货重试，未授权删除返回 `delete-gated`。
+- README、架构、现场复核手册和追踪矩阵已补充 Week 4 runner 用法、浏览器四尺寸记录项、外部证据边界和敏感信息约束。
+- 从 `codex/agent-quality-eval@6c7e82f` 重跑确定性评测 12 场景 × 3 次：安全不变量 36/36，路由与终止 36/36；该 runner 不连接真实模型。
 
 Decisions:
 
-- 本文件是有界的“最新状态摘要 + 唯一下一步指针”，不累计提交列表、过程日志或重复验证；详细证据进入实施追踪、运行手册和 Git 历史。
-- 每次更新整体覆盖文件：Goal 保留当前目标，Completed 只保留仍影响下一步的事实，Validation 只保留最近有效结果；被新结果替代的内容直接删除。
-- 业务 WorkflowRun、QuestionCard、Workflow Checkpoint 和 ExternalActionCommand 是事实源；LangGraph 快照只保存可重建技术状态。
-- 旧数据库表/列和旧 Item 只读保留到迁移/数据保留期结束，运行时代码不得访问或创建旧授权 QuestionCard。
-- 当前用户授权本计划创建阶段性 Git commit，后续推送目标为 GitHub；本轮不执行 push。`.hooks`、`.githooks`、`.idea`、deployment、Docker 及其他无关改动不纳入本阶段；本机 Git 配置不写入项目代码。
-- `AGENTS.md` 是完整长期协作规范，不按本文件的快照机制压缩或覆盖；本轮只做可审阅的定点优化。
+- 本分支只包含 Week 4 验收闭环；Week 1～3 PR 仍按顺序以 `codex/commerce-guardian-agent` 为目标，不在本分支合并或改写 `master`。
+- 真实模型结果只进入本机脱敏报告，不进入 CI；浏览器、数据库副本和第三方订单服务证据必须在对应环境实际执行，不能由组件测试或确定性 runner 推断。
+- 一次性夹具删除必须在动作前取得操作者确认；未确认时保持 `delete-gated` 是安全的预期状态。
+- 原工作区已有 `.idea`、deployment、Docker、Hook、脚本和其他 dirty 资产不从隔离工作树导入；本阶段不 force push、不改变 GitCode upstream。
 
 TODO:
 
-- 阶段七：使用数据库副本完成 V7→V8→V9 迁移核验，运行真实模型配置和前端浏览器黄金路径，补齐最终验收证据。
-- GitHub PR/Codex 审查须在用户明确 push 或创建 PR 后单独验证；不可逆删除动作须在动作前取得用户确认。
-- 阶段七全部完成后，覆盖本文件为 `status: completed` 快照。
+- 在具备 Agent、前端和订单夹具进程后执行完整 `python -m scripts.acceptance ...`；取得确认后再运行夹具删除开关。
+- 在可用的真实模型凭据下运行 12 场景 × 3 次，生成忽略提交的脱敏 JSON/Markdown，并与 36/36 确定性基线比较。
+- 运行 V7→V8→V9 一次性数据库副本，保留历史业务事实和记录数校验；完成四个视口、深浅主题、键盘/Esc、reduced-motion、SSE 重连和刷新恢复浏览器记录。
+- 重新执行完整 Python/Maven/前端门禁；待 Week 1 PR #2 移除集成基线废弃 Docker 编排后，重跑 Python convention 和 GitHub CI。
+- 提交本分支的独立 `test:`/`docs:` commits，推送 `codex/demo-acceptance`；创建 Week 4 PR 前取得用户确认。
 
 Blocked:
 
-- 本地代码门禁、真实 HTTP `*IT`、订单夹具和静态前端检查暂无阻塞。
-- 数据库副本、真实模型、实际服务启动和浏览器黄金路径尚未在本轮重新执行；它们需要对应运行环境和用户确认/推送，不构成当前代码修复阻塞。
+- 当前环境没有 `DEEPSEEK_API_KEY` 或真实 Agent/前端服务，因此真实模型 36 次、SSE/刷新浏览器验收和数据库副本迁移尚未执行。
+- 本分支从尚未合并 Week 1 PR 的集成基线创建，`python -m scripts.convention_check` 被基线 `docker-compose.yml` 的两个既有禁用字符串（遗留内存配置名和旧仓库名）阻塞；不修改该 Docker 资产，待 PR #2 合并序列重跑。
+- 删除场景的真实夹具请求等待操作者确认；单元测试已覆盖显式开关路径。
 
 Next action:
 
-- 在具备数据库副本、真实模型和浏览器运行条件后执行阶段七；当前本地代码评审和自动化门禁已完成，服务未保持运行状态。
+- 先完成代码/文档门禁和分阶段提交，再推送 `codex/demo-acceptance`；外部环境可用后按本 handoff 的 TODO 顺序补齐证据，最后再请求创建 PR。
 
 Validation:
 
-- Maven：`mvn clean '-DskipTests=false' test` 通过，148 项 0 失败；`mvn verify` 通过 HTTP `*IT` 9 项 0 失败；`mvn dependency:analyze -DskipTests` 通过。
-- 前端：`npm --prefix agent-fronted run typecheck`、Vitest 5 个文件 47 项和 `npm --prefix agent-fronted run build` 通过。
-- Python：`python -m scripts.convention_check`、脚本单测 10 项和 runtime eval 通过（本机使用 Miniconda Python 执行）。
-- 未执行：真实数据库副本、真实模型、浏览器交互和 GitHub PR/CI；服务当前未启动。
+- `D:\Application\miniconda3\python.exe -m unittest scripts.tests.test_acceptance`：5 项通过。
+- 独立 SQLite 订单夹具 HTTP 冒烟：`logistics`、`refund-idempotency`、`expedite-retry` 通过，删除保持 `delete-gated`。
+- `codex/agent-quality-eval@6c7e82f` 的 `python -m scripts.runtime_eval --repetitions 3`：安全 36/36，路由 36/36。
+- 当前完整脚本发现集：13 项中因上述两个基线 Docker 文本问题失败 1 项；Maven、前端完整门禁待本阶段代码定稿后运行。
 
 Preserve:
 
-- 不修改或提交 `.idea`、deployment、Docker、Hook、脚本及其他未纳入当前阶段的既有工作树改动；混合修改文件保持原样。
-- `agent-fronted` 是当前唯一前端目录；历史旧 Item 和旧数据库结构只用于迁移或只读展示。
+- 不修改或提交原工作区既有 dirty 资产；禁止把 `.idea`、deployment、Docker、Hook、未授权脚本和配置混入本阶段提交。
+- 不保存 Prompt、Thinking、API key、完整敏感响应或真实模型原文；`output/runtime_eval` 等报告目录保持忽略。
+- 保留 PR #1～#4、`codex/commerce-review-base` 和所有既有远端分支；不合并、关闭或删除它们。

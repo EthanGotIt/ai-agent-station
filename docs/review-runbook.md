@@ -19,6 +19,31 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/review/review-servic
 
 默认端口为前端 `5173`、Agent `8090`、订单夹具 `18080`。如果端口已有非本脚本进程，先人工核对命令行和归属，不要让脚本接管它。夹具数据库和进程日志可在临时目录查看；不需要时只删除该明确目录中的验收临时数据。
 
+## Week 4 自动验收 runner
+
+服务启动后，先运行不含删除动作的确定性 HTTP 验收：
+
+```powershell
+python -m scripts.acceptance `
+  --base-url http://127.0.0.1:8090 `
+  --order-service-url http://127.0.0.1:18080 `
+  --require-expedite-retry
+```
+
+runner 会创建新的 Thread，并核对 Thread/Turn/Item 契约、Item 刷新恢复、开放交互重复读取、`clientRequestId` 幂等和执行轨迹回放；随后用独立订单夹具验证物流详情、退款重放和催发货临时失败重试。输出中的 `scenarios=...` 只记录场景名，不保存 Prompt、Thinking、密钥或完整响应。
+
+只有在操作者已经确认夹具数据库属于本次验收且可丢弃时，才执行删除场景：
+
+```powershell
+python -m scripts.acceptance `
+  --base-url http://127.0.0.1:8090 `
+  --order-service-url http://127.0.0.1:18080 `
+  --require-expedite-retry `
+  --allow-destructive-fixture-actions
+```
+
+该开关只允许删除 `ORDER-EXT-DELIVERED-001` 这个夹具订单，并验证同一幂等键重放、订单与物流均返回 404；它不会放开 Agent API 或第三方订单服务的删除权限。未取得确认时，记录 `delete-gated` 即为预期结果。
+
 ## 三条黄金路径
 
 ### 1. 物流问题闭环
@@ -46,5 +71,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/review/review-servic
 ## 浏览器验收矩阵
 
 至少复核 `1920×900`、`1440×900`、`1024×768` 和 `390×844`。每个尺寸检查：底部输入框常驻、中央阅读列不被输入框遮挡、1024px 使用右侧抽屉、移动端检查器可关闭且锁定背景滚动；同时切换深浅主题、键盘 Tab/Enter/Esc、`prefers-reduced-motion`，并确认错误状态有焦点和 `role=alert`。
+
+每次复核按下表记录结论，未实际打开浏览器时保持 `pending`，不可用组件测试结果替代：
+
+| 视口 | 主题 | 键盘/Esc | reduced-motion | SSE 重连 | 刷新恢复 | 结论/提交 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1920×900 | light/dark | pending | pending | pending | pending | pending |
+| 1440×900 | light/dark | pending | pending | pending | pending | pending |
+| 1024×768 | light/dark | pending | pending | pending | pending | pending |
+| 390×844 | light/dark | pending | pending | pending | pending | pending |
 
 复核记录只写结论、尺寸、端口和提交号，不记录 API key、完整 Prompt、Thinking、用户身份明文或原始订单服务响应。

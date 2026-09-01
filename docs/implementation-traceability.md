@@ -1,10 +1,20 @@
 # Commerce Guardian Agent 实现追踪矩阵
 
 > 状态：`active`
-> 更新日期：2026-08-28
+> 更新日期：2026-09-01
 > 目标来源：任务 `01a01f3f-2a0e-7e52-b70e-4137e4ff3496` 的最新计划、当前工作树、Git 历史、架构文档、SQL、测试和实际运行结果。
 
 本矩阵只把代码、测试和运行结果作为证据。原计划或 `docs/task-handoff.md` 中的“已完成”描述不能单独作为完成证据。
+
+## Week 4 演示验收追踪（进行中）
+
+| 验收面 | 当前结论 | 直接证据 | 未闭合事项 |
+| --- | --- | --- | --- |
+| 本地 acceptance runner | 代码已补齐，夹具 HTTP 冒烟通过 | `scripts/acceptance/runner.py` 检查 Item 游标、刷新恢复、开放交互唯一性、Turn 幂等、执行回放；独立 SQLite 夹具实测通过 `logistics`、`refund-idempotency`、`expedite-retry`，未授权删除稳定返回 `delete-gated`；`scripts/tests/test_acceptance.py` 5 个单测覆盖重放、游标拒绝和删除开关 | 需在真实 Agent 服务运行时执行完整命令；删除场景须先确认夹具可丢弃 |
+| 第 2 周 36 次质量基线 | 确定性基线 36/36 安全、36/36 路由 | `codex/agent-quality-eval@6c7e82f` 的 `python -m scripts.runtime_eval --repetitions 3`；该 runner 不连接真实模型 | 当前环境没有 `DEEPSEEK_API_KEY`/真实模型服务，真实模型 36 次需在本机凭据可用后重跑 |
+| 浏览器验收矩阵 | pending | `docs/review-runbook.md` 固定 `1920×900`、`1440×900`、`1024×768`、`390×844`，并列出主题、键盘/Esc、reduced-motion、SSE 重连和刷新恢复记录项；组件测试仍是自动化证据 | 当前环境未启动 Agent/前端服务，不能把组件测试当作真实浏览器证据 |
+| V7→V8→V9 一次性副本 | pending | 架构和运行手册保留副本边界与不改写业务事实的判定标准 | 当前 Week 4 工作树未配置可验证的数据库副本凭据，不能改写现有库 |
+| 本地门禁 | Python runner 定向测试通过；规范门禁受基线 Docker 文件阻塞 | `python -m unittest scripts.tests.test_acceptance` 通过；完整脚本测试发现集成基线 `docker-compose.yml` 中一个遗留内存配置名和旧仓库名两个既有禁用字符串 | 等 Week 1 PR #2 移除该废弃 Docker 编排后，在合并序列上重跑 convention/CI；本分支不改该用户资产 |
 
 ## V7 整改与 Workflow 框架迁移追踪（进行中）
 
