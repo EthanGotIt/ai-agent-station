@@ -26,7 +26,7 @@ Thread 的 `PATCH /api/agent/threads/{threadId}` 只允许更新标题；历史 
    mvn spring-boot:run -pl commerce-guardian-agent-app
    ```
 
-4. 运行前端 `cd agent-fronted; npm run dev`。
+4. 运行前端前，在仓库根目录执行 `node scripts/npm_ci_fallback.mjs`；脚本默认按 npmmirror → npmjs 顺序尝试，也可用 `NPM_REGISTRIES` 覆盖顺序，然后执行 `cd agent-fronted; npm run dev`。
 
 本地演示身份通过 `X-User-Id: demo-user-1` 传递；真实部署应在网关完成认证并由应用认证适配器提供用户 ID。
 

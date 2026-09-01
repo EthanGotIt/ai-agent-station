@@ -69,8 +69,12 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: agent-fronted/package-lock.json
+      - name: Test npm registry fallback
+        run: node ../scripts/npm_ci_fallback.test.mjs
       - name: Install dependencies
-        run: npm ci
+        env:
+          NPM_REGISTRIES: https://registry.npmjs.org/,https://registry.npmmirror.com/
+        run: node ../scripts/npm_ci_fallback.mjs
       - name: Typecheck
         run: npm run typecheck
       - name: Run Vitest suite

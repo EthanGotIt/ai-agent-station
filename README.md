@@ -21,8 +21,8 @@ Commerce Guardian Agent 是一个 Agent-first 执行平台：业务订单、物�
 
 ```text
 mvn spring-boot:run -pl commerce-guardian-agent-app
+node scripts/npm_ci_fallback.mjs
 cd agent-fronted
-npm install
 npm run dev
 ```
 
