@@ -13,7 +13,7 @@ Completed:
 - 已从主力分支 `38b971b` 创建同步分支，并保留以下独立阶段提交：工作流 `ci`/`eval` 命名、Python 3.14/Node 24/JDK 17 对齐、npm registry fallback、deployment/Docker 打包清理、分支治理、已授权 `.idea` 项目设置和 hook/根 Docker 忽略文件移除。
 - 已推送 `codex/integration-sync-20260901`，并创建 GitHub PR #8（base=`codex/commerce-guardian-agent`，非 Draft）。
 - GitHub 默认分支已是 `codex/commerce-guardian-agent`；`master` 保持 `93ff0b3`，未合并、未改写。
-- `ChatGPT Codex Connector` 已连接 EthanGotIt，`ai-agent-station` Codex 云端环境存在；PR #8 的自动 Codex Review 已返回建议。
+- `ChatGPT Codex Connector` 已连接 EthanGotIt，目标仓库的 Codex 云端环境存在；PR #8 的自动 Codex Review 已返回建议。
 - 订单服务夹具继续作为独立 Python 进程承担本地 HTTP 验收，已移除 Docker 打包和 deployment/CD 资产。
 
 Decisions:
