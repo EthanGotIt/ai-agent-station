@@ -118,11 +118,11 @@
 
 ## 历史外部验证边界（不替代本轮阶段七重跑）
 
-本轮追加校准：当前配置库与专用校准库实际启动到 Flyway 版本 5；专用克隆库 `COMMERCE_GUARDIAN_AGENT_V5_MIGRATION_20260823` 从已确认的、早于 V5 的迁移前备份导入后由版本 3 增量执行 V4、V5，保留 9 条订单、6 条物流事件并成功启动；当前库和校准库均有 V5 后恢复快照。真实浏览器已完成订单 Workflow、QuestionCard 刷新、Thread 回收站、移动端抽屉和业务进度验收；本轮独立 HTTP 订单服务也已完成 Agent 查询、退款、适配器动作和服务端幂等重放验收；Docker Linux 引擎未启动，不伪称存在容器现场证据。V5 未单独生成命名备份的差异已按 P2 运维记录接受。
+本轮追加校准：当前配置库与专用校准库实际启动到 Flyway 版本 5；专用克隆库 `COMMERCE_GUARDIAN_AGENT_V5_MIGRATION_20260823` 从已确认的、早于 V5 的迁移前备份导入后由版本 3 增量执行 V4、V5，保留 9 条订单、6 条物流事件并成功启动；当前库和校准库均有 V5 后恢复快照。真实浏览器已完成订单 Workflow、QuestionCard 刷新、Thread 回收站、移动端抽屉和业务进度验收；本轮独立 HTTP 订单服务也已完成 Agent 查询、退款、适配器动作和服务端幂等重放验收。V5 未单独生成命名备份的差异已按 P2 运维记录接受。
 
 本轮追加代码校准：提交 `7029122` 强制所有订单写操作端口接收命令幂等键，HTTP 适配器把该键发送为 `Idempotency-Key` 请求头；当时的四类动作传播测试和 HTTP 请求头契约测试通过。当前订单写操作收敛为退款、催发货和删除，隐藏/恢复历史测试不再代表现行产品契约。该修复降低远程成功后本地回执提交失败时的重复写入风险，但真实外部订单服务仍需凭据验证其服务端去重实现。
 
-本轮独立 HTTP 验收：提交 `80c5ca9` 新增不共享 Agent MySQL 的订单服务夹具。真实 Agent 通过 `127.0.0.1:18080` 完成订单搜索和退款 QuestionCard，远程 `ORDER-EXT-STALLED-001` 最终为 `REFUNDED`；同一 Workflow 幂等键重放不新增服务端记录或业务变更。历史 Java `HttpOrderGateway` 对 `EXPEDITE`、`HIDDEN`、`ACTIVE` 各执行一次并重复一次的证据仅用于旧契约追踪；当前夹具已移除 visibility 写接口并新增 DELETE 幂等/物流清理测试。该服务可由独立进程运行，也可按 README 使用 Docker Desktop；当前 Docker Linux 引擎未启动，不将容器未启动伪称为容器证据。
+本轮独立 HTTP 验收：提交 `80c5ca9` 新增不共享 Agent MySQL 的订单服务夹具。真实 Agent 通过 `127.0.0.1:18080` 完成订单搜索和退款 QuestionCard，远程 `ORDER-EXT-STALLED-001` 最终为 `REFUNDED`；同一 Workflow 幂等键重放不新增服务端记录或业务变更。历史 Java `HttpOrderGateway` 对 `EXPEDITE`、`HIDDEN`、`ACTIVE` 各执行一次并重复一次的证据仅用于旧契约追踪；当前夹具已移除 visibility 写接口并新增 DELETE 幂等/物流清理测试。该服务只由独立 Python 进程运行，不属于 CD 或部署能力。
 
 已确认专用校准边界为本机 `127.0.0.1:3306/COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821`，当前只在该库导入基线；原 `COMMERCE_GUARDIAN_AGENT` 未重建。数据库日志和命令输出均未打印密码；本轮 Thread/QuestionCard 故障触发器只存在于专用库，验证后已移除。Context 长历史探针未删除业务事实，使用独立校准 Thread 并记录 246 个 Item、8 个快照和重启后上下文事件；另对一条手工遗留校准 Thread 的错误 `NEXT_SEQUENCE` 做了仅限该专用库的计数修正，重启后确认 Worker 复用单一幂等结果且未修改生产代码。真实 DeepSeek 已在同一专用库完成 Tool Calling、71 个 SSE delta、流中取消、短时限超时和敏感信息检查；早期“订单售后前端真实浏览器验收尚未开始”属于历史记录，当前浏览器证据见本文顶部及阶段 5 行。复核被 Git 忽略的 App `.env` 后删除了旧 `AI_AGENT_MODEL_*`、Router/ReAct、旧队列和旧 Worker 变量，并使其与 `.env.example` 的变量集合和非敏感默认值一致；Spring Boot 不自动加载该文件，必须显式注入进程，且真实 key 只保留在 `.env`。不能以本地替身替代真实模型证据，也不能把阶段性 P0/P1 运行时证据误报为本计划最终完成。
 本阶段新增数据库证据：当前配置库和专用校准库均在确认备份/克隆边界后由 Flyway 从版本 2 增量执行版本 4，`STEPS_JSON`、`STATE_JSON` 为非空，Question 外键恢复，唯一键为 `(RUN_ID, STEP_NO)`，V4 `IDX_EXTERNAL_ACTION_THREAD_STATUS` 已存在；两个库均保留 9 条订单、6 条物流事件，应用实际启动并响应 Thread/Question API 后暂时运行在 8091/8092 供浏览器验收。V3 退款以及 V4 催发货/隐藏/恢复验证均使用专用校准库和真实 DeepSeek Tool Calling，未将密钥或 Thinking 写入数据库；隐藏/恢复部分为历史证据，当前新增的删除协议以代码和夹具测试为准。本轮新增的独立 HTTP 订单服务使用独立 SQLite 并完成查询、物流、Agent 退款、Java 适配器写操作和服务端幂等验证，不把该本机夹具表述为第三方生产平台。

@@ -647,7 +647,7 @@ def create_server(
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
 ) -> ThreadingHTTPServer:
-    """创建可供 Docker 和测试复用的 HTTP 服务实例。"""
+    """创建可供本地验收和测试复用的 HTTP 服务实例。"""
 
     class RequestHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 - stdlib handler contract

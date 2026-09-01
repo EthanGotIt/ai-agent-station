@@ -1,6 +1,6 @@
 # 独立 HTTP 订单服务夹具
 
-这是一个只用于本机验收的独立订单服务，不是生产订单平台。它运行在单独进程或 Docker 容器中，使用独立 SQLite 数据卷，和 Commerce Guardian Agent 的 MySQL 没有共享数据。
+这是一个只用于本机验收的独立订单服务，不是生产订单平台。它运行在单独进程中，使用独立 SQLite 数据文件，和 Commerce Guardian Agent 的 MySQL 没有共享数据。
 
 服务提供：
 
@@ -16,25 +16,15 @@
 为验证自动重试耗尽和人工重试，可在启动夹具前设置
 `ORDER_SERVICE_FIXTURE_EXPEDITE_TRANSIENT_FAILURES=3`。该值只对有效的待发货催发货订单生效：前 3 次使用同一幂等键返回 `retryable=true`，不创建幂等记录、不改变订单；后续请求才执行一次真实变更。默认值为 `0`，不注入故障。
 
-## Docker Desktop 启动
+## 本地进程启动
 
-在仓库根目录执行（将夹具目录作为构建上下文）：
-
-```powershell
-docker build -f scripts/acceptance/order_service_fixture/Dockerfile -t commerce-guardian-agent-order-service-fixture scripts/acceptance/order_service_fixture
-docker volume create commerce-guardian-order-data
-docker run --name commerce-guardian-order-service --detach --publish 18080:8080 --volume commerce-guardian-order-data:/data commerce-guardian-agent-order-service-fixture
-Invoke-RestMethod -Uri http://127.0.0.1:18080/health
-```
-
-停止容器但保留独立订单数据：
+夹具只用于本机 HTTP 验收，不需要 Docker 或部署环境。完整黄金路径由
+`scripts/review/review-services.ps1` 直接启动 `server.py`；需要单独运行时，
+在仓库根目录执行：
 
 ```powershell
-docker stop commerce-guardian-order-service
-docker rm commerce-guardian-order-service
+python scripts/acceptance/order_service_fixture/server.py
 ```
-
-只有需要重新生成演示订单时才删除 `commerce-guardian-order-data` 数据卷；删除前应确认其中没有需要保留的验收数据。
 
 ## Agent 配置
 
@@ -46,7 +36,7 @@ $env:AI_AGENT_ORDER_BASE_URL = 'http://127.0.0.1:18080'
 $env:AI_AGENT_ORDER_HTTP_TIMEOUT = 'PT5S'
 ```
 
-如果通过 `commerce-guardian-agent-app/.env` 加载配置，将 `AI_AGENT_ORDER_GATEWAY` 改为 `http`、将 `AI_AGENT_ORDER_BASE_URL` 改为 `http://127.0.0.1:18080`；验收结束后可恢复为 `local`。宿主机运行 Agent 时使用 `127.0.0.1`；如果 Agent 也运行在 Docker Compose 中，则应使用同一网络中的服务名，而不是 `localhost`。
+如果通过 `commerce-guardian-agent-app/.env` 加载配置，将 `AI_AGENT_ORDER_GATEWAY` 改为 `http`、将 `AI_AGENT_ORDER_BASE_URL` 改为 `http://127.0.0.1:18080`；验收结束后可恢复为 `local`。夹具只在本机进程中运行，不对公网提供服务。
 
 默认演示身份为 `demo-user-1`，初始订单包括：
 
