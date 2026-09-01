@@ -16,6 +16,7 @@ Completed:
 - README、架构、现场复核手册和追踪矩阵已补充 Week 4 runner 用法、浏览器四尺寸记录项、外部证据边界和敏感信息约束。
 - 从 `codex/agent-quality-eval@6c7e82f` 重跑确定性评测 12 场景 × 3 次：安全不变量 36/36，路由与终止 36/36；该 runner 不连接真实模型。
 - `codex/demo-acceptance` 已推送到 GitHub 并复核远端引用；未更新集成分支、`master` 或 GitCode upstream。
+- Week 4 PR #5 已创建并保持 Open/非 Draft：base=`codex/commerce-guardian-agent`、head=`codex/demo-acceptance`，标题为 `test: complete demo acceptance coverage`；未自动合并或关闭。
 
 Decisions:
 
@@ -30,7 +31,7 @@ TODO:
 - 在可用的真实模型凭据下运行 12 场景 × 3 次，生成忽略提交的脱敏 JSON/Markdown，并与 36/36 确定性基线比较。
 - 运行 V7→V8→V9 一次性数据库副本，保留历史业务事实和记录数校验；完成四个视口、深浅主题、键盘/Esc、reduced-motion、SSE 重连和刷新恢复浏览器记录。
 - 重新执行完整 Python/Maven/前端门禁；待 Week 1 PR #2 移除集成基线废弃 Docker 编排后，重跑 Python convention 和 GitHub CI。
-- 创建 Week 4 PR；目标保持 `codex/commerce-guardian-agent`，不自动合并或关闭。
+- 等待 PR #5 的检查/审查反馈；不自动合并或关闭，外部验收证据仍按 TODO 补齐。
 
 Blocked:
 
@@ -39,17 +40,18 @@ Blocked:
 
 Next action:
 
-- 创建 Week 4 PR；外部环境可用后按本 handoff 的 TODO 顺序补齐证据。
+- 观察 PR #5 的检查/审查状态；外部环境可用后按本 handoff 的 TODO 顺序补齐证据。
 
 Validation:
 
 - `D:\Application\miniconda3\python.exe -m unittest scripts.tests.test_acceptance`：5 项通过。
 - 独立 SQLite 订单夹具完整验收：`logistics`、`refund-idempotency`、`expedite-retry`、`delete-idempotency` 通过；统计 `idempotencyRecords=3`、`businessMutations=3`、`injectedFailures=3`，临时目录随进程结束清理。
 - `codex/agent-quality-eval@6c7e82f` 的 `python -m scripts.runtime_eval --repetitions 3`：安全 36/36，路由 36/36。
-- 当前完整脚本发现集：13 项中因上述两个基线 Docker 文本问题失败 1 项；Maven、前端完整门禁待本阶段代码定稿后运行。
+- 当前完整脚本发现集：13 项中因上述两个基线 Docker 文本问题失败 1 项；Maven `clean test`/`verify`/依赖分析和前端 typecheck/Vitest/组件测试/build 已通过。
+- GitHub：PR #5 已创建为 Open/非 Draft，base 为 `codex/commerce-guardian-agent`，head 为 `codex/demo-acceptance`。
 
 Preserve:
 
 - 不修改或提交原工作区既有 dirty 资产；禁止把 `.idea`、deployment、Docker、Hook、未授权脚本和配置混入本阶段提交。
 - 不保存 Prompt、Thinking、API key、完整敏感响应或真实模型原文；`output/runtime_eval` 等报告目录保持忽略。
-- 保留 PR #1～#4、`codex/commerce-review-base` 和所有既有远端分支；不合并、关闭或删除它们。
+- 保留 PR #1～#5、`codex/commerce-review-base` 和所有既有远端分支；不自动合并、关闭或删除它们。
