@@ -24,25 +24,25 @@ Decisions:
 
 TODO:
 
-- 用户确认后创建 Week3 PR（base `codex/commerce-guardian-agent`，head `codex/agent-decision-contract`）；不触碰 GitHub `master`。
+- 等待 Week3 PR #4 的 GitHub/Codex 审查结果；不触碰 GitHub `master`。
 - 在真实模型和浏览器黄金路径中复核终止消息、`AGENT_DECISION_MISSING` 重试和刷新恢复；将结果补入追踪矩阵。
 - 通过后再进入第四周演示验收分支；不合并 GitHub `master`。
 
 Blocked:
 
 - Python 规范门禁仍被基线 `docker-compose.yml` 的两处旧标识阻塞（`ai-agent-station`、`AGENT_MEMORY`）；该 Docker 文件按计划视为用户资产，本分支未修改或提交。
-- 真实模型/浏览器/PR 尚未执行；PR 创建仍等待用户当前轮确认，属于外部验收前置条件，不视为第三周实现失败。
+- 真实模型/浏览器尚未执行；PR #4 已创建，等待 GitHub/Codex 审查，属于外部验收前置条件，不视为第三周实现失败。
 
 Next action:
 
-- 等待用户确认后创建 Week3 PR；Python 基线阻塞保持显式记录。
+- 观察 PR #4 的 CI/Codex 审查；Python 基线阻塞保持显式记录。
 
 Validation:
 
 - 已通过：`mvn clean '-DskipTests=false' test`（Core 53、Infrastructure 80、App 19，0 失败）；`mvn verify`（HTTP `*IT` 9 项，0 失败）；`mvn dependency:analyze -DskipTests`；前端 typecheck、Vitest 49 项、组件测试 25 项、production build；`git diff --check`。
 - Python：Miniconda `convention_check` 发现 `docker-compose.yml` 两处基线旧标识，脚本单测 9 项中 1 项随之失败；未修改 Docker 用户资产。
-- GitHub：`codex/agent-decision-contract` 已推送，远端 SHA `9bca7f572519a551d752f41fddb1615fb4a9f3a6`；PR 尚未创建。
-- 未执行：真实模型、浏览器交互和 GitHub PR/CI；服务当前未启动。
+- GitHub：`codex/agent-decision-contract` 远端 SHA `7817cf5ca0f817b7ae2ab221a43e1bed7f101f44`；PR #4 已创建（Open、非 Draft，base `codex/commerce-guardian-agent`）。
+- 未执行：真实模型、浏览器交互和 PR #4 的审查结果；服务当前未启动。
 
 Preserve:
 
