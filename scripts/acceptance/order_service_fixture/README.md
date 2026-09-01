@@ -18,10 +18,10 @@
 
 ## Docker Desktop 启动
 
-在仓库根目录执行：
+在仓库根目录执行（将夹具目录作为构建上下文）：
 
 ```powershell
-docker build -f scripts/acceptance/order_service_fixture/Dockerfile -t commerce-guardian-agent-order-service-fixture .
+docker build -f scripts/acceptance/order_service_fixture/Dockerfile -t commerce-guardian-agent-order-service-fixture scripts/acceptance/order_service_fixture
 docker volume create commerce-guardian-order-data
 docker run --name commerce-guardian-order-service --detach --publish 18080:8080 --volume commerce-guardian-order-data:/data commerce-guardian-agent-order-service-fixture
 Invoke-RestMethod -Uri http://127.0.0.1:18080/health
