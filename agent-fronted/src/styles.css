@@ -205,6 +205,7 @@ textarea { min-height: 84px; resize: vertical; line-height: 1.55; }
 .loading-copy::after { display: inline-block; width: .8em; content: ""; animation: cursor-pulse 900ms var(--ease) infinite; }
 .turn-error { display: flex; align-items: flex-start; gap: 7px; margin: 13px 0 0; border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line)); border-radius: 8px; padding: 9px 10px; color: var(--danger); background: var(--danger-soft); line-height: 1.45; overflow-wrap: anywhere; }
 .turn-error svg { width: 15px; flex: 0 0 auto; margin-top: 1px; }
+.retry-agent-button { margin-top: 9px; }
 .order-action-status { display: flex; align-items: center; gap: 8px; margin-top: 11px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 9px; color: var(--muted); background: var(--surface); }
 .order-action-status-icon { display: grid; width: 22px; height: 22px; flex: 0 0 auto; place-items: center; border: 1px solid currentColor; border-radius: 50%; }
 .order-action-status-icon svg { width: 13px; height: 13px; }

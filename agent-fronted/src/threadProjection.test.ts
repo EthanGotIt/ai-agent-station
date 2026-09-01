@@ -236,4 +236,26 @@ describe("thread projection", () => {
     expect(turn.continuationWarning).toBeNull();
     expect(turn.error).toBe("催发货失败");
   });
+
+  it("projects a missing decision as a retryable failure without an open interaction", () => {
+    const items = [
+      item("USER_MESSAGE", 1, "turn-missing-decision", "查询订单"),
+      item("AGENT_DECISION", 2, "turn-missing-decision", {
+        decision: "FINISH", code: "CONTROL_TOOL", correctionAttempt: true
+      }),
+      item("ERROR", 3, "turn-missing-decision", "AGENT_DECISION_MISSING"),
+      item("TURN_STATE", 4, "turn-missing-decision", {
+        status: "FAILED", errorCode: "AGENT_DECISION_MISSING"
+      })
+    ].map(normalizeItem);
+
+    const [turn] = rebuildTurns(items);
+
+    expect(turn.status).toBe("FAILED");
+    expect(turn.errorCode).toBe("AGENT_DECISION_MISSING");
+    expect(turn.decisions).toContainEqual(expect.objectContaining({
+      decision: "FINISH", correctionAttempt: true
+    }));
+    expect(findOpenInteraction(items)).toBeNull();
+  });
 });

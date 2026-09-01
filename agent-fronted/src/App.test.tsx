@@ -681,6 +681,38 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(document.querySelectorAll(".conversation-turn")).toHaveLength(1);
   });
 
+  it("仅为 AGENT_DECISION_MISSING 显示再次尝试，并创建新的 Turn 请求", async () => {
+    const thread = threadRecord("thread-1", "决策缺失 Thread");
+    const events = [
+      itemEvent("item-missing-user", "thread-1", "turn-missing", "USER_MESSAGE", 1,
+        { schemaVersion: 1, kind: "USER_MESSAGE", data: "查询订单" }),
+      itemEvent("item-missing-error", "thread-1", "turn-missing", "ERROR", 2,
+        { schemaVersion: 1, kind: "ERROR", data: "AGENT_DECISION_MISSING" }),
+      itemEvent("item-missing-state", "thread-1", "turn-missing", "TURN_STATE", 3,
+        { schemaVersion: 1, kind: "TURN_STATE", data: { status: "FAILED", errorCode: "AGENT_DECISION_MISSING" } })
+    ];
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      if (url.includes("/threads/thread-1/items")) return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse(events));
+      if (url.endsWith("/threads/thread-1/turns")) return Promise.resolve(json({ turnId: "turn-retry" }));
+      throw new Error(`unexpected request: ${url} ${String(init?.body ?? "")}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const retryButton = await screen.findByRole("button", { name: "再次尝试" });
+    fireEvent.click(retryButton);
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/threads/thread-1/turns"))).toBe(true));
+    const retryCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/threads/thread-1/turns"));
+    const body = JSON.parse(String(retryCall?.[1]?.body));
+    expect(body.message).toBe("查询订单");
+    expect(body.clientRequestId).toMatch(/^turn-retry-/);
+    expect(screen.queryByRole("button", { name: "人工重试" })).toBeNull();
+  });
+
   it("为耗尽的外部动作显示人工重试并调用稳定 API", async () => {
     const thread = threadRecord("thread-1", "人工重试 Thread");
     const retryEvents = [
