@@ -5,49 +5,50 @@ updated: 2026-09-01
 
 Goal:
 
-- 完成第三周显式 Agent 决策契约：普通消息 Turn 必须以受控 `FINISH`、持久化 QuestionCard 或确定性 Workflow 收口；缺失决策安全失败并允许用户显式重试。
-- 保持 `/api/agent`、SSE envelope、Thread→Turn→Item 和 V9 数据库结构不变；本分支只覆盖第三周契约，不合并或修改原工作区改动。
+- 完成 Week 4 `codex/demo-acceptance`：把本地验收 runner、订单夹具幂等边界、浏览器矩阵记录和四周交接文档收口到可审阅状态。
+- 保持 Commerce Guardian Agent 的 Thread → Turn → Item、确定性 Workflow、持久化事实和现有 HTTP/SSE/V9 契约；本阶段不部署、不生产化、不替换 GitHub `master`。
 
 Completed:
 
-- `complete_agent_cycle` 仅接受 `FINISH`；`ASK_USER` 只能由 `request_user_input` 持久化 QuestionCard 产生，`START_WORKFLOW` 只能由 Workflow Tool 产生。
-- `SpringAiAgentTurnCoordinator` 在终止 Tool 后只采用受控消息，忽略模型追加自由文本；同一调用链重复 Workflow/QuestionCard Tool 时复用已有事实，不创建第二个 Run 或问题卡。
-- Runtime 对没有终止决策且没有结构化副作用的首次结果最多执行一次纠正调用；第二次仍缺失时写入 `AGENT_DECISION_MISSING`、失败收口且不持久化自由文本。
-- 前端投影新增错误码和纠正标志；只有 `AGENT_DECISION_MISSING` 显示“再次尝试”，并以新 Turn/requestId 调用现有提交 API。
-- 文档已同步架构、运行手册、README、实现追踪矩阵和 `docs/agent-decision-contract.md`。
-- 第 1 周 PR #2 已合入集成（`4742e253`），第 2 周 PR #3 已合入集成（`2ee1f062`）；`master` 仍为 `2106978`，GitCode upstream 未改动。
-- 原工作区的 `.idea`、deployment、Docker、Hook、脚本和其他未提交改动保持原样，未暂存、未提交、未带入本分支。
+- `scripts.acceptance` 已扩展为检查 Item 游标严格前进、刷新恢复、开放交互唯一性、Turn `clientRequestId` 幂等和执行轨迹回放；可选运行物流、退款幂等、催发货临时失败重试和删除场景。
+- 用户已确认一次性夹具订单可直接删除；`ORDER-EXT-DELIVERED-001` 的物流、退款幂等、催发货重试和删除幂等均已通过，最终统计为幂等记录 3、业务变更 3、注入失败 3，临时目录随运行结束清理。
+- `scripts/tests/test_acceptance.py` 的 5 项测试覆盖无开放交互重读、交互替换拒绝、游标错误、订单动作重放和删除开关。
+- README、架构、现场复核手册和追踪矩阵已补充 Week 4 runner 用法、浏览器四尺寸记录项、外部证据边界和敏感信息约束。
+- 第 2 周确定性评测 12 场景 × 3 次保持安全 36/36、路由与终止 36/36；该 runner 不连接真实模型。
+- 第 1 周 PR #2、Week 2 PR #3、Week 3 PR #4 已按顺序合入 `codex/commerce-guardian-agent`，合并提交分别为 `4742e253`、`2ee1f062`、`1ef78fc`；`master` 仍为 `2106978`，GitCode upstream 未改动。
+- 合入 #2→#4 后全量门禁通过：Python convention、脚本 19 项、Maven Core 53/Infrastructure 80/App 19、HTTP `*IT` 9 项、依赖分析、前端 typecheck、Vitest 49 项、组件测试 25 项和 production build；前端总测单独重跑后 49/49 通过。
+- 原工作区已有 `.idea`、deployment、Docker、Hook、脚本和其他 dirty 资产未从隔离工作树导入；未 force push。
 
 Decisions:
 
-- `AgentCoordinatorResult` 以可选 `correctionAttempt` 标记纠正调用，旧构造边界保持兼容。
-- 已存在 WorkflowRun、QuestionCard、Checkpoint 或结构化副作用时不自动再次调用模型，避免重复外部写操作或孤立等待。
-- 每周一个前后端闭环垂直切片，周 PR 只面向 `codex/commerce-guardian-agent`；不更新 GitHub `master`，不 force push，不改变 GitCode upstream。
-- 真实模型只在本机执行，不进入稳定 CI；外部写操作继续由持久化 Workflow、Checkpoint 和 ExternalActionCommand 控制。
+- 本分支只包含 Week 4 验收闭环；周 PR 只面向 `codex/commerce-guardian-agent`，不合并或改写 `master`。
+- 真实模型结果只进入本机脱敏报告，不进入 CI；浏览器、数据库副本和第三方订单服务证据必须在对应环境实际执行，不能由组件测试或确定性 runner 推断。
+- 一次性 SQLite 夹具删除已获用户授权；该授权不扩展到正式数据库、共享服务或非夹具订单，默认开关仍保持关闭。
+- 所有外部写操作继续由持久化 Workflow、Checkpoint 和 ExternalActionCommand 控制；不新增部署、生产化或其他业务能力。
 
 TODO:
 
-- 推送已合入第 2 周基线的 `codex/agent-decision-contract`，更新 PR #4，等待 GitHub 确定性 CI/Codex 审查结果后按顺序合入。
-- 在真实模型和浏览器黄金路径中复核终止消息、`AGENT_DECISION_MISSING` 重试和刷新恢复；将结果补入追踪矩阵。
-- PR #4 合入后创建/更新第四周演示验收分支，并继续按用户授权处理 PR #5；不合并 GitHub `master`。
+- 在具备 Agent、前端和订单夹具进程后执行完整 `python -m scripts.acceptance ...`；一次性夹具删除可按既有授权执行并清理。
+- 在可用的真实模型凭据下运行 12 场景 × 3 次，生成忽略提交的脱敏 JSON/Markdown，并与 36/36 确定性基线比较。
+- 完成四个视口、深浅主题、键盘/Esc、reduced-motion、SSE 重连和刷新恢复浏览器记录；真实 Agent 黄金路径仍需现场复核。
+- 推送更新后的 PR #5，等待 GitHub 检查/Codex 审查结果后按用户已授权顺序合入；保留 PR #1、审查基线和所有远端分支。
 
 Blocked:
 
-- 当前无代码或外部权限阻塞；PR #4 需先完成本地基线合并、推送并等待 GitHub 检查。
-- 真实模型/浏览器尚未在本次分支重跑，属于阶段验收项，不视为第三周实现失败。
+- 当前无代码或 GitHub 权限阻塞；真实模型、浏览器现场和生产数据库不在当前自动化环境中，属于 Week 4 外部验收项。
 
 Next action:
 
-- 检查并提交本次集成基线合并，运行 Maven、Python、前端及定向决策契约门禁，随后推送并观察 PR #4。
+- 提交验收文档更新，推送 `codex/demo-acceptance` 并观察 PR #5；检查全部成功后合入。
 
 Validation:
 
-- 第三周原分支已通过：`mvn clean '-DskipTests=false' test`（Core 53、Infrastructure 80、App 19）；`mvn verify`（HTTP `*IT` 9 项）；`mvn dependency:analyze -DskipTests`；前端 typecheck、Vitest 49 项、组件测试 25 项、production build；`git diff --check`。
-- 合入第 1、2 周基线后需重跑 Python convention、全量脚本测试、Maven、前端和确定性 12 场景评测；不连接真实模型、数据库或订单服务。
-- PR #4 当前 head 为 `e4037c3`，base 为 `codex/commerce-guardian-agent`；更新后等待 GitHub/Codex 结果。
+- 合入 #2→#4 后通过：`python -m scripts.convention_check`；`python -m unittest discover -s scripts/tests -p "test_*.py"`（19 项）；`python -m scripts.runtime_eval --repetitions 3`（安全 36/36、路由与终止 36/36）；`python -m unittest scripts.tests.test_acceptance`（5 项）；Maven `clean test`（Core 53、Infrastructure 80、App 19）、`verify`（HTTP `*IT` 9 项）和依赖分析；前端 typecheck、Vitest 49 项（单独重跑）、组件测试 25 项和 production build。
+- 合入后独立临时 SQLite 夹具完整验收通过：`logistics`、`refund-idempotency`、`expedite-retry`、`delete-idempotency`；统计 `idempotencyRecords=3`、`businessMutations=3`、`injectedFailures=3`，临时目录已清理。
+- PR #5 当前 head 为本地基线合并提交 `f739203`，base 为 `codex/commerce-guardian-agent`；推送文档更新后等待新 head 的 GitHub workflow。
 
 Preserve:
 
-- 不修改或提交原工作区 `.idea`、deployment、Docker、Hook、脚本及其他未纳入本分支的既有改动。
-- `agent-fronted` 是当前唯一前端目录；历史 Item/数据库结构只做迁移或只读兼容。
+- 不修改或提交原工作区既有 dirty 资产；禁止把 `.idea`、deployment、Docker、Hook、未授权脚本和配置混入本阶段提交。
+- 不保存 Prompt、Thinking、API key、完整敏感响应或真实模型原文；`output/runtime_eval` 等报告目录保持忽略。
 - `AGENTS.md` 是完整长期规范；本 handoff 只保留最新状态快照，不累积过程日志。

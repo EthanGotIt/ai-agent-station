@@ -41,6 +41,15 @@ npm run test:component
 npm run build
 ```
 
-运行中的服务可用 `python -m scripts.acceptance --base-url http://127.0.0.1:8090` 验证 Thread 列表、创建、Item 恢复、Turn 入队和重复请求幂等性。
+运行中的 Agent 可用下面的命令执行 Week 4 本地验收。订单夹具与 Agent 使用不同端口和独立 SQLite；命令默认只做物流、退款幂等和催发货重试，并把删除场景保持为 gated，避免误删非一次性数据：
 
-详细模型、数据流、配置和排错分别见 [docs/architecture.md](docs/architecture.md) 与 [docs/runbook.md](docs/runbook.md)。
+```text
+python -m scripts.acceptance `
+  --base-url http://127.0.0.1:8090 `
+  --order-service-url http://127.0.0.1:18080 `
+  --require-expedite-retry
+```
+
+确认夹具数据库确实为本次运行创建且可丢弃后，才额外传入 `--allow-destructive-fixture-actions`，执行一次性订单的删除、重放和 404 清理验证。验收 runner 会检查 Item 游标严格前进、刷新恢复、开放交互唯一性、Turn `clientRequestId` 幂等、执行轨迹回放、物流事件唯一性，以及订单动作的受控结果和业务变更计数。
+
+详细模型、数据流、配置和排错分别见 [docs/architecture.md](docs/architecture.md)、[docs/runbook.md](docs/runbook.md) 与 [docs/review-runbook.md](docs/review-runbook.md)。
