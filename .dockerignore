@@ -6,10 +6,6 @@
 
 **/target
 **/node_modules
-agent-console/dist
+agent-fronted/dist
 **/__pycache__
 **/*.py[cod]
-
-deployment/.env
-deployment/certs
-deployment/backups
