@@ -1,4 +1,4 @@
-FROM node:22-alpine AS console-build
+FROM node:24-alpine AS console-build
 
 WORKDIR /workspace/agent-console
 COPY agent-console/package.json agent-console/package-lock.json ./
