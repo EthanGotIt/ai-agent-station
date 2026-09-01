@@ -7,9 +7,9 @@ __pycache__/
 !**/src/test/**/target/
 .kotlin
 
-### React console ###
-/agent-console/node_modules/
-/agent-console/dist/
+### React frontend ###
+/agent-fronted/node_modules/
+/agent-fronted/dist/
 *.tsbuildinfo
 
 ### IntelliJ IDEA ###

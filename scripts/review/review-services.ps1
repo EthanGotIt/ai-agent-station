@@ -36,6 +36,37 @@ function Test-ProcessAlive([int]$ProcessId) {
     return $null -ne $process -and -not $process.HasExited
 }
 
+function Get-ProcessCommandLine([int]$ProcessId) {
+    $process = Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction SilentlyContinue
+    if ($null -eq $process) { return $null }
+    return [string]$process.CommandLine
+}
+
+function Test-ReviewProcessIdentity([object]$Entry) {
+    if ($null -eq $Entry -or -not (Test-ProcessAlive ([int]$Entry.pid))) {
+        return $false
+    }
+    # 旧状态文件没有命令签名，宁可标记为过期，也不凭 PID 猜测进程归属。
+    $signature = [string]$Entry.commandSignature
+    if ([string]::IsNullOrWhiteSpace($signature)) {
+        return $false
+    }
+    $commandLine = Get-ProcessCommandLine ([int]$Entry.pid)
+    if ([string]::IsNullOrWhiteSpace($commandLine)) {
+        return $false
+    }
+    $tokens = @($signature -split '\s+') | Select-Object -Skip 1 | Where-Object {
+        $_ -and $_.Length -ge 4 -and $_ -notmatch '^(--?\w+)$'
+    }
+    foreach ($token in $tokens) {
+        $candidate = $token.Trim('"')
+        if (-not $commandLine.Contains($candidate, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $false
+        }
+    }
+    return $true
+}
+
 function Start-ReviewProcess(
     [string]$Name,
     [string]$FilePath,
@@ -45,7 +76,7 @@ function Start-ReviewProcess(
     $allState = @(Read-State)
     $existing = $allState | Where-Object { $_.name -eq $Name } | Select-Object -First 1
     $state = @($allState | Where-Object { $_.name -ne $Name })
-    if ($null -ne $existing -and (Test-ProcessAlive ([int]$existing.pid))) {
+    if ($null -ne $existing -and (Test-ReviewProcessIdentity $existing)) {
         Write-Host "$Name already running PID=$($existing.pid) port=$Port"
         return @($state + $existing)
     }
@@ -61,6 +92,7 @@ function Start-ReviewProcess(
         startedAt = [DateTime]::UtcNow.ToString("o")
         stdout = $stdout
         stderr = $stderr
+        commandSignature = "$FilePath $($Arguments -join ' ')"
     }
     Write-Host "$Name started PID=$($process.Id) port=$Port"
     return @($state + $entry)
@@ -110,6 +142,10 @@ function Stop-Services {
     $state = @(Read-State)
     foreach ($entry in $state) {
         $processId = [int]$entry.pid
+        if (-not (Test-ReviewProcessIdentity $entry)) {
+            Write-Output "$($entry.name) skipped PID=$processId (stale or command identity mismatch)"
+            continue
+        }
         if (Test-ProcessAlive $processId) {
             & taskkill.exe /PID $processId /T /F | Out-Null
             Write-Output "$($entry.name) stopped PID=$processId"
@@ -128,7 +164,8 @@ function Show-Status {
     }
     foreach ($entry in $state) {
         $alive = Test-ProcessAlive ([int]$entry.pid)
-        $stateLabel = if ($alive) { "RUNNING" } else { "STOPPED" }
+        $owned = Test-ReviewProcessIdentity $entry
+        $stateLabel = if ($owned) { "RUNNING" } elseif ($alive) { "STALE" } else { "STOPPED" }
         Write-Output ("{0}: {1} PID={2} port={3} log={4}" -f $entry.name, $stateLabel, $entry.pid, $entry.port, $entry.stdout)
     }
 }
