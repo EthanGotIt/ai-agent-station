@@ -1,0 +1,36 @@
+name: deterministic-agent-quality-eval
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - 'codex/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deterministic-agent-quality-eval-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deterministic-runtime-eval:
+    name: Deterministic 12-scenario evaluation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run fixed scenarios three times
+        run: python -m scripts.runtime_eval --repetitions 3
+      - name: Run runtime evaluation tests
+        run: >-
+          python -m unittest
+          scripts.tests.test_runtime_eval
+          scripts.tests.test_runtime_eval_scenarios
+          scripts.tests.test_live_runner

@@ -1,7 +1,7 @@
 # Commerce Guardian Agent 实现追踪矩阵
 
 > 状态：`active`
-> 更新日期：2026-08-29
+> 更新日期：2026-09-01
 > 目标来源：任务 `01a01f3f-2a0e-7e52-b70e-4137e4ff3496` 的最新计划、当前工作树、Git 历史、架构文档、SQL、测试和实际运行结果。
 
 本矩阵只把代码、测试和运行结果作为证据。原计划或 `docs/task-handoff.md` 中的“已完成”描述不能单独作为完成证据。
@@ -57,12 +57,19 @@
 - 数据库副本 V7→V8→V9 已在只读源库的临时克隆中重跑并通过；真实模型/订单夹具/浏览器黄金路径本轮仍未重跑，历史现场记录需按发布前运行手册再次确认。
 - 当前工作树仍包含用户既有的 `.idea`、部署、Docker、Hook、脚本和配置改动；本阶段未覆盖或混入这些改动。
 
+## 第 2 周 Agent 质量评测基线（2026-08-31）
+
+- 在隔离克隆中从 `codex/commerce-guardian-agent` 创建 `codex/agent-quality-eval`，审阅并吸收原工作区未提交的 `scripts/runtime_eval`，未覆盖原工作区。
+- 新增内部 `EvalScenario` 格式，固定字段为 `id`、`prompt`、`setup`、`expectedDecision`、`requiredItems`、`forbiddenItems`、`maxOpenInteractions` 和 `expectedMutationCount`；该格式不进入 Core 或 HTTP DTO。
+- 固定 12 个场景覆盖精确订单、今日订单、停滞物流、物流详情、退款缺订单、退款缺原因、退款拒绝/批准、催发货失败/人工重试、删除拒绝/批准。
+- 确定性 runner 默认执行 12 场景 × 3 次，验证安全边界、幂等和路由/终止决策；本地结果为安全 36/36、路由 36/36。GitHub Actions 只调用该 runner 和定向单测，不连接真实模型、数据库或订单服务。
+- 本机 `live_runner` 只接受已脱敏结构化观察结果，报告仅保留决策、Item 类型、开放交互数、变更数和通过状态；输出写入忽略目录，拒绝 Prompt、Thinking、原始响应、密钥和请求头字段。
 ## 第 1 周发布基线（2026-08-29）
 
 - `e4e8dd6`（分支 `codex/demo-baseline`）新增确定性 GitHub Actions，分别执行 Python 规范/脚本单测、Maven 单测/集成测试/依赖分析，以及前端 typecheck/Vitest/组件测试/production build；工作流不调用真实模型或数据库副本。
 - 根目录 `AGENTS.md` 新增三条 Code Review Rules：外部写操作必须经过持久化 Workflow/Checkpoint/ExternalActionCommand；`WORKFLOW_RESULT`/`EXTERNAL_ACTION_STATUS` 优先于 Turn 完成态；分页与 SSE 游标必须严格前进并在异常时安全收口。
 - GitHub Actions `deterministic-ci #1`/`#2` 的失败已定位为 committed 旧 `docker-compose.yml` 和交接文本中的禁用内容；这些历史运行未带入原工作区的 Docker、部署或其他未提交文件。
-- Week 1 PR #2 已创建并保持 Open/非 Draft，base=`codex/commerce-guardian-agent`、head=`codex/demo-baseline`，当前包含 5 个提交/5 个文件，未合并或关闭。
+- Week 1 PR #2 已按顺序合入集成分支，生成合并提交 `4742e25`；base=`codex/commerce-guardian-agent`、head=`codex/demo-baseline`，未改变 `master`。
 - `a851b40` 已从 Week 1 分支移除废弃的 Docker 编排文件，`7e0745b` 修正文档禁用文本；本地 `convention_check` 与脚本 9 项测试通过，GitHub Actions `deterministic-ci #8`（push）和 `#9`（pull_request）全部成功。
 - Codex 自动审查未发现 P0/P1；另有一条 P2 建议指出 CI 的 `git diff --check` 需要比较显式 base/head 范围，暂不影响本周三项门禁通过。
 
