@@ -46,10 +46,22 @@ public final class AgentTurnItemPayloads {
             String runId,
             String code
     ) {
+        return decision(decision, cycleNo, runId, code, false);
+    }
+
+    /** 生成 Agent 终止决策事实；纠正调用只在需要时显式标记。 */
+    public static String decision(
+            AgentDecisionTypeEnum decision,
+            int cycleNo,
+            String runId,
+            String code,
+            boolean correctionAttempt
+    ) {
         return "{\"decision\":\"" + decision.name()
                 + "\",\"cycleNo\":" + cycleNo
                 + ",\"runId\":" + quotedOrNull(runId)
-                + ",\"code\":" + quotedOrNull(code) + "}";
+                + ",\"code\":" + quotedOrNull(code)
+                + (correctionAttempt ? ",\"correctionAttempt\":true" : "") + "}";
     }
 
     /** 生成只包含受控字段的 QuestionCard 事实。 */

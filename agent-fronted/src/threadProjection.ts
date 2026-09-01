@@ -469,7 +469,8 @@ function parseDecision(item: AgentItem): AgentDecisionFact | null {
     decision,
     cycleNo: numberValue(data?.cycleNo) ?? undefined,
     runId: stringValue(data?.runId),
-    code: stringValue(data?.code)
+    code: stringValue(data?.code),
+    correctionAttempt: data?.correctionAttempt === true
   };
 }
 
@@ -639,13 +640,14 @@ function buildActivities(items: AgentItem[]): BusinessProgress[] {
         const labels: Record<string, string> = {
           FINISH: "Agent 已完成本轮判断",
           START_WORKFLOW: "Agent 已启动业务流程",
+          ASK_USER: "等待用户补充信息",
           WAIT_USER: "等待用户补充信息",
           STOP_LIMIT: "已达到自动决策上限",
           FALLBACK: "已降级为可控结果"
         };
         return { id: `${item.itemId}-agent-decision`, label: labels[decision.decision] ?? "Agent 已作出决策",
           detail: decision.code ?? null, status: decision.decision === "FALLBACK" ? "ERROR"
-            : decision.decision === "WAIT_USER" ? "WAITING" : "DONE", sequence: item.sequence };
+            : ["ASK_USER", "WAIT_USER"].includes(decision.decision) ? "WAITING" : "DONE", sequence: item.sequence };
       }
       if (item.type === "ERROR") {
         return { id: `${item.itemId}-error`, label: "执行遇到问题", detail: "可以检查结果后重试", status: "ERROR", sequence: item.sequence };
@@ -668,6 +670,7 @@ function buildTurn(turnId: string, sourceItems: AgentItem[]): ThreadViewTurn {
     content: "",
     status: "ACTIVE",
     error: null,
+    errorCode: null,
     continuationWarning: null,
     startedAt: orderedItems[0]?.createdAt ?? new Date(0).toISOString(),
     finishedAt: null,
@@ -743,6 +746,9 @@ function buildTurn(turnId: string, sourceItems: AgentItem[]): ThreadViewTurn {
         current.continuationWarning = "业务操作已完成，后续 Agent 续接未完成；可以继续提问或稍后查看。";
       } else {
         current.error = payloadText(item.payload);
+        const errorData = recordValue(item.payload.data);
+        current.errorCode = stringValue(errorData?.code)
+          ?? (current.error === "AGENT_DECISION_MISSING" ? current.error : current.errorCode);
         current.status = "FAILED";
         current.finishedAt = item.createdAt;
       }
@@ -752,6 +758,7 @@ function buildTurn(turnId: string, sourceItems: AgentItem[]): ThreadViewTurn {
       if (state && typeof state === "object" && "status" in state && typeof state.status === "string") {
         const status = state.status as AgentTurnStatus;
         const stateData = recordValue(item.payload.data);
+        current.errorCode = stringValue(stateData?.errorCode) ?? current.errorCode;
         const runId = stringValue(stateData?.runId)
           ?? (item.turnId ? continuationRuns.get(item.turnId) ?? null : null);
         const externalSucceeded = (item.turnId ? externalSucceededTurns.has(item.turnId) : false)

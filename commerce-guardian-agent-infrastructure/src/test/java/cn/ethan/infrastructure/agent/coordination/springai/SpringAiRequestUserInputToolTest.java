@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -35,6 +36,22 @@ class SpringAiRequestUserInputToolTest {
         assertEquals("已向用户提出问题，等待回答。", tools.requestUserInput(
                 "缺少订单号", "请补充订单号", "[{\"name\":\"orderId\",\"required\":true,\"maxLength\":64}]"));
         assertEquals("AGENT", created.get().resumeTarget().name());
+    }
+
+    @Test
+    void repeatedQuestionToolCallReusesTheSamePersistentCard() {
+        AtomicReference<AgentQuestionCardModel> created = new AtomicReference<>();
+        AtomicInteger createCount = new AtomicInteger();
+        SpringAiAgentTurnCoordinator.WorkflowInvocation invocation = invocation();
+        SpringAiAgentTurnCoordinator.RequestUserInputTools tools = new SpringAiAgentTurnCoordinator.RequestUserInputTools(
+                thread(), turn(), store(created, createCount), invocation);
+
+        assertEquals("已向用户提出问题，等待回答。", tools.requestUserInput(
+                "缺少订单号", "请补充订单号", "[]"));
+        assertEquals("已向用户提出问题，等待回答。", tools.requestUserInput(
+                "重复提问", "不应创建第二张卡", "[]"));
+        assertEquals(1, createCount.get());
+        assertEquals("缺少订单号", created.get().title());
     }
 
     @Test
@@ -64,6 +81,10 @@ class SpringAiRequestUserInputToolTest {
     }
 
     private AgentQuestionCardStore store(AtomicReference<AgentQuestionCardModel> created) {
+        return store(created, new AtomicInteger());
+    }
+
+    private AgentQuestionCardStore store(AtomicReference<AgentQuestionCardModel> created, AtomicInteger createCount) {
         return new AgentQuestionCardStore() {
             @Override
             public Optional<AgentQuestionCardModel> find(String userId, String questionId) {
@@ -77,6 +98,7 @@ class SpringAiRequestUserInputToolTest {
 
             @Override
             public void create(AgentQuestionCardModel question) {
+                createCount.incrementAndGet();
                 created.set(question);
             }
 

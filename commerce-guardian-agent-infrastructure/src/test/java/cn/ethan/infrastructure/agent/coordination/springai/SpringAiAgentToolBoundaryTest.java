@@ -19,7 +19,6 @@ import java.time.ZoneOffset;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -97,14 +96,14 @@ class SpringAiAgentToolBoundaryTest {
 
     @Test
     void blankRefundReasonIsPassedToWorkflowForQuestionCardCompletion() {
-        AtomicBoolean engineCalled = new AtomicBoolean();
+        AtomicInteger engineCalls = new AtomicInteger();
         SpringAiAgentTurnCoordinator.WorkflowInvocation invocation = invocation();
         AgentWorkflowEngine engine = new AgentWorkflowEngine() {
             @Override
             public StartResult start(
                     AgentThreadModel thread, AgentTurnModel turn, String operation, Map<String, String> arguments
             ) {
-                engineCalled.set(true);
+                engineCalls.incrementAndGet();
                 assertEquals("ORDER_SERVICE", operation);
                 assertEquals("REFUND", arguments.get("intent"));
                 assertEquals("ORDER-1", arguments.get("orderId"));
@@ -122,9 +121,22 @@ class SpringAiAgentToolBoundaryTest {
 
         tools.startOrderService("REFUND", "ORDER-1", null, null, null, null,
                 null, null, null, " ");
+        tools.startOrderService("REFUND", "ORDER-1", null, null, null, null,
+                null, null, null, " ");
 
-        assertTrue(engineCalled.get());
+        assertEquals(1, engineCalls.get());
         assertEquals(2, invocation.traces().size());
+    }
+
+    @Test
+    void completeAgentCycleAcceptsOnlyFinish() {
+        SpringAiAgentTurnCoordinator.WorkflowInvocation invocation = invocation();
+        SpringAiAgentTurnCoordinator.ControlTools tools = new SpringAiAgentTurnCoordinator.ControlTools(invocation);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> tools.completeAgentCycle("ASK_USER", "请补充信息"));
+        assertEquals("Agent 决策已记录。", tools.completeAgentCycle("FINISH", "已完成查询"));
+        assertEquals("Agent 决策已记录。", tools.completeAgentCycle("FINISH", "不应覆盖"));
     }
 
     @Test
