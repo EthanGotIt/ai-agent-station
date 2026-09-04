@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findOpenInteraction, normalizeItem, rebuildTurns } from "./threadProjection";
+import { createOpenInteractionIndex, createThreadProjectionCache, findOpenInteraction, normalizeItem, rebuildTurns } from "./threadProjection";
 import { findOrderAction, projectOrderAction } from "./orderActionProjection";
 import type { AgentItemWire, AgentItemType } from "./threadTypes";
 
@@ -257,5 +257,87 @@ describe("thread projection", () => {
       decision: "FINISH", correctionAttempt: true
     }));
     expect(findOpenInteraction(items)).toBeNull();
+  });
+
+  it("reuses unaffected Turn references when appending an Item", () => {
+    const initialItems = [
+      item("USER_MESSAGE", 1, "turn-a", "查看订单"),
+      item("USER_MESSAGE", 2, "turn-b", "查询物流")
+    ].map(normalizeItem);
+    const cache = createThreadProjectionCache();
+    const first = rebuildTurns(initialItems, cache);
+    const second = rebuildTurns([
+      ...initialItems,
+      normalizeItem(item("ASSISTANT_MESSAGE", 3, "turn-b", "已发货"))
+    ], cache);
+
+    expect(second.find((turn) => turn.turnId === "turn-a")).toBe(first.find((turn) => turn.turnId === "turn-a"));
+    expect(second.find((turn) => turn.turnId === "turn-b")).not.toBe(first.find((turn) => turn.turnId === "turn-b"));
+  });
+
+  it("keeps folded Turn projection equivalent to a full rebuild across appended Items", () => {
+    const sourceTurnId = "turn-source";
+    const actionTurnId = "turn-action";
+    const initialItems = [
+      item("USER_MESSAGE", 1, sourceTurnId, "申请退款"),
+      item("ORDER_DETAIL", 2, sourceTurnId, { orderId: "ORDER-1", status: "PAID", visibility: "ACTIVE" })
+    ].map(normalizeItem);
+    const appendedItems = [
+      item("ORDER_ACTION_REQUEST", 3, actionTurnId, {
+        sourceTurnId, orderId: "ORDER-1", actionType: "REFUND"
+      }),
+      item("WORKFLOW_RESULT", 4, actionTurnId, { runId: "run-1", status: "APPROVED" }),
+      item("EXTERNAL_ACTION_STATUS", 5, actionTurnId, {
+        runId: "run-1", status: "SUCCEEDED", orderId: "ORDER-1", actionType: "REFUND"
+      })
+    ].map(normalizeItem);
+    const cache = createThreadProjectionCache();
+    rebuildTurns(initialItems, cache);
+    let current = initialItems;
+    for (const nextItem of appendedItems) {
+      current = [...current, nextItem];
+      expect(rebuildTurns(current, cache)).toEqual(rebuildTurns(current));
+    }
+    expect(rebuildTurns(current, cache)).toHaveLength(1);
+    expect(rebuildTurns(current, cache)[0].externalActionStatus).toBe("SUCCEEDED");
+  });
+
+  it("does not duplicate a newly appended Turn when several Items arrive together", () => {
+    const initialItems = [item("USER_MESSAGE", 1, "turn-a", "查看订单")].map(normalizeItem);
+    const appendedItems = [
+      item("USER_MESSAGE", 2, "turn-b", "查询物流"),
+      item("ASSISTANT_MESSAGE", 3, "turn-b", "已发货")
+    ].map(normalizeItem);
+    const cache = createThreadProjectionCache();
+    rebuildTurns(initialItems, cache);
+    const next = [...initialItems, ...appendedItems];
+
+    expect(rebuildTurns(next, cache)).toEqual(rebuildTurns(next));
+    expect(rebuildTurns(next, cache).find((turn) => turn.turnId === "turn-b")?.items).toHaveLength(2);
+  });
+
+  it("advances the open interaction index without replaying prior Items", () => {
+    const index = createOpenInteractionIndex();
+    const steps = [
+      [item("QUESTION_CARD", 1, "owner-turn", {
+        questionId: "question-1", runId: "run-1", resumeTarget: "WORKFLOW",
+        title: "补充订单号", prompt: "请补充订单号", fields: []
+      })],
+      [item("QUESTION_ANSWER", 2, "answer-turn", {
+        questionId: "question-1", runId: "run-1", resumeTarget: "WORKFLOW", action: "SUBMIT"
+      })],
+      [item("TURN_STATE", 3, "answer-turn", { status: "FAILED" })],
+      [item("QUESTION_ANSWER", 4, "answer-turn-2", {
+        questionId: "question-1", runId: "run-1", resumeTarget: "WORKFLOW", action: "CANCEL"
+      })],
+      [item("WORKFLOW_RESULT", 5, "answer-turn-2", { runId: "run-1", status: "CANCELLED" })]
+    ];
+    let current: ReturnType<typeof normalizeItem>[] = [];
+    for (const [nextItem] of steps) {
+      current = [...current, normalizeItem(nextItem)];
+      expect(findOpenInteraction(current, index)).toEqual(findOpenInteraction(current));
+    }
+    const outOfOrder = [...current].reverse();
+    expect(findOpenInteraction(outOfOrder, index)).toEqual(findOpenInteraction(outOfOrder));
   });
 });

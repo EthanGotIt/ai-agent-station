@@ -161,74 +161,152 @@ function parseInteraction(value: unknown): AgentInteraction | null {
   return null;
 }
 
-function findOpenInteraction(items: AgentItem[]): AgentInteraction | null {
-  let current: AgentInteraction | null = null;
-  const pendingAnswers = new Map<string, string>();
-  const ordered = items.every((item, index) => index === 0 || item.sequence >= items[index - 1].sequence)
-    ? items
-    : [...items].sort((left, right) => left.sequence - right.sequence);
-  for (const item of ordered) {
-    if (item.type === "QUESTION_CARD") {
-      const question = parseQuestion(item.payload);
-      if (question) current = { type: "QUESTION_CARD", question };
-      continue;
+/** 可跨 SSE 增量复用的开放交互索引；乱序历史会自动回退到全量重建。 */
+export type OpenInteractionIndex = {
+  items: AgentItem[];
+  current: AgentInteraction | null;
+  pendingAnswers: Map<string, string>;
+  answerTurnToQuestions: Map<string, Set<string>>;
+};
+
+/** 创建开放交互索引，供同一 Thread 的历史恢复和 SSE 共用。 */
+export function createOpenInteractionIndex(): OpenInteractionIndex {
+  return {
+    items: [],
+    current: null,
+    pendingAnswers: new Map(),
+    answerTurnToQuestions: new Map()
+  };
+}
+
+function resetOpenInteractionIndex(index: OpenInteractionIndex) {
+  index.items = [];
+  index.current = null;
+  index.pendingAnswers.clear();
+  index.answerTurnToQuestions.clear();
+}
+
+function appendOpenInteractionAnswer(index: OpenInteractionIndex, questionId: string, turnId: string) {
+  const previousTurnId = index.pendingAnswers.get(questionId);
+  if (previousTurnId && previousTurnId !== turnId) {
+    const previousQuestionIds = index.answerTurnToQuestions.get(previousTurnId);
+    previousQuestionIds?.delete(questionId);
+    if (previousQuestionIds?.size === 0) index.answerTurnToQuestions.delete(previousTurnId);
+  }
+  index.pendingAnswers.set(questionId, turnId);
+  const questionIds = index.answerTurnToQuestions.get(turnId) ?? new Set<string>();
+  questionIds.add(questionId);
+  index.answerTurnToQuestions.set(turnId, questionIds);
+}
+
+function removeOpenInteractionAnswer(index: OpenInteractionIndex, questionId: string) {
+  const turnId = index.pendingAnswers.get(questionId);
+  index.pendingAnswers.delete(questionId);
+  if (!turnId) return;
+  const questionIds = index.answerTurnToQuestions.get(turnId);
+  questionIds?.delete(questionId);
+  if (questionIds?.size === 0) index.answerTurnToQuestions.delete(turnId);
+}
+
+function applyOpenInteractionItem(index: OpenInteractionIndex, item: AgentItem) {
+  if (item.type === "QUESTION_CARD") {
+    const question = parseQuestion(item.payload);
+    if (question) index.current = { type: "QUESTION_CARD", question };
+    return;
+  }
+  if (item.type === "WORKFLOW_CHECKPOINT") {
+    const checkpoint = parseWorkflowCheckpoint(item.payload);
+    if (checkpoint) index.current = { type: "WORKFLOW_CHECKPOINT", checkpoint };
+    return;
+  }
+  if (item.type === "QUESTION_ANSWER") {
+    const answer = parseQuestionAnswer(item.payload);
+    if (answer && item.turnId && index.current?.type === "QUESTION_CARD"
+      && index.current.question.questionId === answer.questionId) {
+      // 回答 Item 先于执行结果到达；只有对应 Turn 成功完成才关闭问题，
+      // 版本冲突、超时或取消释放回答时仍需让用户看到可重试的 QuestionCard。
+      appendOpenInteractionAnswer(index, answer.questionId, item.turnId);
     }
-    if (item.type === "WORKFLOW_CHECKPOINT") {
-      const checkpoint = parseWorkflowCheckpoint(item.payload);
-      if (checkpoint) current = { type: "WORKFLOW_CHECKPOINT", checkpoint };
-      continue;
+    return;
+  }
+  if (item.type === "WORKFLOW_DECISION") {
+    const decision = parseWorkflowDecision(item.payload);
+    if (decision && index.current?.type === "WORKFLOW_CHECKPOINT"
+      && index.current.checkpoint.checkpointId === decision.checkpointId) index.current = null;
+    return;
+  }
+  if (item.type === "WORKFLOW_ANSWER") {
+    const data = recordValue(item.payload.data);
+    const questionId = stringValue(data?.questionId);
+    if (questionId && index.current?.type === "QUESTION_CARD" && index.current.question.questionId === questionId) index.current = null;
+    return;
+  }
+  if (item.type === "WORKFLOW_RESULT") {
+    const data = recordValue(item.payload.data);
+    const resultStatus = stringValue(data?.status);
+    if (index.current?.type === "QUESTION_CARD"
+      && index.current.question.resumeTarget === "WORKFLOW"
+      && index.current.question.runId && resultStatus
+      && ["ANSWERED", "CANCELLED"].includes(resultStatus)
+      && index.current.question.runId === stringValue(data?.runId)) {
+      index.current = null;
     }
-    if (item.type === "QUESTION_ANSWER") {
-      const answer = parseQuestionAnswer(item.payload);
-      if (answer && item.turnId && current?.type === "QUESTION_CARD"
-        && current.question.questionId === answer.questionId) {
-        // 回答 Item 先于执行结果到达；只有对应 Turn 成功完成才关闭问题，
-        // 版本冲突、超时或取消释放回答时仍需让用户看到可重试的 QuestionCard。
-        pendingAnswers.set(answer.questionId, item.turnId);
-      }
-      continue;
+    return;
+  }
+  if (item.type !== "TURN_STATE" || item.payload.kind !== "TURN_STATE") return;
+  const data = recordValue(item.payload.data);
+  const status = stringValue(data?.status);
+  const questionIds = item.turnId ? index.answerTurnToQuestions.get(item.turnId) : undefined;
+  if (!questionIds || !status) return;
+  for (const questionId of questionIds) {
+    if (index.current?.type === "QUESTION_CARD"
+      && index.current.question.questionId === questionId
+      && status === "COMPLETED") {
+      index.current = null;
     }
-    if (item.type === "WORKFLOW_DECISION") {
-      const decision = parseWorkflowDecision(item.payload);
-      if (decision && current?.type === "WORKFLOW_CHECKPOINT"
-        && current.checkpoint.checkpointId === decision.checkpointId) current = null;
-      continue;
-    }
-    if (item.type === "WORKFLOW_ANSWER") {
-      const data = recordValue(item.payload.data);
-      const questionId = stringValue(data?.questionId);
-      if (questionId && current?.type === "QUESTION_CARD" && current.question.questionId === questionId) current = null;
-      continue;
-    }
-    if (item.type === "WORKFLOW_RESULT") {
-      const data = recordValue(item.payload.data);
-      const resultStatus = stringValue(data?.status);
-      if (current?.type === "QUESTION_CARD"
-        && current.question.resumeTarget === "WORKFLOW"
-        && current.question.runId && resultStatus
-        && ["ANSWERED", "CANCELLED"].includes(resultStatus)
-        && current.question.runId === stringValue(data?.runId)) {
-        current = null;
-      }
-      continue;
-    }
-    if (item.type === "TURN_STATE" && item.payload.kind === "TURN_STATE") {
-      const data = recordValue(item.payload.data);
-      const status = stringValue(data?.status);
-      const questionId = [...pendingAnswers.entries()]
-        .find(([, answerTurnId]) => answerTurnId === item.turnId)?.[0];
-      if (questionId && current?.type === "QUESTION_CARD"
-        && current.question.questionId === questionId
-        && status === "COMPLETED") {
-        current = null;
-        pendingAnswers.delete(questionId);
-      } else if (questionId && status
-        && ["COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"].includes(status)) {
-        pendingAnswers.delete(questionId);
-      }
+    if (["COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"].includes(status)) {
+      removeOpenInteractionAnswer(index, questionId);
     }
   }
-  return current;
+}
+
+function appendOnlyDelta(previous: AgentItem[], next: AgentItem[]): AgentItem[] | null {
+  if (previous.length > next.length) return null;
+  if (!previous.every((item, index) => item === next[index])) return null;
+  let lastSequence = previous.at(-1)?.sequence ?? -1;
+  const fresh = next.slice(previous.length);
+  for (const item of fresh) {
+    if (item.sequence <= lastSequence) return null;
+    lastSequence = item.sequence;
+  }
+  return fresh;
+}
+
+/**
+ * 按严格递增 sequence 消费新 Item；历史重载或乱序页会清空索引并完整重放。
+ */
+export function findOpenInteraction(items: AgentItem[], index?: OpenInteractionIndex): AgentInteraction | null {
+  if (!index) {
+    const localIndex = createOpenInteractionIndex();
+    const ordered = items.every((item, position) => position === 0 || item.sequence >= items[position - 1].sequence)
+      ? items
+      : [...items].sort((left, right) => left.sequence - right.sequence);
+    for (const item of ordered) applyOpenInteractionItem(localIndex, item);
+    return localIndex.current;
+  }
+
+  const fresh = appendOnlyDelta(index.items, items);
+  if (fresh) {
+    for (const item of fresh) applyOpenInteractionItem(index, item);
+  } else {
+    resetOpenInteractionIndex(index);
+    const ordered = items.every((item, position) => position === 0 || item.sequence >= items[position - 1].sequence)
+      ? items
+      : [...items].sort((left, right) => left.sequence - right.sequence);
+    for (const item of ordered) applyOpenInteractionItem(index, item);
+  }
+  index.items = items;
+  return index.current;
 }
 
 function normalizeQuestionField(raw: unknown, index: number): QuestionField | null {
@@ -838,7 +916,83 @@ function buildTurn(turnId: string, sourceItems: AgentItem[]): ThreadViewTurn {
   };
 }
 
-function rebuildTurns(items: AgentItem[]): ThreadViewTurn[] {
+const FOLDED_INPUT_KINDS = new Set<ThreadViewTurn["inputKind"]>([
+  "QUESTION_ANSWER", "WORKFLOW_ANSWER", "WORKFLOW_DECISION"
+]);
+
+function isFoldedInputKind(inputKind: ThreadViewTurn["inputKind"]) {
+  return FOLDED_INPUT_KINDS.has(inputKind);
+}
+
+/** 缓存物理 Turn、折叠关系和投影数组，增量路径只重算受影响的 Turn。 */
+export type ThreadProjectionCache = {
+  items: AgentItem[];
+  turnItems: Map<string, AgentItem[]>;
+  firstSequences: Map<string, number>;
+  foldTargets: Map<string, string | null>;
+  physical: Map<string, ThreadViewTurn>;
+  projected: Map<string, ThreadViewTurn>;
+  projectedItems: Map<string, AgentItem[]>;
+};
+
+/** 创建 Thread 投影缓存，供工作区在 SSE 增量更新时复用。 */
+export function createThreadProjectionCache(): ThreadProjectionCache {
+  return {
+    items: [],
+    turnItems: new Map(),
+    firstSequences: new Map(),
+    foldTargets: new Map(),
+    physical: new Map(),
+    projected: new Map(),
+    projectedItems: new Map()
+  };
+}
+
+function sameItemList(previous: AgentItem[] | undefined, next: AgentItem[]) {
+  return Boolean(previous) && previous!.length === next.length
+    && next.every((item, index) => previous![index] === item);
+}
+
+function resolveProjectionTarget(
+  turn: ThreadViewTurn,
+  physical: Map<string, ThreadViewTurn>,
+  runOwners: Map<string, string>
+): string | null {
+  let target = turn.sourceTurnId
+    ?? (isFoldedInputKind(turn.inputKind) && turn.workflowRunId
+      ? runOwners.get(turn.workflowRunId) ?? null : null);
+  const visited = new Set<string>();
+  while (target && physical.get(target)?.sourceTurnId && !visited.has(target)) {
+    visited.add(target);
+    target = physical.get(target)?.sourceTurnId ?? target;
+  }
+  return target && target !== turn.turnId && physical.has(target) ? target : null;
+}
+
+function buildRunOwners(physical: Map<string, ThreadViewTurn>) {
+  const runOwners = new Map<string, string>();
+  for (const turn of physical.values()) {
+    // 回答/决策子 Turn 也会携带 runId，但它不是 Workflow 的归属 Turn；否则会覆盖来源 Turn。
+    if (turn.workflowRunId && !isFoldedInputKind(turn.inputKind)) {
+      runOwners.set(turn.workflowRunId, turn.turnId);
+    }
+  }
+  return runOwners;
+}
+
+function projectionResult(
+  projected: Map<string, ThreadViewTurn>,
+  foldTargets: Map<string, string | null>,
+  firstSequences: Map<string, number>
+) {
+  return [...projected.entries()]
+    .filter(([turnId]) => !foldTargets.get(turnId))
+    .map(([, turn]) => turn)
+    .sort((left, right) => (firstSequences.get(left.turnId) ?? left.items[0]?.sequence ?? 0)
+      - (firstSequences.get(right.turnId) ?? right.items[0]?.sequence ?? 0));
+}
+
+function rebuildTurnsFromScratch(items: AgentItem[], cache?: ThreadProjectionCache): ThreadViewTurn[] {
   const grouped = new Map<string, AgentItem[]>();
   for (const item of items) {
     if (!item.turnId) continue;
@@ -846,38 +1000,122 @@ function rebuildTurns(items: AgentItem[]): ThreadViewTurn[] {
     current.push(item);
     grouped.set(item.turnId, current);
   }
-  const physical = new Map([...grouped.entries()].map(([turnId, turnItems]) => [turnId, buildTurn(turnId, turnItems)]));
-  const runOwners = new Map<string, string>();
-  for (const turn of physical.values()) {
-    // 回答/决策子 Turn 也会携带 runId，但它不是 Workflow 的归属 Turn；否则会覆盖来源 Turn。
-    if (turn.workflowRunId && !["QUESTION_ANSWER", "WORKFLOW_ANSWER", "WORKFLOW_DECISION"].includes(turn.inputKind)) {
-      runOwners.set(turn.workflowRunId, turn.turnId);
-    }
+  const previousPhysical = cache?.physical ?? new Map<string, ThreadViewTurn>();
+  const physical = new Map<string, ThreadViewTurn>();
+  for (const [turnId, turnItems] of grouped) {
+    const previous = previousPhysical.get(turnId);
+    physical.set(turnId, previous && sameItemList(previous.items, turnItems)
+      ? previous : buildTurn(turnId, turnItems));
   }
-  const resolveTarget = (turn: ThreadViewTurn): string | null => {
-    let target = turn.sourceTurnId
-      ?? (["QUESTION_ANSWER", "WORKFLOW_ANSWER", "WORKFLOW_DECISION"].includes(turn.inputKind) && turn.workflowRunId
-        ? runOwners.get(turn.workflowRunId) ?? null : null);
-    const visited = new Set<string>();
-    while (target && physical.get(target)?.sourceTurnId && !visited.has(target)) {
-      visited.add(target);
-      target = physical.get(target)?.sourceTurnId ?? target;
-    }
-    return target && target !== turn.turnId && physical.has(target) ? target : null;
-  };
+  const runOwners = buildRunOwners(physical);
+  const foldTargets = new Map<string, string | null>();
+  for (const turn of physical.values()) {
+    foldTargets.set(turn.turnId, resolveProjectionTarget(turn, physical, runOwners));
+  }
   const mergedItems = new Map<string, AgentItem[]>();
   for (const turn of physical.values()) mergedItems.set(turn.turnId, [...turn.items]);
-  const folded = new Set<string>();
   for (const turn of physical.values()) {
-    const target = resolveTarget(turn);
-    if (!target) continue;
-    mergedItems.get(target)?.push(...turn.items);
-    folded.add(turn.turnId);
+    const target = foldTargets.get(turn.turnId);
+    if (target) mergedItems.get(target)?.push(...turn.items);
   }
-  return [...mergedItems.entries()]
-    .filter(([turnId]) => !folded.has(turnId))
-    .map(([turnId, turnItems]) => buildTurn(turnId, turnItems))
-    .sort((left, right) => left.items[0]?.sequence - right.items[0]?.sequence);
+  const previousProjected = cache?.projected ?? new Map<string, ThreadViewTurn>();
+  const previousProjectedItems = cache?.projectedItems ?? new Map<string, AgentItem[]>();
+  const projected = new Map<string, ThreadViewTurn>();
+  for (const [turnId, turnItems] of mergedItems) {
+    const previous = previousProjected.get(turnId);
+    const previousItems = previousProjectedItems.get(turnId);
+    projected.set(turnId, previous && sameItemList(previousItems, turnItems)
+      ? previous : buildTurn(turnId, turnItems));
+  }
+  const firstSequences = new Map<string, number>();
+  const turnItems = new Map<string, AgentItem[]>();
+  for (const [turnId, turn] of physical) {
+    turnItems.set(turnId, turn.items);
+    firstSequences.set(turnId, turn.items[0]?.sequence ?? 0);
+  }
+  if (!cache) return projectionResult(projected, foldTargets, firstSequences);
+  cache.items = items;
+  cache.turnItems = turnItems;
+  cache.firstSequences = firstSequences;
+  cache.foldTargets = foldTargets;
+  cache.physical = physical;
+  cache.projected = projected;
+  cache.projectedItems = mergedItems;
+  return projectionResult(projected, foldTargets, firstSequences);
+}
+
+function appendTurnsIncrementally(
+  items: AgentItem[],
+  fresh: AgentItem[],
+  cache: ThreadProjectionCache
+): ThreadViewTurn[] {
+  const freshByTurn = new Map<string, AgentItem[]>();
+  const affectedTurnIds = new Set<string>();
+  for (const item of fresh) {
+    if (!item.turnId) continue;
+    const turnItems = freshByTurn.get(item.turnId) ?? [];
+    turnItems.push(item);
+    freshByTurn.set(item.turnId, turnItems);
+    affectedTurnIds.add(item.turnId);
+  }
+  for (const [turnId, appendedItems] of freshByTurn) {
+    const nextItems = [...(cache.turnItems.get(turnId) ?? []), ...appendedItems];
+    cache.turnItems.set(turnId, nextItems);
+    if (!cache.firstSequences.has(turnId)) cache.firstSequences.set(turnId, nextItems[0]?.sequence ?? 0);
+    cache.physical.set(turnId, buildTurn(turnId, nextItems));
+  }
+
+  const runOwners = buildRunOwners(cache.physical);
+  const nextFoldTargets = new Map<string, string | null>();
+  let relationChanged = false;
+  for (const turn of cache.physical.values()) {
+    const target = resolveProjectionTarget(turn, cache.physical, runOwners);
+    nextFoldTargets.set(turn.turnId, target);
+    if (cache.foldTargets.has(turn.turnId) && cache.foldTargets.get(turn.turnId) !== target) relationChanged = true;
+  }
+  // 新增 Turn 的折叠关系可以直接追加；已有 Turn 的归属变化需要一次完整重建，
+  // 以正确处理来源链、run owner 变化和历史乱序边界。
+  if (relationChanged) return rebuildTurnsFromScratch(items, cache);
+
+  const projectedItems = new Map(cache.projectedItems);
+  const projected = new Map(cache.projected);
+  for (const turnId of affectedTurnIds) {
+    const physical = cache.physical.get(turnId);
+    if (!physical) continue;
+    projected.set(turnId, physical);
+    const target = nextFoldTargets.get(turnId);
+    // 根 Turn 的 merged 数组可能已经包含多个折叠子 Turn；只有子 Turn
+    // 或新建根 Turn 才能直接用自己的物理 Item 数组替换该键。
+    if (target || !projectedItems.has(turnId)) {
+      projectedItems.set(turnId, cache.turnItems.get(turnId) ?? physical.items);
+    }
+  }
+  const changedRoots = new Set<string>();
+  for (const [turnId, appendedItems] of freshByTurn) {
+    const rootId = nextFoldTargets.get(turnId) ?? turnId;
+    projectedItems.set(rootId, cache.projectedItems.has(rootId)
+      ? [...(projectedItems.get(rootId) ?? []), ...appendedItems]
+      : appendedItems);
+    changedRoots.add(rootId);
+  }
+  for (const rootId of changedRoots) {
+    const rootItems = projectedItems.get(rootId) ?? [];
+    projected.set(rootId, buildTurn(rootId, rootItems));
+  }
+  cache.items = items;
+  cache.foldTargets = nextFoldTargets;
+  cache.projected = projected;
+  cache.projectedItems = projectedItems;
+  return projectionResult(projected, nextFoldTargets, cache.firstSequences);
+}
+
+function rebuildTurns(items: AgentItem[], cache?: ThreadProjectionCache): ThreadViewTurn[] {
+  if (!cache) return rebuildTurnsFromScratch(items);
+  if (cache.items.length === 0 && cache.physical.size === 0 && items.length > 0) {
+    return rebuildTurnsFromScratch(items, cache);
+  }
+  const fresh = appendOnlyDelta(cache.items, items);
+  return fresh ? appendTurnsIncrementally(items, fresh, cache) : rebuildTurnsFromScratch(items, cache);
 }
 
 function terminal(status: AgentTurnStatus) {
@@ -908,6 +1146,5 @@ export {
   terminal,
   workflowResultRawStatus,
   workflowResultTurnStatus,
-  workflowRunFromItem,
-  findOpenInteraction
+  workflowRunFromItem
 };

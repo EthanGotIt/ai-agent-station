@@ -26,7 +26,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
   it("显示服务端不可用错误，不生成本地伪回复", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("服务不可用")));
     render(<App />);
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("网络连接暂时不可用"));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("网络连接暂时不可用"));
     expect(screen.queryByText(/已选择 .* 路径/)).toBeNull();
   });
 
@@ -59,7 +59,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(within(threadRow as HTMLElement).queryByRole("button", { name: "恢复对话" })).toBeNull();
 
     const activeRow = screen.getAllByText("售后咨询").find((element) => element.closest(".thread-row"))?.closest(".thread-row");
-    const renameButton = within(activeRow as HTMLElement).getByRole("button", { name: "重命名对话" });
+    const renameButton = within(activeRow as HTMLElement).getByRole("button", { name: "重命名对话 售后咨询" });
     fireEvent.click(renameButton);
     const titleInput = screen.getByRole("textbox", { name: "重命名 售后咨询" });
     fireEvent.change(titleInput, { target: { value: "退款进度" } });
@@ -68,7 +68,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
       String(input).endsWith("/threads/thread-1") && JSON.parse(String(init?.body)).title === "退款进度")).toBe(true));
 
     const renamedRow = screen.getAllByText("退款进度").find((element) => element.closest(".thread-row"))?.closest(".thread-row");
-    fireEvent.click(within(renamedRow as HTMLElement).getByRole("button", { name: "重命名对话" }));
+    fireEvent.click(within(renamedRow as HTMLElement).getByRole("button", { name: "重命名对话 退款进度" }));
     const cancelInput = screen.getByRole("textbox", { name: "重命名 退款进度" });
     fireEvent.change(cancelInput, { target: { value: "不应保存" } });
     fireEvent.blur(cancelInput);
@@ -122,10 +122,15 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(await screen.findByRole("heading", { name: "退款确认" })).not.toBeNull();
     const decision = screen.getByLabelText("决定") as HTMLSelectElement;
     expect(decision.value).toBe("");
+    expect(decision.getAttribute("aria-required")).toBe("true");
+    expect(decision.getAttribute("aria-describedby")).toBeNull();
     fireEvent.submit(decision.closest("form") as HTMLFormElement);
 
     expect((await screen.findByRole("alert")).textContent).toContain("请先完成“决定”。");
+    expect(decision.getAttribute("aria-describedby")).toBe("question-form-error");
     fireEvent.change(decision, { target: { value: "APPROVE" } });
+    expect(decision.getAttribute("aria-invalid")).toBe("false");
+    expect(decision.getAttribute("aria-describedby")).toBeNull();
     fireEvent.submit(decision.closest("form") as HTMLFormElement);
 
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) =>
@@ -312,6 +317,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
   });
 
   it("运行详情展示当前 Turn 的完整 Item 序列，而不是截断为八步", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     const thread = threadRecord("thread-1", "完整序列 Thread");
     const events = Array.from({ length: 10 }, (_, index) => {
       const sequence = index + 1;
@@ -345,11 +351,87 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
 
     expect(await screen.findByText("请求已完成")).not.toBeNull();
     expect(screen.queryByText("可以这样问")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /运行详情/ }));
+    const detailButton = screen.getByRole("button", { name: /运行详情/ });
+    detailButton.focus();
+    fireEvent.click(detailButton);
     expect(await screen.findByRole("heading", { name: "运行详情" })).not.toBeNull();
+    expect(screen.getByRole("dialog", { name: "运行详情" })).not.toBeNull();
+    expect(document.querySelector(".thread-sidebar")?.hasAttribute("inert")).toBe(true);
     expect(screen.getByText("10 个持久化 Item · Turn turn-1")).not.toBeNull();
     expect(screen.getByText("#010")).not.toBeNull();
     expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/turns/turn-1/execution")).length).toBe(1);
+    const closeButtons = screen.getAllByRole("button", { name: "关闭运行详情" });
+    fireEvent.click(closeButtons.at(-1) as HTMLElement);
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "运行详情" })).toBeNull());
+    expect(document.querySelector(".thread-sidebar")?.hasAttribute("inert")).toBe(false);
+    expect(document.activeElement).toBe(detailButton);
+  });
+
+  it("运行详情对长 Item 序列按页展示并可加载更早事实", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    const thread = threadRecord("thread-1", "长序列 Thread");
+    const events = Array.from({ length: 90 }, (_, index) => {
+      const sequence = index + 1;
+      const type = sequence === 1 ? "USER_MESSAGE" : sequence === 90 ? "TURN_STATE" : "EXECUTION_EVENT";
+      const data = type === "USER_MESSAGE"
+        ? { schemaVersion: 1, kind: type, data: "查询订单进度" }
+        : type === "TURN_STATE"
+          ? { schemaVersion: 1, kind: type, data: { status: "COMPLETED" } }
+          : { schemaVersion: 1, kind: type, data: `步骤 ${sequence}` };
+      return itemEvent(`item-long-${sequence}`, "thread-1", "turn-1", type, sequence, data);
+    });
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      if (url.includes("/threads/thread-1/items")) return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse(events));
+      if (url.endsWith("/turns/turn-1/execution")) return Promise.resolve(json({ timeline: [] }));
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("请求已完成")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /运行详情/ }));
+    expect(await screen.findByRole("heading", { name: "运行详情" })).not.toBeNull();
+    expect(screen.queryByText("#010")).toBeNull();
+    expect(screen.getByText("#090")).not.toBeNull();
+    const loadMore = screen.getByRole("button", { name: "加载更早的 10 个 Item" });
+    fireEvent.click(loadMore);
+    expect(screen.getByText("#001")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /加载更早/ })).toBeNull();
+  });
+
+  it("移动端 Thread 抽屉收束焦点并支持 Escape 关闭", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    const thread = threadRecord("thread-1", "移动 Thread");
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      if (url.includes("/threads/thread-1/items")) return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(streamResponse([]));
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "移动 Thread" });
+    const opener = screen.getByRole("button", { name: "对话列表" });
+    opener.focus();
+    fireEvent.click(opener);
+
+    const sidebar = await screen.findByRole("dialog", { name: "对话记录" });
+    expect(sidebar.getAttribute("aria-modal")).toBe("true");
+    expect(sidebar.getAttribute("aria-labelledby")).toBe("thread-list-title");
+    expect(document.querySelector(".thread-main")?.hasAttribute("inert")).toBe(true);
+    expect(document.querySelector(".app-topbar")?.hasAttribute("inert")).toBe(true);
+    expect(document.activeElement).toBe(sidebar.querySelector(".mobile-sidebar-close"));
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "对话记录" })).toBeNull());
+    expect(document.querySelector(".thread-main")?.hasAttribute("inert")).toBe(false);
+    expect(document.activeElement).toBe(opener);
   });
 
   it("执行回放失败时保留当前 Item 并在检查器降级", async () => {
@@ -427,7 +509,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     fireEvent.click(within(orderCard as HTMLElement).getByRole("button", { name: "申请退款" }));
     const composer = screen.getByRole("textbox", { name: "输入请求" }) as HTMLTextAreaElement;
     expect(composer.value).toBe("");
-    expect(screen.getByRole("status", { name: "申请退款 执行状态" })).not.toBeNull();
+    expect(document.querySelector(".order-action-status")).not.toBeNull();
     expect(screen.getByText("已提交，正在排队")).not.toBeNull();
     const actionCall = fetchMock.mock.calls.find(([input]) => String(input).includes("/threads/thread-1/order-actions"));
     expect(JSON.parse(String(actionCall?.[1]?.body))).toMatchObject({
@@ -469,7 +551,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(JSON.parse(String(actionCall?.[1]?.body))).toMatchObject({
       sourceTurnId: "turn-1", orderId: "ORDER-DELETE-001", actionType: "DELETE_ORDER"
     });
-    expect(screen.getByRole("status", { name: "删除记录 执行状态" })).not.toBeNull();
+    expect(document.querySelector(".order-action-status")).not.toBeNull();
   });
 
   it("QuestionCard 输入不会因无关 SSE Item 到达而被清空", async () => {
@@ -637,7 +719,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
 
     expect(await screen.findByText("补充退款原因")).not.toBeNull();
     expect(document.querySelectorAll(".conversation-turn")).toHaveLength(1);
-    expect(screen.getByRole("status", { name: "申请退款 执行状态" })).not.toBeNull();
+    expect(document.querySelector(".order-action-status")).not.toBeNull();
     expect(document.querySelector(".question-modal-layer .question-card")).not.toBeNull();
     expect(document.querySelector(".thread-records .question-card")).toBeNull();
     expect(screen.queryByText("订单动作")).toBeNull();
@@ -867,7 +949,8 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /Thread 2/ }));
+    const threadTwoRow = (await screen.findByText("Thread 2")).closest(".thread-row");
+    fireEvent.click(within(threadTwoRow as HTMLElement).getByRole("button", { name: "Thread 2订单售后" }));
     expect(await screen.findByRole("heading", { name: "直接输入请求" })).not.toBeNull();
 
     delayedHistory.resolve(json({ items: [staleItem], afterSequence: 0, nextAfterSequence: 1, hasMore: false }));

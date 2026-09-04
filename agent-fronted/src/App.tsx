@@ -11,9 +11,9 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <main className="app-page">
+      <div className="app-page">
         <header className="app-topbar">
-          <div className="product-lockup"><span className="brand-mark"><ShieldCheck aria-hidden="true" /></span><strong>Commerce Guardian Agent</strong><span className="product-divider" aria-hidden="true" /><span className="console-title">订单调度台</span></div>
+          <div className="product-lockup"><span className="brand-mark"><ShieldCheck aria-hidden="true" /></span><h1 className="product-name">Commerce Guardian Agent</h1><span className="product-divider" aria-hidden="true" /><span className="console-title">订单调度台</span></div>
           <details className="thread-context">
             <summary><CircleUserRound aria-hidden="true" /><span>当前账户</span><small>{normalizedUserId}</small></summary>
             <div className="context-fields">
@@ -25,7 +25,7 @@ export function App() {
           </details>
         </header>
         <div className="workbench-content"><ThreadWorkspace workspace={workspace} userId={normalizedUserId} /></div>
-      </main>
+      </div>
     </div>
   );
 }

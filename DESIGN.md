@@ -5,15 +5,15 @@
 ## 页面骨架
 
 - 顶部为单行产品栏：`Commerce Guardian Agent｜订单调度台` 在左、当前账户与演示账户切换在右；桌面端不再额外占用一段营销式标题区。Thread 只提供重命名，不提供回收站或归档恢复入口。
-- 工作区在顶栏下直接进入三栏信息层级：宽屏按设计稿比例使用约 23.5% 的 Thread 列、约 49% 的中央 Turn 业务流和约 27.5% 的 Item 检查器（分别钳制为 280–376px 与 340–440px）；1024px 及以下检查器改为抽屉。
-- 检查器打开后只显示当前 Turn 的完整持久化 Item 序列；主流仍保持业务结果优先。
-- 1180px 以下检查器变为右侧抽屉，760px 以下覆盖为全屏面板；移动端 Thread 列表也变为可关闭抽屉。
+- 工作区在顶栏下直接进入三栏信息层级：宽屏按设计稿比例使用约 23.5% 的 Thread 列、约 49% 的中央 Turn 业务流和约 27.5% 的 Item 检查器（分别钳制为 280–376px 与 340–440px）；1180px 以下检查器改为抽屉。
+- 检查器打开后优先显示当前 Turn 的最新持久化 Item 序列；长历史按 80 条一页加载更早 Item，主流仍保持业务结果优先。
+- 1180px 以下检查器变为右侧抽屉，760px 以下覆盖为全屏面板；移动端 Thread 列表也变为带焦点收束、Esc 关闭的可关闭抽屉。
 
 ## 视觉系统
 
-页面使用更轻的冷雾灰画布（`#F4F7F6`）和清晰的白色工作面（`#FFFFFF`）；侧栏与右侧检查器以细分隔线而非厚重卡片阴影分区。路线青绿（`#176C60`）表达正常业务流，信号琥珀（`#C8792A`）表达等待确认或外部系统尚未核验，故障红（`#B6403C`）表达失败与错误。
+页面使用更轻的冷雾灰画布（`#F4F7F6`）和清晰的白色工作面（`#FFFFFF`）；侧栏与右侧检查器以细分隔线而非厚重卡片阴影分区。路线青绿（`#176C60`）表达正常业务流，信号琥珀（`#925515`）表达等待确认或外部系统尚未核验，故障红（`#A33B37`）表达失败与错误。
 
-正文采用 `Segoe UI Variable`、中文系统字体；时间、序号和 Item 类型采用 `Cascadia Mono`。按钮、面板、状态胶囊和输入控件共享 8–12px 圆角与 180ms 状态过渡。系统深色模式通过同一组语义 token 覆盖，`prefers-reduced-motion` 会收敛过渡和动画。
+正文采用 `Segoe UI Variable`、中文系统字体；时间、序号和 Item 类型采用 `Cascadia Mono`。按钮、面板、状态胶囊和输入控件共享 8–12px 圆角与 180ms 状态过渡；所有可触控控件统一使用 `--hit-target: 44px`。模态和抽屉遮罩复用 `--scrim`、`--scrim-hover`、`--scrim-strong` 主题 token。系统深色模式通过同一组语义 token 覆盖，`prefers-reduced-motion` 会收敛过渡和动画。
 
 ## 交互结果
 
@@ -25,8 +25,15 @@
 - QuestionCard 的普通步骤按钮为“继续”，取消按钮为“结束本次提问”；Workflow Checkpoint 只展示动作、对象、影响和“确认执行/拒绝执行”。QuestionCard 取消不会触发必填字段校验；Checkpoint 拒绝关闭 Workflow 且不创建外部动作。
 - 活跃 QuestionCard 不再嵌入历史 Turn，而是作为页面中央、避开底部 Composer 的模态浮层；它带遮罩、关闭按钮、Esc 取消、焦点收束和独立滚动，底部输入框保留但在确认期间禁用，历史 Turn 只保留阶段摘要与卡内动作回执。
 - `运行详情`显示浅色账本式真实 sequence、时间、Item 类型和受控 JSON；敏感键会被遮蔽，不展示 Thinking。Escape、关闭按钮和遮罩均可退出，抽屉打开时锁定页面滚动并将焦点移至关闭按钮。
+- 连接失败显示可恢复的“重新连接”状态，不把“直接输入请求”与禁用 Composer 同时呈现；实时中断原地续接当前 Thread，历史加载失败重放当前 Thread，技术错误默认收进可展开详情。
+- 主区的七步 Workflow 节点收敛为当前业务阶段摘要，完整节点、耗时和受控数据按需放入运行详情；删除记录收进“更多操作”并明确标注不可恢复。Composer 提供可选工作台提示与搜索、新建、最近详情快捷键。
 - 终态 Turn 首次打开检查器时按需读取并缓存只读执行回放；回放失败时保留已由 Items/SSE 恢复的事实，并在检查器内给出降级提示。
 - QuestionCard 使用后端提供的 `operation`、`step`、`stepNo`；外部动作回执区分已核验与“操作已受理、最新状态暂未核验”，后者提供可编辑的重新查询入口。
+- SSE 增量按 `itemId` 去重；Thread 投影缓存和 `memo` 保持未受影响 Turn/Item 行的引用稳定，长历史使用 `content-visibility` 延迟非可视区域的布局与绘制。
+- SSE 严格递增时按新 Item 增量更新 Turn 索引和开放交互索引；乱序或历史重载自动回退到完整重建，避免每个事件重扫整个 Thread。
+- Item 检查器长序列默认展示最新 80 条，可通过“加载更早的 Item”渐进展开，避免一次性物化全部历史行。
+- QuestionCard 的必填字段暴露 `aria-required`，校验错误以稳定 ID 通过 `aria-describedby` 关联；字段开始修正时同步清除错误状态。
+- 可恢复的连接状态使用 `role="status"` 与 polite live region；需要打断用户的操作错误继续使用 `role="alert"`。
 
 ## 受控闭环投影
 
@@ -38,7 +45,7 @@
 ## 验收记录
 
 - 2026-08-26 受控闭环增量已在一次性克隆库 `COMMERCE_GUARDIAN_AGENT_V7_MIGRATION_20260826` 完成 V6→V7 演练：应用启动触发 Flyway 7 并确认 `AGENT_TURN.CONTINUATION_JSON` 可空、历史 88 条 Turn 保持不变；原配置库保持 V6 且未增加该列。2026-08-27 为 DeepSeek RestClient 切换到项目已有的 Reactor Netty，并为 Tomcat 增加可配置的 NIO2 协议；本机用真实配置启动后端成功，`/actuator/health` 返回 200。当前 Codex Windows 沙箱在真正调用 DeepSeek 时仍会阻断 Netty selector 的 loopback 管道，页面会安全收敛为“Agent 执行失败”，不代表订单数据或数据库异常。
-- `npm.cmd run typecheck`、`npm.cmd test -- --run`、`npm.cmd run build` 已通过；当前 Vitest 为 28 项，覆盖多 Turn/Item 聚合、旧 SSE 增量忽略、快捷问消失、完整 Item 检查器、回放失败降级、结构化订单卡片直达动作、卡内动作状态回执、居中 QuestionCard 模态浮层和取消后 QuestionCard 收敛。
-- `mvn -q -DskipTests compile`、订单 Workflow/Worker/Spring AI 定向测试和 `mvn -q dependency:analyze -DskipTests` 已通过；Python convention、脚本单测和 `scripts.runtime_eval` 使用仓库配置的显式解释器通过。完整 Maven 测试中的 HTTP 适配器测试仍受当前 Windows 环境无法建立 JDK loopback connection 限制，未将环境错误当作产品通过证据。
-- Impeccable detector 扫描 `agent-fronted/src` 返回空问题集。
-- 已使用真实后端数据复核 1920×900、1440×900、1024×768、390×844：桌面三栏、1024 右侧抽屉与移动端全屏检查器均可用；居中 QuestionCard 避开底部 Composer，关闭检查器后移动端主业务流保持可操作。现场还验证了空退款原因 `CANCEL`、订单卡片 `QUERY_LOGISTICS` 直达请求，以及催发货 3 次夹具失败→人工重试→第 4 次成功的卡内回执（`injectedFailures=3`、`businessMutations=1`）。正文基准为 14px，页面/Turn 标题为 16px，卡片标题为 15px，技术元数据使用 11–12px 等宽字体；可复现启停与三条黄金路径见 `docs/review-runbook.md`。
+- `npm.cmd run typecheck`、`npm.cmd test -- --run --fileParallelism=false`、`npm.cmd run build` 已通过；当前 Vitest 为 55 项，覆盖多 Turn/Item 聚合、折叠 Turn 增量等价性、开放交互增量索引、旧 SSE 增量忽略、快捷问消失、Item 检查器分页、回放失败降级、结构化订单卡片直达动作、卡内动作状态回执、居中 QuestionCard 模态浮层和取消后 QuestionCard 收敛。
+- `mvn -q -DskipTests compile`、订单 Workflow/Worker/Spring AI 定向测试和 `mvn -q dependency:analyze -DskipTests` 已通过；Python 脚本单测共 19 项，其中 18 项通过，唯一失败是 convention gate 发现 Impeccable 生成的两个空目录（`agent-fronted/.impeccable/live/annotations`、`agent-fronted/.impeccable/live/sessions`），不是业务代码错误。`scripts.runtime_eval` 使用仓库配置的显式解释器通过。完整 Maven 测试中的 HTTP 适配器测试仍受当前 Windows 环境无法建立 JDK loopback connection 限制，未将环境错误当作产品通过证据。
+- Impeccable detector 扫描 `agent-fronted` 返回空问题集；本机缺少 `htmlparser2`、`css-select`、`css-tree`、`domutils`，因此本次结果是降级正则扫描，未将其当作完整清洁证明。
+- 后端已启动于 `127.0.0.1:8090`，Flyway schema 版本 9，`/actuator/health` 返回 `UP`；前端浏览器复核覆盖 1440×900 与 390×844，包含在线 Thread、Item 分页、移动抽屉和连接恢复语义。正文基准为 14px，业务元数据统一至少 12px；真实后端三条黄金路径仍见 `docs/review-runbook.md`。

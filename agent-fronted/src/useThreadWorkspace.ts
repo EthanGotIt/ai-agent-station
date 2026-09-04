@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HttpRequestError, readJsonResponse } from "./http";
 import { appendSseChunk } from "./sse";
 import {
+  createOpenInteractionIndex,
+  createThreadProjectionCache,
   findOpenInteraction,
   normalizeItem,
   parseInteraction,
@@ -19,8 +21,10 @@ import type {
   AgentThreadEvent,
   AgentTurnStatus,
   OrderActionType,
-  QuestionAnswerAction
+  QuestionAnswerAction,
+  ThreadViewTurn
 } from "./threadTypes";
+import type { OpenInteractionIndex, ThreadProjectionCache } from "./threadProjection";
 
 const API = "/api/agent";
 const SSE_READ_IDLE_TIMEOUT_MS = 45_000;
@@ -72,6 +76,10 @@ export function useThreadWorkspace(userId: string) {
   const [error, setError] = useState<string | null>(null);
   const cursorRef = useRef(0);
   const itemsRef = useRef<AgentItem[]>([]);
+  const itemIndexRef = useRef(new Map<string, AgentItem>());
+  const projectionCacheRef = useRef<ThreadProjectionCache>(createThreadProjectionCache());
+  const openInteractionIndexRef = useRef<OpenInteractionIndex>(createOpenInteractionIndex());
+  const turnsRef = useRef<ThreadViewTurn[]>([]);
   const activeTurnRef = useRef<string | null>(null);
   const eventControllerRef = useRef<AbortController | null>(null);
   const historyControllerRef = useRef<AbortController | null>(null);
@@ -84,7 +92,11 @@ export function useThreadWorkspace(userId: string) {
   const executionLoadingRef = useRef(new Set<string>());
   const [executionReplayStates, setExecutionReplayStates] = useState<Record<string, ExecutionReplayStatus>>({});
   const [retryingRunId, setRetryingRunId] = useState<string | null>(null);
-  const turns = useMemo(() => rebuildTurns(items), [items]);
+  const turns = useMemo(() => {
+    const next = rebuildTurns(items, projectionCacheRef.current);
+    turnsRef.current = next;
+    return next;
+  }, [items]);
   const question = interaction?.type === "QUESTION_CARD" ? interaction.question : null;
   const checkpoint = interaction?.type === "WORKFLOW_CHECKPOINT" ? interaction.checkpoint : null;
 
@@ -96,6 +108,9 @@ export function useThreadWorkspace(userId: string) {
   useEffect(() => {
     executionCacheRef.current.clear();
     executionLoadingRef.current.clear();
+    itemIndexRef.current.clear();
+    projectionCacheRef.current = createThreadProjectionCache();
+    openInteractionIndexRef.current = createOpenInteractionIndex();
     setExecutionReplayStates({});
   }, [userId]);
 
@@ -103,20 +118,26 @@ export function useThreadWorkspace(userId: string) {
     const normalizedIncoming = incoming.map(normalizeItem);
     for (const item of normalizedIncoming) cursorRef.current = Math.max(cursorRef.current, item.sequence);
     const current = itemsRef.current;
-    const knownIds = new Set(current.map((item) => item.itemId));
-    const fresh = normalizedIncoming.filter((item) => !knownIds.has(item.itemId));
+    const freshById = new Map<string, AgentItem>();
+    for (const item of normalizedIncoming) {
+      if (!itemIndexRef.current.has(item.itemId)) freshById.set(item.itemId, item);
+    }
+    const fresh = [...freshById.values()];
+    // SSE 重连可能重放已落库 Item；保持引用不变可避免无意义的全量投影和渲染。
+    if (fresh.length === 0) return;
     const lastSequence = current.at(-1)?.sequence ?? 0;
     const appendOnly = fresh.length > 0
       && fresh.every((item, index) => item.sequence > lastSequence
         && (index === 0 || item.sequence > fresh[index - 1].sequence));
     const next = appendOnly
       ? [...current, ...fresh]
-      : [...new Map([...current, ...normalizedIncoming].map((item) => [item.itemId, item])).values()]
+      : [...new Map([...current, ...fresh].map((item) => [item.itemId, item])).values()]
         .sort((left, right) => left.sequence - right.sequence);
     itemsRef.current = next;
+    for (const item of fresh) itemIndexRef.current.set(item.itemId, item);
     setItems(next);
-    const derivedInteraction = findOpenInteraction(next);
-    const hasInteractionMutation = incoming.some((value) => {
+    const derivedInteraction = findOpenInteraction(next, openInteractionIndexRef.current);
+    const hasInteractionMutation = fresh.some((value) => {
       const type = typeof value.payload === "string" ? value.type : value.payload.kind;
       // 回答 Item 到达时仍保留卡片，待对应 Turn 的终态/Workflow 回执到达后再收敛。
       return [
@@ -127,8 +148,7 @@ export function useThreadWorkspace(userId: string) {
     if (derivedInteraction || hasInteractionMutation || interactionRef.current === null) {
       updateInteraction(derivedInteraction);
     }
-    for (const item of incoming) {
-      const normalized = normalizeItem(item);
+    for (const normalized of fresh) {
       const action = parseExternalAction(normalized.payload);
       if (action && action.runId === retryingRunRef.current && action.status !== "MANUAL_RETRY_REQUIRED") {
         retryingRunRef.current = null;
@@ -276,6 +296,9 @@ export function useThreadWorkspace(userId: string) {
     setLoading(true);
     setError(null);
     itemsRef.current = [];
+    itemIndexRef.current.clear();
+    projectionCacheRef.current = createThreadProjectionCache();
+    openInteractionIndexRef.current = createOpenInteractionIndex();
     cursorRef.current = 0;
     setItems([]);
     updateInteraction(null);
@@ -295,7 +318,7 @@ export function useThreadWorkspace(userId: string) {
       if (controller.signal.aborted || generationRef.current !== generation
         || threadIdRef.current !== nextThreadId) return;
       applyItems(recovered);
-      const recoveredInteraction = findOpenInteraction(recovered.map(normalizeItem));
+      const recoveredInteraction = findOpenInteraction(itemsRef.current, openInteractionIndexRef.current);
       try {
         const serverInteraction = await threadWorkspaceApi.getInteraction(userId, nextThreadId, controller.signal);
         if (controller.signal.aborted || generationRef.current !== generation || threadIdRef.current !== nextThreadId) return;
@@ -335,47 +358,84 @@ export function useThreadWorkspace(userId: string) {
     void loadThread(nextThreadId, generation);
   }, [loadThread, updateInteraction]);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function loadThreads() {
-      setLoading(true);
-      setError(null);
-      try {
-        const page = await threadWorkspaceApi.listThreads(userId);
-        if (cancelled) return;
-        setThreads(page.items);
-        if (page.items[0]) selectThread(page.items[0].threadId);
-        else {
-          const created = await threadWorkspaceApi.createThread(userId);
-          if (cancelled) return;
-          setThreads([created]);
-          selectThread(created.threadId);
-        }
-      } catch (failure) {
-        if (!cancelled) {
-          setLoading(false);
-          setError(failure instanceof Error ? failure.message : "Thread 列表加载失败");
-        }
+  const loadThreads = useCallback(async (generation: number) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const page = await threadWorkspaceApi.listThreads(userId);
+      if (generationRef.current !== generation) return;
+      setThreads(page.items);
+      if (page.items[0]) {
+        selectThread(page.items[0].threadId);
+        return;
+      }
+      const created = await threadWorkspaceApi.createThread(userId);
+      if (generationRef.current !== generation) return;
+      setThreads([created]);
+      selectThread(created.threadId);
+    } catch (failure) {
+      if (generationRef.current === generation) {
+        setLoading(false);
+        setError(failure instanceof Error ? failure.message : "Thread 列表加载失败");
       }
     }
-    void loadThreads();
+  }, [selectThread, userId]);
+
+  /** 连接失败时重新拉取 Thread，而不是要求用户刷新整页并丢失当前上下文。 */
+  const retryConnection = useCallback(() => {
+    const currentThreadId = threadIdRef.current;
+    if (currentThreadId) {
+      if (reconnectTimerRef.current !== null) window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+      eventControllerRef.current?.abort();
+      setError(null);
+      const generation = generationRef.current;
+      if (threadId === currentThreadId) void connect(currentThreadId, cursorRef.current, generation);
+      else void loadThread(currentThreadId, generation);
+      return;
+    }
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
+    historyControllerRef.current?.abort();
+    eventControllerRef.current?.abort();
+    if (reconnectTimerRef.current !== null) window.clearTimeout(reconnectTimerRef.current);
+    threadIdRef.current = null;
+    setThreadId(null);
+    setThreads([]);
+    itemsRef.current = [];
+    itemIndexRef.current.clear();
+    projectionCacheRef.current = createThreadProjectionCache();
+    openInteractionIndexRef.current = createOpenInteractionIndex();
+    cursorRef.current = 0;
+    setItems([]);
+    updateInteraction(null);
+    setBusy(false);
+    void loadThreads(generation);
+  }, [connect, loadThread, loadThreads, threadId, updateInteraction]);
+
+  useEffect(() => {
+    const generation = generationRef.current;
+    void loadThreads(generation);
     return () => {
-      cancelled = true;
       generationRef.current += 1;
       historyControllerRef.current?.abort();
       eventControllerRef.current?.abort();
       if (reconnectTimerRef.current !== null) window.clearTimeout(reconnectTimerRef.current);
     };
-  }, [selectThread, userId]);
+  }, [loadThreads]);
 
   const createThread = useCallback(async () => {
+    const generation = generationRef.current;
     setError(null);
     try {
       const created = await threadWorkspaceApi.createThread(userId);
+      if (generationRef.current !== generation) return;
       setThreads((current) => [created, ...current]);
       selectThread(created.threadId);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Thread 创建失败");
+      if (generationRef.current === generation) {
+        setError(failure instanceof Error ? failure.message : "Thread 创建失败");
+      }
     }
   }, [selectThread, userId]);
 
@@ -401,7 +461,7 @@ export function useThreadWorkspace(userId: string) {
 
   /** 仅重新提交形成 AGENT_DECISION_MISSING 的用户请求；每次都创建新的 Turn/requestId。 */
   const retryTurn = useCallback(async (turnId: string) => {
-    const source = turns.find((turn) => turn.turnId === turnId);
+    const source = turnsRef.current.find((turn) => turn.turnId === turnId);
     const currentThread = threads.find((thread) => thread.threadId === threadId);
     if (!source || source.errorCode !== "AGENT_DECISION_MISSING" || !threadId
       || !currentThread || currentThread.status !== "ACTIVE" || busy || question) return;
@@ -422,7 +482,7 @@ export function useThreadWorkspace(userId: string) {
         setError(failure instanceof Error ? failure.message : "再次尝试提交失败");
       }
     }
-  }, [busy, question, threadId, threads, turns, userId]);
+  }, [busy, question, threadId, threads, userId]);
 
   const orderAction = useCallback(async (
     sourceTurnId: string,
@@ -545,15 +605,18 @@ export function useThreadWorkspace(userId: string) {
   }, [busy, userId]);
 
   const loadExecution = useCallback(async (turnId: string) => {
-    const turn = turns.find((candidate) => candidate.turnId === turnId);
+    const turn = turnsRef.current.find((candidate) => candidate.turnId === turnId);
+    const requestThreadId = threadIdRef.current;
+    const generation = generationRef.current;
     if (!turn || !terminal(turn.status) || executionCacheRef.current.has(turnId)
-      || executionLoadingRef.current.has(turnId)) {
+      || executionLoadingRef.current.has(turnId) || !requestThreadId) {
       return;
     }
     executionLoadingRef.current.add(turnId);
     setExecutionReplayStates((current) => ({ ...current, [turnId]: "loading" }));
     try {
       const replay = await threadWorkspaceApi.loadExecution(userId, turnId);
+      if (generationRef.current !== generation || threadIdRef.current !== requestThreadId) return;
       const timeline = Array.isArray(replay.timeline)
         ? replay.timeline.filter((item) => item && item.turnId === turnId).map(normalizeItem)
         : [];
@@ -562,23 +625,29 @@ export function useThreadWorkspace(userId: string) {
       setExecutionReplayStates((current) => ({ ...current, [turnId]: "loaded" }));
     } catch {
       // 回放接口失败时保留已经从 Items/SSE 恢复的事实，检查器仍可打开。
-      setExecutionReplayStates((current) => ({ ...current, [turnId]: "failed" }));
+      if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
+        setExecutionReplayStates((current) => ({ ...current, [turnId]: "failed" }));
+      }
     } finally {
       executionLoadingRef.current.delete(turnId);
     }
-  }, [applyItems, turns, userId]);
+  }, [applyItems, userId]);
 
   const rename = useCallback(async (nextThreadId: string, title: string) => {
     const target = threads.find((thread) => thread.threadId === nextThreadId);
     if (!target || !title.trim()) return false;
+    const generation = generationRef.current;
     try {
       const updated = await threadWorkspaceApi.updateThread(
         userId, nextThreadId, title.trim()
       );
+      if (generationRef.current !== generation) return false;
       setThreads((current) => current.map((thread) => thread.threadId === updated.threadId ? updated : thread));
       return true;
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Thread 重命名失败");
+      if (generationRef.current === generation) {
+        setError(failure instanceof Error ? failure.message : "Thread 重命名失败");
+      }
       return false;
     }
   }, [threads, userId]);
@@ -600,6 +669,7 @@ export function useThreadWorkspace(userId: string) {
     question,
     rename,
     retry,
+    retryConnection,
     retryTurn,
     retryingRunId,
     selectThread,

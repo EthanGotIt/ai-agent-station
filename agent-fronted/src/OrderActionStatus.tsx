@@ -40,7 +40,7 @@ function StatusIcon({ state }: { state: OrderActionProjection["state"] }) {
 export function OrderActionStatus({ view, disabled, retrying, onRetry, onRefresh }: Props) {
   const verificationPending = view.receipt?.verificationStatus === "PENDING";
   const retryable = view.state === "error" && view.retryable && view.runId;
-  return <div className={`order-action-status order-action-status-${view.state}`} role="status" aria-label={`${ACTION_LABELS[view.request.actionType]} 执行状态`} aria-live="polite">
+  return <div className={`order-action-status order-action-status-${view.state}`} role="status" aria-live="polite">
     <span className="order-action-status-icon"><StatusIcon state={view.state} /></span>
     <div className="order-action-status-copy"><strong>{ACTION_LABELS[view.request.actionType]}</strong><span>{statusCopy(view)}</span></div>
     {verificationPending ? <button className="secondary compact-action" type="button" disabled={disabled} onClick={() => onRefresh(view.request.orderId)}>重新查询</button> : null}
