@@ -6,6 +6,7 @@ import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.execution.AgentRuntimeMetrics;
 import cn.ethan.core.agent.execution.AgentExecutionCancelledException;
 import cn.ethan.core.agent.execution.AgentExecutionContext;
+import cn.ethan.core.agent.execution.AgentExecutionStopReasonEnum;
 import cn.ethan.core.agent.execution.AgentExecutionTimeoutException;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemStore;
@@ -16,11 +17,15 @@ import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentQuestionAnswerInput;
 import cn.ethan.core.agent.workflow.AgentWorkflowEngine;
 import cn.ethan.core.agent.workflow.AgentQuestionCardAnswerActionEnum;
+import cn.ethan.core.agent.workflow.AgentQuestionCardModel;
+import cn.ethan.core.agent.workflow.AgentQuestionCardStore;
 import cn.ethan.core.agent.workflow.AgentQuestionCardResumeTargetEnum;
 import cn.ethan.core.commerce.order.LogisticsGateway;
 import cn.ethan.core.commerce.order.OrderGateway;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.metadata.DefaultUsage;
+import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -36,11 +41,14 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 类型职责：验证协调器使用 DeepSeek 兼容的流式 ChatClient 路径，并将完整回复交给持久化 Item 层。
@@ -74,12 +82,46 @@ class SpringAiAgentTurnCoordinatorTest {
         SpringAiAgentTurnCoordinator coordinator = coordinator(model, events);
 
         AgentTurnCoordinator.AgentCoordinatorResult result = coordinator.run(
-                thread(), turn(), List.of(), null);
+                thread(), turn(), List.of(), null,
+                new AgentExecutionContext(Clock.fixed(NOW, ZoneOffset.UTC), NOW.plusSeconds(30), 1, 3));
 
-        assertEquals(2, model.calls);
+        assertEquals(1, model.calls);
         assertEquals(AgentDecisionTypeEnum.FINISH, result.decision());
         assertEquals("受控终止", result.assistantMessage());
         assertEquals("CONTROL_TOOL", result.decisionCode());
+    }
+
+    @Test
+    void settlesMissingUsageConservativelyAndIgnoresDuplicateSettlement() {
+        CapturingEvents events = new CapturingEvents();
+        SpringAiAgentTurnCoordinator coordinator = coordinator(new StreamingModel(
+                Flux.just(response("预算内回复")), false), events);
+        AgentExecutionContext context = new AgentExecutionContext(
+                Clock.fixed(NOW, ZoneOffset.UTC), NOW.plusSeconds(30), 2, 3);
+
+        AgentTurnCoordinator.AgentCoordinatorResult result = coordinator.run(
+                thread(), turn(), List.of(), null, context);
+
+        assertEquals("预算内回复", result.assistantMessage());
+        assertEquals(2, context.outputTokensUsed());
+        assertEquals(AgentExecutionStopReasonEnum.OUTPUT_BUDGET_EXCEEDED, context.stopReason());
+        context.settleCurrentOutput(null);
+        assertEquals(2, context.outputTokensUsed());
+    }
+
+    @Test
+    void settlesProviderCompletionUsageOnce() {
+        CapturingEvents events = new CapturingEvents();
+        SpringAiAgentTurnCoordinator coordinator = coordinator(new StreamingModel(
+                Flux.just(response("已计量", 1)), false), events);
+        AgentExecutionContext context = new AgentExecutionContext(
+                Clock.fixed(NOW, ZoneOffset.UTC), NOW.plusSeconds(30), 8, 3);
+
+        coordinator.run(thread(), turn(), List.of(), null, context);
+
+        assertEquals(1, context.outputTokensUsed());
+        context.settleCurrentOutput(1);
+        assertEquals(1, context.outputTokensUsed());
     }
 
     @Test
@@ -104,6 +146,116 @@ class SpringAiAgentTurnCoordinatorTest {
 
         assertEquals("Agent 模型调用失败", failure.getMessage());
         assertEquals(List.of(), events.published);
+    }
+
+    @Test
+    void keepsOutputReservationWhenStreamingBreaksBeforeUsageArrives() {
+        CapturingEvents events = new CapturingEvents();
+        SpringAiAgentTurnCoordinator coordinator = coordinator(new StreamingModel(
+                Flux.error(new IllegalStateException("stream interrupted")), false), events);
+        AgentExecutionContext context = new AgentExecutionContext(
+                Clock.fixed(NOW, ZoneOffset.UTC), NOW.plusSeconds(30), 8, 3);
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> coordinator.run(thread(), turn(), List.of(), null, context)
+        );
+
+        assertEquals(0, context.outputTokensUsed());
+        assertTrue(context.outputBudgetExhausted());
+        assertEquals(null, context.reserveOutput(1), "断流后的预留必须保留，不能被下一次请求重复使用");
+        assertEquals(AgentExecutionStopReasonEnum.OUTPUT_BUDGET_EXCEEDED, context.stopReason());
+    }
+
+    @Test
+    void doesNotTreatItemPersistenceFailureAsAWaitingQuestion() {
+        AgentItemStore failingItems = new AgentItemStore() {
+            @Override
+            public long appendItem(AgentItemModel item) {
+                throw new IllegalStateException("item store unavailable");
+            }
+
+            @Override
+            public List<AgentItemModel> listItems(String userId, String threadId, long afterSequence, int limit) {
+                return List.of();
+            }
+        };
+        AgentQuestionCardStore questions = new AgentQuestionCardStore() {
+            @Override
+            public Optional<AgentQuestionCardModel> find(String userId, String questionId) {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<AgentQuestionCardModel> findOpen(String userId, String threadId) {
+                return Optional.empty();
+            }
+
+            @Override
+            public void create(AgentQuestionCardModel question) {
+                // 业务 QuestionCard 已成功落库；随后 Item 事实写入失败仍不能伪装为正常暂停。
+            }
+
+            @Override
+            public OptionalLong reserveAnswerTurn(String userId, String questionId, long expectedVersion,
+                                                   String answerTurnId) {
+                return OptionalLong.empty();
+            }
+
+            @Override
+            public OptionalLong markAnswerTurnEnqueued(String userId, String questionId, long expectedVersion,
+                                                       String answerTurnId) {
+                return OptionalLong.empty();
+            }
+
+            @Override
+            public boolean releaseAnswerTurn(String userId, String questionId, long expectedVersion,
+                                             String answerTurnId) {
+                return false;
+            }
+
+            @Override
+            public boolean closeAnswerTurn(String userId, String questionId, long expectedVersion,
+                                           String answerTurnId,
+                                           cn.ethan.core.agent.workflow.AgentQuestionCardStatusEnum terminalStatus,
+                                           Instant answeredAt) {
+                return false;
+            }
+        };
+        SpringAiAgentTurnCoordinator coordinator = new SpringAiAgentTurnCoordinator(
+                ChatClient.builder(new QuestionCardToolModel())
+                        .defaultAdvisors(new ControlledToolCallingAdvisor(
+                                new ControlledToolCallingManager(), 1024))
+                        .build(),
+                (orderId, userId) -> null,
+                (orderId, userId) -> List.of(),
+                new AgentWorkflowEngine() {
+                    @Override
+                    public StartResult start(AgentThreadModel thread, AgentTurnModel turn,
+                                             String operation, Map<String, String> arguments) {
+                        throw new AssertionError("workflow must not be called");
+                    }
+
+                    @Override
+                    public ResumeResult resume(AgentThreadModel thread, AgentTurnModel turn,
+                                               Map<String, String> answers) {
+                        throw new AssertionError("workflow resume must not be called");
+                    }
+                },
+                failingItems,
+                new CapturingEvents(),
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                AgentRuntimeMetrics.noop(),
+                questions,
+                3,
+                8_000
+        );
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> coordinator.run(thread(), turn(), List.of(), null,
+                        new AgentExecutionContext(Clock.fixed(NOW, ZoneOffset.UTC), NOW.plusSeconds(30), 8, 3)));
+
+        assertEquals("Agent 模型调用失败", failure.getMessage());
     }
 
     @Test
@@ -211,7 +363,10 @@ class SpringAiAgentTurnCoordinatorTest {
             }
         };
         return new SpringAiAgentTurnCoordinator(
-                ChatClient.builder(model).build(),
+                ChatClient.builder(model)
+                        .defaultAdvisors(new ControlledToolCallingAdvisor(
+                                new ControlledToolCallingManager(), 1024))
+                        .build(),
                 (orderId, userId) -> null,
                 (orderId, userId) -> List.of(),
                 workflowEngine,
@@ -256,6 +411,12 @@ class SpringAiAgentTurnCoordinatorTest {
         return new ChatResponse(List.of(new Generation(new AssistantMessage(content))));
     }
 
+    private ChatResponse response(String content, int completionTokens) {
+        return new ChatResponse(
+                List.of(new Generation(new AssistantMessage(content))),
+                ChatResponseMetadata.builder().usage(new DefaultUsage(null, completionTokens)).build());
+    }
+
     private static final class StreamingModel implements ChatModel {
         private final Flux<ChatResponse> responses;
         private final boolean failOnCall;
@@ -263,6 +424,11 @@ class SpringAiAgentTurnCoordinatorTest {
         private StreamingModel(Flux<ChatResponse> responses, boolean failOnCall) {
             this.responses = responses;
             this.failOnCall = failOnCall;
+        }
+
+        @Override
+        public ToolCallingChatOptions getOptions() {
+            return ToolCallingChatOptions.builder().build();
         }
 
         @Override
@@ -310,6 +476,27 @@ class SpringAiAgentTurnCoordinatorTest {
 
         private ChatResponse response(String content) {
             return new ChatResponse(List.of(new Generation(new AssistantMessage(content))));
+        }
+    }
+
+    private static final class QuestionCardToolModel implements ChatModel {
+        @Override
+        public ToolCallingChatOptions getOptions() {
+            return ToolCallingChatOptions.builder().build();
+        }
+
+        @Override
+        public ChatResponse call(Prompt prompt) {
+            throw new AssertionError("test model only supports streaming");
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(Prompt prompt) {
+            AssistantMessage.ToolCall question = new AssistantMessage.ToolCall(
+                    "question-1", "function", "request_user_input",
+                    "{\"title\":\"补充信息\",\"prompt\":\"请补充订单号\",\"fieldsJson\":\"[]\"}");
+            return Flux.just(new ChatResponse(List.of(new Generation(
+                    AssistantMessage.builder().toolCalls(List.of(question)).build()))));
         }
     }
 

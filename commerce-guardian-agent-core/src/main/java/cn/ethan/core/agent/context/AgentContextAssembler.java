@@ -12,7 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * 类型职责：按预算组装可恢复上下文，优先续接最新快照并在摘要失败时安全降级。
+ * 类型职责：按预算组装可恢复上下文，并可在受控开关下续接历史快照。
  *
  * @author ethan
  * @date 2026-08-20
@@ -30,6 +30,7 @@ public final class AgentContextAssembler {
     private final int snapshotTriggerEstimatedTokens;
     private final int toolResultMaxCharacters;
     private final int outputReserveEstimatedTokens;
+    private final boolean snapshotCompactionEnabled;
 
     public AgentContextAssembler(
             AgentItemStore items,
@@ -54,6 +55,24 @@ public final class AgentContextAssembler {
             int outputReserveEstimatedTokens,
             AgentContextSummarizer summarizer
     ) {
+        this(items, snapshots, clock, contextMaxEstimatedTokens, snapshotTriggerEstimatedTokens,
+                toolResultMaxCharacters, outputReserveEstimatedTokens, true, summarizer);
+    }
+
+    /**
+     * 显式控制快照视图。第一阶段关闭它以优先读取原始 Items；第二阶段可在独立验收后启用压缩。
+     */
+    public AgentContextAssembler(
+            AgentItemStore items,
+            AgentContextSnapshotStore snapshots,
+            Clock clock,
+            int contextMaxEstimatedTokens,
+            int snapshotTriggerEstimatedTokens,
+            int toolResultMaxCharacters,
+            int outputReserveEstimatedTokens,
+            boolean snapshotCompactionEnabled,
+            AgentContextSummarizer summarizer
+    ) {
         this.items = items;
         this.snapshots = snapshots;
         this.summarizer = summarizer == null ? AgentContextAssembler::fallbackSummary : summarizer;
@@ -64,6 +83,7 @@ public final class AgentContextAssembler {
         this.toolResultMaxCharacters = Math.max(256, toolResultMaxCharacters);
         this.outputReserveEstimatedTokens = Math.max(128,
                 Math.min(outputReserveEstimatedTokens, this.contextMaxEstimatedTokens - 1));
+        this.snapshotCompactionEnabled = snapshotCompactionEnabled;
     }
 
     public List<AgentItemModel> assemble(AgentThreadModel thread, String currentTurnId, String currentInput) {
@@ -73,8 +93,10 @@ public final class AgentContextAssembler {
     public AgentContextAssembly assembleWithReport(
             AgentThreadModel thread, String currentTurnId, String currentInput
     ) {
-        Optional<AgentContextSnapshotModel> previous = snapshots.findLatestSnapshot(thread.userId(), thread.threadId())
-                .filter(snapshot -> snapshot.summary().startsWith(SAFE_SNAPSHOT_PREFIX));
+        Optional<AgentContextSnapshotModel> previous = snapshotCompactionEnabled
+                ? snapshots.findLatestSnapshot(thread.userId(), thread.threadId())
+                    .filter(snapshot -> snapshot.summary().startsWith(SAFE_SNAPSHOT_PREFIX))
+                : Optional.empty();
         long throughSequence = previous.map(AgentContextSnapshotModel::throughSequence).orElse(0L);
         List<AgentItemModel> rawHistory = items.listLatestItems(
                         thread.userId(), thread.threadId(), throughSequence, HISTORY_LIMIT)
@@ -93,8 +115,10 @@ public final class AgentContextAssembler {
         recent.addAll(history);
         boolean compressed = false;
         boolean degraded = false;
+        int droppedItems = 0;
         long completedThroughSequence = completedThroughSequence(rawHistory);
-        if (estimate(recent) + currentInputEstimate > snapshotTriggerEstimatedTokens
+        if (snapshotCompactionEnabled
+                && estimate(recent) + currentInputEstimate > snapshotTriggerEstimatedTokens
                 && completedThroughSequence > throughSequence) {
             List<AgentItemModel> old = history.stream()
                     .filter(item -> item.sequence() <= completedThroughSequence)
@@ -128,9 +152,11 @@ public final class AgentContextAssembler {
                     && recent.get(0).type() == AgentItemTypeEnum.EXECUTION_EVENT ? 1 : 0;
             recent.remove(removeIndex);
             degraded = true;
+            droppedItems++;
         }
         return new AgentContextAssembly(recent, new AgentContextBudgetReport(
-                estimate(recent) + currentInputEstimate, inputBudget, throughSequence, compressed, degraded));
+                estimate(recent) + currentInputEstimate, inputBudget, throughSequence, compressed, degraded,
+                droppedItems));
     }
 
     private AgentItemModel snapshotItem(AgentThreadModel thread, AgentContextSnapshotModel snapshot) {
@@ -196,8 +222,27 @@ public final class AgentContextAssembler {
     }
 
     private String escape(String value) {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\r", "\\r").replace("\n", "\\n");
+        StringBuilder escaped = new StringBuilder(value.length());
+        for (char current : value.toCharArray()) {
+            switch (current) {
+                case '\\' -> escaped.append("\\\\");
+                case '"' -> escaped.append("\\\"");
+                case '\b' -> escaped.append("\\b");
+                case '\f' -> escaped.append("\\f");
+                case '\n' -> escaped.append("\\n");
+                case '\r' -> escaped.append("\\r");
+                case '\t' -> escaped.append("\\t");
+                default -> {
+                    if (current < 0x20) {
+                        escaped.append(String.format("\\u%04x", (int) current));
+                    }
+                    else {
+                        escaped.append(current);
+                    }
+                }
+            }
+        }
+        return escaped.toString();
     }
 
     private static String fallbackSummary(List<AgentItemModel> values) {

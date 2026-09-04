@@ -11,6 +11,18 @@ public record AgentContextBudgetReport(
         int inputBudget,
         long snapshotThroughSequence,
         boolean compressed,
-        boolean degraded
+        boolean degraded,
+        int droppedItems
 ) {
+
+    /** 保留旧的五字段调用边界；新运行时通过 droppedItems 记录裁剪数量。 */
+    public AgentContextBudgetReport(
+            int estimatedTokens,
+            int inputBudget,
+            long snapshotThroughSequence,
+            boolean compressed,
+            boolean degraded
+    ) {
+        this(estimatedTokens, inputBudget, snapshotThroughSequence, compressed, degraded, 0);
+    }
 }

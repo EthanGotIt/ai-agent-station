@@ -29,6 +29,8 @@ import cn.ethan.core.commerce.order.OrderSearchResultModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -68,6 +70,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
     private final AgentRuntimeMetrics metrics;
     private final int maxAgentCycles;
     private final AgentQuestionCardStore questionCards;
+    private final int toolResultMaxCharacters;
 
     public SpringAiAgentTurnCoordinator(
             @Qualifier("agentChatClient") ChatClient chatClient,
@@ -79,7 +82,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             Clock clock,
             AgentRuntimeMetrics metrics
     ) {
-        this(chatClient, orders, logistics, workflowEngine, items, events, clock, metrics, null, 3);
+        this(chatClient, orders, logistics, workflowEngine, items, events, clock, metrics, null, 3, 8_000);
     }
 
     /** 保留旧测试装配边界；新生产装配额外注入 QuestionCard Store。 */
@@ -94,7 +97,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             AgentRuntimeMetrics metrics,
             @Value("${ai-agent.runtime.max-agent-cycles:3}") int maxAgentCycles
     ) {
-        this(chatClient, orders, logistics, workflowEngine, items, events, clock, metrics, null, maxAgentCycles);
+        this(chatClient, orders, logistics, workflowEngine, items, events, clock, metrics, null, maxAgentCycles,
+                8_000);
     }
 
     /** 生产装配边界：向 Workflow Tool 传递续跑上限并持久化 request_user_input QuestionCard。 */
@@ -109,7 +113,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             Clock clock,
             AgentRuntimeMetrics metrics,
             AgentQuestionCardStore questionCards,
-            @Value("${ai-agent.runtime.max-agent-cycles:3}") int maxAgentCycles
+            @Value("${ai-agent.runtime.max-agent-cycles:3}") int maxAgentCycles,
+            @Value("${ai-agent.thread.tool-result-max-characters:8000}") int toolResultMaxCharacters
     ) {
         this.chatClient = chatClient;
         this.orders = orders;
@@ -121,6 +126,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         this.metrics = metrics == null ? AgentRuntimeMetrics.noop() : metrics;
         this.maxAgentCycles = Math.max(1, Math.min(maxAgentCycles, 5));
         this.questionCards = questionCards;
+        this.toolResultMaxCharacters = Math.max(256, toolResultMaxCharacters);
     }
 
     @Override
@@ -205,7 +211,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         }
 
         WorkflowInvocation invocation = new WorkflowInvocation(
-                executionContext, clock, metrics, thread, turn, items, events);
+                executionContext, clock, metrics, thread, turn, items, events, toolResultMaxCharacters);
         try {
             StringBuilder content = new StringBuilder();
             String systemPrompt = """
@@ -227,6 +233,9 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             Flux<String> contentStream = chatClient.prompt()
                     .system(systemPrompt)
                     .user(renderContext(context, turn))
+                    .toolContext(Map.of(ControlledToolCallingAdvisor.TOOL_STATE_KEY, invocation))
+                    .advisors(advisor -> advisor.param(
+                            ControlledToolCallingAdvisor.TOOL_STATE_KEY, invocation))
                     .tools(
                             new ReadOnlyTools(thread.userId(), orders, logistics, invocation),
                             new WorkflowTools(thread, turn, workflowEngine, invocation, maxAgentCycles, questionCards),
@@ -247,40 +256,15 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 }
                 content.append(delta);
             }).blockLast();
-            if (invocation.result != null) {
-                AgentWorkflowEngine.StartResult result = invocation.result;
-                return new AgentCoordinatorResult(
-                        invocation.decisionMessage == null || invocation.decisionMessage.isBlank()
-                                ? "我已启动订单处理流程，请在执行确认卡中确认。" : invocation.decisionMessage,
-                        List.of(), result.runId(), true,
-                        AgentDecisionTypeEnum.START_WORKFLOW, invocation.decisionCode,
-                        result.questionCard(), result.checkpoint(), correctionAttempt
-                );
+            if (invocation.persistenceFailed()) {
+                throw new IllegalStateException("Agent 事实持久化失败");
             }
-            if (invocation.questionCard != null) {
-                return new AgentCoordinatorResult(
-                        invocation.decisionMessage == null || invocation.decisionMessage.isBlank()
-                                ? "需要补充信息后继续。" : invocation.decisionMessage,
-                        List.of(), null, true, AgentDecisionTypeEnum.ASK_USER,
-                        invocation.decisionCode, invocation.questionCard, null, correctionAttempt);
-            }
-            if (invocation.decision != null) {
-                String controlledMessage = invocation.decisionMessage == null
-                        || invocation.decisionMessage.isBlank()
-                        ? "本轮处理已收口。" : invocation.decisionMessage;
-                return new AgentCoordinatorResult(
-                        controlledMessage, List.of(), null,
-                        invocation.decision == AgentDecisionTypeEnum.ASK_USER,
-                        invocation.decision, invocation.decisionCode, null, null, correctionAttempt);
-            }
-            if (content.isEmpty() || content.toString().isBlank()) {
-                return new AgentCoordinatorResult("", List.of(), null, false,
-                        null, null, null, null, correctionAttempt);
-            }
-            // 自由文本只作为诊断结果返回；Runtime 会要求一次显式纠正，不能把文本当作完成态。
-            return new AgentCoordinatorResult(content.toString().trim(), List.of(), null, false,
-                    null, null, null, null, correctionAttempt);
+            return resultForInvocation(invocation, correctionAttempt, content);
         } catch (RuntimeException failure) {
+            // QuestionCard/Workflow/终止决策已经持久化后，模型流尾部异常不能推翻已提交事实。
+            if (invocation.terminal() && !invocation.persistenceFailed()) {
+                return resultForInvocation(invocation, correctionAttempt, new StringBuilder());
+            }
             if (causedByTimeout(failure)) {
                 LOGGER.warn("Agent 模型流式调用超时，threadId={}, turnId={}", thread.threadId(), turn.turnId());
                 throw new AgentExecutionTimeoutException("Agent 模型流式调用超过 Turn 截止时间", failure);
@@ -292,6 +276,46 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                     thread.threadId(), turn.turnId(), failure.getClass().getSimpleName());
             throw new IllegalStateException("Agent 模型调用失败", failure);
         }
+    }
+
+    private AgentCoordinatorResult resultForInvocation(
+            WorkflowInvocation invocation,
+            boolean correctionAttempt,
+            StringBuilder content
+    ) {
+        if (invocation.result != null) {
+            AgentWorkflowEngine.StartResult result = invocation.result;
+            return new AgentCoordinatorResult(
+                    invocation.decisionMessage == null || invocation.decisionMessage.isBlank()
+                            ? "我已启动订单处理流程，请在执行确认卡中确认。" : invocation.decisionMessage,
+                    List.of(), result.runId(), true,
+                    AgentDecisionTypeEnum.START_WORKFLOW, invocation.decisionCode,
+                    result.questionCard(), result.checkpoint(), correctionAttempt
+            );
+        }
+        if (invocation.questionCard != null) {
+            return new AgentCoordinatorResult(
+                    invocation.decisionMessage == null || invocation.decisionMessage.isBlank()
+                            ? "需要补充信息后继续。" : invocation.decisionMessage,
+                    List.of(), null, true, AgentDecisionTypeEnum.ASK_USER,
+                    invocation.decisionCode, invocation.questionCard, null, correctionAttempt);
+        }
+        if (invocation.decision != null) {
+            String controlledMessage = invocation.decisionMessage == null
+                    || invocation.decisionMessage.isBlank()
+                    ? "本轮处理已收口。" : invocation.decisionMessage;
+            return new AgentCoordinatorResult(
+                    controlledMessage, List.of(), null,
+                    invocation.decision == AgentDecisionTypeEnum.ASK_USER,
+                    invocation.decision, invocation.decisionCode, null, null, correctionAttempt);
+        }
+        if (content.isEmpty() || content.toString().isBlank()) {
+            return new AgentCoordinatorResult("", List.of(), null, false,
+                    null, null, null, null, correctionAttempt);
+        }
+        // 自由文本只作为诊断结果返回；Runtime 会要求一次显式纠正，不能把文本当作完成态。
+        return new AgentCoordinatorResult(content.toString().trim(), List.of(), null, false,
+                null, null, null, null, correctionAttempt);
     }
 
     private Duration remaining(AgentExecutionContext executionContext) {
@@ -407,7 +431,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 String result = call.run();
                 invocation.checkActive();
                 invocation.recordResult(invocationId, name, "SUCCESS", result);
-                return SpringAiOrderToolSupport.boundToolValue(result);
+                return invocation.boundToolResult(result);
             } catch (RuntimeException failure) {
                 invocation.recordResult(invocationId, name, "FAILED", failure.getClass().getSimpleName());
                 throw failure;
@@ -692,7 +716,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         }
     }
 
-    static final class WorkflowInvocation {
+    static final class WorkflowInvocation implements AgentToolExecutionState {
         private AgentWorkflowEngine.StartResult result;
         private AgentQuestionCardModel questionCard;
         private AgentDecisionTypeEnum decision;
@@ -706,14 +730,16 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         private final AgentTurnModel turn;
         private final AgentItemStore items;
         private final AgentThreadEventGateway events;
+        private final int toolResultMaxCharacters;
         private final Map<String, Instant> toolStartedAt = new LinkedHashMap<>();
+        private volatile boolean persistenceFailed;
 
         WorkflowInvocation(
                 AgentExecutionContext executionContext,
                 Clock clock,
                 AgentRuntimeMetrics metrics
         ) {
-            this(executionContext, clock, metrics, null, null, null, null);
+            this(executionContext, clock, metrics, null, null, null, null, 8_000);
         }
 
         WorkflowInvocation(
@@ -725,6 +751,19 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 AgentItemStore items,
                 AgentThreadEventGateway events
         ) {
+            this(executionContext, clock, metrics, thread, turn, items, events, 8_000);
+        }
+
+        WorkflowInvocation(
+                AgentExecutionContext executionContext,
+                Clock clock,
+                AgentRuntimeMetrics metrics,
+                AgentThreadModel thread,
+                AgentTurnModel turn,
+                AgentItemStore items,
+                AgentThreadEventGateway events,
+                int toolResultMaxCharacters
+        ) {
             this.executionContext = executionContext;
             this.clock = clock;
             this.metrics = metrics;
@@ -732,6 +771,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             this.turn = turn;
             this.items = items;
             this.events = events;
+            this.toolResultMaxCharacters = Math.max(256, toolResultMaxCharacters);
         }
 
         private void checkActive() {
@@ -748,8 +788,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         private synchronized void recordResult(
                 String invocationId, String tool, String status, String value
         ) {
-            boolean truncated = value != null && value.length() > 2000;
-            String bounded = truncated ? value.substring(0, 2000) : value;
+            boolean truncated = value != null && value.length() > toolResultMaxCharacters;
+            String bounded = truncated ? value.substring(0, toolResultMaxCharacters) : value;
             recordImmediate(new AgentItemDraft(
                     "TOOL_RESULT", json(tool, invocationId, Map.of(), status, bounded, truncated)));
             Instant started = toolStartedAt.remove(invocationId);
@@ -775,6 +815,58 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             decisionMessage = message == null ? "" : message.trim();
         }
 
+        @Override
+        public AgentExecutionContext executionContext() {
+            return executionContext;
+        }
+
+        @Override
+        public synchronized boolean terminal() {
+            return result != null || questionCard != null || decision != null;
+        }
+
+        @Override
+        public boolean persistenceFailed() {
+            return persistenceFailed;
+        }
+
+        @Override
+        public synchronized void markResourceStop(
+                cn.ethan.core.agent.execution.AgentExecutionStopReasonEnum reason
+        ) {
+            if (executionContext != null) {
+                executionContext.markStopped(reason);
+            }
+            if (reason != null) {
+                recordDecision(AgentDecisionTypeEnum.STOP_LIMIT, reason.name(),
+                        "本轮资源预算已耗尽，已停止继续调用模型或工具。");
+            }
+        }
+
+        @Override
+        public synchronized void markRepeatedToolFailure() {
+            if (executionContext != null) {
+                executionContext.markStopped(
+                        cn.ethan.core.agent.execution.AgentExecutionStopReasonEnum.TOOL_REPEATED_FAILURE);
+            }
+            recordDecision(AgentDecisionTypeEnum.FALLBACK, "TOOL_REPEATED_FAILURE",
+                    "相同工具请求连续失败，已停止自动重试，请检查订单事实后再试。");
+        }
+
+        @Override
+        public String boundToolResult(String value) {
+            return SpringAiOrderToolSupport.boundToolValue(value, toolResultMaxCharacters);
+        }
+
+        @Override
+        public void settleModelOutput(ChatResponse response) {
+            if (executionContext == null || response == null) {
+                return;
+            }
+            Usage usage = response.getMetadata() == null ? null : response.getMetadata().getUsage();
+            executionContext.settleCurrentOutput(usage == null ? null : usage.getCompletionTokens());
+        }
+
         private synchronized void recordStructured(String type, String payload) {
             recordImmediate(new AgentItemDraft(type, payload));
         }
@@ -789,12 +881,26 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             if (items == null || thread == null || turn == null || events == null) {
                 return;
             }
-            AgentItemTypeEnum type = AgentItemTypeEnum.valueOf(draft.type());
-            AgentItemModel item = new AgentItemModel(UUID.randomUUID().toString(), thread.threadId(),
-                    turn.turnId(), 0, type, draft.payload(), clock.instant());
-            long sequence = items.appendItem(item);
-            events.itemCreated(new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), sequence,
-                    item.type(), item.payload(), item.createdAt()));
+            AgentItemModel item;
+            long sequence;
+            try {
+                AgentItemTypeEnum type = AgentItemTypeEnum.valueOf(draft.type());
+                item = new AgentItemModel(UUID.randomUUID().toString(), thread.threadId(),
+                        turn.turnId(), 0, type, draft.payload(), clock.instant());
+                sequence = items.appendItem(item);
+            } catch (RuntimeException persistenceFailure) {
+                this.persistenceFailed = true;
+                throw persistenceFailure;
+            }
+            try {
+                events.itemCreated(new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), sequence,
+                        item.type(), item.payload(), item.createdAt()));
+            } catch (RuntimeException eventFailure) {
+                // Item 已经持久化；SSE 断线可从游标回放，不能把已提交 Tool 事实当成调用失败。
+                metrics.observeFailure("SSE_PUBLISH_FAILED");
+                LOGGER.warn("Tool 事实已提交但实时事件发布失败，itemId={}, threadId={}, errorType={}",
+                        item.itemId(), item.threadId(), eventFailure.getClass().getSimpleName());
+            }
         }
 
         private static String json(

@@ -138,7 +138,8 @@ public final class AgentTurnItemPayloads {
                 + ",\"inputBudget\":" + report.inputBudget()
                 + ",\"snapshotThroughSequence\":" + report.snapshotThroughSequence()
                 + ",\"compressed\":" + report.compressed()
-                + ",\"degraded\":" + report.degraded() + "}";
+                + ",\"degraded\":" + report.degraded()
+                + ",\"droppedItems\":" + report.droppedItems() + "}";
     }
 
     public static AgentItemModel withSequence(AgentItemModel item, long sequence) {

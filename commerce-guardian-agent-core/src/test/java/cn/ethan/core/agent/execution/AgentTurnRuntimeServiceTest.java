@@ -476,6 +476,57 @@ class AgentTurnRuntimeServiceTest {
     }
 
     @Test
+    void doesNotSpendCorrectionCallAfterOutputBudgetStop() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "输出预算 Thread", null, null);
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        AtomicInteger calls = new AtomicInteger();
+        AgentTurnCoordinator coordinator = new AgentTurnCoordinator() {
+            @Override
+            public AgentCoordinatorResult run(
+                    AgentThreadModel current,
+                    AgentTurnModel turn,
+                    List<AgentItemModel> history,
+                    Map<String, String> answer
+            ) {
+                throw new AssertionError("execution context overload must be used");
+            }
+
+            @Override
+            public AgentCoordinatorResult run(
+                    AgentThreadModel current,
+                    AgentTurnModel turn,
+                    List<AgentItemModel> history,
+                    Map<String, String> answer,
+                    AgentExecutionContext executionContext
+            ) {
+                calls.incrementAndGet();
+                String reservation = executionContext.reserveOutput(1);
+                executionContext.settleOutput(reservation, null);
+                return new AgentCoordinatorResult("不可验证文本", List.of(), null, false);
+            }
+        };
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, threads,
+                new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
+                coordinator, new RecordingEvents(), executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256,
+                AgentRuntimeMetrics.noop(), null, true, 3, null, null, 1, 3);
+
+        AgentTurnModel turn = runtime.submitTurn("user-1", thread.threadId(), "output-budget-request", "查询订单");
+        executor.runAll();
+
+        AgentTurnModel failed = persistence.findTurn("user-1", turn.turnId()).orElseThrow();
+        assertEquals(AgentTurnStatusEnum.FAILED, failed.status());
+        assertEquals("OUTPUT_BUDGET_EXCEEDED", failed.errorCode());
+        assertEquals(1, calls.get(), "资源耗尽后不能再发起纠正模型请求");
+        scheduler.shutdownNow();
+    }
+
+    @Test
     void failsSafelyAfterSecondCallStillOmitsDecision() {
         InMemoryPersistence persistence = new InMemoryPersistence();
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
@@ -540,6 +591,35 @@ class AgentTurnRuntimeServiceTest {
         scheduler.shutdownNow();
     }
 
+    @Test
+    void keepsCommittedTurnWhenSsePublishFails() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "SSE 失败 Thread", null, null);
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        RecordingEvents events = new RecordingEvents();
+        events.fail = true;
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, threads,
+                new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
+                (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
+                        "事实已提交", List.of(), null, false, AgentDecisionTypeEnum.FINISH, "TEST_FINISH"),
+                events, executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256);
+
+        AgentTurnModel turn = runtime.submitTurn("user-1", thread.threadId(), "sse-failure-request", "查询订单");
+        executor.runAll();
+
+        AgentTurnModel persisted = persistence.findTurn("user-1", turn.turnId()).orElseThrow();
+        assertEquals(AgentTurnStatusEnum.COMPLETED, persisted.status());
+        assertTrue(persistence.items.stream().anyMatch(item -> item.turnId().equals(turn.turnId())
+                && item.type() == cn.ethan.core.agent.thread.AgentItemTypeEnum.TURN_STATE
+                && item.payload().contains("COMPLETED")));
+        scheduler.shutdownNow();
+    }
+
     private static final class ManualExecutor implements java.util.concurrent.Executor {
         private final List<Runnable> tasks = new ArrayList<>();
 
@@ -557,9 +637,13 @@ class AgentTurnRuntimeServiceTest {
 
     private static final class RecordingEvents implements AgentThreadEventGateway {
         private final List<AgentThreadEvent> published = new ArrayList<>();
+        private boolean fail;
 
         @Override
         public void publish(AgentThreadEvent event) {
+            if (fail) {
+                throw new IllegalStateException("simulated SSE failure");
+            }
             published.add(event);
         }
     }

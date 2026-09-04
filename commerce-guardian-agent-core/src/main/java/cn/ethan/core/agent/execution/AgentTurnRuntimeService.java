@@ -81,6 +81,8 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
     private final AgentRuntimeMetrics metrics;
     private final boolean continuationEnabled;
     private final int maxAgentCycles;
+    private final int maxOutputTokensPerTurn;
+    private final int repeatedToolFailureThreshold;
     private final AtomicInteger pendingGlobal = new AtomicInteger();
     private final Map<String, ThreadSlot> slots = new ConcurrentHashMap<>();
 
@@ -103,7 +105,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
     ) {
         this(threadStore, turns, items, threads, contextAssembler, coordinator, events, executor, scheduler, clock,
                 maxPendingPerThread, maxPendingGlobal, waitTimeout, turnTimeout, toolResultMaxCharacters,
-                AgentRuntimeMetrics.noop(), null, true, 3, null, null);
+                AgentRuntimeMetrics.noop(), null, true, 3, null, null, 8_192, 3);
     }
 
     /** 生产装配边界：Runtime 只依赖新的 QuestionCard 与 Workflow Checkpoint 事实。 */
@@ -130,6 +132,38 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
             AgentQuestionCardStore questionCards,
             AgentWorkflowCheckpointStore checkpoints
     ) {
+        this(threadStore, turns, items, threads, contextAssembler, coordinator, events, executor, scheduler, clock,
+                maxPendingPerThread, maxPendingGlobal, waitTimeout, turnTimeout, toolResultMaxCharacters, metrics,
+                orderActionCoordinator, continuationEnabled, maxAgentCycles, questionCards, checkpoints,
+                8_192, 3);
+    }
+
+    /** 生产装配边界：把同一 Turn 的输出额度和重复失败阈值传入共享执行上下文。 */
+    public AgentTurnRuntimeService(
+            AgentThreadStore threadStore,
+            AgentTurnStore turns,
+            AgentItemStore items,
+            AgentThreadService threads,
+            AgentContextAssembler contextAssembler,
+            AgentTurnCoordinator coordinator,
+            AgentThreadEventGateway events,
+            Executor executor,
+            ScheduledExecutorService scheduler,
+            Clock clock,
+            int maxPendingPerThread,
+            int maxPendingGlobal,
+            Duration waitTimeout,
+            Duration turnTimeout,
+            int toolResultMaxCharacters,
+            AgentRuntimeMetrics metrics,
+            AgentOrderActionCoordinator orderActionCoordinator,
+            boolean continuationEnabled,
+            int maxAgentCycles,
+            AgentQuestionCardStore questionCards,
+            AgentWorkflowCheckpointStore checkpoints,
+            int maxOutputTokensPerTurn,
+            int repeatedToolFailureThreshold
+    ) {
         this.threadStore = threadStore;
         this.turns = turns;
         this.items = items;
@@ -150,6 +184,8 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         this.metrics = metrics == null ? AgentRuntimeMetrics.noop() : metrics;
         this.continuationEnabled = continuationEnabled;
         this.maxAgentCycles = Math.max(1, Math.min(maxAgentCycles, 5));
+        this.maxOutputTokensPerTurn = Math.max(1, maxOutputTokensPerTurn);
+        this.repeatedToolFailureThreshold = Math.max(1, repeatedToolFailureThreshold);
     }
 
     public void recoverPersistedTurns() {
@@ -371,7 +407,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
             if (initialSequence <= 0) {
                 appendItem(initialItem);
             } else {
-                events.itemCreated(AgentTurnItemPayloads.withSequence(initialItem, initialSequence));
+                publishItemEvent(AgentTurnItemPayloads.withSequence(initialItem, initialSequence));
             }
             appendItem(turn, AgentItemTypeEnum.TURN_STATE, AgentTurnItemPayloads.turnState(turn.status(), null));
             queued = new QueuedTurn(turn, null, new AtomicBoolean(false),
@@ -456,7 +492,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
             if (initialSequence <= 0) {
                 appendItem(initialItem);
             } else {
-                events.itemCreated(AgentTurnItemPayloads.withSequence(initialItem, initialSequence));
+                publishItemEvent(AgentTurnItemPayloads.withSequence(initialItem, initialSequence));
             }
             appendItem(turn, AgentItemTypeEnum.TURN_STATE, AgentTurnItemPayloads.turnState(turn.status(), null));
             QueuedTurn queued = new QueuedTurn(turn, null, new AtomicBoolean(false),
@@ -597,7 +633,8 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                 return;
             }
             appendItem(active, AgentItemTypeEnum.TURN_STATE, AgentTurnItemPayloads.turnState(active.status(), null));
-            executionContext = new AgentExecutionContext(clock, started.plus(turnTimeout));
+            executionContext = new AgentExecutionContext(clock, started.plus(turnTimeout),
+                    maxOutputTokensPerTurn, repeatedToolFailureThreshold);
             execution.executionContext.set(executionContext);
             if (execution.cancelled.get()) {
                 executionContext.cancel();
@@ -655,9 +692,32 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                 metrics.observeContext(assembly.report().estimatedTokens(), assembly.report().compressed(),
                         assembly.report().degraded());
                 appendItem(active, AgentItemTypeEnum.EXECUTION_EVENT, AgentTurnItemPayloads.context(assembly.report()));
+                executionContext.initializeContextBudget(
+                        assembly.report().inputBudget(), assembly.report().estimatedTokens());
+                if (executionContext.stopped()) {
+                    String reason = executionContext.stopReason().name();
+                    appendItem(active, AgentItemTypeEnum.AGENT_DECISION,
+                            AgentTurnItemPayloads.decision(AgentDecisionTypeEnum.STOP_LIMIT, 0,
+                                    active.workflowRunId(), reason));
+                    appendItem(active, AgentItemTypeEnum.ERROR, reason);
+                    finish(active, AgentTurnStatusEnum.FAILED, reason);
+                    return;
+                }
                 result = executionRouter.route(
                         thread, active, assembly.items(), execution.answers(), executionContext);
                 if (requiresDecisionCorrection(result)) {
+                    AgentExecutionStopReasonEnum stopReason = executionContext.stopReason();
+                    if (stopReason != null) {
+                        String code = stopReason.name();
+                        AgentDecisionTypeEnum decision = stopReason
+                                == AgentExecutionStopReasonEnum.TOOL_REPEATED_FAILURE
+                                ? AgentDecisionTypeEnum.FALLBACK : AgentDecisionTypeEnum.STOP_LIMIT;
+                        appendItem(active, AgentItemTypeEnum.AGENT_DECISION,
+                                AgentTurnItemPayloads.decision(decision, 0, active.workflowRunId(), code));
+                        appendItem(active, AgentItemTypeEnum.ERROR, code);
+                        finish(active, AgentTurnStatusEnum.FAILED, code);
+                        return;
+                    }
                     // 第一次没有终止决策且没有留下结构化事实时只允许一次完整纠正调用；
                     // 首次自由文本不会进入持久化事实，已产生 Workflow/QuestionCard 的结果绝不重复调用。
                     executionContext.checkActive();
@@ -670,6 +730,20 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                     finish(active, AgentTurnStatusEnum.FAILED, AGENT_DECISION_MISSING);
                     return;
                 }
+            }
+            if (result.decision() == AgentDecisionTypeEnum.FALLBACK
+                    && "TOOL_REPEATED_FAILURE".equals(result.decisionCode())) {
+                appendDecision(active, result);
+                appendItem(active, AgentItemTypeEnum.ERROR, result.decisionCode());
+                finish(active, AgentTurnStatusEnum.FAILED, result.decisionCode());
+                return;
+            }
+            if (result.decision() == AgentDecisionTypeEnum.STOP_LIMIT
+                    && isResourceStop(result.decisionCode())) {
+                appendDecision(active, result);
+                appendItem(active, AgentItemTypeEnum.ERROR, result.decisionCode());
+                finish(active, AgentTurnStatusEnum.FAILED, result.decisionCode());
+                return;
             }
             if (execution.cancelled.get() || executionContext.cancelled()) {
                 finish(active, execution.timedOut.get() ? AgentTurnStatusEnum.TIMED_OUT : AgentTurnStatusEnum.CANCELLED,
@@ -734,6 +808,18 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
             boolean cancelled = timedOut
                     || failure instanceof AgentExecutionCancelledException
                     || execution.cancelled.get();
+            if (failure instanceof AgentExecutionLimitException limit) {
+                String reason = limit.reason().name();
+                if (!cancelled) {
+                    appendItem(active, AgentItemTypeEnum.AGENT_DECISION,
+                            AgentTurnItemPayloads.decision(AgentDecisionTypeEnum.STOP_LIMIT, 0,
+                                    active.workflowRunId(), reason));
+                    appendItem(active, AgentItemTypeEnum.ERROR, reason);
+                    metrics.observeFailure(reason);
+                }
+                finish(active, AgentTurnStatusEnum.FAILED, reason);
+                return;
+            }
             if (!cancelled) {
                 if (execution.continuation()) {
                     try {
@@ -791,10 +877,8 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
     }
 
     private void appendItem(AgentTurnModel turn, AgentItemTypeEnum type, String payload) {
-        String boundedPayload = type == AgentItemTypeEnum.TOOL_RESULT && payload != null
-                && payload.length() > toolResultMaxCharacters
-                ? payload.substring(0, toolResultMaxCharacters) + "…[TOOL_RESULT_TRUNCATED]"
-                : payload;
+        String boundedPayload = type == AgentItemTypeEnum.TOOL_RESULT
+                ? boundToolResult(payload) : payload;
         appendItem(new AgentItemModel(
                 UUID.randomUUID().toString(), turn.threadId(), turn.turnId(), 0, type, boundedPayload, clock.instant()
         ));
@@ -848,11 +932,55 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         AgentItemModel bounded = item.type() == AgentItemTypeEnum.TOOL_RESULT && item.payload() != null
                 && item.payload().length() > toolResultMaxCharacters
                 ? new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), item.sequence(), item.type(),
-                item.payload().substring(0, toolResultMaxCharacters) + "…[TOOL_RESULT_TRUNCATED]", item.createdAt())
+                boundToolResult(item.payload()), item.createdAt())
                 : item;
         long sequence = items.appendItem(bounded);
-        events.itemCreated(new AgentItemModel(bounded.itemId(), bounded.threadId(), bounded.turnId(), sequence,
+        publishItemEvent(new AgentItemModel(bounded.itemId(), bounded.threadId(), bounded.turnId(), sequence,
                 bounded.type(), bounded.payload(), bounded.createdAt()));
+    }
+
+    /** 持久化事实提交后再通知 SSE；通知失败由游标回放补偿，不能改写已提交状态。 */
+    private void publishItemEvent(AgentItemModel item) {
+        try {
+            events.itemCreated(item);
+        } catch (RuntimeException eventFailure) {
+            metrics.observeFailure("SSE_PUBLISH_FAILED");
+            LOGGER.log(Level.WARNING, "Thread event publish failed: itemId=" + item.itemId()
+                    + ", threadId=" + item.threadId()
+                    + ", errorType=" + eventFailure.getClass().getName());
+        }
+    }
+
+    private String boundToolResult(String payload) {
+        if (payload == null || payload.length() <= toolResultMaxCharacters) {
+            return payload;
+        }
+        String value = escapeJson(payload.substring(0, toolResultMaxCharacters));
+        return "{\"truncated\":true,\"value\":\"" + value + "\"}";
+    }
+
+    private String escapeJson(String value) {
+        StringBuilder escaped = new StringBuilder(value.length());
+        for (char current : value.toCharArray()) {
+            switch (current) {
+                case '\\' -> escaped.append("\\\\");
+                case '"' -> escaped.append("\\\"");
+                case '\b' -> escaped.append("\\b");
+                case '\f' -> escaped.append("\\f");
+                case '\n' -> escaped.append("\\n");
+                case '\r' -> escaped.append("\\r");
+                case '\t' -> escaped.append("\\t");
+                default -> {
+                    if (current < 0x20) {
+                        escaped.append(String.format("\\u%04x", (int) current));
+                    }
+                    else {
+                        escaped.append(current);
+                    }
+                }
+            }
+        }
+        return escaped.toString();
     }
 
     private boolean sourceContainsOrderFact(AgentTurnModel source, String orderId) {
@@ -958,6 +1086,11 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                     "CLIENT_REQUEST_CONFLICT", "clientRequestId 已用于不同的订单动作");
         }
         return existing;
+    }
+
+    private boolean isResourceStop(String code) {
+        return "CONTEXT_BUDGET_EXCEEDED".equals(code)
+                || "OUTPUT_BUDGET_EXCEEDED".equals(code);
     }
 
     /**

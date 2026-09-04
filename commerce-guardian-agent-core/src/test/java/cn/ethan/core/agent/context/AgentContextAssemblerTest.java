@@ -171,6 +171,29 @@ class AgentContextAssemblerTest {
     }
 
     @Test
+    void firstStageReadsRawItemsEvenWhenLegacySnapshotExists() {
+        List<AgentItemModel> history = List.of(
+                new AgentItemModel("old", "thread-1", "turn-old", 1,
+                        AgentItemTypeEnum.USER_MESSAGE, "原始事实", NOW),
+                new AgentItemModel("latest", "thread-1", "turn-latest", 2,
+                        AgentItemTypeEnum.USER_MESSAGE, "最新事实", NOW)
+        );
+        RecordingSnapshots snapshots = new RecordingSnapshots();
+        snapshots.saved.add(new AgentContextSnapshotModel(
+                "legacy", "thread-1", 1, 1, 2, "MODEL_SAFE_V1\n不应跳过原始事实", NOW));
+        AgentContextAssembler assembler = new AgentContextAssembler(
+                new RecordingItems(history), snapshots, Clock.fixed(NOW, ZoneOffset.UTC),
+                2_000, 300, 256, 128, false, values -> "不应调用");
+
+        List<AgentItemModel> result = assembler.assemble(thread(), null, "继续");
+
+        assertTrue(result.stream().anyMatch(item -> item.payload().contains("原始事实")));
+        assertTrue(result.stream().anyMatch(item -> item.payload().contains("最新事实")));
+        assertTrue(result.stream().noneMatch(item -> item.payload().contains("不应跳过")));
+        assertEquals(1L, result.get(0).sequence());
+    }
+
+    @Test
     void summaryFailureDegradesWithoutPersistingUnsafeSnapshot() {
         List<AgentItemModel> history = new ArrayList<>();
         for (int sequence = 1; sequence <= 4; sequence++) {

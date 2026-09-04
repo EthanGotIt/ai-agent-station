@@ -143,10 +143,16 @@ public final class SpringAiOrderToolSupport {
     }
 
     public static String boundToolValue(String value) {
-        if (value == null || value.length() <= 2_000) {
+        return boundToolValue(value, 8_000);
+    }
+
+    public static String boundToolValue(String value, int maxCharacters) {
+        int limit = Math.max(256, maxCharacters);
+        if (value == null || value.length() <= limit) {
             return value == null ? "" : value;
         }
-        return value.substring(0, 1_980) + "…[TOOL_RESULT_TRUNCATED]";
+        return "{\"truncated\":true,\"value\":\""
+                + escapeJson(value.substring(0, limit)) + "\"}";
     }
 
     public static OrderSearchCriteria parseSearchCriteria(
@@ -208,7 +214,29 @@ public final class SpringAiOrderToolSupport {
     }
 
     public static String escapeJson(String value) {
-        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\r", "\\r").replace("\n", "\\n");
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        StringBuilder escaped = new StringBuilder(value.length());
+        for (char current : value.toCharArray()) {
+            switch (current) {
+                case '\\' -> escaped.append("\\\\");
+                case '"' -> escaped.append("\\\"");
+                case '\b' -> escaped.append("\\b");
+                case '\f' -> escaped.append("\\f");
+                case '\n' -> escaped.append("\\n");
+                case '\r' -> escaped.append("\\r");
+                case '\t' -> escaped.append("\\t");
+                default -> {
+                    if (current < 0x20) {
+                        escaped.append(String.format("\\u%04x", (int) current));
+                    }
+                    else {
+                        escaped.append(current);
+                    }
+                }
+            }
+        }
+        return escaped.toString();
     }
 }
