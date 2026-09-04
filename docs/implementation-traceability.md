@@ -1,10 +1,19 @@
 # Commerce Guardian Agent 实现追踪矩阵
 
 > 状态：`active`
-> 更新日期：2026-09-01
+> 更新日期：2026-09-04
 > 目标来源：任务 `01a01f3f-2a0e-7e52-b70e-4137e4ff3496` 的最新计划、当前工作树、Git 历史、架构文档、SQL、测试和实际运行结果。
 
 本矩阵只把代码、测试和运行结果作为证据。原计划或 `docs/task-handoff.md` 中的“已完成”描述不能单独作为完成证据。
+
+## 第一阶段运行闭环加固（2026-09-04）
+
+| 验收面 | 当前结论 | 直接证据 | 未闭合事项 |
+| --- | --- | --- | --- |
+| 终止与同批截断 | 已通过本地门禁 | `ControlledToolCallingAdvisor` 显式装配唯一 Tool Calling 循环；`ControlledToolCallingManagerTest.stopsRemainingBatchAfterFinish` 覆盖 FINISH 后不执行后续工具；Coordinator 测试覆盖终止消息优先；完整 `mvn clean test` 通过 | 真实模型黄金路径仍需现场复核 |
+| 输出与上下文预算 | 已通过本地门禁 | `AgentExecutionContextTest` 覆盖预留、缺失/零 usage、幂等结算和上下文超限；Coordinator 测试覆盖真实 Advisor 路径的缺失 usage、已知 usage、断流保留预留和输出额度耗尽时终止工具优先；Runtime 测试覆盖 SSE 发布失败不改写已提交 Turn | 真实模型黄金路径仍需现场复核 |
+| 工具失败熔断与结果边界 | 已通过本地门禁 | `AgentToolFailureCircuitBreaker` 按工具、规范化参数和稳定错误码计数；`ControlledToolCallingManagerTest` 覆盖三次重复失败、成功重置和统一结果截断；前端测试覆盖具体停止原因 | 真实模型黄金路径仍需现场复核 |
+| 长上下文起点 | 生产路径已切换原始 Items | `AgentContextAssembler` 的生产 Bean 关闭快照视图；Core 测试覆盖旧摘要存在时仍读取原始事实和最新 300 条窗口 | 2A Harness 式压缩仍是后续独立实施单元 |
 
 ## Week 4 演示验收追踪（进行中）
 

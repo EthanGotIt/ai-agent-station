@@ -1,52 +1,49 @@
-status: completed
-updated: 2026-09-01
+status: active
+updated: 2026-09-04
 
 # Task Handoff
 
 Goal:
 
-- 将 `codex/commerce-guardian-agent` 作为 GitHub 默认主力分支，持续累积可独立验证的小提交。
-- 本轮通过 `codex/integration-sync-20260901` 汇总仍有价值的 CI、运行时、npm fallback、部署清理和已授权本地项目设置；`master` 继续保留里程碑版本。
+- 完成 Commerce Guardian Agent 第一阶段“运行闭环加固”，让模型、工具、持久化事实和 SSE 在同一 Turn 内遵守明确的终止、预算和故障边界。
+- 第一阶段验收稳定后，再以独立实施单元推进 2A Harness 式上下文压缩和 2B LangGraph 催发货编排试点。
 
 Completed:
 
-- 已从主力分支 `38b971b` 创建同步分支，并保留以下独立阶段提交：工作流 `ci`/`eval` 命名、Python 3.14/Node 24/JDK 17 对齐、npm registry fallback、deployment/Docker 打包清理、分支治理、已授权 `.idea` 项目设置和 hook/根 Docker 忽略文件移除。
-- 已推送 `codex/integration-sync-20260901`，并通过 GitHub PR #8（base=`codex/commerce-guardian-agent`，非 Draft）以普通 merge commit `b4cf244` 合入主力。
-- GitHub 默认分支已是 `codex/commerce-guardian-agent`；`master` 保持 `93ff0b3`，未合并、未改写。
-- 同步分支仍保留在远端 `df1998a`；`codex/commerce-review-base` 仍固定在 `d660f64`，归档分支未改变。
-- `ChatGPT Codex Connector` 已连接 EthanGotIt，目标仓库的 Codex 云端环境存在；PR #8 的自动 Codex Review 已返回建议。
-- 订单服务夹具继续作为独立 Python 进程承担本地 HTTP 验收，已移除 Docker 打包和 deployment/CD 资产。
+- Core 新增稳定停止原因、输出额度预留/结算、上下文预算检查和相同工具失败熔断；默认累计输出额度为 8,192 token，重复失败阈值为 3。
+- Infrastructure 显式装配唯一 `ControlledToolCallingAdvisor` 与顺序执行的 `ControlledToolCallingManager`。FINISH、QuestionCard 或 Workflow 事实成功落库后截断同批剩余工具和额外模型请求；资源停止使用 `STOP_LIMIT`，重复失败使用 `FALLBACK` 并失败收口。
+- 每次真实模型请求前按完整 Prompt 估算上下文并预留输出，响应后只结算一次；缺失/零 usage 和断流保守保留预留。正常与错误工具结果统一限制为有效 JSON，并保留标识和截断说明。
+- 持久化 Item 成功后，SSE 事件发布失败只记录观测并依赖游标回放，不改写已经提交的 Turn 或业务事实。
+- 生产 ContextAssembler 已切换到最新 300 条原始 Item；旧快照继续保留在库中，但第一阶段不再用快照跳过原始历史或提前触发摘要，并记录被裁剪 Item 数量。
+- 运行参数、前端停止原因投影、架构文档和运行手册已同步；HTTP 请求格式与既有 Workflow、问答、审批协议保持兼容。
+- 新增/调整 Core、Infrastructure、App 与前端测试覆盖同批截断、预算预留和幂等结算、缺失 usage、结果截断、连续失败重置、原始历史读取和前端具体停止原因。
 
 Decisions:
 
-- 不强推、不删除远端分支、不把 `master` 反向合入主力；`archive/*` 分支保留，不回流旧架构。
-- `.idea`、`.githooks`、`.dockerignore` 的当前用户授权内容已纳入同步 PR；根工作区原有 dirty 状态仍不直接操作。
-- 不配置 Codex 密钥、部署脚本或生产化能力；真实模型和浏览器验收仍只作为本地门禁。
+- 本轮只实现第一阶段；DeepSeek Harness 压缩细节和 LangGraph 催发货节点记录不提前混入运行时。2A/2B 需在本阶段验收后分别设计、实现和验证。
+- 保留 Spring AI 2.0.0、同 Thread FIFO、现有恢复路线和 Workflow 事实归属；不增加正常工具调用总次数上限或语义“无进展”判断器。
+- 不持久化或展示原始 Thinking；本轮已获得用户授权，提交与推送只包含本阶段明确文件，不纳入 `.impeccable/critique/`。
 
 TODO:
 
-- 后续新功能从 `codex/commerce-guardian-agent` 创建分支并回到主力；需要发布里程碑时再创建 `codex/milestone-*` promotion PR。
-- 分支 ruleset 仍待用户确认具体必需检查与审批人数后配置；本轮未改变现有保护设置。
+- 在当前第一阶段门禁基础上，先按独立计划实施 2A Harness 式上下文压缩；完成其压缩、连续水位、取消和重启恢复验收后，再实施 2B LangGraph 催发货试点。
 
 Blocked:
 
-- 当前无代码、审查或推送阻塞；Docker 引擎不可用不再是阻塞，因为 Docker 打包已移除。
+- 当前无代码或测试阻塞。真实模型、浏览器和外部服务黄金路径属于后续现场验收，不改变本轮代码结论。
 
 Next action:
 
-- 等待下一项主力分支迭代；恢复任务时先核对主力远端 SHA、工作区 dirty 资产和本 handoff。
+- 恢复任务时先核对 `git status --short` 与本 handoff；若继续本计划，从 2A 的设计边界和快照水位接口开始，不回退第一阶段运行时改动。
 
 Validation:
 
-- Python 3.14 `convention_check`、脚本测试 19 项和确定性 runtime eval：安全边界 36/36，路由与终止 36/36。
-- npm fallback 测试、官方源优先安装、前端 typecheck、Vitest 49/49、组件测试 25/25、production build 通过。
-- Maven clean test：Core 54、Infrastructure 82、App 19；`verify` 集成测试 9 项；dependency analyze 无问题。
-- `git diff --check` 和 Git 对象连通性检查通过；未运行 Docker 构建，因本 PR 已删除 Docker 打包。
-- GitHub PR #8 的 8 项 `ci`/`eval` 检查全部通过；Codex 第二轮 Review 针对 `df1998a5af` 返回“未发现重大问题”，旧 P1/P2 线程已处理并关闭。
+- `mvn clean '-DskipTests=false' test` 通过：Core 60、Infrastructure 90、App 20，Reactor `BUILD SUCCESS`。
+- `npm --prefix agent-fronted run typecheck`、`npm --prefix agent-fronted test`（56 tests）和 `npm --prefix agent-fronted run build` 通过。
+- Python `scripts.convention_check` 和 `unittest discover -s scripts/tests -p "test_*.py"` 通过（19 tests）；`git diff --check` 已通过。
 
 Preserve:
 
-- 根工作区 `.idea`、deployment、Docker、Hook 及其他用户资产的原始 dirty 状态，不在同步工作树之外擅自覆盖。
-- 本地 `stash@{0}`（对象 `a086787`）及历史 WIP stash 保留，直到用户确认不再需要。
-- 不保存 Prompt、Thinking、API key、完整敏感响应或真实模型原文；`output/runtime_eval` 等报告目录保持忽略。
-- `AGENTS.md` 是完整长期规范；本 handoff 只保留当前恢复所需事实。
+- 保留用户已有的 `.impeccable/critique/` 资产及其他未纳入本阶段的工作区改动，不删除、不暂存、不提交。
+- 保留数据库中的原始业务事实与旧快照；不保存 Prompt、Thinking、API key、完整敏感响应或真实模型原文。
+- `AGENTS.md` 是完整长期规范；本 handoff 只保留当前恢复所需的最小事实。

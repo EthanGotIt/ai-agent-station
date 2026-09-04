@@ -4,7 +4,7 @@
 
 本地与 CI 工具链保持一致：Python 3.14、Node.js 24、JDK 17；订单服务夹具由 Python 3.14 进程运行。项目只维护 CI 与本地验收，不提供 CD 部署资产。
 
-敏感配置只通过环境变量注入：`MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` 和 `DEEPSEEK_API_KEY`。DeepSeek 请求固定使用 `deepseek-v4-pro` thinking 模式；`DEEPSEEK_BASE_URL`、输出上限、重试次数、模型 HTTP 超时、Thread 上下文预算、队列容量、各层超时、SSE 心跳（`AI_AGENT_SSE_HEARTBEAT_INTERVAL`）和 Worker 轮询参数均在 `application.yml` 中以环境变量覆盖。受控闭环默认开启（`AI_AGENT_CONTINUATION_ENABLED=true`），最多自动续跑 3 轮（`AI_AGENT_MAX_CYCLES=3`）；Windows/JDK 17 本地验收默认使用 Reactor Netty 与 Tomcat NIO2，协议可用 `AI_AGENT_TOMCAT_PROTOCOL` 覆盖。当前 Codex Windows 沙箱仍可能在实际 DeepSeek 请求时阻断 Netty selector loopback；出现“Agent 执行失败”时先在普通 Windows 终端复核网络/JDK，再判断模型或业务问题。需要隔离验证时可将这些变量显式注入启动进程。Spring Boot 不会自动读取被 Git 忽略的 `.env` 文件；使用该文件时必须先把它加载到当前启动进程，旧的 `AI_AGENT_MODEL_*` 变量不会被当前应用读取。
+敏感配置只通过环境变量注入：`MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` 和 `DEEPSEEK_API_KEY`。DeepSeek 请求固定使用 `deepseek-v4-pro` thinking 模式；`DEEPSEEK_BASE_URL`、模型单次输出上限（默认 1,024）、Turn 累计生成额度（`AI_AGENT_MAX_OUTPUT_TOKENS_PER_TURN`，默认 8,192）、重复工具失败阈值（`AI_AGENT_REPEATED_TOOL_FAILURE_THRESHOLD`，默认 3）、重试次数、模型 HTTP 超时、Thread 上下文预算（默认 65,536，输出预留 1,500）、队列容量、各层超时、SSE 心跳（`AI_AGENT_SSE_HEARTBEAT_INTERVAL`）和 Worker 轮询参数均在 `application.yml` 中以环境变量覆盖。第一阶段生产路径从原始 Items 读取最新 300 条，旧 ContextSnapshot 只保留不参与上下文跳过。受控闭环默认开启（`AI_AGENT_CONTINUATION_ENABLED=true`），最多自动续跑 3 轮（`AI_AGENT_MAX_CYCLES=3`）；Windows/JDK 17 本地验收默认使用 Reactor Netty 与 Tomcat NIO2，协议可用 `AI_AGENT_TOMCAT_PROTOCOL` 覆盖。当前 Codex Windows 沙箱仍可能在实际 DeepSeek 请求时阻断 Netty selector loopback；出现“Agent 执行失败”时先在普通 Windows 终端复核网络/JDK，再判断模型或业务问题。需要隔离验证时可将这些变量显式注入启动进程。Spring Boot 不会自动读取被 Git 忽略的 `.env` 文件；使用该文件时必须先把它加载到当前启动进程，旧的 `AI_AGENT_MODEL_*` 变量不会被当前应用读取。
 
 订单适配器默认使用本地 `local` 实现；验收外部订单服务时设置 `AI_AGENT_ORDER_GATEWAY=http`、`AI_AGENT_ORDER_BASE_URL` 和可选的 `AI_AGENT_ORDER_HTTP_TIMEOUT`。HTTP 订单服务必须按 `/orders/search`、`/orders/{id}`、`/orders/{id}/refund`、`/orders/{id}/expedite` 和 `DELETE /orders/{id}` 契约提供 JSON 响应；应用会发送 `X-User-Id`，所有写操作还会发送 `Idempotency-Key`。订单隐藏/恢复接口已移除，历史 `HIDDEN_AT` 仅为旧数据读取兼容，不得再写入。仓库没有约定额外的外部鉴权环境变量，启用真实服务前需取得其服务端鉴权和响应契约；不要把凭据写入文档或提交。
 
@@ -50,6 +50,8 @@ Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8090/api/agent/threads/$thr
 - SSE 断线：先请求 Items API，使用返回的 `nextAfterSequence` 重新订阅 events；最终状态以持久化 Item 为准。
 - `MANUAL_RETRY_REQUIRED`：确认外部系统没有成功写入后调用 `/api/agent/workflow-runs/{runId}/retry`，接口保持原幂等键。
 - `AGENT_DECISION_MISSING`：模型两次未形成受控终止决策；页面只显示“再次尝试”，该操作通过原请求内容创建新的 Turn 和 `clientRequestId`，不会自动重放旧 Turn 或复用旧请求 ID。
+- `CONTEXT_BUDGET_EXCEEDED` / `OUTPUT_BUDGET_EXCEEDED`：本轮资源预算已耗尽；页面显示具体停止原因，已持久化的 Workflow、QuestionCard 或外部动作事实保持不变，不把 Turn 终态当作业务成功。
+- `TOOL_REPEATED_FAILURE`：相同工具、规范化参数和稳定错误码连续失败达到阈值；Runtime 以 `FALLBACK` 失败收口，确认订单事实或调整请求后再试。
 - `RUNTIME_RESTARTED`：重启时 ACTIVE Turn 会失败收敛，排队 Turn、QuestionCard 和外部命令继续恢复。
 
 ## 验证命令

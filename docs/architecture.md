@@ -62,13 +62,13 @@ Thread
 
 Item 是唯一事实来源。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersion=1` 和 `kind` 判别 envelope；`TURN_STATE` 记录 QUEUED、ACTIVE、WAITING、终态等生命周期事实，模型最终消息、工具调用/结果、Workflow 状态、订单动作请求和错误均即时持久化。模型内部可以流式消费，但 SSE 对外只发送 `ready`、`heartbeat` 和 `item.*`，不再暴露 `assistant.delta` 或瞬时 `turn.*`；客户端断线时先按 `afterSequence` 读取 Items，再订阅事件，不重放丢失的文本增量。
 
-`AgentContextAssembler` 从最新快照的 `throughSequence` 继续读取，过滤当前 Turn 已写入的输入，依次放入系统提示和工具定义、快照之后的最近 Item、当前输入，并为输出预留预算。超过阈值时通过 `AgentContextSummarizer` 压缩最旧已完成 Turn；摘要失败沿用旧快照和最近窗口，`AgentContextBudgetReport` 标记降级但不阻塞执行。所有预算和工具结果截断上限均配置化。`WORKFLOW_STEP`、`WORKFLOW_CHECKPOINT`、`WORKFLOW_DECISION` 与 `AGENT_DECISION` 是模型可见的受控事实；`AGENT_CONTINUATION` 只作为运行元数据和前端折叠依据，不直接注入模型文本。
+第一阶段生产路径显式关闭 `AgentContextAssembler` 的快照视图：从原始 Items 读取最新 300 条，保留库中的旧 `ContextSnapshot` 但不再据此跳过历史；每次组装记录 `estimatedTokens`、`inputBudget`、`snapshotThroughSequence`、`compressed`、`degraded` 和 `droppedItems`。系统提示、工具定义、历史、当前输入及本轮工具结果会在每次真实模型请求前重新估算，输出预留不计入输入预算。后续 2A 再单独启用快照压缩和摘要替换。`WORKFLOW_STEP`、`WORKFLOW_CHECKPOINT`、`WORKFLOW_DECISION` 与 `AGENT_DECISION` 是模型可见的受控事实；`AGENT_CONTINUATION` 只作为运行元数据和前端折叠依据，不直接注入模型文本。
 
 Runtime 的输入边界由 `AgentTurnExecutionRouter` 按 `MESSAGE`、`QUESTION_ANSWER`、`WORKFLOW_DECISION` 和 `ORDER_ACTION` 分派；`AgentTurnInputValidator` 与 `AgentTurnItemPayloads` 只负责无副作用的规范化和 Item envelope 构造。Spring AI 协调器保留模型调用与受控 Tool 生命周期，订单 Tool 的参数解析、字段白名单和输出截断由 `SpringAiOrderToolSupport` 承担；QuestionCard schema 与 Workflow Checkpoint schema 分属各自 Core 模型。历史 `WORKFLOW_ANSWER` Turn 只按消息兼容读取，不进入新 Runtime 路径。这样拆分不改变同 Thread FIFO、持久化 Item、事务边界或外部动作幂等契约。
 
 ## 编排和审批
 
-`SpringAiAgentTurnCoordinator` 是唯一协调 Agent。只读 Tool 查询订单和物流；订单售后能力统一由 `start_order_service_workflow` 启动确定性 Workflow，不能直接产生外部副作用。协调器使用终态 `FINISH|ASK_USER|START_WORKFLOW`，但入口受工具契约收窄：`complete_agent_cycle` 只接受 `FINISH`，`ASK_USER` 只能由 `request_user_input` 持久化 QuestionCard 产生，`START_WORKFLOW` 只能由 Workflow Tool 产生；固定 Workflow 的人工执行确认由独立 Workflow Checkpoint 承担。模型未形成终态决策时，Runtime 在同一 Turn 内最多发起一次带纠正提示的完整调用，首次自由文本不写入 Item；第二次仍缺失时写入 `AGENT_DECISION_MISSING` 并安全失败，不使用文本假完成。终止 Tool 的受控消息优先于模型追加文本，后续自由文本不会覆盖最终消息。第三轮之后不再创建新的续跑 Turn。Tool Call/Result/Agent Decision 只记录受控参数、状态、截断标志，不记录 Prompt 或 Thinking。Workflow 类型、状态和开放交互使用枚举，并显式执行：
+`SpringAiAgentTurnCoordinator` 是唯一协调 Agent，并显式装配一个 `ControlledToolCallingAdvisor` 与 `ControlledToolCallingManager`；Manager 按模型返回顺序执行工具，在 `FINISH`、成功持久化 QuestionCard 或 Workflow 交互后截断同批后续工具和模型请求。只读 Tool 查询订单和物流；订单售后能力统一由 `start_order_service_workflow` 启动确定性 Workflow，不能直接产生外部副作用。协调器使用终态 `FINISH|ASK_USER|START_WORKFLOW`，但入口受工具契约收窄：`complete_agent_cycle` 只接受 `FINISH`，`ASK_USER` 只能由 `request_user_input` 持久化 QuestionCard 产生，`START_WORKFLOW` 只能由 Workflow Tool 产生；固定 Workflow 的人工执行确认由独立 Workflow Checkpoint 承担。模型未形成终态决策时，Runtime 在同一 Turn 内最多发起一次带纠正提示的完整调用，首次自由文本不写入 Item；第二次仍缺失时写入 `AGENT_DECISION_MISSING` 并安全失败，不使用文本假完成。终止 Tool 的受控消息优先于模型追加文本，后续自由文本不会覆盖最终消息。第三轮之后不再创建新的续跑 Turn。Tool Call/Result/Agent Decision 只记录受控参数、状态、截断标志，不记录 Prompt 或 Thinking。Workflow 类型、状态和开放交互使用枚举，并显式执行：
 
 ```text
 校验 → 持久化 QuestionCard → WAITING_USER_INPUT
@@ -93,7 +93,7 @@ QuestionCard 回答使用 `POST /questions/{questionId}/answers`，请求体携�
 
 ## Runtime 可靠性
 
-队列键是 Thread：同一 Thread 严格 FIFO、任意时刻一个 ACTIVE Turn；不同 Thread 可并行。Turn 持久状态通过 `VERSION_NO` 条件更新执行 CAS，版本竞争或终态重写会丢弃后续事实写入。排队 Turn 可直接取消，ACTIVE Turn 通过运行上下文协作取消；已提交的外部副作用不会回滚。队列等待、Turn、工具、外部动作和 SSE 流/心跳均可独立配置。
+队列键是 Thread：同一 Thread 严格 FIFO、任意时刻一个 ACTIVE Turn；不同 Thread 可并行。Turn 持久状态通过 `VERSION_NO` 条件更新执行 CAS，版本竞争或终态重写会丢弃后续事实写入。排队 Turn 可直接取消，ACTIVE Turn 通过运行上下文协作取消；已提交的外部副作用不会回滚。每次模型请求都检查完整上下文并预留输出额度，完成后只结算一次 usage；usage 缺失、零值或断流保留整笔预留。默认应用上下文总预算为 65,536 估算 token，输入预算扣除 1,500 预留，单次模型输出上限为 1,024，Turn 累计生成额度为 8,192，截止时间为 4 分钟。相同工具、规范化参数和稳定错误码连续失败 3 次后以 `FALLBACK` 结束并写入 `TOOL_REPEATED_FAILURE`；成功或不同失败组合会重置计数。资源停止使用 `STOP_LIMIT`，代码为 `CONTEXT_BUDGET_EXCEEDED` 或 `OUTPUT_BUDGET_EXCEEDED`，前端不把它投影为业务成功。队列等待、Turn、工具、外部动作和 SSE 流/心跳均可独立配置。
 
 外部命令以 `(userId, idempotencyKey)` 唯一。Worker 先在本地事务中原子 Claim Lease，再在事务外调用远程系统；PENDING、RETRY_WAIT 和过期 PROCESSING 都可被领取。仅瞬时错误按指数退避，永久错误直接进入人工重试；动作超时也会形成可分类结果。订单 HTTP 适配器必须把命令的 `idempotencyKey` 作为 `Idempotency-Key` 请求头传给退款、催发货和删除接口，由订单服务按该键去重；本地演示执行器则在同一本地事务中完成订单状态 CAS、订单/物流删除和幂等回执写入。人工重试沿用原命令和幂等键，重复回答、重复 Claim 和重启恢复不会产生第二次业务写入。
 
