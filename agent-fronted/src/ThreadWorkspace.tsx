@@ -421,7 +421,10 @@ function ContinuationNotice({ turn }: { turn: ThreadViewTurn }) {
   const stopLimit = turn.decisions.find((decision) => decision.decision === "STOP_LIMIT");
   const fallback = turn.decisions.find((decision) => decision.decision === "FALLBACK");
   if (!turn.continuation && !stopLimit && !fallback) return null;
-  if (stopLimit) return <p className="continuation-notice continuation-notice-warning" role="status"><Clock3 aria-hidden="true" />已达到自动决策上限，业务结果保持不变；可以继续提问或人工处理。</p>;
+  if (stopLimit) {
+    const resourceStop = ["CONTEXT_BUDGET_EXCEEDED", "OUTPUT_BUDGET_EXCEEDED"].includes(stopLimit.code ?? "");
+    return <p className="continuation-notice continuation-notice-warning" role="status"><Clock3 aria-hidden="true" />{resourceStop ? "本轮资源预算已耗尽，业务结果保持不变；可以继续提问或人工处理。" : "已达到自动决策上限，业务结果保持不变；可以继续提问或人工处理。"}</p>;
+  }
   if (fallback) return <p className="continuation-notice continuation-notice-warning" role="status"><CircleAlert aria-hidden="true" />Agent 已降级为可控结果，业务状态未被覆盖。</p>;
   return <p className="continuation-notice" role="status"><GitBranch aria-hidden="true" />已接续第 {turn.continuation?.cycleNo} 轮 Agent 判断，业务事实仍以本卡片为准。</p>;
 }

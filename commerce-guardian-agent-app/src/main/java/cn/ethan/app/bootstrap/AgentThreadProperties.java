@@ -22,8 +22,8 @@ public record AgentThreadProperties(
 
     @ConstructorBinding
     public AgentThreadProperties {
-        contextMaxEstimatedTokens = valueOrDefault(contextMaxEstimatedTokens, 12_000);
-        snapshotTriggerEstimatedTokens = valueOrDefault(snapshotTriggerEstimatedTokens, 9_000);
+        contextMaxEstimatedTokens = valueOrDefault(contextMaxEstimatedTokens, 65_536);
+        snapshotTriggerEstimatedTokens = valueOrDefault(snapshotTriggerEstimatedTokens, 65_535);
         toolResultMaxCharacters = valueOrDefault(toolResultMaxCharacters, 8_000);
         outputReserveEstimatedTokens = valueOrDefault(outputReserveEstimatedTokens, 1_500);
         turnTimeout = turnTimeout == null ? Duration.ofMinutes(4) : turnTimeout;

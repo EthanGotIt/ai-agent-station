@@ -259,6 +259,29 @@ describe("thread projection", () => {
     expect(findOpenInteraction(items)).toBeNull();
   });
 
+  it("projects resource stop decisions with their exact reason and error state", () => {
+    const items = [
+      item("USER_MESSAGE", 1, "turn-budget", "查询订单"),
+      item("AGENT_DECISION", 2, "turn-budget", {
+        decision: "STOP_LIMIT", code: "CONTEXT_BUDGET_EXCEEDED"
+      }),
+      item("ERROR", 3, "turn-budget", "CONTEXT_BUDGET_EXCEEDED"),
+      item("TURN_STATE", 4, "turn-budget", {
+        status: "FAILED", errorCode: "CONTEXT_BUDGET_EXCEEDED"
+      })
+    ].map(normalizeItem);
+
+    const [turn] = rebuildTurns(items);
+
+    expect(turn.status).toBe("FAILED");
+    expect(turn.activities).toContainEqual(expect.objectContaining({
+      label: "已达到本轮资源预算", detail: "CONTEXT_BUDGET_EXCEEDED", status: "ERROR"
+    }));
+    expect(turn.activities).toContainEqual(expect.objectContaining({
+      label: "自动执行已停止", detail: "CONTEXT_BUDGET_EXCEEDED", status: "ERROR"
+    }));
+  });
+
   it("reuses unaffected Turn references when appending an Item", () => {
     const initialItems = [
       item("USER_MESSAGE", 1, "turn-a", "查看订单"),

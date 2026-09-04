@@ -18,7 +18,9 @@ public record AgentRuntimeProperties(
         ExecutorProperties executor,
         Duration heartbeatInterval,
         Boolean continuationEnabled,
-        Integer maxAgentCycles
+        Integer maxAgentCycles,
+        Integer maxOutputTokensPerTurn,
+        Integer repeatedToolFailureThreshold
 ) {
 
     private static final Duration DEFAULT_STREAM_TIMEOUT = Duration.ofSeconds(245);
@@ -26,13 +28,15 @@ public record AgentRuntimeProperties(
     private static final Duration DEFAULT_HEARTBEAT_INTERVAL = Duration.ofSeconds(15);
     private static final Duration MAX_HEARTBEAT_INTERVAL = Duration.ofMinutes(1);
     private static final int DEFAULT_MAX_AGENT_CYCLES = 3;
+    private static final int DEFAULT_MAX_OUTPUT_TOKENS_PER_TURN = 8_192;
+    private static final int DEFAULT_REPEATED_TOOL_FAILURE_THRESHOLD = 3;
 
     public AgentRuntimeProperties(
             Duration streamTimeout,
             QueueProperties queue,
             ExecutorProperties executor
     ) {
-        this(streamTimeout, queue, executor, null, null, null);
+        this(streamTimeout, queue, executor, null, null, null, null, null);
     }
 
     public AgentRuntimeProperties(
@@ -41,7 +45,31 @@ public record AgentRuntimeProperties(
             ExecutorProperties executor,
             Duration heartbeatInterval
     ) {
-        this(streamTimeout, queue, executor, heartbeatInterval, null, null);
+        this(streamTimeout, queue, executor, heartbeatInterval, null, null, null, null);
+    }
+
+    public AgentRuntimeProperties(
+            Duration streamTimeout,
+            QueueProperties queue,
+            ExecutorProperties executor,
+            Duration heartbeatInterval,
+            Boolean continuationEnabled,
+            Integer maxAgentCycles
+    ) {
+        this(streamTimeout, queue, executor, heartbeatInterval, continuationEnabled, maxAgentCycles, null, null);
+    }
+
+    public AgentRuntimeProperties(
+            Duration streamTimeout,
+            QueueProperties queue,
+            ExecutorProperties executor,
+            Duration heartbeatInterval,
+            Boolean continuationEnabled,
+            Integer maxAgentCycles,
+            Integer maxOutputTokensPerTurn
+    ) {
+        this(streamTimeout, queue, executor, heartbeatInterval, continuationEnabled, maxAgentCycles,
+                maxOutputTokensPerTurn, null);
     }
 
     @ConstructorBinding
@@ -71,6 +99,18 @@ public record AgentRuntimeProperties(
         maxAgentCycles = maxAgentCycles == null ? DEFAULT_MAX_AGENT_CYCLES : maxAgentCycles;
         if (maxAgentCycles < 1 || maxAgentCycles > 5) {
             throw new IllegalArgumentException("maxAgentCycles must be between 1 and 5");
+        }
+        maxOutputTokensPerTurn = maxOutputTokensPerTurn == null
+                ? DEFAULT_MAX_OUTPUT_TOKENS_PER_TURN : maxOutputTokensPerTurn;
+        if (maxOutputTokensPerTurn < 1 || maxOutputTokensPerTurn > 1_000_000) {
+            throw new IllegalArgumentException(
+                    "maxOutputTokensPerTurn must be between 1 and 1000000");
+        }
+        repeatedToolFailureThreshold = repeatedToolFailureThreshold == null
+                ? DEFAULT_REPEATED_TOOL_FAILURE_THRESHOLD : repeatedToolFailureThreshold;
+        if (repeatedToolFailureThreshold < 1 || repeatedToolFailureThreshold > 20) {
+            throw new IllegalArgumentException(
+                    "repeatedToolFailureThreshold must be between 1 and 20");
         }
         if (executor.queueCapacity() < queue.maxPendingGlobal()) {
             throw new IllegalArgumentException(

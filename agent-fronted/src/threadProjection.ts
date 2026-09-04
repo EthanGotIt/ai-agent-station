@@ -715,20 +715,26 @@ function buildActivities(items: AgentItem[]): BusinessProgress[] {
       if (item.type === "AGENT_DECISION") {
         const decision = parseDecision(item);
         if (!decision) return null;
+        const resourceStop = decision.decision === "STOP_LIMIT"
+          && ["CONTEXT_BUDGET_EXCEEDED", "OUTPUT_BUDGET_EXCEEDED"].includes(decision.code ?? "");
         const labels: Record<string, string> = {
           FINISH: "Agent 已完成本轮判断",
           START_WORKFLOW: "Agent 已启动业务流程",
           ASK_USER: "等待用户补充信息",
           WAIT_USER: "等待用户补充信息",
-          STOP_LIMIT: "已达到自动决策上限",
+          STOP_LIMIT: resourceStop ? "已达到本轮资源预算" : "已达到自动决策上限",
           FALLBACK: "已降级为可控结果"
         };
         return { id: `${item.itemId}-agent-decision`, label: labels[decision.decision] ?? "Agent 已作出决策",
-          detail: decision.code ?? null, status: decision.decision === "FALLBACK" ? "ERROR"
+          detail: decision.code ?? null, status: decision.decision === "FALLBACK" || resourceStop ? "ERROR"
             : ["ASK_USER", "WAIT_USER"].includes(decision.decision) ? "WAITING" : "DONE", sequence: item.sequence };
       }
       if (item.type === "ERROR") {
-        return { id: `${item.itemId}-error`, label: "执行遇到问题", detail: "可以检查结果后重试", status: "ERROR", sequence: item.sequence };
+        const errorCode = payloadText(item.payload);
+        const knownStop = ["CONTEXT_BUDGET_EXCEEDED", "OUTPUT_BUDGET_EXCEEDED", "TOOL_REPEATED_FAILURE"]
+          .includes(errorCode);
+        return { id: `${item.itemId}-error`, label: knownStop ? "自动执行已停止" : "执行遇到问题",
+          detail: knownStop ? errorCode : "可以检查结果后重试", status: "ERROR", sequence: item.sequence };
       }
       return null;
     })

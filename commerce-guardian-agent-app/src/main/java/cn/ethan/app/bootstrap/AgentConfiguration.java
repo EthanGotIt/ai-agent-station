@@ -17,6 +17,8 @@ import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
 import cn.ethan.core.agent.coordination.AgentOrderActionCoordinator;
 import cn.ethan.core.agent.workflow.AgentQuestionCardStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStore;
+import cn.ethan.infrastructure.agent.coordination.springai.ControlledToolCallingAdvisor;
+import cn.ethan.infrastructure.agent.coordination.springai.ControlledToolCallingManager;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
@@ -65,8 +67,10 @@ public class AgentConfiguration {
     }
 
     @Bean(name = "agentChatClient")
-    public ChatClient agentChatClient(ChatModel chatModel) {
-        return ChatClient.builder(chatModel).build();
+    public ChatClient agentChatClient(ChatModel chatModel, AgentModelProperties properties) {
+        ControlledToolCallingAdvisor advisor = new ControlledToolCallingAdvisor(
+                new ControlledToolCallingManager(), properties.maxOutputTokens());
+        return ChatClient.builder(chatModel).defaultAdvisors(advisor).build();
     }
 
     @Bean
@@ -156,7 +160,8 @@ public class AgentConfiguration {
     ) {
         return new AgentContextAssembler(items, snapshots, clock,
                 properties.contextMaxEstimatedTokens(), properties.snapshotTriggerEstimatedTokens(),
-                properties.toolResultMaxCharacters(), properties.outputReserveEstimatedTokens());
+                properties.toolResultMaxCharacters(), properties.outputReserveEstimatedTokens(),
+                false, null);
     }
 
     @Bean
@@ -186,7 +191,8 @@ public class AgentConfiguration {
                 runtimeProperties.queue().waitTimeout(),
                 threadProperties.turnTimeout(),
                 threadProperties.toolResultMaxCharacters(), metrics, orderActionCoordinator,
-                runtimeProperties.continuationEnabled(), runtimeProperties.maxAgentCycles(), questionCards, checkpoints);
+                runtimeProperties.continuationEnabled(), runtimeProperties.maxAgentCycles(), questionCards, checkpoints,
+                runtimeProperties.maxOutputTokensPerTurn(), runtimeProperties.repeatedToolFailureThreshold());
         runtime.recoverPersistedTurns();
         return runtime;
     }
