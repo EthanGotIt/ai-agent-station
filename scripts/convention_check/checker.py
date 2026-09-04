@@ -44,8 +44,8 @@ FORBIDDEN_SOURCE_TEXT = (
     "DEMO_AFTER_SALES_CASE",
 )
 SCAN_SUFFIXES = {".java", ".xml", ".yml", ".yaml", ".sql", ".md", ".ts", ".tsx", ".css"}
-IGNORED_DIRECTORIES = {".agents", ".codex", ".git", ".idea", "target", "node_modules", "dist"}
-EMPTY_DIRECTORY_IGNORES = {".git", "target", "node_modules", "dist"}
+IGNORED_DIRECTORIES = {".agents", ".codex", ".git", ".idea", ".impeccable", "target", "node_modules", "dist"}
+EMPTY_DIRECTORY_IGNORES = {".git", ".impeccable", "target", "node_modules", "dist"}
 TOP_LEVEL_TYPE_PATTERN = re.compile(
     r"^(?:public\s+)?(?:(?:final|abstract|sealed|non-sealed)\s+)*"
     r"(class|interface|enum|record)\s+([A-Za-z_$][\w$]*)",
