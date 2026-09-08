@@ -1043,6 +1043,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/workflow-runs/run-checkpoint/checkpoints/checkpoint-new/decisions"))).toBe(true));
     const decisionCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/workflow-runs/run-checkpoint/checkpoints/checkpoint-new/decisions"));
     expect(JSON.parse(String(decisionCall?.[1]?.body))).toEqual(expect.objectContaining({ expectedVersion: 2, decision: "APPROVE", factsFingerprint: "facts-v1" }));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "请确认这项订单操作" })).toBeNull());
   });
 });
 
