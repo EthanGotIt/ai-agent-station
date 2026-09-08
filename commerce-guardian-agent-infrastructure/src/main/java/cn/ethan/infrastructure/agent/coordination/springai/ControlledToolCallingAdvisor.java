@@ -3,15 +3,15 @@ package cn.ethan.infrastructure.agent.coordination.springai;
 import cn.ethan.core.agent.execution.AgentExecutionContext;
 import cn.ethan.core.agent.execution.AgentExecutionLimitException;
 import cn.ethan.core.agent.execution.AgentExecutionStopReasonEnum;
+import cn.ethan.core.agent.context.AgentContextPressureException;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
 import org.springframework.ai.chat.client.advisor.api.StreamAdvisorChain;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.model.tool.ToolCallingManager;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
 
 /**
  * 类型职责：在每次模型请求前预留输出并校验完整 Prompt，在响应后一次结算 usage。
@@ -22,15 +22,55 @@ import org.springframework.ai.model.tool.ToolCallingManager;
 public final class ControlledToolCallingAdvisor extends ToolCallingAdvisor {
 
     static final String TOOL_STATE_KEY = "commerceGuardianAgentToolState";
+    static final String OUTPUT_RESERVATION_KEY = "commerceGuardianAgentOutputReservation";
 
     private final int perRequestOutputTokens;
+    private final int contextMaxEstimatedTokens;
+    private final double compactionTriggerRatio;
+    private final boolean compactionEnabled;
+    private final int maxOverflowRetries;
 
     public ControlledToolCallingAdvisor(ToolCallingManager manager, int perRequestOutputTokens) {
+        this(manager, perRequestOutputTokens, 65_536, 0.80, true, 1);
+    }
+
+    public ControlledToolCallingAdvisor(
+            ToolCallingManager manager,
+            int perRequestOutputTokens,
+            int contextMaxEstimatedTokens,
+            double compactionTriggerRatio
+    ) {
+        this(manager, perRequestOutputTokens, contextMaxEstimatedTokens, compactionTriggerRatio, true, 1);
+    }
+
+    public ControlledToolCallingAdvisor(
+            ToolCallingManager manager,
+            int perRequestOutputTokens,
+            int contextMaxEstimatedTokens,
+            double compactionTriggerRatio,
+            boolean compactionEnabled
+    ) {
+        this(manager, perRequestOutputTokens, contextMaxEstimatedTokens, compactionTriggerRatio,
+                compactionEnabled, 1);
+    }
+
+    public ControlledToolCallingAdvisor(
+            ToolCallingManager manager,
+            int perRequestOutputTokens,
+            int contextMaxEstimatedTokens,
+            double compactionTriggerRatio,
+            boolean compactionEnabled,
+            int maxOverflowRetries
+    ) {
         super(manager, DEFAULT_TOOL_EXECUTION_ELIGIBILITY_CHECKER, DEFAULT_ORDER, true);
         if (perRequestOutputTokens < 1) {
             throw new IllegalArgumentException("perRequestOutputTokens must be positive");
         }
         this.perRequestOutputTokens = perRequestOutputTokens;
+        this.contextMaxEstimatedTokens = Math.max(1_000, contextMaxEstimatedTokens);
+        this.compactionTriggerRatio = compactionTriggerRatio;
+        this.compactionEnabled = compactionEnabled;
+        this.maxOverflowRetries = Math.max(0, Math.min(maxOverflowRetries, 3));
     }
 
     @Override
@@ -38,7 +78,7 @@ public final class ControlledToolCallingAdvisor extends ToolCallingAdvisor {
             ChatClientRequest request,
             StreamAdvisorChain advisorChain
     ) {
-        AgentToolExecutionState state = state(request.prompt());
+        AgentToolExecutionState state = state(request);
         if (state == null) {
             return request;
         }
@@ -47,18 +87,39 @@ public final class ControlledToolCallingAdvisor extends ToolCallingAdvisor {
             return request;
         }
         context.checkActive();
-        int estimate = estimate(request.prompt());
+        AgentPromptMeasurement.Measurement measurement = AgentPromptMeasurement.measure(request.prompt());
+        int estimate = measurement.estimatedTokens();
+        context.recordPromptMeasurement(context.contextViewKey(), estimate);
+        if (context.contextOverflowRecoveryPending()
+                && !context.validateContextOverflowRecovery(context.contextViewKey(), estimate, maxOverflowRetries)) {
+            state.markResourceStop(AgentExecutionStopReasonEnum.CONTEXT_BUDGET_EXCEEDED);
+            throw new AgentExecutionLimitException(AgentExecutionStopReasonEnum.CONTEXT_BUDGET_EXCEEDED);
+        }
+        int pressureThreshold = Math.max(1, (int) Math.floor(contextMaxEstimatedTokens * compactionTriggerRatio));
+        if (compactionEnabled && estimate >= pressureThreshold
+                && !context.contextCompactionAttempted(context.contextViewKey())) {
+            throw new AgentContextPressureException("模型上下文达到压缩压力阈值",
+                    estimate, context.contextViewKey());
+        }
         if (!context.checkContextBudget(estimate)) {
             AgentExecutionStopReasonEnum reason = context.stopReason();
             state.markResourceStop(reason);
             throw new AgentExecutionLimitException(reason);
         }
-        if (context.reserveOutput(perRequestOutputTokens) == null) {
+        String reservationId = context.reserveOutput(perRequestOutputTokens);
+        if (reservationId == null) {
             AgentExecutionStopReasonEnum reason = context.stopReason();
             state.markResourceStop(reason);
             throw new AgentExecutionLimitException(reason);
         }
-        return request;
+        int reserved = context.reservedOutputTokens(reservationId);
+        state.bindModelOutputReservation(reservationId);
+        ChatOptions options = request.prompt().getOptions();
+        ChatOptions boundedOptions = options == null
+                ? ToolCallingChatOptions.builder().maxTokens(reserved).build()
+                : options.mutate().maxTokens(reserved).build();
+        Prompt boundedPrompt = request.prompt().mutate().chatOptions(boundedOptions).build();
+        return request.mutate().prompt(boundedPrompt).context(OUTPUT_RESERVATION_KEY, reservationId).build();
     }
 
     @Override
@@ -68,7 +129,9 @@ public final class ControlledToolCallingAdvisor extends ToolCallingAdvisor {
     ) {
         AgentToolExecutionState state = response == null ? null : state(response);
         if (state != null && response.chatResponse() != null) {
-            state.settleModelOutput(response.chatResponse());
+            Object reservation = response.context() == null ? null
+                    : response.context().get(OUTPUT_RESERVATION_KEY);
+            state.settleModelOutput(response.chatResponse(), reservation instanceof String value ? value : null);
         }
         return response;
     }
@@ -82,39 +145,22 @@ public final class ControlledToolCallingAdvisor extends ToolCallingAdvisor {
         return null;
     }
 
+    private AgentToolExecutionState state(ChatClientRequest request) {
+        if (request.context() != null) {
+            Object value = request.context().get(TOOL_STATE_KEY);
+            if (value instanceof AgentToolExecutionState state) {
+                return state;
+            }
+        }
+        return state(request.prompt());
+    }
+
     private AgentToolExecutionState state(ChatClientResponse response) {
+        if (response.context() == null) {
+            return null;
+        }
         Object value = response.context().get(TOOL_STATE_KEY);
         return value instanceof AgentToolExecutionState state ? state : null;
     }
 
-    private int estimate(Prompt prompt) {
-        long characters = 0L;
-        for (Message message : prompt.getInstructions()) {
-            if (message != null && message.getText() != null) {
-                characters += message.getText().length();
-            }
-            if (message instanceof AssistantMessage assistant) {
-                for (AssistantMessage.ToolCall toolCall : assistant.getToolCalls()) {
-                    characters += toolCall.id().length() + toolCall.name().length()
-                            + (toolCall.arguments() == null ? 0 : toolCall.arguments().length());
-                }
-            }
-            if (message instanceof ToolResponseMessage toolResponse) {
-                for (ToolResponseMessage.ToolResponse response : toolResponse.getResponses()) {
-                    characters += response.id().length() + response.name().length()
-                            + (response.responseData() == null ? 0 : response.responseData().length());
-                }
-            }
-        }
-        if (prompt.getOptions() instanceof org.springframework.ai.model.tool.ToolCallingChatOptions options
-                && options.getToolCallbacks() != null) {
-            for (var callback : options.getToolCallbacks()) {
-                var definition = callback.getToolDefinition();
-                characters += definition.name().length()
-                        + definition.description().length()
-                        + definition.inputSchema().length();
-            }
-        }
-        return (int) Math.min(Integer.MAX_VALUE, characters / 2L + 1L);
-    }
 }

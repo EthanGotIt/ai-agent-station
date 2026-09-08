@@ -105,7 +105,7 @@ class SpringAiAgentTurnCoordinatorTest {
         assertEquals("预算内回复", result.assistantMessage());
         assertEquals(2, context.outputTokensUsed());
         assertEquals(AgentExecutionStopReasonEnum.OUTPUT_BUDGET_EXCEEDED, context.stopReason());
-        context.settleCurrentOutput(null);
+        context.settleOutput("late-response", null);
         assertEquals(2, context.outputTokensUsed());
     }
 
@@ -120,8 +120,58 @@ class SpringAiAgentTurnCoordinatorTest {
         coordinator.run(thread(), turn(), List.of(), null, context);
 
         assertEquals(1, context.outputTokensUsed());
-        context.settleCurrentOutput(1);
+        context.settleOutput("late-response", 1);
         assertEquals(1, context.outputTokensUsed());
+    }
+
+    @Test
+    void clampsProviderMaxTokensToTheTurnReservation() {
+        CapturingEvents events = new CapturingEvents();
+        StreamingModel model = new StreamingModel(Flux.just(response("额度内", 1)), false);
+        SpringAiAgentTurnCoordinator coordinator = coordinator(model, events);
+        AgentExecutionContext context = new AgentExecutionContext(
+                Clock.fixed(NOW, ZoneOffset.UTC), NOW.plusSeconds(30), 10, 3);
+
+        coordinator.run(thread(), turn(), List.of(), null, context);
+
+        assertEquals(10, model.lastPrompt.get().getOptions().getMaxTokens());
+    }
+
+    @Test
+    void reportsFullPromptBudgetFailureBeforeCallingTheModel() {
+        CapturingEvents events = new CapturingEvents();
+        StreamingModel model = new StreamingModel(Flux.just(response("不应发送")), false);
+        SpringAiAgentTurnCoordinator coordinator = coordinator(model, events);
+        AgentExecutionContext context = new AgentExecutionContext(
+                Clock.fixed(NOW, ZoneOffset.UTC), NOW.plusSeconds(30), 10, 3);
+        context.initializeContextBudget(1, 0);
+
+        AgentTurnCoordinator.AgentCoordinatorResult result = coordinator.run(
+                thread(), turn(), List.of(), null, context);
+
+        assertEquals(AgentDecisionTypeEnum.STOP_LIMIT, result.decision());
+        assertEquals(AgentExecutionStopReasonEnum.CONTEXT_BUDGET_EXCEEDED.name(), result.decisionCode());
+        assertEquals(null, model.lastPrompt.get());
+    }
+
+    @Test
+    void lateOutputResponseSettlesItsOwnReservation() {
+        AgentExecutionContext context = new AgentExecutionContext(
+                Clock.fixed(NOW, ZoneOffset.UTC), NOW.plusSeconds(30), 20, 3);
+        String first = context.reserveOutput(10);
+        String second = context.reserveOutput(10);
+        SpringAiAgentTurnCoordinator.WorkflowInvocation invocation =
+                new SpringAiAgentTurnCoordinator.WorkflowInvocation(context,
+                        Clock.fixed(NOW, ZoneOffset.UTC), AgentRuntimeMetrics.noop());
+        invocation.bindModelOutputReservation(first);
+        invocation.bindModelOutputReservation(second);
+
+        invocation.settleModelOutput(response("第二次", 3), second);
+
+        assertEquals(3, context.outputTokensUsed());
+        assertEquals(10, context.reservedOutputTokens(first));
+        invocation.settleModelOutput(response("第一次", 2), first);
+        assertEquals(5, context.outputTokensUsed());
     }
 
     @Test
@@ -149,7 +199,7 @@ class SpringAiAgentTurnCoordinatorTest {
     }
 
     @Test
-    void keepsOutputReservationWhenStreamingBreaksBeforeUsageArrives() {
+    void settlesOutputReservationConservativelyWhenStreamingBreaksBeforeUsageArrives() {
         CapturingEvents events = new CapturingEvents();
         SpringAiAgentTurnCoordinator coordinator = coordinator(new StreamingModel(
                 Flux.error(new IllegalStateException("stream interrupted")), false), events);
@@ -161,7 +211,7 @@ class SpringAiAgentTurnCoordinatorTest {
                 () -> coordinator.run(thread(), turn(), List.of(), null, context)
         );
 
-        assertEquals(0, context.outputTokensUsed());
+        assertEquals(8, context.outputTokensUsed());
         assertTrue(context.outputBudgetExhausted());
         assertEquals(null, context.reserveOutput(1), "断流后的预留必须保留，不能被下一次请求重复使用");
         assertEquals(AgentExecutionStopReasonEnum.OUTPUT_BUDGET_EXCEEDED, context.stopReason());
@@ -420,6 +470,7 @@ class SpringAiAgentTurnCoordinatorTest {
     private static final class StreamingModel implements ChatModel {
         private final Flux<ChatResponse> responses;
         private final boolean failOnCall;
+        private final AtomicReference<Prompt> lastPrompt = new AtomicReference<>();
 
         private StreamingModel(Flux<ChatResponse> responses, boolean failOnCall) {
             this.responses = responses;
@@ -441,6 +492,7 @@ class SpringAiAgentTurnCoordinatorTest {
 
         @Override
         public Flux<ChatResponse> stream(Prompt prompt) {
+            lastPrompt.set(prompt);
             return responses;
         }
     }

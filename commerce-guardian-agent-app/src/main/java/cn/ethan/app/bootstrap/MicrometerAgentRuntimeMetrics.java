@@ -36,6 +36,25 @@ public final class MicrometerAgentRuntimeMetrics implements AgentRuntimeMetrics 
     }
 
     @Override
+    public void observeOutputSettlement(int reservedTokens, int chargedTokens, boolean conservative) {
+        registry.summary("agent.model.output.reserved").record(reservedTokens);
+        registry.summary("agent.model.output.charged").record(chargedTokens);
+        if (conservative) {
+            registry.counter("agent.model.output.conservative").increment();
+        }
+    }
+
+    @Override
+    public void observeContextCompaction(
+            int beforeEstimatedTokens, int afterEstimatedTokens, int prunedToolResults, boolean summaryApplied
+    ) {
+        registry.summary("agent.context.compaction.before").record(beforeEstimatedTokens);
+        registry.summary("agent.context.compaction.after").record(afterEstimatedTokens);
+        registry.summary("agent.context.compaction.pruned-tools").record(prunedToolResults);
+        registry.counter("agent.context.compaction", "summary", Boolean.toString(summaryApplied)).increment();
+    }
+
+    @Override
     public void observeFailure(String category) {
         registry.counter("agent.runtime.failure", "category", safe(category)).increment();
     }

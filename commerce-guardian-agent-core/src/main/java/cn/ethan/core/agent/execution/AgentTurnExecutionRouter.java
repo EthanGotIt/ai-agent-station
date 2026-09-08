@@ -2,13 +2,13 @@ package cn.ethan.core.agent.execution;
 
 import cn.ethan.core.agent.coordination.AgentOrderActionCoordinator;
 import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
-import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnInputKindEnum;
 import cn.ethan.core.agent.thread.AgentTurnModel;
+import cn.ethan.core.agent.context.AgentModelContext;
 
-import java.util.List;
 import java.util.Map;
+import java.util.List;
 
 /**
  * 类型职责：将普通消息、Workflow 回答和订单卡片动作分派到各自的执行端口。
@@ -31,23 +31,11 @@ public final class AgentTurnExecutionRouter {
         this.orderActionCoordinator = orderActionCoordinator;
     }
 
+    /** 路由同一 Turn 的结构化模型视图；确定性订单动作只消费事实列表，不重新组装上下文。 */
     public AgentTurnCoordinator.AgentCoordinatorResult route(
             AgentThreadModel thread,
             AgentTurnModel turn,
-            List<AgentItemModel> context,
-            Map<String, String> answers,
-            AgentExecutionContext executionContext
-    ) {
-        return route(thread, turn, context, answers, executionContext, false);
-    }
-
-    /**
-     * 路由同一 Turn 的模型调用，并把一次性纠正标记传给协调器；确定性订单动作不重复调用模型。
-     */
-    public AgentTurnCoordinator.AgentCoordinatorResult route(
-            AgentThreadModel thread,
-            AgentTurnModel turn,
-            List<AgentItemModel> context,
+            AgentModelContext context,
             Map<String, String> answers,
             AgentExecutionContext executionContext,
             boolean correctionAttempt
@@ -58,8 +46,8 @@ public final class AgentTurnExecutionRouter {
             if (orderActionCoordinator == null) {
                 throw new IllegalStateException("订单动作协调器未装配");
             }
-            return orderActionCoordinator.run(thread, turn, context,
-                    turn.orderActionInput(), executionContext);
+            return orderActionCoordinator.run(thread, turn,
+                    context == null ? List.of() : context.items(), turn.orderActionInput(), executionContext);
         }
         AgentTurnCoordinator.AgentCoordinatorResult result = conversationCoordinator.run(
                 thread, turn, context, answers, executionContext, correctionAttempt);

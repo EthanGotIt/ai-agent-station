@@ -139,7 +139,13 @@ public final class AgentTurnItemPayloads {
                 + ",\"snapshotThroughSequence\":" + report.snapshotThroughSequence()
                 + ",\"compressed\":" + report.compressed()
                 + ",\"degraded\":" + report.degraded()
-                + ",\"droppedItems\":" + report.droppedItems() + "}";
+                + ",\"droppedItems\":" + report.droppedItems()
+                + ",\"readWatermark\":" + report.readWatermark()
+                + ",\"coveredThroughSequence\":" + report.coveredThroughSequence()
+                + ",\"readItemCount\":" + report.readItemCount()
+                + ",\"historyComplete\":" + report.historyComplete()
+                + ",\"peakEstimatedTokens\":" + report.peakEstimatedTokens()
+                + ",\"pressurePrunedToolResults\":" + report.pressurePrunedToolResults() + "}";
     }
 
     public static AgentItemModel withSequence(AgentItemModel item, long sequence) {

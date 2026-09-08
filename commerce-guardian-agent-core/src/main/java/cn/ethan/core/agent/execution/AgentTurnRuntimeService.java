@@ -11,6 +11,9 @@ import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnInputKindEnum;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import cn.ethan.core.agent.context.AgentContextAssembler;
+import cn.ethan.core.agent.context.AgentContextAssembly;
+import cn.ethan.core.agent.context.AgentContextPressureException;
+import cn.ethan.core.agent.context.AgentModelContextOverflowException;
 import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
 import cn.ethan.core.agent.coordination.AgentDecisionTypeEnum;
 import cn.ethan.core.agent.coordination.AgentOrderActionCoordinator;
@@ -77,7 +80,6 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
     private final int maxPendingGlobal;
     private final Duration waitTimeout;
     private final Duration turnTimeout;
-    private final int toolResultMaxCharacters;
     private final AgentRuntimeMetrics metrics;
     private final boolean continuationEnabled;
     private final int maxAgentCycles;
@@ -180,7 +182,6 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         this.maxPendingGlobal = Math.max(this.maxPendingPerThread, maxPendingGlobal);
         this.waitTimeout = waitTimeout == null ? Duration.ofMinutes(2) : waitTimeout;
         this.turnTimeout = turnTimeout == null ? Duration.ofMinutes(4) : turnTimeout;
-        this.toolResultMaxCharacters = Math.max(256, toolResultMaxCharacters);
         this.metrics = metrics == null ? AgentRuntimeMetrics.noop() : metrics;
         this.continuationEnabled = continuationEnabled;
         this.maxAgentCycles = Math.max(1, Math.min(maxAgentCycles, 5));
@@ -683,17 +684,38 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         }
         try {
             AgentTurnCoordinator.AgentCoordinatorResult result;
-            if (execution.orderAction()) {
+            if (execution.deterministicResume()) {
                 result = executionRouter.route(
-                        thread, active, List.of(), execution.answers(), executionContext);
+                        thread, active,
+                        new cn.ethan.core.agent.context.AgentModelContext("", List.of(), 0L, 0L, 0L, "raw"),
+                        execution.answers(), executionContext, false);
             } else {
-                var assembly = contextAssembler.assembleWithReport(thread, active.turnId(), active.input());
+                var assembly = contextAssembler.assembleWithReport(
+                        thread, active.turnId(), active.input(), executionContext::checkActive,
+                        executionContext, false);
+                if (assembly.report().compressed()) {
+                    // 初次组装已经应用摘要视图；Advisor 不应为同一视图再次触发压力信号。
+                    // 固定 Tool Result 限长仍允许在完整 Prompt 达压后继续进入摘要流程。
+                    executionContext.markContextCompactionAttempted(assembly.modelContext().compactionKey());
+                }
+                if (assembly.report().estimatedTokens() > assembly.report().inputBudget()) {
+                    assembly = contextAssembler.assembleWithReport(
+                            thread, active.turnId(), active.input(), executionContext::checkActive,
+                            executionContext, true);
+                }
                 executionContext.checkActive();
                 metrics.observeContext(assembly.report().estimatedTokens(), assembly.report().compressed(),
                         assembly.report().degraded());
-                appendItem(active, AgentItemTypeEnum.EXECUTION_EVENT, AgentTurnItemPayloads.context(assembly.report()));
                 executionContext.initializeContextBudget(
                         assembly.report().inputBudget(), assembly.report().estimatedTokens());
+                if (assembly.report().compressed() || assembly.report().droppedItems() > 0) {
+                    metrics.observeContextCompaction(assembly.report().peakEstimatedTokens(),
+                            assembly.report().estimatedTokens(), assembly.report().droppedItems(),
+                            assembly.report().compressed());
+                }
+                appendItem(active, AgentItemTypeEnum.EXECUTION_EVENT,
+                        AgentTurnItemPayloads.context(
+                                assembly.report()));
                 if (executionContext.stopped()) {
                     String reason = executionContext.stopReason().name();
                     appendItem(active, AgentItemTypeEnum.AGENT_DECISION,
@@ -703,8 +725,8 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                     finish(active, AgentTurnStatusEnum.FAILED, reason);
                     return;
                 }
-                result = executionRouter.route(
-                        thread, active, assembly.items(), execution.answers(), executionContext);
+                result = routeWithContextRecovery(thread, active, assembly, execution.answers(),
+                        executionContext, false);
                 if (requiresDecisionCorrection(result)) {
                     AgentExecutionStopReasonEnum stopReason = executionContext.stopReason();
                     if (stopReason != null) {
@@ -721,8 +743,27 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                     // 第一次没有终止决策且没有留下结构化事实时只允许一次完整纠正调用；
                     // 首次自由文本不会进入持久化事实，已产生 Workflow/QuestionCard 的结果绝不重复调用。
                     executionContext.checkActive();
-                    result = executionRouter.route(
-                            thread, active, assembly.items(), execution.answers(), executionContext, true);
+                    var correctionAssembly = contextAssembler.assembleWithReport(
+                            thread, active.turnId(), active.input(), executionContext::checkActive,
+                            executionContext, false);
+                    boolean correctionFits = executionContext.checkContextBudget(
+                            correctionAssembly.report().estimatedTokens());
+                    appendItem(active, AgentItemTypeEnum.EXECUTION_EVENT,
+                            AgentTurnItemPayloads.context(correctionAssembly.report()
+                                    .withPeakEstimatedTokens(Math.max(
+                                            correctionAssembly.report().peakEstimatedTokens(),
+                                            executionContext.contextTokensPeak()))));
+                    if (!correctionFits) {
+                        String code = executionContext.stopReason().name();
+                        appendItem(active, AgentItemTypeEnum.AGENT_DECISION,
+                                AgentTurnItemPayloads.decision(AgentDecisionTypeEnum.STOP_LIMIT, 0,
+                                        active.workflowRunId(), code));
+                        appendItem(active, AgentItemTypeEnum.ERROR, code);
+                        finish(active, AgentTurnStatusEnum.FAILED, code);
+                        return;
+                    }
+                    result = routeWithContextRecovery(thread, active, correctionAssembly, execution.answers(),
+                            executionContext, true);
                 }
                 if (!hasUsableDecision(result)) {
                     appendItem(active, AgentItemTypeEnum.ERROR, AGENT_DECISION_MISSING);
@@ -820,6 +861,14 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                 finish(active, AgentTurnStatusEnum.FAILED, reason);
                 return;
             }
+            if (failure instanceof cn.ethan.core.agent.context.AgentContextHistoryException historyFailure) {
+                if (!cancelled) {
+                    appendItem(active, AgentItemTypeEnum.ERROR, historyFailure.code());
+                    metrics.observeFailure(historyFailure.code());
+                }
+                finish(active, AgentTurnStatusEnum.FAILED, historyFailure.code());
+                return;
+            }
             if (!cancelled) {
                 if (execution.continuation()) {
                     try {
@@ -876,11 +925,93 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         return updated;
     }
 
+    private AgentTurnCoordinator.AgentCoordinatorResult routeWithContextRecovery(
+            AgentThreadModel thread,
+            AgentTurnModel turn,
+            AgentContextAssembly initialAssembly,
+            Map<String, String> answers,
+            AgentExecutionContext executionContext,
+            boolean correctionAttempt
+    ) {
+        AgentContextAssembly assembly = initialAssembly;
+        int maxRecoveryAttempts = Math.max(0, contextAssembler.maxOverflowRetries());
+        for (;;) {
+            try {
+                executionContext.setContextViewKey(assembly.modelContext().compactionKey());
+                return executionRouter.route(thread, turn, assembly.modelContext(), answers,
+                        executionContext, correctionAttempt);
+            } catch (AgentContextPressureException pressure) {
+                executionContext.checkActive();
+                AgentContextAssembly recovered = recoverContextAssembly(
+                        thread, turn, assembly, executionContext);
+                String pressureView = pressure.viewKey() == null
+                        ? assembly.modelContext().compactionKey() : pressure.viewKey();
+                AgentExecutionContext.PromptMeasurement measured = executionContext.promptMeasurement();
+                int pressureEstimate = measured != null && measured.estimatedTokens() > 0
+                        ? measured.estimatedTokens() : pressure.estimatedTokens();
+                if (!viewChanged(assembly, recovered)) {
+                    // 请求前压力是应用侧信号，不得因为摘要无效就提前写入不可逆停止原因。
+                    // 只要 Advisor 测量的完整 Prompt 仍在硬预算内，允许当前视图继续发送一次。
+                    executionContext.recordContextCompactionAttempt(
+                            pressureView, pressureEstimate, pressureEstimate);
+                    if (pressureEstimate <= executionContext.contextBudget()
+                            && executionContext.checkContextBudget(pressureEstimate)) {
+                        continue;
+                    }
+                    throw new AgentExecutionLimitException(
+                            AgentExecutionStopReasonEnum.CONTEXT_BUDGET_EXCEEDED);
+                }
+                // 新视图的完整 Prompt 由 Advisor 在下一次真实请求前测量；暂存 0，
+                // 由该测量回填，避免拿 assembly 估算冒充供应商实际请求大小。
+                executionContext.recordContextCompactionAttempt(
+                        pressureView, pressureEstimate, 0);
+                executionContext.markContextCompactionAttempted(recovered.modelContext().compactionKey());
+                assembly = recovered;
+            } catch (AgentModelContextOverflowException overflow) {
+                if (executionContext.contextOverflowRetries() >= maxRecoveryAttempts) {
+                    throw new AgentExecutionLimitException(AgentExecutionStopReasonEnum.CONTEXT_BUDGET_EXCEEDED);
+                }
+                executionContext.checkActive();
+                AgentContextAssembly recovered = recoverContextAssembly(thread, turn, assembly, executionContext);
+                if (!viewChanged(assembly, recovered)) {
+                    throw new AgentExecutionLimitException(AgentExecutionStopReasonEnum.CONTEXT_BUDGET_EXCEEDED);
+                }
+                AgentExecutionContext.PromptMeasurement rejected = executionContext.promptMeasurement();
+                String rejectedView = rejected == null || rejected.viewKey() == null
+                        ? assembly.modelContext().compactionKey() : rejected.viewKey();
+                int rejectedEstimate = rejected == null || rejected.estimatedTokens() <= 0
+                        ? assembly.report().estimatedTokens() : rejected.estimatedTokens();
+                // Advisor 在下一次实际渲染后校验严格缩减并消耗 Turn 共享重试额度。
+                executionContext.beginContextOverflowRecovery(rejectedView, rejectedEstimate);
+                executionContext.recordContextCompactionAttempt(rejectedView,
+                        rejectedEstimate, 0);
+                executionContext.markContextCompactionAttempted(recovered.modelContext().compactionKey());
+                assembly = recovered;
+            }
+        }
+    }
+
+    private boolean viewChanged(AgentContextAssembly previous, AgentContextAssembly recovered) {
+        return recovered != null
+                && !java.util.Objects.equals(recovered.modelContext().compactionKey(),
+                previous.modelContext().compactionKey());
+    }
+
+    private AgentContextAssembly recoverContextAssembly(
+            AgentThreadModel thread,
+            AgentTurnModel turn,
+            AgentContextAssembly previous,
+            AgentExecutionContext executionContext
+    ) {
+        AgentContextAssembly recovered = contextAssembler.assembleWithReport(
+                thread, turn.turnId(), turn.input(), executionContext::checkActive,
+                executionContext, true);
+        return recovered;
+    }
+
     private void appendItem(AgentTurnModel turn, AgentItemTypeEnum type, String payload) {
-        String boundedPayload = type == AgentItemTypeEnum.TOOL_RESULT
-                ? boundToolResult(payload) : payload;
         appendItem(new AgentItemModel(
-                UUID.randomUUID().toString(), turn.threadId(), turn.turnId(), 0, type, boundedPayload, clock.instant()
+                UUID.randomUUID().toString(), turn.threadId(), turn.turnId(), 0, type, payload, clock.instant()
         ));
     }
 
@@ -929,14 +1060,11 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
     }
 
     private void appendItem(AgentItemModel item) {
-        AgentItemModel bounded = item.type() == AgentItemTypeEnum.TOOL_RESULT && item.payload() != null
-                && item.payload().length() > toolResultMaxCharacters
-                ? new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), item.sequence(), item.type(),
-                boundToolResult(item.payload()), item.createdAt())
-                : item;
-        long sequence = items.appendItem(bounded);
-        publishItemEvent(new AgentItemModel(bounded.itemId(), bounded.threadId(), bounded.turnId(), sequence,
-                bounded.type(), bounded.payload(), bounded.createdAt()));
+        // Tool 结果在模型适配器边界按最终 JSON 长度限长；Runtime 只提交已受控的事实，
+        // 避免再次包装而丢失 tool、invocationId 和状态字段。
+        long sequence = items.appendItem(item);
+        publishItemEvent(new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), sequence,
+                item.type(), item.payload(), item.createdAt()));
     }
 
     /** 持久化事实提交后再通知 SSE；通知失败由游标回放补偿，不能改写已提交状态。 */
@@ -949,38 +1077,6 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                     + ", threadId=" + item.threadId()
                     + ", errorType=" + eventFailure.getClass().getName());
         }
-    }
-
-    private String boundToolResult(String payload) {
-        if (payload == null || payload.length() <= toolResultMaxCharacters) {
-            return payload;
-        }
-        String value = escapeJson(payload.substring(0, toolResultMaxCharacters));
-        return "{\"truncated\":true,\"value\":\"" + value + "\"}";
-    }
-
-    private String escapeJson(String value) {
-        StringBuilder escaped = new StringBuilder(value.length());
-        for (char current : value.toCharArray()) {
-            switch (current) {
-                case '\\' -> escaped.append("\\\\");
-                case '"' -> escaped.append("\\\"");
-                case '\b' -> escaped.append("\\b");
-                case '\f' -> escaped.append("\\f");
-                case '\n' -> escaped.append("\\n");
-                case '\r' -> escaped.append("\\r");
-                case '\t' -> escaped.append("\\t");
-                default -> {
-                    if (current < 0x20) {
-                        escaped.append(String.format("\\u%04x", (int) current));
-                    }
-                    else {
-                        escaped.append(current);
-                    }
-                }
-            }
-        }
-        return escaped.toString();
     }
 
     private boolean sourceContainsOrderFact(AgentTurnModel source, String orderId) {
@@ -1207,6 +1303,19 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         private boolean orderAction() {
             return turn.inputKind() == AgentTurnInputKindEnum.ORDER_ACTION
                     && turn.orderActionInput() != null;
+        }
+
+        private boolean deterministicResume() {
+            if (orderAction() || workflowDecision()) {
+                return true;
+            }
+            if (!questionAnswer()) {
+                return false;
+            }
+            AgentQuestionAnswerInput input = questionAnswerInput;
+            return input.resumeTarget()
+                    == cn.ethan.core.agent.workflow.AgentQuestionCardResumeTargetEnum.WORKFLOW
+                    || input.action() == AgentQuestionCardAnswerActionEnum.CANCEL;
         }
 
         private boolean continuation() {
