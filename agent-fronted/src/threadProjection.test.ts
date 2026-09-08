@@ -282,6 +282,23 @@ describe("thread projection", () => {
     }));
   });
 
+  it("shows an invalid fixed history as a distinct execution failure", () => {
+    const items = [
+      item("USER_MESSAGE", 1, "turn-history", "查询订单"),
+      item("ERROR", 2, "turn-history", "CONTEXT_HISTORY_INVALID"),
+      item("TURN_STATE", 3, "turn-history", {
+        status: "FAILED", errorCode: "CONTEXT_HISTORY_INVALID"
+      })
+    ].map(normalizeItem);
+
+    const [turn] = rebuildTurns(items);
+
+    expect(turn.status).toBe("FAILED");
+    expect(turn.activities).toContainEqual(expect.objectContaining({
+      label: "上下文历史读取失败", detail: "CONTEXT_HISTORY_INVALID", status: "ERROR"
+    }));
+  });
+
   it("reuses unaffected Turn references when appending an Item", () => {
     const initialItems = [
       item("USER_MESSAGE", 1, "turn-a", "查看订单"),

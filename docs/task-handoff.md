@@ -1,49 +1,50 @@
 status: active
-updated: 2026-09-04
+updated: 2026-09-08
 
 # Task Handoff
 
 Goal:
 
-- 完成 Commerce Guardian Agent 第一阶段“运行闭环加固”，让模型、工具、持久化事实和 SSE 在同一 Turn 内遵守明确的终止、预算和故障边界。
-- 第一阶段验收稳定后，再以独立实施单元推进 2A Harness 式上下文压缩和 2B LangGraph 催发货编排试点。
+- 恢复丢失前有证据的 Commerce Guardian Agent 代码、测试和文档，保留可审阅的分批提交。
+- 在恢复分支完成验收并通过 PR 合并到 `codex/commerce-guardian-agent`；合并后根据实际代码重新评估 2B 状态。
 
 Completed:
 
-- Core 新增稳定停止原因、输出额度预留/结算、上下文预算检查和相同工具失败熔断；默认累计输出额度为 8,192 token，重复失败阈值为 3。
-- Infrastructure 显式装配唯一 `ControlledToolCallingAdvisor` 与顺序执行的 `ControlledToolCallingManager`。FINISH、QuestionCard 或 Workflow 事实成功落库后截断同批剩余工具和额外模型请求；资源停止使用 `STOP_LIMIT`，重复失败使用 `FALLBACK` 并失败收口。
-- 每次真实模型请求前按完整 Prompt 估算上下文并预留输出，响应后只结算一次；缺失/零 usage 和断流保守保留预留。正常与错误工具结果统一限制为有效 JSON，并保留标识和截断说明。
-- 持久化 Item 成功后，SSE 事件发布失败只记录观测并依赖游标回放，不改写已经提交的 Turn 或业务事实。
-- 生产 ContextAssembler 已切换到最新 300 条原始 Item；旧快照继续保留在库中，但第一阶段不再用快照跳过原始历史或提前触发摘要，并记录被裁剪 Item 数量。
-- 运行参数、前端停止原因投影、架构文档和运行手册已同步；HTTP 请求格式与既有 Workflow、问答、审批协议保持兼容。
-- 新增/调整 Core、Infrastructure、App 与前端测试覆盖同批截断、预算预留和幂等结算、缺失 usage、结果截断、连续失败重置、原始历史读取和前端具体停止原因。
+- 以 `99f669b8d0cd9e4447d83555c018f82579570274` 为基线建立独立 `codex/session-recovery` worktree；主工作区的 `.impeccable/critique/`、`.env`、IDE、deployment 和现有 worktree 未改动。
+- 固定两组 Codex 任务日志及当前任务截止序号 19490；严格重放得到 371 个 FileChange 事件、79 个相关路径，候选最终文件与严格重放逐文件一致。原 `8993d23` 已在基线历史中，未重复重放。
+- 恢复隐藏的上下文与 Workflow MySQL 验收测试，未修改整个忽略规则；旧摘要入口、过渡结算入口和最新窗口读取入口按证据删除。
+- 已追加本地提交：`82a11e8` 上下文历史与快照、`b6dd8aa` 压缩与模型恢复、`cef862a` Workflow 路由与图授权、`0cf58a4` 前端停止原因投影、`6e8d89a` 验收门禁与交接、`c77fce2` Linux/MySQL Flyway 表名兼容修复。原 19 个丢失提交的 SHA、序号和文件归属保存在项目外恢复证据目录。
+- Maven 新安装仓库中发现的零填充/损坏缓存已可逆移到 `D:\Environment\apache-maven-3.9.16\repository-corrupt-20260908`，新仓库由已验证缓存种子并由 Maven Central 按需补齐；项目源码和全局 Maven 配置未改动。
+- 已创建 PR [#9](https://github.com/EthanGotIt/ai-agent-station/pull/9)，目标为 `codex/commerce-guardian-agent`；当前远端 head 仍是 `6e8d89a`，待推送 `c77fce2` 后重新触发 CI。
 
 Decisions:
 
-- 本轮只实现第一阶段；DeepSeek Harness 压缩细节和 LangGraph 催发货节点记录不提前混入运行时。2A/2B 需在本阶段验收后分别设计、实现和验证。
-- 保留 Spring AI 2.0.0、同 Thread FIFO、现有恢复路线和 Workflow 事实归属；不增加正常工具调用总次数上限或语义“无进展”判断器。
-- 不持久化或展示原始 Thinking；本轮已获得用户授权，提交与推送只包含本阶段明确文件，不纳入 `.impeccable/critique/`。
+- 内容优先、分批新提交，不伪造原始 SHA；不重排已有历史，不修改 `master`。
+- 恢复证据只保存在项目外，不上传原始会话日志、Prompt、Thinking 或密钥；模块 `.env` 仅在验收子进程中读取。
+- 2A 的上下文预算、压缩和快照实现与 2B-1 的 Workflow 代码按日志中最后可证实状态恢复；不在本任务顺带实施 2B-2 或 3A。
 
 TODO:
 
-- 在当前第一阶段门禁基础上，先按独立计划实施 2A Harness 式上下文压缩；完成其压缩、连续水位、取消和重启恢复验收后，再实施 2B LangGraph 催发货试点。
-
-Blocked:
-
-- 当前无代码或测试阻塞。真实模型、浏览器和外部服务黄金路径属于后续现场验收，不改变本轮代码结论。
+- 将 `c77fce2` 推送到 PR #9，等待 CI 与审查完成；合并后，以当前代码、测试和运行事实重新评估 2B，另行制定后续实施计划。
 
 Next action:
 
-- 恢复任务时先核对 `git status --short` 与本 handoff；若继续本计划，从 2A 的设计边界和快照水位接口开始，不回退第一阶段运行时改动。
+- 更新并推送 `codex/session-recovery` 到 PR #9（目标为 `codex/commerce-guardian-agent`）；等待仓库 CI/审查后保留分批提交合并。
+
+Blocked:
+
+- 当前无代码阻塞。若远端认证或审查策略阻止推送/合并，保留可审阅分支和 PR 并记录具体阻塞。
 
 Validation:
 
-- `mvn clean '-DskipTests=false' test` 通过：Core 60、Infrastructure 90、App 20，Reactor `BUILD SUCCESS`。
-- `npm --prefix agent-fronted run typecheck`、`npm --prefix agent-fronted test`（56 tests）和 `npm --prefix agent-fronted run build` 通过。
-- Python `scripts.convention_check` 和 `unittest discover -s scripts/tests -p "test_*.py"` 通过（19 tests）；`git diff --check` 已通过。
+- Python convention check 和脚本单测：通过，19 项。
+- 最终恢复内容的 Maven 单元测试：Core 82、Infrastructure 108、App 20，均通过；各提交的隔离验证已记录在恢复证据中。
+- 前端 `npm ci`、`typecheck`、57 项测试和 `build`：通过。
+- 使用模块 `.env` 注入数据库环境变量的 `context-acceptance,workflow-acceptance`：Context 5、Workflow 3，另有 HTTP IT 9，均通过；随机临时库执行 V9→V11 并清理。
+- CI 首次暴露 Workflow IT 直接查询大写 `FLYWAY_SCHEMA_HISTORY` 的 Linux 大小写问题；`c77fce2` 已改为 Flyway 实际的小写表名，本地相同验收重新通过。
+- 严格重放内容与候选文件一致性检查：通过；`c77fce2` 推送后需等待 GitHub Actions 对新 head 复跑并通过。
 
 Preserve:
 
-- 保留用户已有的 `.impeccable/critique/` 资产及其他未纳入本阶段的工作区改动，不删除、不暂存、不提交。
-- 保留数据库中的原始业务事实与旧快照；不保存 Prompt、Thinking、API key、完整敏感响应或真实模型原文。
-- `AGENTS.md` 是完整长期规范；本 handoff 只保留当前恢复所需的最小事实。
+- 保留 `.impeccable/critique/`、`commerce-guardian-agent-app/.env`、IDE、deployment、已有 worktree、缓存备份和项目外恢复证据。
+- 保留原始 Items、历史摘要、SSE/HTTP 契约和已有 Git 提交；不把恢复证据目录加入产品仓库。

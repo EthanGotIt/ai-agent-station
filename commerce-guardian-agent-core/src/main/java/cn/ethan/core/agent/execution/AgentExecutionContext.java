@@ -1,9 +1,13 @@
 package cn.ethan.core.agent.execution;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -26,6 +30,12 @@ public final class AgentExecutionContext {
     private long outputTokensUsed;
     private int contextBudget = Integer.MAX_VALUE;
     private int contextTokensUsed;
+    private int contextTokensPeak;
+    private String contextViewKey;
+    private final Map<String, ContextCompactionAttempt> contextCompactionAttempts = new LinkedHashMap<>();
+    private PromptMeasurement promptMeasurement;
+    private PromptMeasurement pendingOverflowRecoveryBaseline;
+    private int contextOverflowRetries;
 
     public AgentExecutionContext(Clock clock, Instant deadline) {
         this(clock, deadline, 8_192, 3);
@@ -98,11 +108,9 @@ public final class AgentExecutionContext {
         }
     }
 
-    public synchronized void settleCurrentOutput(Integer completionTokens) {
-        if (outputReservations.isEmpty()) {
-            return;
-        }
-        settleOutput(outputReservations.keySet().iterator().next(), completionTokens);
+    /** 返回指定请求的预留额度；未知标识返回零，避免迟到响应重复结算。 */
+    public synchronized int reservedOutputTokens(String reservationId) {
+        return reservationId == null ? 0 : outputReservations.getOrDefault(reservationId, 0);
     }
 
     /**
@@ -111,21 +119,134 @@ public final class AgentExecutionContext {
     public synchronized void initializeContextBudget(int budget, int estimatedTokens) {
         contextBudget = Math.max(1, budget);
         contextTokensUsed = Math.max(0, estimatedTokens);
-        if (contextTokensUsed > contextBudget) {
-            markStopped(AgentExecutionStopReasonEnum.CONTEXT_BUDGET_EXCEEDED);
-        }
+        contextTokensPeak = contextTokensUsed;
     }
 
     /**
      * 在每次真实模型请求前检查包含工具结果的完整 Prompt 估算。
      */
     public synchronized boolean checkContextBudget(int estimatedTokens) {
-        contextTokensUsed = Math.max(contextTokensUsed, Math.max(0, estimatedTokens));
+        contextTokensUsed = Math.max(0, estimatedTokens);
+        contextTokensPeak = Math.max(contextTokensPeak, contextTokensUsed);
         if (contextTokensUsed > contextBudget) {
             markStopped(AgentExecutionStopReasonEnum.CONTEXT_BUDGET_EXCEEDED);
             return false;
         }
         return true;
+    }
+
+    /** 设置 Advisor 当前正在发送的固定上下文视图版本。 */
+    public synchronized void setContextViewKey(String viewKey) {
+        contextViewKey = viewKey == null || viewKey.isBlank() ? null : viewKey;
+    }
+
+    public synchronized String contextViewKey() {
+        return contextViewKey;
+    }
+
+    /** 记录 Advisor 实际发送的完整 Prompt 估算，供 Runtime 比较恢复前后的同一渲染结果。 */
+    public synchronized void recordPromptMeasurement(String viewKey, int estimatedTokens) {
+        promptMeasurement = new PromptMeasurement(viewKey, estimatedTokens);
+        if (viewKey != null && !viewKey.isBlank()) {
+            ContextCompactionAttempt attempt = contextCompactionAttempts.get(viewKey);
+            if (attempt != null && attempt.afterEstimatedTokens() <= 0 && estimatedTokens > 0) {
+                contextCompactionAttempts.put(viewKey, new ContextCompactionAttempt(
+                        viewKey, attempt.beforeEstimatedTokens(), estimatedTokens,
+                        estimatedTokens < attempt.beforeEstimatedTokens()));
+            }
+        }
+    }
+
+    public synchronized PromptMeasurement promptMeasurement() {
+        return promptMeasurement;
+    }
+
+    /** 记录一个固定水位加视图版本的压缩候选，避免 Advisor 在同一候选上循环重入。 */
+    public synchronized void markContextCompactionAttempted(String viewKey) {
+        recordContextCompactionAttempt(viewKey, 0, 0);
+    }
+
+    /**
+     * 保存候选的压缩结果。结果只用于本 Turn 的防重入和受控观测，不改变原始业务事实。
+     */
+    public synchronized void recordContextCompactionAttempt(String viewKey, int beforeEstimatedTokens,
+                                                              int afterEstimatedTokens) {
+        if (viewKey == null || viewKey.isBlank()) {
+            return;
+        }
+        if (contextCompactionAttempts.size() >= 64 && !contextCompactionAttempts.containsKey(viewKey)) {
+            String oldest = contextCompactionAttempts.keySet().iterator().next();
+            contextCompactionAttempts.remove(oldest);
+        }
+        contextCompactionAttempts.put(viewKey, new ContextCompactionAttempt(
+                viewKey, Math.max(0, beforeEstimatedTokens), Math.max(0, afterEstimatedTokens),
+                afterEstimatedTokens > 0 && afterEstimatedTokens < beforeEstimatedTokens));
+    }
+
+    public synchronized Optional<ContextCompactionAttempt> contextCompactionAttempt(String viewKey) {
+        return viewKey == null ? Optional.empty() : Optional.ofNullable(contextCompactionAttempts.get(viewKey));
+    }
+
+    public synchronized boolean contextCompactionAttempted(String viewKey) {
+        return viewKey != null && contextCompactionAttempts.containsKey(viewKey);
+    }
+
+    /** 在供应商拒绝后固定被拒请求的完整 Prompt，下一次 Advisor 请求必须严格缩减后才能发送。 */
+    public synchronized void beginContextOverflowRecovery(String viewKey, int estimatedTokens) {
+        pendingOverflowRecoveryBaseline = new PromptMeasurement(viewKey, estimatedTokens);
+    }
+
+    /**
+     * 校验恢复请求是否相对供应商实际拒绝的 Prompt 严格缩减并改变视图；成功时消耗共享重试额度。
+     */
+    public synchronized boolean validateContextOverflowRecovery(String viewKey, int estimatedTokens,
+                                                                 int maxRetries) {
+        if (pendingOverflowRecoveryBaseline == null) {
+            return true;
+        }
+        PromptMeasurement baseline = pendingOverflowRecoveryBaseline;
+        boolean reduced = !Objects.equals(baseline.viewKey(), viewKey)
+                && estimatedTokens < baseline.estimatedTokens();
+        if (!reduced || contextOverflowRetries >= Math.max(0, maxRetries)) {
+            pendingOverflowRecoveryBaseline = null;
+            return false;
+        }
+        contextOverflowRetries++;
+        pendingOverflowRecoveryBaseline = null;
+        return true;
+    }
+
+    public synchronized boolean contextOverflowRecoveryPending() {
+        return pendingOverflowRecoveryBaseline != null;
+    }
+
+    /**
+     * 新 Tool 批次已经推进了持久化事实水位，允许下一次模型请求针对新视图重新触发一次压缩。
+     */
+    public synchronized void resetContextCompactionAttempted() {
+        contextCompactionAttempts.clear();
+        contextViewKey = null;
+        promptMeasurement = null;
+        pendingOverflowRecoveryBaseline = null;
+    }
+
+    public synchronized int contextOverflowRetries() {
+        return contextOverflowRetries;
+    }
+
+    public record PromptMeasurement(String viewKey, int estimatedTokens) {
+        public PromptMeasurement {
+            viewKey = viewKey == null || viewKey.isBlank() ? null : viewKey;
+            estimatedTokens = Math.max(0, estimatedTokens);
+        }
+    }
+
+    public record ContextCompactionAttempt(
+            String viewKey,
+            int beforeEstimatedTokens,
+            int afterEstimatedTokens,
+            boolean reduced
+    ) {
     }
 
     public synchronized boolean outputBudgetExhausted() {
@@ -136,12 +257,21 @@ public final class AgentExecutionContext {
         return outputTokensUsed;
     }
 
+    /** 返回本 Turn 的累计输出上限，供摘要和正常模型请求共同计算剩余额度。 */
+    public int maxOutputTokens() {
+        return maxOutputTokens;
+    }
+
     public synchronized int contextBudget() {
         return contextBudget;
     }
 
     public synchronized int contextTokensUsed() {
         return contextTokensUsed;
+    }
+
+    public synchronized int contextTokensPeak() {
+        return contextTokensPeak;
     }
 
     public AgentExecutionStopReasonEnum stopReason() {
@@ -172,5 +302,11 @@ public final class AgentExecutionContext {
 
     public Instant deadline() {
         return deadline;
+    }
+
+    /** 返回当前请求可等待的剩余时间，供摘要流和外部适配器取消阻塞等待。 */
+    public Duration remainingTime() {
+        Duration remaining = Duration.between(clock.instant(), deadline);
+        return remaining.isNegative() || remaining.isZero() ? Duration.ZERO : remaining;
     }
 }

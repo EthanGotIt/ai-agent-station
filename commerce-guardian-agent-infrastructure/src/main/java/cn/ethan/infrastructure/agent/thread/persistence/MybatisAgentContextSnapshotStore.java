@@ -4,6 +4,7 @@ import cn.ethan.core.agent.context.AgentContextSnapshotModel;
 import cn.ethan.core.agent.context.AgentContextSnapshotStore;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 
@@ -36,8 +37,43 @@ public class MybatisAgentContextSnapshotStore implements AgentContextSnapshotSto
     }
 
     @Override
+    public Optional<AgentContextSnapshotModel> findSnapshot(String userId, String threadId, String snapshotId) {
+        if (snapshotId == null || snapshotId.isBlank()) {
+            return Optional.empty();
+        }
+        AgentThreadEntity owned = threadMapper.selectOne(new QueryWrapper<AgentThreadEntity>()
+                .eq("THREAD_ID", threadId).eq("USER_ID", userId));
+        if (owned == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(mapper.selectBySnapshotId(threadId, snapshotId))
+                .map(MybatisAgentContextSnapshotStore::toModel);
+    }
+
+    @Override
+    @Transactional
     public void saveSnapshot(AgentContextSnapshotModel snapshot) {
         mapper.insert(toEntity(snapshot));
+    }
+
+    @Override
+    @Transactional
+    public boolean saveSnapshotIfCurrent(String userId, String threadId, String expectedLatestSnapshotId,
+                                         AgentContextSnapshotModel snapshot) {
+        if (snapshot == null || !threadId.equals(snapshot.threadId())) {
+            return false;
+        }
+        AgentThreadEntity owned = threadMapper.selectForUpdate(threadId);
+        if (owned == null || !userId.equals(owned.getUserId()) || !threadId.equals(owned.getThreadId())) {
+            return false;
+        }
+        AgentContextSnapshotEntity current = mapper.selectLatest(threadId);
+        String currentId = current == null ? null : current.getSnapshotId();
+        if (!java.util.Objects.equals(currentId, expectedLatestSnapshotId)) {
+            return false;
+        }
+        mapper.insert(toEntity(snapshot));
+        return true;
     }
 
     private static AgentContextSnapshotEntity toEntity(AgentContextSnapshotModel model) {
@@ -49,12 +85,22 @@ public class MybatisAgentContextSnapshotStore implements AgentContextSnapshotSto
         entity.setEstimatedTokens(model.estimatedTokens());
         entity.setSummary(model.summary());
         entity.setCreatedAt(model.createdAt());
+        entity.setFormatVersion(model.formatVersion());
+        entity.setBaseSnapshotId(model.baseSnapshotId());
+        entity.setSourceFromSequence(model.sourceFromSequence());
+        entity.setSourceEstimatedTokens(model.sourceEstimatedTokens());
+        entity.setPromptVersion(model.promptVersion());
+        entity.setSummaryMaxOutputTokens(model.summaryMaxOutputTokens());
         return entity;
     }
 
     private static AgentContextSnapshotModel toModel(AgentContextSnapshotEntity entity) {
         return new AgentContextSnapshotModel(entity.getSnapshotId(), entity.getThreadId(), value(entity.getThroughSequence()),
-                value(entity.getVersionNo()), value(entity.getEstimatedTokens()), entity.getSummary(), entity.getCreatedAt());
+                value(entity.getVersionNo()), value(entity.getEstimatedTokens()), entity.getSummary(), entity.getCreatedAt(),
+                intValue(entity.getFormatVersion(), 1), entity.getBaseSnapshotId(), value(entity.getSourceFromSequence()),
+                intValue(entity.getSourceEstimatedTokens(), value(entity.getEstimatedTokens())),
+                entity.getPromptVersion() == null ? "legacy" : entity.getPromptVersion(),
+                intValue(entity.getSummaryMaxOutputTokens(), 0));
     }
 
     private static long value(Long value) {
@@ -63,5 +109,9 @@ public class MybatisAgentContextSnapshotStore implements AgentContextSnapshotSto
 
     private static int value(Integer value) {
         return value == null ? 0 : value;
+    }
+
+    private static int intValue(Integer value, int defaultValue) {
+        return value == null ? defaultValue : value;
     }
 }

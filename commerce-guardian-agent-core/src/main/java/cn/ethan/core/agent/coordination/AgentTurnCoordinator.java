@@ -6,6 +6,7 @@ import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointModel;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.execution.AgentExecutionContext;
+import cn.ethan.core.agent.context.AgentModelContext;
 
 import java.util.List;
 import java.util.Map;
@@ -51,6 +52,18 @@ public interface AgentTurnCoordinator {
             boolean correctionAttempt
     ) {
         return run(thread, turn, context, answer, executionContext);
+    }
+
+    default AgentCoordinatorResult run(
+            AgentThreadModel thread,
+            AgentTurnModel turn,
+            AgentModelContext context,
+            Map<String, String> answer,
+            AgentExecutionContext executionContext,
+            boolean correctionAttempt
+    ) {
+        return run(thread, turn, context == null ? List.of() : context.items(), answer,
+                executionContext, correctionAttempt);
     }
 
     record AgentCoordinatorResult(

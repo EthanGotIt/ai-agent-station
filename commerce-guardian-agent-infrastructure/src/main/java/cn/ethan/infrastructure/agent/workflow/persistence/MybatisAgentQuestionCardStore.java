@@ -54,6 +54,11 @@ public class MybatisAgentQuestionCardStore implements AgentQuestionCardStore {
     }
 
     @Override
+    public Optional<AgentQuestionCardModel> findOpenByRun(String userId, String runId) {
+        return Optional.ofNullable(mapper.selectOpenByRun(userId, runId)).map(this::toModel);
+    }
+
+    @Override
     @Transactional
     public void create(AgentQuestionCardModel question) {
         requireInitial(question);

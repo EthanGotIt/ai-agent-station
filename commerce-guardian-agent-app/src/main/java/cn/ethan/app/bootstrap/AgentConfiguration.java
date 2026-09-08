@@ -7,6 +7,8 @@ import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.context.AgentContextAssembler;
 import cn.ethan.core.agent.context.AgentContextSnapshotStore;
+import cn.ethan.core.agent.context.AgentContextSummaryGateway;
+import cn.ethan.core.agent.context.AgentContextCompactionSettings;
 import cn.ethan.core.agent.execution.AgentTurnRuntimeService;
 import cn.ethan.core.agent.execution.AgentExecutionTimelineService;
 import cn.ethan.core.agent.execution.AgentRuntimeMetrics;
@@ -67,9 +69,12 @@ public class AgentConfiguration {
     }
 
     @Bean(name = "agentChatClient")
-    public ChatClient agentChatClient(ChatModel chatModel, AgentModelProperties properties) {
+    public ChatClient agentChatClient(ChatModel chatModel, AgentModelProperties properties,
+                                      AgentThreadProperties threadProperties) {
         ControlledToolCallingAdvisor advisor = new ControlledToolCallingAdvisor(
-                new ControlledToolCallingManager(), properties.maxOutputTokens());
+                new ControlledToolCallingManager(), properties.maxOutputTokens(),
+                threadProperties.contextMaxEstimatedTokens(), threadProperties.compactionTriggerRatio(),
+                threadProperties.compactionEnabled(), threadProperties.maxOverflowRetries());
         return ChatClient.builder(chatModel).defaultAdvisors(advisor).build();
     }
 
@@ -155,13 +160,18 @@ public class AgentConfiguration {
     public AgentContextAssembler agentContextAssembler(
             AgentItemStore items,
             AgentContextSnapshotStore snapshots,
+            AgentContextSummaryGateway summaryGateway,
             Clock clock,
             AgentThreadProperties properties
     ) {
+        AgentContextCompactionSettings compaction = new AgentContextCompactionSettings(
+                properties.compactionEnabled(), properties.compactionTriggerRatio(), properties.compactionRetainRatio(),
+                properties.summaryMaxOutputTokens(), properties.toolPruneThresholdCharacters(),
+                properties.toolPruneHeadCharacters(), properties.toolPruneTailCharacters(),
+                properties.maxOverflowRetries());
         return new AgentContextAssembler(items, snapshots, clock,
-                properties.contextMaxEstimatedTokens(), properties.snapshotTriggerEstimatedTokens(),
-                properties.toolResultMaxCharacters(), properties.outputReserveEstimatedTokens(),
-                false, null);
+                properties.contextMaxEstimatedTokens(), properties.toolResultMaxCharacters(),
+                properties.outputReserveEstimatedTokens(), summaryGateway, compaction);
     }
 
     @Bean

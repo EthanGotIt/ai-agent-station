@@ -559,6 +559,9 @@ export function useThreadWorkspace(userId: string) {
         requestCheckpoint.version, decision, requestCheckpoint.factsFingerprint
       );
       if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
+        // 决策接口成功即代表确认事实已提交；在 SSE 回执到达前先收起旧确认面板，
+        // 避免用户对同一个 checkpoint 重复操作。后续 Item 仍负责恢复最终业务状态。
+        updateInteraction(null);
         activeTurnRef.current = accepted.turnId;
       }
     } catch (failure) {
@@ -567,7 +570,7 @@ export function useThreadWorkspace(userId: string) {
         setError(failure instanceof Error ? failure.message : "执行确认提交失败");
       }
     }
-  }, [busy, checkpoint, userId]);
+  }, [busy, checkpoint, updateInteraction, userId]);
 
   const cancel = useCallback(async () => {
     const turnId = activeTurnRef.current;

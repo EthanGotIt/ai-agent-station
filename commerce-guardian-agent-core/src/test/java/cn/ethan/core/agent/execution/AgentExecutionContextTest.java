@@ -66,6 +66,71 @@ class AgentExecutionContextTest {
         assertEquals(AgentExecutionStopReasonEnum.CONTEXT_BUDGET_EXCEEDED, context.stopReason());
     }
 
+    @Test
+    void budgetInitializationDoesNotCreateIrreversibleStopBeforeFinalPromptCheck() {
+        AgentExecutionContext context = context(100, 3);
+        context.initializeContextBudget(50, 60);
+
+        assertNull(context.stopReason());
+        assertFalse(context.checkContextBudget(60));
+        assertEquals(AgentExecutionStopReasonEnum.CONTEXT_BUDGET_EXCEEDED, context.stopReason());
+    }
+
+    @Test
+    void keepsPeakSeparateFromTheCurrentContextEstimate() {
+        AgentExecutionContext context = context(100, 3);
+        context.initializeContextBudget(100, 80);
+
+        assertTrue(context.checkContextBudget(40));
+        assertEquals(40, context.contextTokensUsed());
+        assertEquals(80, context.contextTokensPeak());
+    }
+
+    @Test
+    void scopesCompactionAttemptToViewAndSharesOverflowBudgetAcrossRecovery() {
+        AgentExecutionContext context = context(100, 3);
+        context.setContextViewKey("12:8:raw");
+        assertFalse(context.contextCompactionAttempted("12:8:raw"));
+        context.markContextCompactionAttempted("12:8:raw");
+        assertTrue(context.contextCompactionAttempted("12:8:raw"));
+        assertFalse(context.contextCompactionAttempted("13:9:raw"));
+
+        context.beginContextOverflowRecovery("12:8:raw", 900);
+        assertTrue(context.validateContextOverflowRecovery("13:6:summary", 700, 1));
+        assertEquals(1, context.contextOverflowRetries());
+        context.resetContextCompactionAttempted();
+        assertFalse(context.contextCompactionAttempted("12:8:raw"));
+    }
+
+    @Test
+    void validatesOverflowRecoveryAgainstTheActualRejectedPrompt() {
+        AgentExecutionContext context = context(100, 3);
+        context.recordPromptMeasurement("12:8:raw", 900);
+        context.beginContextOverflowRecovery("12:8:raw", 900);
+
+        assertFalse(context.validateContextOverflowRecovery("12:8:raw", 800, 1));
+        assertEquals(0, context.contextOverflowRetries());
+
+        context.beginContextOverflowRecovery("12:8:raw", 900);
+        assertTrue(context.validateContextOverflowRecovery("13:6:summary", 700, 1));
+        assertEquals(1, context.contextOverflowRetries());
+        assertFalse(context.contextOverflowRecoveryPending());
+    }
+
+    @Test
+    void fillsCompactionAttemptWithTheNextActualPromptMeasurement() {
+        AgentExecutionContext context = context(100, 3);
+        context.recordContextCompactionAttempt("12:8:summary", 900, 0);
+
+        context.recordPromptMeasurement("12:8:summary", 640);
+
+        AgentExecutionContext.ContextCompactionAttempt attempt =
+                context.contextCompactionAttempt("12:8:summary").orElseThrow();
+        assertEquals(900, attempt.beforeEstimatedTokens());
+        assertEquals(640, attempt.afterEstimatedTokens());
+        assertTrue(attempt.reduced());
+    }
+
     private AgentExecutionContext context(int output, int threshold) {
         return new AgentExecutionContext(
                 Clock.fixed(NOW, ZoneOffset.UTC), NOW.plusSeconds(30), output, threshold);

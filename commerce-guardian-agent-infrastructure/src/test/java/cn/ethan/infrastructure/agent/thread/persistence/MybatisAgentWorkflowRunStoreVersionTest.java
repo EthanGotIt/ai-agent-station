@@ -2,6 +2,7 @@ package cn.ethan.infrastructure.agent.thread.persistence;
 
 import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowOrchestrationVersionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
@@ -12,6 +13,7 @@ import java.time.Instant;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -45,6 +47,7 @@ class MybatisAgentWorkflowRunStoreVersionTest {
         assertTrue(wrapper.getParamNameValuePairs().containsValue(0L),
                 wrapper.getParamNameValuePairs()::toString);
         assertTrue(sql.contains("VERSION_NO"));
+        assertTrue(sql.contains("ORCHESTRATION_VERSION"));
         assertTrue(sql.contains("STATUS"));
     }
 
@@ -58,10 +61,50 @@ class MybatisAgentWorkflowRunStoreVersionTest {
                 () -> store.update(run(AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, 1)));
     }
 
+    @Test
+    void sourceLookupMapsPersistedOrchestrationVersion() {
+        AgentWorkflowRunEntity entity = entity("EXPEDITE_GRAPH_V1");
+        AgentWorkflowRunMapper mapper = mapper((method, arguments) ->
+                method.equals("selectBySource") ? entity : defaultValue(method));
+        AgentWorkflowRunModel found = new MybatisAgentWorkflowRunStore(mapper)
+                .findBySource("user-1", "turn-1", AgentWorkflowTypeEnum.ORDER_SERVICE)
+                .orElseThrow();
+
+        assertEquals(AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V1,
+                found.orchestrationVersion());
+    }
+
+    @Test
+    void unknownPersistedOrchestrationVersionFailsClosed() {
+        AgentWorkflowRunEntity entity = entity("UNKNOWN_V9");
+        AgentWorkflowRunMapper mapper = mapper((method, arguments) ->
+                method.equals("selectBySource") ? entity : defaultValue(method));
+
+        assertThrows(IllegalStateException.class, () -> new MybatisAgentWorkflowRunStore(mapper)
+                .findBySource("user-1", "turn-1", AgentWorkflowTypeEnum.ORDER_SERVICE));
+    }
+
     private AgentWorkflowRunModel run(AgentWorkflowStatusEnum status, long version) {
         return new AgentWorkflowRunModel(
                 "run-1", "thread-1", "turn-1", "user-1", AgentWorkflowTypeEnum.REFUND,
                 status, version, NOW, NOW);
+    }
+
+    private AgentWorkflowRunEntity entity(String orchestrationVersion) {
+        AgentWorkflowRunEntity entity = new AgentWorkflowRunEntity();
+        entity.setRunId("run-1");
+        entity.setThreadId("thread-1");
+        entity.setTurnId("turn-1");
+        entity.setUserId("user-1");
+        entity.setWorkflowType(AgentWorkflowTypeEnum.ORDER_SERVICE.name());
+        entity.setOrchestrationVersion(orchestrationVersion);
+        entity.setStatus(AgentWorkflowStatusEnum.WAITING_USER_INPUT.name());
+        entity.setVersionNo(0L);
+        entity.setStepsJson("[]");
+        entity.setStateJson("{\"intent\":\"EXPEDITE\",\"orderId\":\"ORDER-1\"}");
+        entity.setCreatedAt(NOW);
+        entity.setUpdatedAt(NOW);
+        return entity;
     }
 
     @SuppressWarnings("unchecked")

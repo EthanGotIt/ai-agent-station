@@ -72,11 +72,18 @@ public final class ControlledToolCallingManager implements ToolCallingManager {
         AgentExecutionContext executionContext = state == null ? null : state.executionContext();
         List<ToolResponseMessage.ToolResponse> responses = new ArrayList<>();
         boolean returnDirect = false;
+        if (state != null) {
+            state.beginToolBatch(java.util.UUID.randomUUID().toString());
+            if (executionContext != null) {
+                executionContext.resetContextCompactionAttempted();
+            }
+        }
         boolean allowFirstToolAfterOutputBudget = executionContext != null
                 && executionContext.stopReason() == AgentExecutionStopReasonEnum.OUTPUT_BUDGET_EXCEEDED;
 
-        int toolIndex = 0;
-        for (AssistantMessage.ToolCall toolCall : assistant.getToolCalls()) {
+        try {
+            int toolIndex = 0;
+            for (AssistantMessage.ToolCall toolCall : assistant.getToolCalls()) {
             if (state != null && (state.terminal() || state.persistenceFailed())) {
                 returnDirect = true;
                 break;
@@ -144,7 +151,12 @@ public final class ControlledToolCallingManager implements ToolCallingManager {
                     break;
                 }
             }
-            toolIndex++;
+                toolIndex++;
+            }
+        } finally {
+            if (state != null) {
+                state.endToolBatch();
+            }
         }
 
         if (allowFirstToolAfterOutputBudget && executionContext != null

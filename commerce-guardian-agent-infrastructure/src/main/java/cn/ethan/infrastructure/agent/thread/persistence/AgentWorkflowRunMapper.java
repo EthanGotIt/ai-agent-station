@@ -15,4 +15,11 @@ public interface AgentWorkflowRunMapper extends BaseMapper<AgentWorkflowRunEntit
 
     @Select("SELECT * FROM AGENT_WORKFLOW_RUN WHERE USER_ID = #{userId} AND RUN_ID = #{runId}")
     AgentWorkflowRunEntity selectOwned(String userId, String runId);
+
+    @Select("SELECT * FROM AGENT_WORKFLOW_RUN WHERE USER_ID = #{userId} AND RUN_ID = #{runId} FOR UPDATE")
+    AgentWorkflowRunEntity selectOwnedForUpdate(String userId, String runId);
+
+    @Select("SELECT * FROM AGENT_WORKFLOW_RUN WHERE USER_ID = #{userId} "
+            + "AND TURN_ID = #{turnId} AND WORKFLOW_TYPE = #{workflowType} LIMIT 1")
+    AgentWorkflowRunEntity selectBySource(String userId, String turnId, String workflowType);
 }

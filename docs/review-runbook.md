@@ -32,6 +32,8 @@ python -m scripts.acceptance `
 
 runner 会创建新的 Thread，并核对 Thread/Turn/Item 契约、Item 刷新恢复、开放交互重复读取、`clientRequestId` 幂等和执行轨迹回放；随后用独立订单夹具验证物流详情、退款重放和催发货临时失败重试。输出中的 `scenarios=...` 只记录场景名，不保存 Prompt、Thinking、密钥或完整响应。
 
+2026-09-05 本轮 2A-1 已在 `5173/8090/18080` 完成查询与催发货黄金路径：订单查询返回结构化事实，拒绝未产生外部动作，批准经重试后完成并在刷新后恢复为 `EXPEDITE_REQUESTED`；夹具统计显示注入失败 3 次、业务变更和幂等记录均按唯一命令收口。Playwright 在 `1920×900`、`1440×900`、`1024×768`、`390×844` 检查输入区、工作台和横向溢出，均通过；深色主题与 reduced-motion 已完成浏览器媒体设置 smoke。确认接口成功后 checkpoint 弹窗即时收起，前端回归测试覆盖该边界。
+
 只有在操作者已经确认夹具数据库属于本次验收且可丢弃时，才执行删除场景：
 
 ```powershell
@@ -76,9 +78,9 @@ python -m scripts.acceptance `
 
 | 视口 | 主题 | 键盘/Esc | reduced-motion | SSE 重连 | 刷新恢复 | 结论/提交 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1920×900 | light/dark | pending | pending | pending | pending | pending |
-| 1440×900 | light/dark | pending | pending | pending | pending | pending |
-| 1024×768 | light/dark | pending | pending | pending | pending | pending |
-| 390×844 | light/dark | pending | pending | pending | pending | pending |
+| 1920×900 | light/dark | Esc 已验 | reduce smoke | pending | 已通过 | 2A-1 smoke 通过；其余矩阵待补录 |
+| 1440×900 | light/dark | pending | pending | pending | 已通过 | 2A-1 布局 smoke 通过；其余矩阵待补录 |
+| 1024×768 | light/dark | pending | pending | pending | 已通过 | 2A-1 布局 smoke 通过；其余矩阵待补录 |
+| 390×844 | light/dark | pending | reduce smoke | pending | 已通过 | 2A-1 布局 smoke 通过；其余矩阵待补录 |
 
 复核记录只写结论、尺寸、端口和提交号，不记录 API key、完整 Prompt、Thinking、用户身份明文或原始订单服务响应。

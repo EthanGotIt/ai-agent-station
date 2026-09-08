@@ -194,6 +194,18 @@ class SpringAiAgentToolBoundaryTest {
                 null, null, null, null, null, null, "not-a-number"));
     }
 
+    @Test
+    void boundsEscapedToolResultByFinalJsonLengthAndKeepsCorrelation() throws Exception {
+        String bounded = SpringAiOrderToolSupport.boundToolResult(
+                "lookup_order", "inv-1", "SUCCESS", "\\\"\\n".repeat(2_000), 256);
+
+        assertTrue(bounded.length() <= 256);
+        JsonNode json = new ObjectMapper().readTree(bounded);
+        assertEquals("lookup_order", json.path("tool").asString());
+        assertEquals("inv-1", json.path("invocationId").asString());
+        assertTrue(json.path("truncated").asBoolean());
+    }
+
     private SpringAiAgentTurnCoordinator.WorkflowInvocation invocation() {
         return new SpringAiAgentTurnCoordinator.WorkflowInvocation(
                 null, Clock.fixed(NOW, ZoneOffset.UTC), AgentRuntimeMetrics.noop());

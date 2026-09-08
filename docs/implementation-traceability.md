@@ -1,7 +1,7 @@
 # Commerce Guardian Agent 实现追踪矩阵
 
 > 状态：`active`
-> 更新日期：2026-09-04
+> 更新日期：2026-09-05
 > 目标来源：任务 `01a01f3f-2a0e-7e52-b70e-4137e4ff3496` 的最新计划、当前工作树、Git 历史、架构文档、SQL、测试和实际运行结果。
 
 本矩阵只把代码、测试和运行结果作为证据。原计划或 `docs/task-handoff.md` 中的“已完成”描述不能单独作为完成证据。
@@ -11,19 +11,46 @@
 | 验收面 | 当前结论 | 直接证据 | 未闭合事项 |
 | --- | --- | --- | --- |
 | 终止与同批截断 | 已通过本地门禁 | `ControlledToolCallingAdvisor` 显式装配唯一 Tool Calling 循环；`ControlledToolCallingManagerTest.stopsRemainingBatchAfterFinish` 覆盖 FINISH 后不执行后续工具；Coordinator 测试覆盖终止消息优先；完整 `mvn clean test` 通过 | 真实模型黄金路径仍需现场复核 |
-| 输出与上下文预算 | 已通过本地门禁 | `AgentExecutionContextTest` 覆盖预留、缺失/零 usage、幂等结算和上下文超限；Coordinator 测试覆盖真实 Advisor 路径的缺失 usage、已知 usage、断流保留预留和输出额度耗尽时终止工具优先；Runtime 测试覆盖 SSE 发布失败不改写已提交 Turn | 真实模型黄金路径仍需现场复核 |
+| 输出与上下文预算 | 已通过本地门禁 | `AgentExecutionContextTest` 覆盖预留、缺失/零 usage、幂等结算和上下文超限；Coordinator 测试覆盖真实 Advisor 路径的缺失 usage、已知 usage、断流保守结算和输出额度耗尽时终止工具优先；Runtime 测试覆盖 SSE 发布失败不改写已提交 Turn | 真实模型黄金路径仍需现场复核 |
 | 工具失败熔断与结果边界 | 已通过本地门禁 | `AgentToolFailureCircuitBreaker` 按工具、规范化参数和稳定错误码计数；`ControlledToolCallingManagerTest` 覆盖三次重复失败、成功重置和统一结果截断；前端测试覆盖具体停止原因 | 真实模型黄金路径仍需现场复核 |
-| 长上下文起点 | 生产路径已切换原始 Items | `AgentContextAssembler` 的生产 Bean 关闭快照视图；Core 测试覆盖旧摘要存在时仍读取原始事实和最新 300 条窗口 | 2A Harness 式压缩仍是后续独立实施单元 |
+| 长上下文起点 | 2A-1 已完成，2A-2 已接入本地实现 | `AgentContextAssembler` 固定最大 Sequence，按 300 条分页连续读取原始 Items；2A-2 增加 80% 压力裁剪、16% 尾部保留、完整 Turn/Tool 批次摘要、V2 快照 CAS 和溢出恢复边界；Core/Infrastructure 定向测试覆盖旧摘要忽略、固定水位、严格游标、取消、工具配对和预算停止 | 真实 DeepSeek 压缩质量、V10 现场迁移和浏览器矩阵仍需单独验收 |
+
+## 2A-1 上下文基础巩固（2026-09-05）
+
+| 验收面 | 当前结论 | 直接证据 | 未闭合事项 |
+| --- | --- | --- | --- |
+| 固定水位与连续读取 | 已通过本地及 MySQL 集成门禁 | `AgentItemStore.captureWatermark/listItemsThrough`、MyBatis 有界查询和 `AgentContextAssembler` 页面完整性校验；`AgentItemStoreMySqlIT` 在真实 MySQL 8.4 中验证 601 条历史、多页读取、水位后追加、用户归属和新会话读取 | 测试数据库由本次临时验收创建；生产库仍需按运行手册单独复核 |
+| 上下文视图边界 | 已通过运行时跨层门禁 | Runtime 测试覆盖超过 300 条历史下确定性订单动作跳过组装；纠正调用测试在首轮持久化 Tool Call/Result 后确认第二轮重新带回配对事实；Core/Coordinator 测试覆盖当前输入、排队隔离、孤立事实和真实 Advisor 链 | 2A-2 才加入摘要替换和重启恢复 |
+| 请求预算与结果边界 | 已通过本地及真实 Advisor 链门禁 | `AgentContextTokenEstimator` 统一字符估算；Advisor 将实际 `maxTokens` 限制为请求预留，按请求标识结算并处理缺失 usage、断流、迟到响应；工具结果按最终 JSON 长度保留关联字段 | 真实供应商模型仍属于后续模型验收 |
+| 观测与前端停止原因 | 已完成本地门禁及 2A-1 浏览器黄金路径 | Context Item 记录读取水位、覆盖范围、条数、完整性、当前/峰值估算；Micrometer 记录输出预留/结算；前端识别 `CONTEXT_HISTORY_INVALID`、`CONTEXT_BUDGET_EXCEEDED` 和 `OUTPUT_BUDGET_EXCEEDED`；真实 Agent + 独立订单夹具已验证查询、催发货拒绝/批准、重试完成和刷新恢复 | 深浅主题、reduced-motion、SSE 重连和错误焦点仍按完整矩阵补录 |
+
+## 2A-2 Harness 式自动上下文压缩（2026-09-05）
+
+| 验收面 | 当前结论 | 直接证据 | 未闭合事项 |
+| --- | --- | --- | --- |
+| 压力顺序与结构化视图 | 已接入并有 Core 回归 | `AgentModelContext` 分离摘要、原始事实、水位和视图版本；`AgentContextAssembler` 按“完整估算 → Tool Result 裁剪 → 连续完整前缀摘要 → 严格缩减校验”执行，裁剪后解除压力时不调用摘要 | 真实流式 Tool 批次和供应商上下文窗口仍需验收 |
+| V2 快照与恢复 | 已通过本地及 MySQL acceptance 门禁 | V10 增量迁移、MyBatis Thread 锁/CAS、V1 忽略、V2 元数据映射；CAS 失败读取胜出快照，不重复调用摘要，原始 Items 与 SSE 序号不变；随机临时库验证 V9→V10、V2 写入和归属隔离 | 生产库迁移、进程重启后的现场复核和真实模型仍属后续验收 |
+| 预算与溢出重试 | 已接入并通过编译/单测 | 摘要通过无 Tool `ChatModel`，共享 `AgentExecutionContext` 截止时间和 8,192 输出额度；`AgentModelContextOverflowException` 只在明确上下文错误时进入配置次数的严格缩减重试 | DeepSeek 真实错误响应、断流、缺失 usage、取消和摘要持久化失败仍需真实模型验收 |
+| 观测与事实安全 | 已接入 | Context Item 记录水位、覆盖范围、估算、裁剪数量和压缩状态；Micrometer 增加低基数压缩前后估算；不保存 Prompt、Thinking、摘要正文或敏感原文 | 完整浏览器停止原因和压缩后约束保留需后续现场验收 |
+
+## 2A 阻断修复（2026-09-05）
+
+| 验收面 | 当前结论 | 直接证据 | 未闭合事项 |
+| --- | --- | --- | --- |
+| 连续历史与摘要边界 | 已修复并通过 Core 回归 | `AgentModelContext.compactionUnits` 统一完整 Turn/Tool 批次边界；`AgentContextAssembler` 对当前请求、排队输入、孤立工具事实和未完成单元设置覆盖屏障，并拒绝固定范围内的 Sequence 缺口；历史尾部按完整单元保留 16%，当前请求单独渲染；`AgentContextAssemblerTest` 覆盖排队输入水位和连续缺口 | 真实 DeepSeek 长历史质量仍需现场验收 |
+| V2 摘要链与 CAS 基线 | 已修复并通过临时 MySQL acceptance | 新摘要使用 `context-summary-v2`；无效最新快照只作为 CAS 预期标识，不作为基础链；`AgentItemStoreMySqlIT` 的竞争测试改用 Spring 事务代理、`SqlSessionTemplate` 和真实 MyBatis Store，V9→V10 迁移查询改用 `INFORMATION_SCHEMA` | 应用重启后的生产副本复核仍需按运行手册执行 |
+| 压力与溢出恢复 | 已修复并通过 Core/Infrastructure 回归 | Advisor 复用 `AgentPromptMeasurement` 的完整 Prompt 估算；请求前无缩减但未超过硬预算时继续发送；供应商溢出只有严格缩减并改变视图后才消耗 Turn 共享重试；摘要流在批准输出额度到达时停止聚合；压力裁剪保留既有 `truncated` 标记 | 真实供应商错误码和多批次流式验收仍待现场执行 |
+| 结果观测 | 已补充分项计数 | `AgentContextBudgetReport.pressurePrunedToolResults` 与 `droppedItems` 分离，`CONTEXT_ASSEMBLED` 只记录计数、范围、估算和版本，不记录 Prompt、摘要正文或 Thinking | 浏览器错误焦点和 SSE 重连矩阵仍待补录 |
 
 ## Week 4 演示验收追踪（进行中）
 
 | 验收面 | 当前结论 | 直接证据 | 未闭合事项 |
 | --- | --- | --- | --- |
-| 本地 acceptance runner | 代码已补齐，夹具 HTTP 完整验收通过 | PR #5 / `b002922`、基线合并提交 `f739203` 的 `scripts/acceptance/runner.py` 检查 Item 游标、刷新恢复、开放交互唯一性、Turn 幂等、执行回放；合并后独立临时 SQLite 夹具实测通过 `logistics`、`refund-idempotency`、`expedite-retry`、`delete-idempotency`，最终统计为幂等记录 3、业务变更 3、注入失败 3；`scripts/tests/test_acceptance.py` 5 个单测覆盖重放、游标拒绝和删除开关 | 需在真实 Agent 服务运行时执行完整命令 |
+| 本地 acceptance runner | 真实 Agent 与夹具 HTTP 完整验收通过 | PR #5 / `b002922`、基线合并提交 `f739203` 的 `scripts/acceptance/runner.py` 检查 Item 游标、刷新恢复、开放交互唯一性、Turn 幂等、执行回放；2026-09-05 在真实 Agent `8090` + 独立 SQLite 夹具 `18080` 实测通过 `thread-list`、`thread-create`、`item-recovery`、`interaction-uniqueness`、`refresh-recovery`、`turn-accepted`、`turn-idempotency`、`execution-replay`、`logistics`、`refund-idempotency`、`expedite-retry`、`delete-gated`；`scripts/tests/test_acceptance.py` 5 个单测覆盖重放、游标拒绝和删除开关 | 第三方生产订单平台鉴权仍按部署环境验收 |
 | 第 2 周 36 次质量基线 | 确定性基线 36/36 安全、36/36 路由 | 已合入集成的 `codex/agent-quality-eval@d858d45` 执行 `python -m scripts.runtime_eval --repetitions 3`；该 runner 不连接真实模型 | 当前环境没有 `DEEPSEEK_API_KEY`/真实模型服务，真实模型 36 次需在本机凭据可用后重跑 |
-| 浏览器验收矩阵 | pending | `docs/review-runbook.md` 固定 `1920×900`、`1440×900`、`1024×768`、`390×844`，并列出主题、键盘/Esc、reduced-motion、SSE 重连和刷新恢复记录项；组件测试仍是自动化证据 | 当前环境未启动 Agent/前端服务，不能把组件测试当作真实浏览器证据 |
-| V7→V8→V9 一次性副本 | 已通过 | 在一次性克隆 `COMMERCE_GUARDIAN_AGENT_MIGRATION_20260829` 中回退 V7 形态并重放 V8、V9，历史业务事实与记录数未改写；夹具目录在授权删除 smoke 后清理 | 真实生产数据库不在本计划范围 |
-| 本地门禁 | 合并基线后全量通过 | Week4 分支合入 #2→#4 后，Python convention、脚本 15 项、Maven `clean test`/`verify`/依赖分析、前端 typecheck/Vitest/组件测试/build 均通过；删除场景仍只使用一次性夹具 | 真实 Agent/浏览器黄金路径仍需现场执行；本分支不改用户工作区资产 |
+| 浏览器验收矩阵 | 2A-1 黄金路径及四尺寸布局 smoke 通过 | 2026-09-05 Playwright 连接真实前端，完成订单查询、催发货拒绝/批准、重试完成和刷新恢复；四尺寸均确认输入区、工作台存在且无横向溢出，深色主题/reduced-motion 媒体设置 smoke 通过，确认成功后弹窗即时收口并有前端回归断言 | 完整矩阵的主题对照、Tab/Enter、SSE 重连和错误焦点仍需逐项补录 |
+| V7→V8→V9→V10→V11 一次性副本 | V11 已通过自动化编译与迁移场景 | `AgentItemStoreMySqlIT` 在随机临时库以 V9 基线执行 V10、V11，验证旧数据保持、V2 快照写入、Run 编排版本读取、归属隔离和 CAS；生产库迁移仍按运行手册单独执行 | 2B-2 生产图快照故障注入和真实生产数据库不在本单元范围 |
+| 本地门禁 | Java、Python、MySQL acceptance 和前端门禁通过 | `D:\Application\miniconda3\python.exe -m scripts.convention_check` 通过，脚本单测 19 项通过；Maven `clean test`（Core 82/Infrastructure 106/App 20），加载模块 `.env` 后的 `context-acceptance,workflow-acceptance`（Core 82/Infrastructure 106 + 9 IT/App 20 + 5 MySQL IT），前端 typecheck/Vitest 57/build 均通过 | 2B-2 生产图快照故障注入、真实模型、生产库迁移和完整浏览器视觉矩阵仍需逐项补录；本分支不改用户工作区资产 |
 
 ## 第三周：显式 Agent 决策收口（已实现，PR #4 已合入）
 
@@ -41,7 +68,7 @@
 | --- | --- | --- | --- |
 | 1. LangGraph4j 基础门禁 | 已完成 | `d74bc79`；`langgraph4j-core:1.8.20`、`AGENT_GRAPH_SNAPSHOT` V8、Jackson 3 序列化、MyBatis Saver 和七节点图测试；Core/Infrastructure 编译、LangGraph 定向测试和 `dependency:analyze` 通过 | 生产 Workflow 尚未切换 |
 | 2. QuestionCard 与 Workflow Checkpoint 拆分 | 已完成 | `AgentQuestionCardModel/Store`、`AgentWorkflowCheckpointModel/Store`；V9 表和历史迁移；Thread `OPEN_INTERACTION_TYPE/ID`；`AgentQuestionAnswerAdmission`、`AgentWorkflowDecisionAdmission`；新 API/DTO；Core 状态机、MyBatis CAS、Turn 持久化、`request_user_input` 定向测试共 12 项 | 旧模型和兼容 API 在阶段六统一清理 |
-| 3. 迁移固定订单 Workflow | 已完成 | `LangGraphAgentWorkflowEngine`、`LangGraphWorkflowGraphFactory.createOrderWorkflow` 和独立 `AgentWorkflowCheckpoint`；七节点拓扑在 `AUTHORIZE` 前中断，QuestionCard/Checkpoint 恢复、事实指纹变化回到 `VERIFY_FACTS`、批准后 ExternalActionCommand 和技术快照重建均有定向测试；本轮补充批准后事实变化时的 `SUPERSEDED → VERIFY_FACTS`、动作失效安全终态，以及事实变化时拒绝仍然终止 Workflow；旧事务引擎已退出生产 Spring 装配 | Worker 完成后的 `VERIFY_OUTCOME/HANDOFF_AGENT` 业务投影和真实外部动作黄金路径纳入阶段七验收 |
+| 3. 迁移固定订单 Workflow | 2B-1 真实试点已接入，默认关闭 | `LangGraphAgentWorkflowEngine`、`LangGraphWorkflowGraphFactory.createOrderWorkflow` 和独立 `AgentWorkflowCheckpoint`；V11 为 Run 持久化 `LEGACY_V1`/`EXPEDITE_GRAPH_V1`，明确订单号催发货新 Run 才能在开关打开时进入试点；图节点记录订单读取、资格核验、确认等待和 Worker 交接阶段，批准事务锁读 Run/Checkpoint 后创建唯一 ExternalActionCommand；进程重启用业务事实重建试点图。定向引擎 18 项和生产 MySQL Workflow IT 3 项覆盖路由、恢复、回滚、CAS 与幂等 | 2B-2 仍需完成生产技术快照恢复校验、故障注入和启用验收；Worker 完成后的结果结算、真实模型和浏览器黄金路径纳入后续现场门禁 |
 | 4. 加固 V7 Continuation | 已完成 | `AgentContinuationGateway`、`TransactionalAgentContinuationGateway`；`AgentContinuationInput.idempotencyKey()` 覆盖根/父 Turn、Run、Command、状态、结果 Sequence 和 cycle；事务内首事实持久化、提交后入队、重复/并发 admission、STOP_LIMIT 和配置边界测试通过；`ExternalActionOutcomeManager` 已移除本地续跑创建并改用统一 Gateway；`e289bcb` 使队列暂满后的续跑重试重新读取持久化 Turn 状态，`ba0e248` 使提交后入队入口也先重读 Turn，避免取消竞态执行过期快照 | 真实重启恢复、外部动作黄金路径纳入阶段七验收 |
 | 5. 前端交互与状态投影 | 已完成 | `agent-fronted` 已统一目录/package；`QUESTION_CARD`、`QUESTION_ANSWER`、`WORKFLOW_CHECKPOINT`、`WORKFLOW_DECISION` 投影与三条新 API；QuestionCard/Checkpoint 独立卡片、历史 `WORKFLOW_QUESTION` 只读展示、七节点 Graph 状态、Continuation 提示、外部成功后的非阻断告警和 Sequence 追加快路径；订单卡片已改为 `DELETE_ORDER` 直接删除记录，Thread 列表不再展示回收站；`e94eb4b` 修正 Agent QuestionCard 合法的 `runId: null`，并覆盖真实 payload；typecheck、Vitest 和 production build 通过 | 真实浏览器四尺寸与黄金路径纳入阶段七 |
 | 6. 遗留代码和测试环境清理 | 已完成 | `e7c18c8` 删除旧 Question/Answer 模型、admission、事务 Workflow 引擎、旧 API DTO、Mapper/Store 和旧授权配置；`96b2e27` 删除无生产引用的重复 Workflow Answer 类型，历史 `WORKFLOW_ANSWER` 仍仅按消息标记读取；`01ad541` 修复规范门禁发现的 persistence 包、Clock 注入和测试命名问题。`FakeClientHttpRequestFactoryTest` 覆盖 HTTP 单测，真实 loopback 契约移至 `HttpOrderGatewayIT`/`HttpExternalActionExecutorIT`，Surefire 与 Failsafe 分离；`rg` 未发现旧生产入口或旧前端目录引用；`833765c` 清理依赖分析警告 | 阶段七外部环境和黄金路径验收 |
@@ -112,7 +139,7 @@
 | 外部动作成功/失败/人工重试 | 已验证完成 | `ExternalActionOutcomeManager` 统一写入 `EXTERNAL_ACTION_STATUS`、`TURN_STATE`，命令/Workflow/Turn/Item 在本地事务内收敛；专用 MySQL 已验证成功、失败重试耗尽、投影冲突回滚、Lease 接管、结果表单行幂等、双 Worker CAS，以及人工重试不产生第二条结果；校准库遗留序列计数修正后重启恢复为 `SUCCEEDED(v256)`，同一幂等结果仍只有 1 行，原失败 Turn 未被重写 | P0 | 无；最终矩阵已通过 |
 | 外部动作人工重试状态收口 | 已验证完成 | `04a4c1c` 已验证 `MANUAL_RETRY_REQUIRED → WAITING_EXTERNAL_ACTION/COMPLETED`，真实 API 返回原 command/idempotencyKey；专用 MySQL 已验证耗尽后 API 重试、成功收敛、失败 Turn 不被重写、重复重试返回 409，结果表和幂等键各 1 行；`9dba42b` 修复结果类型映射 | P0 | 无；最终矩阵已通过 |
 | 类型化 Item 与统一序列日志 | 已验证完成 | Core `AgentItemTypeEnum`、`AgentItemModel` 和 `AgentItemPayloadModel` 强制 `schemaVersion=1 + kind + data` envelope；真实浏览器已展示 `ORDER_LIST`、`ORDER_DETAIL`、`LOGISTICS_TIMELINE` 和受控业务进度，未展示 Tool JSON、事件名或 Thinking | P0 | 无 |
-| Context、摘要和敏感信息隔离 | 已验证完成 | `401e856` 让 Context 通过最新窗口查询、当前请求预算和原始终态 Item 识别摘要边界；Core 7 项测试覆盖严格预算、最新窗口、摘要失败降级、快照安全前缀和内部 Item 隔离。`0ed8688` 让订单/物流 Tool 结果只投影模型安全业务字段并在返回前截断，Infrastructure Tool 边界 4 项通过。专用 MySQL 长历史探针实际得到 246 个 Item、8 个快照（版本 1–8，最新覆盖序列 210）；重启后的 `CONTEXT_ASSEMBLED` 事实读取 `snapshotThroughSequence=156`，后续压缩事件为 `compressed=true/degraded=false`。真实 DeepSeek Turn 的所有 Items 未包含请求用户 ID或 API key，Tool Result 长度 26 且 `truncated=false`，完成真实运行时敏感信息检查 | P1 | 无；最终矩阵已通过 |
+| Context、摘要和敏感信息隔离 | 2A-1 已切换完整原始历史 | `AgentContextAssembler` 通过固定水位和 300 条分页读取原始 Item；旧摘要只保留兼容，不参与模型输入，超预算或历史不完整时受控停止。`SpringAiOrderToolSupport` 与上下文视图按最终 JSON 长度截断并保留关联字段；Core/Infrastructure 边界测试覆盖转义结果和内部 Item 隔离 | P1 | 2A-2 再验证摘要压缩、连续水位和重启恢复；真实 DeepSeek 运行时敏感信息检查待现场执行 |
 | Spring AI / DeepSeek 请求契约 | 已验证完成 | `spring-ai-starter-model-deepseek` 保留 `stream().content()`、取消和超时分类；固定 `deepseek-v4-pro`，开启 thinking 与 `reasoning-effort=max`，`.env`/`.env.example` 已同步；真实 V4 Pro Tool Calling、浏览器订单 Workflow、SSE delta、取消、超时和敏感字段均已检查，未将 Thinking 或 delta 写入 Item、日志和前端 | P1 | 无 |
 | Tool Calling 与 Workflow 边界 | 已验证完成 | Coordinator 将只读工具与 Workflow 工具分离，写操作进入确定性 Workflow；`131924a` 为每次 Tool Call/Result 写入稳定的 `invocationId`，按调用 ID 记录耗时和失败结果，并在 Tool wrapper 边界拒绝空订单号/退款原因；`0ed8688` 删除订单 Record 的隐式 `toString()` 输出，采用字段白名单和返回前 2000 字符边界；最终 Maven 132 项通过，真实 DeepSeek `lookup_order` Tool Call/Result 的 invocationId 匹配、结果长度 26，真实 SSE/取消/超时也已验证 | P1 | 无; 最终矩阵已通过 |
 | SSE 断线恢复、去重、有序合并 | 已验证完成 | `AgentThreadEventStream` 已实现单连接 buffer → backlog → ordered flush → live、`eventId + sequence` 去重和晚绑定清理，并有并发单元测试；`cef1052` 让前端在 offline 时取消 reader、online 时从当前游标重连，并以无数据超时兜底；真实浏览器在 `afterSequence=13` 连接上切换 offline/online 后，实际恢复断线期间的 14–19 号 Item，网络记录出现两次 `events?afterSequence=13`，页面无重复且控制台无错误 | P0 | 无；最终矩阵已通过 |
@@ -123,7 +150,7 @@
 
 ## 当前里程碑边界
 
-阶段一至六已由 `d74bc79`、`fa834b5`、`dbf4aa5`、`ebada3f`、`db73491`、`e7c18c8` 和 `01ad541` 完成并分别可回滚。本轮阶段七已闭合本地代码门禁、真实 HTTP `*IT`、订单夹具直接删除验收和 V7→V8→V9 临时克隆重放；真实模型请求和浏览器黄金路径仍未在当前环境重新执行，因此本矩阵和 handoff 保持 `active`，不能写成最终 `completed`。历史现场证据仍保留在下方，但必须与本轮结果区分。
+阶段一至六已由 `d74bc79`、`fa834b5`、`dbf4aa5`、`ebada3f`、`db73491`、`e7c18c8` 和 `01ad541` 完成并分别可回滚。本轮阶段七已闭合本地代码门禁、真实 HTTP `*IT`、随机临时 MySQL 长历史集成、独立订单夹具和 2A-1 浏览器黄金路径；完整视觉矩阵及第三方生产鉴权仍待补录，因此本矩阵和 handoff 保持 `active`，不能写成最终 `completed`。历史现场证据仍保留在下方，但必须与本轮结果区分。
 
 ## 历史外部验证边界（不替代本轮阶段七重跑）
 
