@@ -24,6 +24,7 @@ import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowDecisionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowEngine;
+import cn.ethan.core.agent.workflow.AgentWorkflowOrchestrationVersionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
@@ -68,6 +69,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -113,7 +115,10 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
     private final AgentQuestionCardStore questionCards;
     private final AgentWorkflowCheckpointStore checkpoints;
     private final TransactionTemplate transactionTemplate;
-    private final CompiledGraph<AgentState> graph;
+    private final CompiledGraph<AgentState> legacyGraph;
+    private final CompiledGraph<AgentState> expediteGraph;
+    private final CompiledGraph<AgentState> expediteRecoveryGraph;
+    private final boolean expediteGraphEnabled;
 
     /** 生产装配边界：只由该 Bean 持有 LangGraph 固定订单图。 */
     @Autowired
@@ -131,10 +136,12 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             AgentWorkflowCheckpointStore checkpoints,
             PlatformTransactionManager transactionManager,
             MybatisLangGraphCheckpointSaver saver,
-            @Value("${ai-agent.workflow.graph-recursion-limit:32}") int recursionLimit
+            @Value("${ai-agent.workflow.graph-recursion-limit:32}") int recursionLimit,
+            @Value("${ai-agent.workflow.expedite-graph-enabled:false}") boolean expediteGraphEnabled
     ) {
         this(clock, commands, objectMapper, workflowRuns, orders, logistics, items, turns, events,
-                questionCards, checkpoints, transactionManager, saver, recursionLimit, true);
+                questionCards, checkpoints, transactionManager, saver, recursionLimit, true,
+                expediteGraphEnabled);
     }
 
     /** 测试边界：允许不提供数据库事务和 MyBatis Saver，使用内存技术快照。 */
@@ -152,7 +159,26 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             AgentWorkflowCheckpointStore checkpoints
     ) {
         this(clock, commands, objectMapper, workflowRuns, orders, logistics, items, turns, events,
-                questionCards, checkpoints, null, null, 32, false);
+                questionCards, checkpoints, null, null, 32, false, false);
+    }
+
+    /** 测试边界：显式打开明确订单号催发货图试点。 */
+    public LangGraphAgentWorkflowEngine(
+            Clock clock,
+            ExternalActionCommandStore commands,
+            ObjectMapper objectMapper,
+            AgentWorkflowRunStore workflowRuns,
+            OrderGateway orders,
+            LogisticsGateway logistics,
+            AgentItemStore items,
+            AgentTurnStore turns,
+            AgentThreadEventGateway events,
+            AgentQuestionCardStore questionCards,
+            AgentWorkflowCheckpointStore checkpoints,
+            boolean expediteGraphEnabled
+    ) {
+        this(clock, commands, objectMapper, workflowRuns, orders, logistics, items, turns, events,
+                questionCards, checkpoints, null, null, 32, false, expediteGraphEnabled);
     }
 
     /** 测试边界：注入技术快照 Saver，验证业务 Run 与图快照的持久化顺序。 */
@@ -171,7 +197,7 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             BaseCheckpointSaver saver
     ) {
         this(clock, commands, objectMapper, workflowRuns, orders, logistics, items, turns, events,
-                questionCards, checkpoints, null, saver, 32, false);
+                questionCards, checkpoints, null, saver, 32, false, false);
     }
 
     private LangGraphAgentWorkflowEngine(
@@ -189,7 +215,8 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             PlatformTransactionManager transactionManager,
             BaseCheckpointSaver saver,
             int recursionLimit,
-            boolean production
+            boolean production,
+            boolean expediteGraphEnabled
     ) {
         this.clock = clock == null ? Clock.systemUTC() : clock;
         this.commands = commands;
@@ -203,10 +230,17 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         this.questionCards = questionCards;
         this.checkpoints = checkpoints;
         this.transactionTemplate = transactionManager == null ? null : new TransactionTemplate(transactionManager);
+        this.expediteGraphEnabled = expediteGraphEnabled;
         BaseCheckpointSaver effectiveSaver = saver == null ? new MemorySaver() : saver;
         try {
-            this.graph = new LangGraphWorkflowGraphFactory(this.objectMapper)
-                    .createOrderWorkflow(effectiveSaver, Math.max(1, Math.min(recursionLimit, 256)));
+            LangGraphWorkflowGraphFactory factory = new LangGraphWorkflowGraphFactory(this.objectMapper);
+            this.legacyGraph = factory.createOrderWorkflow(effectiveSaver,
+                    Math.max(1, Math.min(recursionLimit, 256)));
+            // 2B-1 的试点状态按 Run 隔离保存在进程内；生产图快照和跨进程恢复留给 2B-2。
+            this.expediteGraph = factory.createOrderWorkflow(new MemorySaver(),
+                    Math.max(1, Math.min(recursionLimit, 256)));
+            this.expediteRecoveryGraph = factory.createExpediteExecutionWorkflow(new MemorySaver(),
+                    Math.max(1, Math.min(recursionLimit, 256)));
         } catch (Exception failure) {
             throw new IllegalStateException("无法编译 LangGraph 订单 Workflow", failure);
         }
@@ -229,6 +263,17 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             throw new AgentThreadConflictException("ORDER_HISTORY_ACTION_REMOVED",
                     "订单隐藏/恢复功能已移除，请直接删除订单记录");
         }
+        Optional<AgentWorkflowRunModel> existing = workflowRuns.findBySource(
+                thread.userId(), turn.turnId(), AgentWorkflowTypeEnum.ORDER_SERVICE);
+        if (existing.isPresent()) {
+            AgentWorkflowRunModel run = existing.get();
+            if (!sameRequest(request, requestFromRun(run))) {
+                throw new AgentThreadConflictException("WORKFLOW_SOURCE_CONFLICT",
+                        "同一来源 Turn 已启动不同的订单 Workflow");
+            }
+            requireSupportedOrchestration(run);
+            return existingStartResult(run);
+        }
         ResolvedCandidates candidates = resolveCandidates(request, thread.userId());
         SelectedOrder selected = selectCandidate(request, candidates, thread.userId());
         if (selected != null && !isReasonMissing(request)) {
@@ -237,12 +282,15 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
 
         String runId = "workflow-" + UUID.randomUUID();
         Instant now = clock.instant();
-        String factsFingerprint = factsFingerprint(request, candidates, selected);
+        AgentWorkflowOrchestrationVersionEnum orchestrationVersion = orchestrationVersion(
+                request, selected);
+        String factsFingerprint = factsFingerprint(request, candidates, selected, orchestrationVersion);
         Map<String, Object> businessState = state(request, candidates.orders(), selected, request.reason());
         Map<String, Object> graphState = new LinkedHashMap<>(businessState);
         graphState.put("factsDecision", "READY");
         graphState.put("workflowVersion", 0L);
         graphState.put("factsFingerprint", factsFingerprint);
+        graphState.put("orchestrationVersion", orchestrationVersion.name());
 
         boolean missingOrder = selected == null;
         boolean missingReason = !missingOrder && isReasonMissing(request);
@@ -253,7 +301,8 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
                 runId, thread.threadId(), turn.turnId(), thread.userId(), AgentWorkflowTypeEnum.ORDER_SERVICE,
                 AgentWorkflowStatusEnum.WAITING_USER_INPUT, 0L,
                 steps(activeNode, missingOrder || missingReason ? "WAITING" : "WAITING"),
-                writeJson(withGraphState(businessState, null, factsFingerprint, 0L)), now, now);
+                writeJson(withGraphState(businessState, graphState, factsFingerprint, 0L)), now, now,
+                orchestrationVersion);
 
         AgentQuestionCardModel question = missingOrder || missingReason
                 ? questionCard(run, turn, request, candidates, selected, missingOrder, now)
@@ -261,8 +310,27 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         AgentWorkflowCheckpointModel checkpoint = question == null
                 ? checkpoint(run, turn, request, selected, factsFingerprint, now)
                 : null;
-        return inTransaction(() -> persistStart(
-                thread, turn, run, candidates, selected, question, checkpoint, graphState, factsFingerprint, now));
+        try {
+            return inTransaction(() -> persistStart(
+                    thread, turn, run, candidates, selected, question, checkpoint, graphState, factsFingerprint, now));
+        } catch (RuntimeException failure) {
+            // 来源唯一键是并发启动的最终闸门；输家读取已经提交的 Run，不能再建第二张交互卡。
+            if (!isSourceUniquenessFailure(failure)) {
+                throw failure;
+            }
+            Optional<AgentWorkflowRunModel> winner = workflowRuns.findBySource(
+                    thread.userId(), turn.turnId(), AgentWorkflowTypeEnum.ORDER_SERVICE);
+            if (winner.isEmpty()) {
+                throw failure;
+            }
+            AgentWorkflowRunModel winnerRun = winner.get();
+            if (!sameRequest(request, requestFromRun(winnerRun))) {
+                throw new AgentThreadConflictException("WORKFLOW_SOURCE_CONFLICT",
+                        "同一来源 Turn 已启动不同的订单 Workflow");
+            }
+            requireSupportedOrchestration(winnerRun);
+            return existingStartResult(winnerRun);
+        }
     }
 
     private StartResult persistStart(
@@ -283,9 +351,20 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         }
         workflowRuns.create(run);
         // AGENT_GRAPH_SNAPSHOT.RUN_ID 受 WorkflowRun 外键约束，必须在首个技术快照之前创建业务 Run。
-        runGraph(run.runId(), graphState, run.version(), factsFingerprint, false);
+        Map<String, Object> pausedGraphState = runGraph(run.runId(), graphState, run.version(), factsFingerprint,
+                run.orchestrationVersion(), false);
+        if (run.orchestrationVersion() == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V1) {
+            // 试点 Run 的业务状态记录真实图已完成的资格核验，恢复从该事实而不是技术节点重放。
+            AgentWorkflowRunModel progressed = run.progress(
+                    steps(LangGraphWorkflowGraphFactory.SWITCH_REQUIREMENTS, "WAITING"),
+                    writeJson(withGraphState(state(requestFromRun(run), candidates.orders(), selected,
+                                    requestFromRun(run).reason()),
+                            pausedGraphState, factsFingerprint, run.version())), now);
+            workflowRuns.update(progressed);
+        }
         appendItem(thread, turn, AgentItemTypeEnum.WORKFLOW_STARTED,
-                writeJson(Map.of("runId", run.runId(), "workflowType", ORDER_SERVICE)), now);
+                writeJson(Map.of("runId", run.runId(), "workflowType", ORDER_SERVICE,
+                        "orchestrationVersion", run.orchestrationVersion().name())), now);
         appendOrderFacts(thread, turn, candidates.orders(), selected, now);
         if (question != null) {
             questionCards.create(question);
@@ -330,6 +409,7 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         }
         AgentWorkflowRunModel run = workflowRuns.find(thread.userId(), input.runId())
                 .orElseThrow(() -> new IllegalStateException("QuestionCard 对应 WorkflowRun 不存在"));
+        requireSupportedOrchestration(run);
         WorkflowRequest request = requestFromRun(run);
         String step = questionStep(question);
         if ("ORDER_SELECT".equals(step)) {
@@ -343,13 +423,15 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         if (selected != null && !isReasonMissing(request)) {
             requireActionAllowed(request.intent(), selected.order());
         }
-        String fingerprint = factsFingerprint(request, candidates, selected);
+        String fingerprint = factsFingerprint(request, candidates, selected, run.orchestrationVersion());
         Map<String, Object> businessState = state(request, candidates.orders(), selected, request.reason());
         Map<String, Object> graphState = new LinkedHashMap<>(businessState);
         graphState.put("factsDecision", "READY");
         graphState.put("workflowVersion", run.version());
         graphState.put("factsFingerprint", fingerprint);
-        Map<String, Object> pausedState = runGraph(run.runId(), graphState, run.version(), fingerprint, true);
+        graphState.put("orchestrationVersion", run.orchestrationVersion().name());
+        Map<String, Object> pausedState = runGraph(run.runId(), graphState, run.version(), fingerprint,
+                run.orchestrationVersion(), true);
         Instant now = clock.instant();
         boolean missingOrder = selected == null;
         boolean missingReason = !missingOrder && isReasonMissing(request);
@@ -434,12 +516,28 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         }
         AgentWorkflowRunModel run = workflowRuns.find(thread.userId(), input.runId())
                 .orElseThrow(() -> new IllegalStateException("Workflow Checkpoint 对应 WorkflowRun 不存在"));
+        requireSupportedOrchestration(run);
         Instant now = clock.instant();
+        if (input.decision() == AgentWorkflowDecisionEnum.REJECT
+                && checkpoint.status() == AgentWorkflowCheckpointStatusEnum.REJECTED
+                && run.status() == AgentWorkflowStatusEnum.REJECTED) {
+            return new ResumeResult("已拒绝本次订单操作，未执行外部动作。", "REJECTED", null,
+                    null, checkpoint);
+        }
+        if (input.decision() == AgentWorkflowDecisionEnum.APPROVE
+                && checkpoint.status() == AgentWorkflowCheckpointStatusEnum.APPROVED
+                && run.status() == AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION) {
+            Optional<ExternalActionCommandModel> existingCommand = commands.findByRunId(
+                    thread.userId(), run.runId());
+            if (existingCommand.isPresent()) {
+                return new ResumeResult("已确认，订单动作已进入可靠执行队列。", "APPROVED",
+                        existingCommand.get(), null, checkpoint);
+            }
+        }
         if (checkpoint.status() == AgentWorkflowCheckpointStatusEnum.SUPERSEDED) {
             return reverifyAfterFactsChanged(thread, decisionTurn, run, checkpoint, now);
         }
-        if (input.decision() == AgentWorkflowDecisionEnum.REJECT
-                || checkpoint.status() == AgentWorkflowCheckpointStatusEnum.REJECTED) {
+        if (checkpoint.status() == AgentWorkflowCheckpointStatusEnum.REJECTED) {
             AgentWorkflowRunModel rejected = run.status(AgentWorkflowStatusEnum.REJECTED,
                     steps(LangGraphWorkflowGraphFactory.HANDOFF_AGENT, "COMPLETED"), run.stateJson(), now);
             return inTransaction(() -> {
@@ -466,7 +564,8 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         } catch (RuntimeException factsFailure) {
             return failDecisionAfterFactsUnavailable(thread, decisionTurn, run, checkpoint, factsFailure, now);
         }
-        String fingerprint = factsFingerprint(request, new ResolvedCandidates(List.of(order), true), selected);
+        String fingerprint = factsFingerprint(request, new ResolvedCandidates(List.of(order), true), selected,
+                run.orchestrationVersion());
         if (!checkpoint.factsFingerprint().equals(input.factsFingerprint())
                 || !checkpoint.factsFingerprint().equals(fingerprint)) {
             return reverifyAfterFactsChanged(thread, decisionTurn, run, checkpoint, now);
@@ -477,7 +576,9 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         graphState.put("factsDecision", "READY");
         graphState.put("workflowVersion", run.version());
         graphState.put("factsFingerprint", fingerprint);
-        Map<String, Object> completedGraphState = runGraph(run.runId(), graphState, run.version(), fingerprint, true);
+        graphState.put("orchestrationVersion", run.orchestrationVersion().name());
+        Map<String, Object> completedGraphState = runGraph(run.runId(), graphState, run.version(), fingerprint,
+                run.orchestrationVersion(), true);
         return inTransaction(() -> approve(thread, decisionTurn, run, request, selected, fingerprint,
                 completedGraphState, checkpoint, now));
     }
@@ -502,9 +603,11 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         } catch (RuntimeException factsFailure) {
             return failDecisionAfterFactsUnavailable(thread, decisionTurn, run, superseded, factsFailure, now);
         }
-        String fingerprint = factsFingerprint(request, new ResolvedCandidates(List.of(latest), true), selected);
+        String fingerprint = factsFingerprint(request, new ResolvedCandidates(List.of(latest), true), selected,
+                run.orchestrationVersion());
         Map<String, Object> latestState = state(request.withOrderId(latest.orderId()), List.of(latest), selected,
                 request.reason());
+        latestState.put("orchestrationVersion", run.orchestrationVersion().name());
         try {
             requireActionAllowed(request.intent(), latest);
         } catch (AgentThreadConflictException actionInvalid) {
@@ -597,6 +700,29 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             AgentWorkflowCheckpointModel checkpoint,
             Instant now
     ) {
+        // 命令、Run 和 Checkpoint 必须在同一个本地事务中按固定顺序复核，
+        // 避免批准与事实失效或重复恢复并发时产生第二个有效动作。
+        AgentWorkflowRunModel lockedRun = workflowRuns.findForUpdate(thread.userId(), run.runId())
+                .orElseThrow(() -> new AgentThreadConflictException("WORKFLOW_VERSION_CONFLICT",
+                        "WorkflowRun 已不存在或归属已变化"));
+        AgentWorkflowCheckpointModel lockedCheckpoint = checkpoints.findForUpdate(
+                        thread.userId(), checkpoint.checkpointId())
+                .orElseThrow(() -> new AgentThreadConflictException("CHECKPOINT_VERSION_CONFLICT",
+                        "Workflow Checkpoint 已不存在或归属已变化"));
+        requireSupportedOrchestration(lockedRun);
+        if (lockedRun.orchestrationVersion() != run.orchestrationVersion()
+                || lockedCheckpoint.version() != checkpoint.version()
+                || lockedCheckpoint.status() != AgentWorkflowCheckpointStatusEnum.APPROVED
+                || !lockedCheckpoint.factsFingerprint().equals(fingerprint)
+                || !lockedCheckpoint.runId().equals(lockedRun.runId())) {
+            throw new AgentThreadConflictException("CHECKPOINT_VERSION_CONFLICT",
+                    "批准期间 Workflow 事实或编排版本已变化");
+        }
+        Optional<ExternalActionCommandModel> existing = commands.findByRunId(thread.userId(), run.runId());
+        if (existing.isPresent()) {
+            return new ResumeResult("已确认，订单动作已进入可靠执行队列。", "APPROVED",
+                    existing.get(), null, lockedCheckpoint);
+        }
         ExternalActionTypeEnum type = actionType(request.intent());
         Map<String, String> payload = new LinkedHashMap<>();
         payload.put("orderId", selected.order().orderId());
@@ -607,28 +733,28 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             payload.put("visibility", type == ExternalActionTypeEnum.HIDE_ORDER ? "HIDDEN" : "ACTIVE");
         }
         ExternalActionCommandModel draft = new ExternalActionCommandModel(
-                "action-" + UUID.randomUUID(), run.runId(), thread.threadId(), run.turnId(), thread.userId(), type,
-                "order-service:" + run.runId() + ":" + type.name() + ":" + selected.order().orderId(),
+                "action-" + UUID.randomUUID(), lockedRun.runId(), thread.threadId(), lockedRun.turnId(), thread.userId(), type,
+                "order-service:" + lockedRun.runId() + ":" + type.name() + ":" + selected.order().orderId(),
                 writeJson(payload), ExternalActionStatusEnum.PENDING, 0, 3, now, null, null, null, null,
                 now, now, null);
         ExternalActionCommandModel command = commands.createIfAbsent(draft);
-        AgentWorkflowRunModel waiting = run.status(AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION,
+        AgentWorkflowRunModel waiting = lockedRun.status(AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION,
                 steps(LangGraphWorkflowGraphFactory.EXECUTE_ACTION, "ACTIVE"),
                 writeJson(withGraphState(state(request, List.of(selected.order()), selected, request.reason()),
-                        graphState, fingerprint, run.version())), now);
+                        graphState, fingerprint, lockedRun.version())), now);
         workflowRuns.update(waiting);
-        appendWorkflowStep(thread, decisionTurn, run.runId(), LangGraphWorkflowGraphFactory.AUTHORIZE,
+        appendWorkflowStep(thread, decisionTurn, lockedRun.runId(), LangGraphWorkflowGraphFactory.AUTHORIZE,
                 "COMPLETED", "APPROVE", now);
-        appendWorkflowStep(thread, decisionTurn, run.runId(), LangGraphWorkflowGraphFactory.EXECUTE_ACTION,
+        appendWorkflowStep(thread, decisionTurn, lockedRun.runId(), LangGraphWorkflowGraphFactory.EXECUTE_ACTION,
                 "ACTIVE", type.name(), now);
         appendItem(thread, decisionTurn, AgentItemTypeEnum.EXTERNAL_ACTION_STATUS,
-                writeJson(Map.of("commandId", command.commandId(), "runId", command.runId(),
+                writeJson(Map.of("commandId", command.commandId(), "runId", lockedRun.runId(),
                         "status", command.status().name(), "actionType", command.type().name(),
                         "orderId", selected.order().orderId())), now);
-        projectOwner(thread, run, AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION,
+        projectOwner(thread, lockedRun, AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION,
                 "已确认，订单动作已进入可靠执行队列。", now);
         return new ResumeResult("已确认，订单动作已进入可靠执行队列。", "APPROVED", command,
-                null, checkpoint);
+                null, lockedCheckpoint);
     }
 
     private AgentQuestionCardModel questionCard(
@@ -701,6 +827,7 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             Map<String, Object> input,
             long workflowVersion,
             String factsFingerprint,
+            AgentWorkflowOrchestrationVersionEnum orchestrationVersion,
             boolean resume
     ) {
         Map<String, Object> safeInput = new LinkedHashMap<>(input);
@@ -708,23 +835,34 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         safeInput.put("factsFingerprint", factsFingerprint);
         RunnableConfig config = RunnableConfig.builder().threadId(runId).build()
                 .updateMetadata(Map.of("workflowVersion", workflowVersion, "factsFingerprint", factsFingerprint));
+        CompiledGraph<AgentState> selectedGraph = graphFor(orchestrationVersion);
         try {
             Optional<AgentState> result = resume
-                    ? graph.invoke(GraphInput.resume(), config)
-                    : graph.invoke(safeInput, config);
+                    ? selectedGraph.invoke(GraphInput.resume(), config)
+                    : selectedGraph.invoke(safeInput, config);
             if (result.isPresent()) {
                 return new LinkedHashMap<>(result.get().data());
             }
-            return graph.lastStateOf(config)
+            return selectedGraph.lastStateOf(config)
                     .map(snapshot -> (Map<String, Object>) new LinkedHashMap<>(snapshot.state().data()))
                     .orElse(safeInput);
         } catch (RuntimeException resumeFailure) {
+            if (orchestrationVersion == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V1) {
+                // 进程重启后内存图没有技术快照；只有在确认不存在可恢复图状态时，
+                // 才用已经锁定的业务事实构造无中断恢复图。
+                if (resume && selectedGraph.lastStateOf(config).isEmpty()) {
+                    Optional<AgentState> rebuilt = expediteRecoveryGraph.invoke(safeInput, config);
+                    return rebuilt.map(state -> (Map<String, Object>) new LinkedHashMap<>(state.data()))
+                            .orElse(safeInput);
+                }
+                throw resumeFailure;
+            }
             // 技术快照失配时只用业务 WorkflowRun 重建图状态；绝不把快照当作授权事实。
             if (!resume) {
                 throw resumeFailure;
             }
             try {
-                Optional<AgentState> rebuilt = graph.invoke(safeInput, config);
+                Optional<AgentState> rebuilt = selectedGraph.invoke(safeInput, config);
                 return rebuilt.map(state -> (Map<String, Object>) new LinkedHashMap<>(state.data())).orElse(safeInput);
             } catch (RuntimeException rebuildFailure) {
                 rebuildFailure.addSuppressed(resumeFailure);
@@ -737,6 +875,85 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         if (commands == null || workflowRuns == null || orders == null || questionCards == null || checkpoints == null) {
             throw new IllegalStateException("LangGraph Workflow 依赖未完整装配");
         }
+    }
+
+    private CompiledGraph<AgentState> graphFor(AgentWorkflowOrchestrationVersionEnum orchestrationVersion) {
+        requireSupportedOrchestrationVersion(orchestrationVersion);
+        return orchestrationVersion == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V1
+                ? expediteGraph : legacyGraph;
+    }
+
+    private void requireSupportedOrchestrationVersion(AgentWorkflowOrchestrationVersionEnum version) {
+        if (version != AgentWorkflowOrchestrationVersionEnum.LEGACY_V1
+                && version != AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V1) {
+            throw new AgentThreadConflictException("UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION",
+                    "Workflow 编排版本不受支持，无法安全恢复");
+        }
+    }
+
+    private boolean isSourceUniquenessFailure(Throwable failure) {
+        Throwable current = failure;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && isSourceConstraintMessage(message)) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean isSourceConstraintMessage(String message) {
+        String normalized = message.toUpperCase(Locale.ROOT);
+        if (normalized.contains("UQ_AGENT_WORKFLOW_RUN_SOURCE")) {
+            return true;
+        }
+        // 某些 MySQL 驱动只保留重复键字段，不保留约束名称；要求三个来源字段同时出现，
+        // 避免把外键、状态或 JSON 校验失败误认为来源竞争。
+        return (normalized.contains("DUPLICATE") || normalized.contains("UNIQUE"))
+                && normalized.contains("TURN_ID")
+                && normalized.contains("WORKFLOW_TYPE");
+    }
+
+    private AgentWorkflowOrchestrationVersionEnum orchestrationVersion(
+            WorkflowRequest request, SelectedOrder selected
+    ) {
+        if (expediteGraphEnabled
+                && EXPEDITE.equals(request.intent())
+                && !request.orderId().isBlank()
+                && selected != null) {
+            return AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V1;
+        }
+        return AgentWorkflowOrchestrationVersionEnum.LEGACY_V1;
+    }
+
+    private void requireSupportedOrchestration(AgentWorkflowRunModel run) {
+        if (run == null || run.orchestrationVersion() == null) {
+            throw new AgentThreadConflictException("UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION",
+                    "Workflow 编排版本缺失，无法安全恢复");
+        }
+        if (run.orchestrationVersion() != AgentWorkflowOrchestrationVersionEnum.LEGACY_V1
+                && run.orchestrationVersion() != AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V1) {
+            throw new AgentThreadConflictException("UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION",
+                    "Workflow 编排版本不受支持，无法安全恢复");
+        }
+    }
+
+    private boolean sameRequest(WorkflowRequest left, WorkflowRequest right) {
+        return left != null && right != null
+                && left.intent().equals(right.intent())
+                && left.sourceOrderId().equals(right.sourceOrderId())
+                && left.reason().equals(right.reason())
+                && left.criteriaValues().equals(right.criteriaValues());
+    }
+
+    private StartResult existingStartResult(AgentWorkflowRunModel run) {
+        AgentQuestionCardModel question = questionCards.findOpenByRun(run.userId(), run.runId()).orElse(null);
+        AgentWorkflowCheckpointModel checkpoint = checkpoints.findOpenByRun(run.userId(), run.runId()).orElse(null);
+        if (question != null && checkpoint != null) {
+            throw new IllegalStateException("WorkflowRun 同时存在 QuestionCard 和 Checkpoint");
+        }
+        return new StartResult(run.runId(), question, checkpoint);
     }
 
     private ResolvedCandidates resolveCandidates(WorkflowRequest request, String userId) {
@@ -910,6 +1127,7 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("intent", request.intent());
         result.put("orderId", selected == null ? request.orderId() : selected.order().orderId());
+        result.put("sourceOrderId", request.sourceOrderId());
         result.put("reason", reason == null || reason.isBlank() ? request.reason() : reason);
         result.put("criteria", request.criteriaValues());
         result.put("candidateOrderIds", candidates == null ? List.of()
@@ -928,6 +1146,13 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         Map<String, Object> result = new LinkedHashMap<>(business);
         if (graphState != null) {
             result.put("graphLastNode", graphState.get("lastNode"));
+            if (graphState.get(LangGraphWorkflowGraphFactory.BUSINESS_PHASE) != null) {
+                result.put(LangGraphWorkflowGraphFactory.BUSINESS_PHASE,
+                        graphState.get(LangGraphWorkflowGraphFactory.BUSINESS_PHASE));
+            }
+            if (graphState.get("orchestrationVersion") != null) {
+                result.put("orchestrationVersion", graphState.get("orchestrationVersion"));
+            }
         }
         result.put("workflowVersion", version);
         result.put("factsFingerprint", fingerprint);
@@ -942,8 +1167,11 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             if (criteriaNode.isObject()) {
                 criteriaNode.properties().forEach(entry -> criteria.put(entry.getKey(), entry.getValue().asString("")));
             }
+            String orderId = root.path("orderId").asString("");
+            String sourceOrderId = root.has("sourceOrderId")
+                    ? root.path("sourceOrderId").asString("") : orderId;
             return new WorkflowRequest(normalizeIntent(root.path("intent").asString("")),
-                    root.path("orderId").asString(""), root.path("reason").asString(""), criteria, run.userId());
+                    orderId, root.path("reason").asString(""), criteria, run.userId(), sourceOrderId);
         } catch (RuntimeException failure) {
             throw new IllegalStateException("无法恢复订单 Workflow 状态", failure);
         }
@@ -958,18 +1186,28 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         }
     }
 
-    private String factsFingerprint(WorkflowRequest request, ResolvedCandidates candidates, SelectedOrder selected) {
+    private String factsFingerprint(WorkflowRequest request, ResolvedCandidates candidates,
+                                    SelectedOrder selected,
+                                    AgentWorkflowOrchestrationVersionEnum orchestrationVersion) {
         Map<String, Object> facts = new LinkedHashMap<>();
         facts.put("intent", request.intent());
         facts.put("orderId", selected == null ? request.orderId() : selected.order().orderId());
         facts.put("reason", request.reason());
-        facts.put("orders", candidates.orders().stream().map(this::safeOrder).toList());
+        // 事实指纹只反映业务内容；网关返回顺序变化不能把同一授权误判为新事实。
+        facts.put("orders", candidates.orders().stream()
+                .sorted(Comparator.comparing(OrderSnapshotModel::orderId))
+                .map(this::safeOrder).toList());
         if (selected != null) {
-            facts.put("logistics", selected.events().stream().map(this::safeLogistics).toList());
+            facts.put("logistics", selected.events().stream()
+                    .sorted(Comparator.comparing(LogisticsEventModel::eventId)
+                            .thenComparing(LogisticsEventModel::occurredAt))
+                    .map(this::safeLogistics).toList());
         }
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormatSupport.hex(digest.digest(writeJson(facts).getBytes(StandardCharsets.UTF_8)));
+            String digestValue = HexFormatSupport.hex(digest.digest(writeJson(facts).getBytes(StandardCharsets.UTF_8)));
+            return orchestrationVersion == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V1
+                    ? "expedite-facts-v1:" + digestValue : digestValue;
         } catch (NoSuchAlgorithmException failure) {
             throw new IllegalStateException("JDK 缺少 SHA-256", failure);
         }
@@ -1171,13 +1409,15 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
     }
 
     private record WorkflowRequest(String intent, String orderId, String reason,
-                                   Map<String, String> criteriaValues, String userId) {
+                                   Map<String, String> criteriaValues, String userId,
+                                   String sourceOrderId) {
         private WorkflowRequest {
             intent = normalizeIntent(intent);
             orderId = orderId == null ? "" : orderId.trim();
             reason = reason == null ? "" : reason.trim();
             criteriaValues = criteriaValues == null ? Map.of() : Map.copyOf(criteriaValues);
             userId = userId == null ? "" : userId;
+            sourceOrderId = sourceOrderId == null ? "" : sourceOrderId.trim();
         }
 
         private static WorkflowRequest from(String operation, Map<String, String> arguments) {
@@ -1189,16 +1429,17 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
                     criteria.put(key, value);
                 }
             }
-            return new WorkflowRequest(parseIntent(operation, arguments), value(arguments, "orderId"),
-                    value(arguments, "reason"), criteria, "");
+            String orderId = value(arguments, "orderId");
+            return new WorkflowRequest(parseIntent(operation, arguments), orderId,
+                    value(arguments, "reason"), criteria, "", orderId);
         }
 
         private WorkflowRequest withOrderId(String nextOrderId) {
-            return new WorkflowRequest(intent, nextOrderId, reason, criteriaValues, userId);
+            return new WorkflowRequest(intent, nextOrderId, reason, criteriaValues, userId, sourceOrderId);
         }
 
         private WorkflowRequest withReason(String nextReason) {
-            return new WorkflowRequest(intent, orderId, nextReason, criteriaValues, userId);
+            return new WorkflowRequest(intent, orderId, nextReason, criteriaValues, userId, sourceOrderId);
         }
 
         private OrderSearchCriteria criteria() {

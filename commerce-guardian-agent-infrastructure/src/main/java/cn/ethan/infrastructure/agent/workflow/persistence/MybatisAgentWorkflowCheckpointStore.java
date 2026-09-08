@@ -51,8 +51,20 @@ public class MybatisAgentWorkflowCheckpointStore implements AgentWorkflowCheckpo
     }
 
     @Override
+    public Optional<AgentWorkflowCheckpointModel> findForUpdate(String userId, String checkpointId) {
+        AgentWorkflowCheckpointEntity entity = mapper.selectOwnedForUpdate(userId, checkpointId);
+        return entity == null || !userId.equals(entity.getUserId())
+                ? Optional.empty() : Optional.of(toModel(entity));
+    }
+
+    @Override
     public Optional<AgentWorkflowCheckpointModel> findOpen(String userId, String threadId) {
         return Optional.ofNullable(mapper.selectOpen(userId, threadId)).map(this::toModel);
+    }
+
+    @Override
+    public Optional<AgentWorkflowCheckpointModel> findOpenByRun(String userId, String runId) {
+        return Optional.ofNullable(mapper.selectOpenByRun(userId, runId)).map(this::toModel);
     }
 
     @Override

@@ -16,4 +16,8 @@ public interface AgentQuestionCardMapper extends BaseMapper<AgentQuestionCardEnt
     @Select("SELECT * FROM AGENT_QUESTION_CARD WHERE USER_ID = #{userId} "
             + "AND THREAD_ID = #{threadId} AND STATUS = 'OPEN' ORDER BY CREATED_AT DESC LIMIT 1")
     AgentQuestionCardEntity selectOpen(String userId, String threadId);
+
+    @Select("SELECT * FROM AGENT_QUESTION_CARD WHERE USER_ID = #{userId} "
+            + "AND RUN_ID = #{runId} AND STATUS = 'OPEN' ORDER BY CREATED_AT DESC LIMIT 1")
+    AgentQuestionCardEntity selectOpenByRun(String userId, String runId);
 }

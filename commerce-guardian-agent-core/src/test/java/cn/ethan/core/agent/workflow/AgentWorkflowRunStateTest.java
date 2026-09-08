@@ -28,6 +28,8 @@ class AgentWorkflowRunStateTest {
 
         assertEquals(2L, waiting.version());
         assertEquals(AgentWorkflowStatusEnum.COMPLETED, completed.status());
+        assertEquals(AgentWorkflowOrchestrationVersionEnum.LEGACY_V1,
+                completed.orchestrationVersion());
     }
 
     @Test
