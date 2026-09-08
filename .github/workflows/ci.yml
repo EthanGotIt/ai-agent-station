@@ -37,6 +37,19 @@ jobs:
     name: Maven unit, integration, and dependency checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: COMMERCE_GUARDIAN_AGENT
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
     steps:
       - name: Check out source
         uses: actions/checkout@v5
@@ -50,6 +63,12 @@ jobs:
         run: mvn -B -DskipTests=false clean test
       - name: Run integration tests
         run: mvn -B verify
+      - name: Run MySQL context acceptance tests
+        env:
+          MYSQL_URL: jdbc:mysql://127.0.0.1:3306/COMMERCE_GUARDIAN_AGENT?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
+          MYSQL_USERNAME: root
+          MYSQL_PASSWORD: root
+        run: mvn -B -Pcontext-acceptance,workflow-acceptance verify -DskipTests=false
       - name: Analyze dependencies
         run: mvn -B dependency:analyze -DskipTests
 
