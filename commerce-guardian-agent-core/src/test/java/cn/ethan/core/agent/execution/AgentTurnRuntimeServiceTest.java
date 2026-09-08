@@ -757,6 +757,11 @@ class AgentTurnRuntimeServiceTest {
         }
 
         @Override
+        public Optional<AgentContextSnapshotModel> findSnapshot(String userId, String threadId, String snapshotId) {
+            return Optional.empty();
+        }
+
+        @Override
         public void saveSnapshot(AgentContextSnapshotModel snapshot) {
             throw new UnsupportedOperationException("test does not persist snapshots");
         }

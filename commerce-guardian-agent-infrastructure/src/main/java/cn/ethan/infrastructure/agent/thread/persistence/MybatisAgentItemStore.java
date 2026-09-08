@@ -7,7 +7,6 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -64,16 +63,29 @@ public class MybatisAgentItemStore implements AgentItemStore {
     }
 
     @Override
-    public List<AgentItemModel> listLatestItems(String userId, String threadId, long afterSequence, int limit) {
+    public long captureWatermark(String userId, String threadId) {
         AgentThreadEntity owned = threadMapper.selectOne(new QueryWrapper<AgentThreadEntity>()
                 .eq("THREAD_ID", threadId).eq("USER_ID", userId));
         if (owned == null) {
+            return 0L;
+        }
+        Long value = itemMapper.selectMaxSequence(threadId);
+        return value == null ? 0L : Math.max(0L, value);
+    }
+
+    @Override
+    public List<AgentItemModel> listItemsThrough(
+            String userId, String threadId, long afterSequence, long throughSequence, int limit
+    ) {
+        AgentThreadEntity owned = threadMapper.selectOne(new QueryWrapper<AgentThreadEntity>()
+                .eq("THREAD_ID", threadId).eq("USER_ID", userId));
+        if (owned == null || throughSequence <= Math.max(0L, afterSequence)) {
             return List.of();
         }
-        return itemMapper.selectLatest(threadId, Math.max(0L, afterSequence), Math.max(1, Math.min(limit, 501)))
+        return itemMapper.selectThrough(threadId, Math.max(0L, afterSequence), throughSequence,
+                        Math.max(1, Math.min(limit, 300)))
                 .stream()
                 .map(MybatisAgentItemStore::toModel)
-                .sorted(Comparator.comparingLong(AgentItemModel::sequence))
                 .toList();
     }
 

@@ -30,6 +30,18 @@ public final class AgentContextSnapshotEntity {
     private String summary;
     @TableField("CREATED_AT")
     private Instant createdAt;
+    @TableField("FORMAT_VERSION")
+    private Integer formatVersion;
+    @TableField("BASE_SNAPSHOT_ID")
+    private String baseSnapshotId;
+    @TableField("SOURCE_FROM_SEQUENCE")
+    private Long sourceFromSequence;
+    @TableField("SOURCE_ESTIMATED_TOKENS")
+    private Integer sourceEstimatedTokens;
+    @TableField("SUMMARY_PROMPT_VERSION")
+    private String promptVersion;
+    @TableField("SUMMARY_MAX_OUTPUT_TOKENS")
+    private Integer summaryMaxOutputTokens;
 
     public AgentContextSnapshotEntity() {
     }
@@ -48,4 +60,16 @@ public final class AgentContextSnapshotEntity {
     public void setSummary(String summary) { this.summary = summary; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+    public Integer getFormatVersion() { return formatVersion; }
+    public void setFormatVersion(Integer formatVersion) { this.formatVersion = formatVersion; }
+    public String getBaseSnapshotId() { return baseSnapshotId; }
+    public void setBaseSnapshotId(String baseSnapshotId) { this.baseSnapshotId = baseSnapshotId; }
+    public Long getSourceFromSequence() { return sourceFromSequence; }
+    public void setSourceFromSequence(Long sourceFromSequence) { this.sourceFromSequence = sourceFromSequence; }
+    public Integer getSourceEstimatedTokens() { return sourceEstimatedTokens; }
+    public void setSourceEstimatedTokens(Integer sourceEstimatedTokens) { this.sourceEstimatedTokens = sourceEstimatedTokens; }
+    public String getPromptVersion() { return promptVersion; }
+    public void setPromptVersion(String promptVersion) { this.promptVersion = promptVersion; }
+    public Integer getSummaryMaxOutputTokens() { return summaryMaxOutputTokens; }
+    public void setSummaryMaxOutputTokens(Integer summaryMaxOutputTokens) { this.summaryMaxOutputTokens = summaryMaxOutputTokens; }
 }
