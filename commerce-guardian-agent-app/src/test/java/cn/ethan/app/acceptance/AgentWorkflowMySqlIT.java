@@ -134,7 +134,7 @@ class AgentWorkflowMySqlIT {
         }
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
             assertEquals(11L, scalar(statement,
-                    "SELECT VERSION FROM FLYWAY_SCHEMA_HISTORY WHERE SUCCESS = 1 ORDER BY INSTALLED_RANK DESC LIMIT 1"));
+                    "SELECT VERSION FROM flyway_schema_history WHERE SUCCESS = 1 ORDER BY INSTALLED_RANK DESC LIMIT 1"));
             assertEquals(1L, scalar(statement,
                     "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() "
                             + "AND TABLE_NAME = 'AGENT_WORKFLOW_RUN' AND COLUMN_NAME = 'ORCHESTRATION_VERSION'"));
