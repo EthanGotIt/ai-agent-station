@@ -3,7 +3,7 @@ package cn.ethan.core.agent.workflow;
 import java.time.Instant;
 
 /**
- * 类型职责：保存一个确定性 Workflow 的可恢复状态和版本。
+ * 类型职责：保存一个确定性 Workflow 的可恢复状态、乐观版本和不可变编排归属。
  *
  * @author ethan
  * @date 2026-08-19
@@ -19,11 +19,13 @@ public record AgentWorkflowRunModel(
         String stepsJson,
         String stateJson,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        AgentWorkflowOrchestrationVersionEnum orchestrationVersion
 ) {
     public AgentWorkflowRunModel {
         if (runId == null || runId.isBlank() || threadId == null || threadId.isBlank()
-                || userId == null || userId.isBlank() || workflowType == null) {
+                || userId == null || userId.isBlank() || workflowType == null
+                || orchestrationVersion == null) {
             throw new IllegalArgumentException("WorkflowRun identity must not be blank");
         }
         if (status == null || version < 0) {
@@ -46,7 +48,27 @@ public record AgentWorkflowRunModel(
             Instant updatedAt
     ) {
         this(runId, threadId, turnId, userId, workflowType, status, version,
-                "[]", "{}", createdAt, updatedAt);
+                "[]", "{}", createdAt, updatedAt,
+                AgentWorkflowOrchestrationVersionEnum.LEGACY_V1);
+    }
+
+    /** 保留没有编排版本列的历史调用边界，历史 Run 按 LEGACY_V1 恢复。 */
+    public AgentWorkflowRunModel(
+            String runId,
+            String threadId,
+            String turnId,
+            String userId,
+            AgentWorkflowTypeEnum workflowType,
+            AgentWorkflowStatusEnum status,
+            long version,
+            String stepsJson,
+            String stateJson,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        this(runId, threadId, turnId, userId, workflowType, status, version,
+                stepsJson, stateJson, createdAt, updatedAt,
+                AgentWorkflowOrchestrationVersionEnum.LEGACY_V1);
     }
 
     public AgentWorkflowRunModel status(AgentWorkflowStatusEnum nextStatus, Instant now) {
@@ -70,7 +92,8 @@ public record AgentWorkflowRunModel(
             throw new IllegalStateException("WorkflowRun 不允许状态转换：" + status + " -> " + nextStatus);
         }
         return new AgentWorkflowRunModel(runId, threadId, turnId, userId, workflowType,
-                nextStatus, version + 1, nextStepsJson, nextStateJson, createdAt, now);
+                nextStatus, version + 1, nextStepsJson, nextStateJson, createdAt, now,
+                orchestrationVersion);
     }
 
     /** 在不改变状态的本地事务内推进 Workflow 步骤和可恢复业务状态。 */
@@ -82,7 +105,8 @@ public record AgentWorkflowRunModel(
             throw new IllegalStateException("WorkflowRun 终态不能更新步骤：" + status);
         }
         return new AgentWorkflowRunModel(runId, threadId, turnId, userId, workflowType,
-                status, version + 1, nextStepsJson, nextStateJson, createdAt, now);
+                status, version + 1, nextStepsJson, nextStateJson, createdAt, now,
+                orchestrationVersion);
     }
 
     private static boolean isAllowed(AgentWorkflowStatusEnum current, AgentWorkflowStatusEnum next) {

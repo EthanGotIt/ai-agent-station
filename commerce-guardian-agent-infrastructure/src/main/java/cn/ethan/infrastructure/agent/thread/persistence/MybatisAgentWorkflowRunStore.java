@@ -3,7 +3,9 @@ package cn.ethan.infrastructure.agent.thread.persistence;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
+import cn.ethan.core.agent.workflow.AgentWorkflowOrchestrationVersionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
+import cn.ethan.core.agent.thread.AgentThreadConflictException;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.stereotype.Repository;
 
@@ -37,12 +39,28 @@ public class MybatisAgentWorkflowRunStore implements AgentWorkflowRunStore {
     }
 
     @Override
+    public Optional<AgentWorkflowRunModel> findForUpdate(String userId, String runId) {
+        return Optional.ofNullable(mapper.selectOwnedForUpdate(userId, runId)).map(this::toModel);
+    }
+
+    @Override
+    public Optional<AgentWorkflowRunModel> findBySource(
+            String userId, String turnId, AgentWorkflowTypeEnum workflowType
+    ) {
+        if (userId == null || turnId == null || workflowType == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(mapper.selectBySource(userId, turnId, workflowType.name())).map(this::toModel);
+    }
+
+    @Override
     public void update(AgentWorkflowRunModel run) {
         long previousVersion = Math.max(0, run.version() - 1);
         int updated = mapper.update(toEntity(run), new UpdateWrapper<AgentWorkflowRunEntity>()
                 .eq("RUN_ID", run.runId())
                 .eq("USER_ID", run.userId())
                 .eq("VERSION_NO", previousVersion)
+                .eq("ORCHESTRATION_VERSION", run.orchestrationVersion().name())
                 .notIn("STATUS", List.of(
                         AgentWorkflowStatusEnum.COMPLETED.name(),
                         AgentWorkflowStatusEnum.REJECTED.name(),
@@ -59,6 +77,7 @@ public class MybatisAgentWorkflowRunStore implements AgentWorkflowRunStore {
         entity.setTurnId(run.turnId());
         entity.setUserId(run.userId());
         entity.setWorkflowType(run.workflowType().name());
+        entity.setOrchestrationVersion(run.orchestrationVersion().name());
         entity.setStatus(run.status().name());
         entity.setVersionNo(run.version());
         entity.setStepsJson(run.stepsJson());
@@ -69,11 +88,21 @@ public class MybatisAgentWorkflowRunStore implements AgentWorkflowRunStore {
     }
 
     private AgentWorkflowRunModel toModel(AgentWorkflowRunEntity entity) {
+        AgentWorkflowOrchestrationVersionEnum orchestrationVersion;
+        try {
+            orchestrationVersion = entity.getOrchestrationVersion() == null
+                    || entity.getOrchestrationVersion().isBlank()
+                    ? AgentWorkflowOrchestrationVersionEnum.LEGACY_V1
+                    : AgentWorkflowOrchestrationVersionEnum.valueOf(entity.getOrchestrationVersion());
+        } catch (IllegalArgumentException failure) {
+            throw new AgentThreadConflictException(
+                    "UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION", "WorkflowRun 编排版本无法识别");
+        }
         return new AgentWorkflowRunModel(entity.getRunId(), entity.getThreadId(), entity.getTurnId(),
                 entity.getUserId(), AgentWorkflowTypeEnum.valueOf(entity.getWorkflowType()),
                 AgentWorkflowStatusEnum.valueOf(entity.getStatus()),
                 entity.getVersionNo() == null ? 0 : entity.getVersionNo(),
                 entity.getStepsJson(), entity.getStateJson(),
-                entity.getCreatedAt(), entity.getUpdatedAt());
+                entity.getCreatedAt(), entity.getUpdatedAt(), orchestrationVersion);
     }
 }

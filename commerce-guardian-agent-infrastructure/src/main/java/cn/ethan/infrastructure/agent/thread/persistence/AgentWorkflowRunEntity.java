@@ -26,6 +26,8 @@ public final class AgentWorkflowRunEntity {
     private String userId;
     @TableField("WORKFLOW_TYPE")
     private String workflowType;
+    @TableField("ORCHESTRATION_VERSION")
+    private String orchestrationVersion;
     @TableField("STATUS")
     private String status;
     @TableField("VERSION_NO")
@@ -49,6 +51,8 @@ public final class AgentWorkflowRunEntity {
     public void setUserId(String userId) { this.userId = userId; }
     public String getWorkflowType() { return workflowType; }
     public void setWorkflowType(String workflowType) { this.workflowType = workflowType; }
+    public String getOrchestrationVersion() { return orchestrationVersion; }
+    public void setOrchestrationVersion(String orchestrationVersion) { this.orchestrationVersion = orchestrationVersion; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public Long getVersionNo() { return versionNo; }

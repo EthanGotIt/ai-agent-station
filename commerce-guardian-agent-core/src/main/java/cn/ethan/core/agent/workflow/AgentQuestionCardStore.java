@@ -16,6 +16,11 @@ public interface AgentQuestionCardStore {
 
     Optional<AgentQuestionCardModel> findOpen(String userId, String threadId);
 
+    /** 按 Run 读取开放问题，供重复启动恢复原交互。 */
+    default Optional<AgentQuestionCardModel> findOpenByRun(String userId, String runId) {
+        return Optional.empty();
+    }
+
     void create(AgentQuestionCardModel question);
 
     default void save(AgentQuestionCardModel question) {

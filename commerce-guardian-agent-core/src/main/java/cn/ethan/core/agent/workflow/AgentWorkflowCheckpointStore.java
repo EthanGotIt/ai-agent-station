@@ -12,7 +12,19 @@ public interface AgentWorkflowCheckpointStore {
 
     Optional<AgentWorkflowCheckpointModel> find(String userId, String checkpointId);
 
+    /**
+     * 在本地 Workflow 事务内锁定并读取 Checkpoint；内存测试实现可复用普通读取。
+     */
+    default Optional<AgentWorkflowCheckpointModel> findForUpdate(String userId, String checkpointId) {
+        return find(userId, checkpointId);
+    }
+
     Optional<AgentWorkflowCheckpointModel> findOpen(String userId, String threadId);
+
+    /** 按 Run 读取开放确认，供重复启动恢复原交互。 */
+    default Optional<AgentWorkflowCheckpointModel> findOpenByRun(String userId, String runId) {
+        return Optional.empty();
+    }
 
     void create(AgentWorkflowCheckpointModel checkpoint);
 
