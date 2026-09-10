@@ -151,8 +151,88 @@ public final class SpringAiOrderToolSupport {
         if (value == null || value.length() <= limit) {
             return value == null ? "" : value;
         }
-        return "{\"truncated\":true,\"value\":\""
-                + escapeJson(value.substring(0, limit)) + "\"}";
+        String prefix = "{\"truncated\":true,\"value\":\"";
+        String suffix = "\"}";
+        int length = Math.min(value.length(), Math.max(0, limit - prefix.length() - suffix.length()));
+        String bounded = value.substring(0, length);
+        while (length > 0 && prefix.length() + escapeJson(bounded).length() + suffix.length() > limit) {
+            bounded = value.substring(0, --length);
+        }
+        return prefix + escapeJson(bounded) + suffix;
+    }
+
+    /**
+     * 生成保留 Tool 标识的受控结果；限制针对最终 JSON，而不是未转义的结果文本。
+     */
+    public static String boundToolResult(
+            String tool, String invocationId, String status, String result, int maxCharacters
+    ) {
+        return boundToolResult(tool, invocationId, status, result, maxCharacters, null);
+    }
+
+    public static String boundToolResult(
+            String tool, String invocationId, String status, String result, int maxCharacters, String toolBatchId
+    ) {
+        int limit = Math.max(64, maxCharacters);
+        String safeTool = tool == null ? "" : tool;
+        String safeInvocationId = invocationId == null ? "" : invocationId;
+        String safeToolBatchId = toolBatchId == null ? "" : toolBatchId;
+        String safeStatus = status == null ? "" : status;
+        String source = result == null ? "" : result;
+        boolean truncated = false;
+        String bounded = source;
+        String candidate = toolResultJson(safeTool, safeInvocationId, safeStatus, bounded, false, safeToolBatchId);
+        if (candidate.length() > limit) {
+            truncated = true;
+            bounded = trimToJsonLimit(source, limit, safeTool, safeInvocationId, safeStatus, safeToolBatchId);
+            candidate = toolResultJson(safeTool, safeInvocationId, safeStatus, bounded, true, safeToolBatchId);
+        }
+        // 工具标识通常很短，但仍保证恶意/异常标识不会突破最终 JSON 上限。
+        String boundedTool = safeTool;
+        String boundedInvocationId = safeInvocationId;
+        String boundedStatus = safeStatus;
+        while (candidate.length() > limit) {
+            if (!boundedTool.isEmpty()) {
+                boundedTool = boundedTool.substring(0, boundedTool.length() - 1);
+            } else if (!boundedInvocationId.isEmpty()) {
+                boundedInvocationId = boundedInvocationId.substring(0, boundedInvocationId.length() - 1);
+            } else if (!safeToolBatchId.isEmpty()) {
+                safeToolBatchId = safeToolBatchId.substring(0, safeToolBatchId.length() - 1);
+            } else if (!boundedStatus.isEmpty()) {
+                boundedStatus = boundedStatus.substring(0, boundedStatus.length() - 1);
+            } else if (!bounded.isEmpty()) {
+                bounded = bounded.substring(0, bounded.length() - 1);
+                truncated = true;
+            } else {
+                break;
+            }
+            candidate = toolResultJson(boundedTool, boundedInvocationId, boundedStatus, bounded, truncated, safeToolBatchId);
+        }
+        return candidate;
+    }
+
+    private static String trimToJsonLimit(
+            String source, int limit, String tool, String invocationId, String status, String toolBatchId
+    ) {
+        String bounded = source.substring(0, Math.min(source.length(), Math.max(0, limit)));
+        while (!bounded.isEmpty()
+            && toolResultJson(tool, invocationId, status, bounded, true, toolBatchId).length() > limit) {
+            bounded = bounded.substring(0, bounded.length() - 1);
+        }
+        return bounded;
+    }
+
+    private static String toolResultJson(
+            String tool, String invocationId, String status, String result, boolean truncated, String toolBatchId
+    ) {
+        String batch = toolBatchId == null || toolBatchId.isBlank() ? ""
+                : ",\"toolBatchId\":\"" + escapeJson(toolBatchId) + "\"";
+        return "{\"tool\":\"" + escapeJson(tool)
+                + "\",\"invocationId\":\"" + escapeJson(invocationId)
+                + batch
+                + "\",\"status\":\"" + escapeJson(status)
+                + "\",\"result\":\"" + escapeJson(result)
+                + "\",\"truncated\":" + truncated + "}";
     }
 
     public static OrderSearchCriteria parseSearchCriteria(

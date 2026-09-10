@@ -348,6 +348,12 @@ class AgentTurnRuntimeServiceTest {
         persistence.appendItem(new AgentItemModel("source-order-item", thread.threadId(), source.turnId(), 0,
                 cn.ethan.core.agent.thread.AgentItemTypeEnum.ORDER_DETAIL,
                 "{\"orderId\":\"order-1\"}", NOW));
+        for (int index = 1; index <= 400; index++) {
+            persistence.appendItem(new AgentItemModel("old-history-" + index, thread.threadId(),
+                    "old-turn-" + index, 0,
+                    cn.ethan.core.agent.thread.AgentItemTypeEnum.ASSISTANT_MESSAGE,
+                    "{\"message\":\"" + "旧历史 ".repeat(32) + index + "\"}", NOW));
+        }
         ManualExecutor executor = new ManualExecutor();
         ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
         AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
@@ -476,6 +482,55 @@ class AgentTurnRuntimeServiceTest {
     }
 
     @Test
+    void correctionReassemblesToolFactsPersistedByTheFirstCoordinatorCall() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "纠正事实 Thread", null, null);
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        List<List<AgentItemModel>> receivedContexts = new ArrayList<>();
+        AtomicInteger calls = new AtomicInteger();
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, threads,
+                new AgentContextAssembler(persistence, persistence, clock, 20_000, 1_000, 512, 128),
+                (current, turn, history, answer) -> {
+                    receivedContexts.add(history);
+                    if (calls.incrementAndGet() == 1) {
+                        persistence.appendItem(new AgentItemModel(
+                                "correction-call", thread.threadId(), turn.turnId(), 0,
+                                cn.ethan.core.agent.thread.AgentItemTypeEnum.TOOL_CALL,
+                                "{\"tool\":\"lookup_order\",\"invocationId\":\"invoke-1\","
+                                        + "\"arguments\":{\"orderId\":\"ORDER-1\"}}", NOW));
+                        persistence.appendItem(new AgentItemModel(
+                                "correction-result", thread.threadId(), turn.turnId(), 0,
+                                cn.ethan.core.agent.thread.AgentItemTypeEnum.TOOL_RESULT,
+                                "{\"tool\":\"lookup_order\",\"invocationId\":\"invoke-1\","
+                                        + "\"status\":\"FOUND\",\"result\":{\"orderId\":\"ORDER-1\"}}", NOW));
+                        return new AgentTurnCoordinator.AgentCoordinatorResult("首轮自由文本", List.of(), null, false);
+                    }
+                    assertTrue(history.stream().anyMatch(item -> item.type()
+                            == cn.ethan.core.agent.thread.AgentItemTypeEnum.TOOL_CALL
+                            && item.payload().contains("invoke-1")));
+                    assertTrue(history.stream().anyMatch(item -> item.type()
+                            == cn.ethan.core.agent.thread.AgentItemTypeEnum.TOOL_RESULT
+                            && item.payload().contains("ORDER-1")));
+                    return new AgentTurnCoordinator.AgentCoordinatorResult(
+                            "纠正后收口", List.of(), null, false,
+                            AgentDecisionTypeEnum.FINISH, "CONTROL_TOOL", null, null, true);
+                }, new RecordingEvents(), executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 512);
+
+        AgentTurnModel turn = runtime.submitTurn("user-1", thread.threadId(), "correction-fact-request", "查询订单");
+        executor.runAll();
+
+        assertEquals(AgentTurnStatusEnum.COMPLETED,
+                persistence.findTurn("user-1", turn.turnId()).orElseThrow().status());
+        assertEquals(2, receivedContexts.size());
+        scheduler.shutdownNow();
+    }
+
+    @Test
     void doesNotSpendCorrectionCallAfterOutputBudgetStop() {
         InMemoryPersistence persistence = new InMemoryPersistence();
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
@@ -523,6 +578,37 @@ class AgentTurnRuntimeServiceTest {
         assertEquals(AgentTurnStatusEnum.FAILED, failed.status());
         assertEquals("OUTPUT_BUDGET_EXCEEDED", failed.errorCode());
         assertEquals(1, calls.get(), "资源耗尽后不能再发起纠正模型请求");
+        scheduler.shutdownNow();
+    }
+
+    @Test
+    void stopsBeforeCoordinatorWhenHistoryStillExceedsTheHardContextBudget() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "超大历史 Thread", null, null);
+        persistence.appendItem(new AgentItemModel(
+                "large-history", thread.threadId(), "old-turn", 0,
+                cn.ethan.core.agent.thread.AgentItemTypeEnum.USER_MESSAGE, "x".repeat(8_000), NOW));
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        AtomicInteger calls = new AtomicInteger();
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, threads,
+                new AgentContextAssembler(persistence, persistence, clock, 1_000, 256, 256, 128),
+                (current, turn, history, answer) -> {
+                    calls.incrementAndGet();
+                    throw new AssertionError("硬预算失败时不得调用模型协调器");
+                }, new RecordingEvents(), executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256);
+
+        AgentTurnModel turn = runtime.submitTurn("user-1", thread.threadId(), "oversized-history", "继续");
+        executor.runAll();
+
+        AgentTurnModel failed = persistence.findTurn("user-1", turn.turnId()).orElseThrow();
+        assertEquals(AgentTurnStatusEnum.FAILED, failed.status());
+        assertEquals("CONTEXT_BUDGET_EXCEEDED", failed.errorCode());
+        assertEquals(0, calls.get());
         scheduler.shutdownNow();
     }
 
@@ -617,6 +703,37 @@ class AgentTurnRuntimeServiceTest {
         assertTrue(persistence.items.stream().anyMatch(item -> item.turnId().equals(turn.turnId())
                 && item.type() == cn.ethan.core.agent.thread.AgentItemTypeEnum.TURN_STATE
                 && item.payload().contains("COMPLETED")));
+        scheduler.shutdownNow();
+    }
+
+    @Test
+    void persistsControlledConflictCodeInsteadOfGenericExecutionError() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "受控错误 Thread", null, null);
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, threads,
+                new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
+                (current, turn, history, answer) -> {
+                    throw new AgentThreadConflictException(
+                            "UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION", "WorkflowRun 编排版本无法识别");
+                }, new RecordingEvents(), executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256);
+
+        AgentTurnModel turn = runtime.submitTurn("user-1", thread.threadId(), "controlled-error-request", "恢复订单流程");
+        executor.runAll();
+
+        AgentTurnModel failed = persistence.findTurn("user-1", turn.turnId()).orElseThrow();
+        assertEquals(AgentTurnStatusEnum.FAILED, failed.status());
+        assertEquals("UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION", failed.errorCode());
+        assertTrue(persistence.items.stream().anyMatch(item -> item.turnId().equals(turn.turnId())
+                && item.type() == cn.ethan.core.agent.thread.AgentItemTypeEnum.ERROR
+                && item.payload().contains("UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION")));
+        assertTrue(persistence.items.stream().noneMatch(item -> item.turnId().equals(turn.turnId())
+                && item.payload().contains("Agent 执行失败")));
         scheduler.shutdownNow();
     }
 
@@ -753,6 +870,11 @@ class AgentTurnRuntimeServiceTest {
 
         @Override
         public Optional<AgentContextSnapshotModel> findLatestSnapshot(String userId, String threadId) {
+            return Optional.empty();
+        }
+
+        @Override
+        public Optional<AgentContextSnapshotModel> findSnapshot(String userId, String threadId, String snapshotId) {
             return Optional.empty();
         }
 

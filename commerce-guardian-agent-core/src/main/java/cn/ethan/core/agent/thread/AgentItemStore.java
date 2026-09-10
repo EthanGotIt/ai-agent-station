@@ -1,6 +1,5 @@
 package cn.ethan.core.agent.thread;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -28,37 +27,53 @@ public interface AgentItemStore {
     List<AgentItemModel> listItems(String userId, String threadId, long afterSequence, int limit);
 
     /**
-     * 读取游标之后的最新 Item 窗口，结果按 Sequence 升序返回。
+     * 捕获本次上下文读取的已提交水位。水位只界定读取范围，不表示事实已经被摘要覆盖。
      *
-     * <p>默认实现用于没有倒序查询能力的适配器，按已有游标端口分页并只保留末尾窗口；数据库适配器应覆盖该方法，
-     * 直接使用 Thread/Sequence 索引，避免长历史导致每次组装从最早 Item 开始扫描。</p>
+     * <p>没有专用索引的适配器使用游标分页兜底；数据库适配器应覆盖该方法，直接读取 Thread 的最大序号。</p>
      */
-    default List<AgentItemModel> listLatestItems(String userId, String threadId, long afterSequence, int limit) {
-        int requested = Math.max(1, Math.min(limit, 501));
-        List<AgentItemModel> latest = new ArrayList<>(requested);
-        long cursor = Math.max(0L, afterSequence);
+    default long captureWatermark(String userId, String threadId) {
+        long cursor = 0L;
+        long watermark = 0L;
         while (true) {
-            List<AgentItemModel> page = listItems(userId, threadId, cursor, 501);
+            List<AgentItemModel> page = listItems(userId, threadId, cursor, 300);
             if (page == null || page.isEmpty()) {
-                break;
+                return watermark;
+            }
+            if (page.size() > 300) {
+                throw new IllegalStateException("Item 分页超过固定大小");
             }
             long nextCursor = cursor;
             for (AgentItemModel item : page) {
-                if (item == null || item.sequence() <= cursor) {
-                    continue;
+                if (item == null || item.sequence() <= nextCursor) {
+                    throw new IllegalStateException("Item Sequence 未严格前进");
                 }
-                nextCursor = Math.max(nextCursor, item.sequence());
-                latest.add(item);
-                if (latest.size() > requested) {
-                    latest.remove(0);
-                }
+                nextCursor = item.sequence();
+                watermark = Math.max(watermark, item.sequence());
             }
-            if (nextCursor <= cursor || page.size() < 501) {
-                break;
+            if (nextCursor <= cursor) {
+                return watermark;
             }
             cursor = nextCursor;
         }
-        return List.copyOf(latest);
+    }
+
+    /**
+     * 在固定水位内读取 Item。默认实现兼容只有游标读取能力的适配器，并丢弃水位之后的记录。
+     */
+    default List<AgentItemModel> listItemsThrough(
+            String userId, String threadId, long afterSequence, long throughSequence, int limit
+    ) {
+        if (throughSequence <= Math.max(0L, afterSequence)) {
+            return List.of();
+        }
+        List<AgentItemModel> page = listItems(userId, threadId, afterSequence, Math.max(1, Math.min(limit, 300)));
+        if (page == null || page.isEmpty()) {
+            return List.of();
+        }
+        return page.stream()
+                // 保留游标之前和空值，让组装器显式拒绝重复/无效页面；只隔离固定水位之后的新事实。
+                .filter(item -> item == null || item.sequence() <= throughSequence)
+                .toList();
     }
 
     /** 幂等追加的结果，inserted=false 表示本次只复用了已有事实。 */
@@ -70,4 +85,5 @@ public interface AgentItemStore {
             }
         }
     }
+
 }

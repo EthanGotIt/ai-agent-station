@@ -12,10 +12,25 @@ import java.util.List;
  */
 public record AgentContextAssembly(
         List<AgentItemModel> items,
+        String summary,
+        AgentModelContext modelContext,
         AgentContextBudgetReport report
 ) {
 
     public AgentContextAssembly {
         items = items == null ? List.of() : List.copyOf(items);
+        summary = summary == null ? "" : summary;
+        modelContext = modelContext == null
+                ? new AgentModelContext(summary, items,
+                report == null ? 0L : report.readWatermark(),
+                report == null ? 0L : report.snapshotThroughSequence(),
+                report == null ? 0L : report.coveredThroughSequence(),
+                summary.isBlank() ? "raw" : "compressed")
+                : modelContext;
+        report = report == null ? new AgentContextBudgetReport(0, 0, 0, false, false) : report;
+    }
+
+    public AgentContextAssembly(List<AgentItemModel> items, AgentContextBudgetReport report) {
+        this(items, "", null, report);
     }
 }

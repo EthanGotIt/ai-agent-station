@@ -16,6 +16,16 @@ public interface AgentRuntimeMetrics {
 
     void observeContext(int estimatedTokens, boolean compressed, boolean degraded);
 
+    /** 记录每次模型请求的输出预留和实际结算，维度保持低基数。 */
+    default void observeOutputSettlement(int reservedTokens, int chargedTokens, boolean conservative) {
+    }
+
+    /** 记录压缩前后估算和裁剪数量；不携带 Thread、订单或摘要正文等高基数信息。 */
+    default void observeContextCompaction(
+            int beforeEstimatedTokens, int afterEstimatedTokens, int prunedToolResults, boolean summaryApplied
+    ) {
+    }
+
     void observeFailure(String category);
 
     default void observeTool(Duration duration, String status) {
