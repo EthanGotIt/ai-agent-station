@@ -51,9 +51,9 @@ Next action:
 
 Validation:
 
-- `mvn clean '-DskipTests=false' test` 在 App clean 阶段被仍运行的本地 Agent 占用 jar 阻断；随后 `mvn -pl commerce-guardian-agent-app -am '-DskipTests=false' test` 完整 reactor 通过（Core 86、Infrastructure 115、App 20，`BUILD SUCCESS`）。
+- `mvn.cmd -pl commerce-guardian-agent-app -am '-DskipTests=false' test` 本轮完整 reactor 通过（Core 87、Infrastructure 116、App 20，`BUILD SUCCESS`）；此前 `clean` 曾受本地 Agent 占用 jar 影响，因此本轮使用不清理的完整 reactor 门禁。
 - `npm --prefix agent-fronted run typecheck`、`npm --prefix agent-fronted test`（66 tests）和 `npm --prefix agent-fronted run build` 通过。
-- 第四阶段前端定向验证：`OrderActionStatus.test.tsx` 8 项通过，包含确认等待、PENDING/PROCESSING/RETRY_WAIT、成功待核验刷新、成功回执、人工重试和成功优先级；合并前需再运行完整 Maven/Python/前端矩阵。
+- 第四阶段前端定向验证：`OrderActionStatus.test.tsx` 8 项通过，包含确认等待、PENDING/PROCESSING/RETRY_WAIT、成功待核验刷新、成功回执、人工重试和成功优先级；本轮完整 Maven/Python/前端矩阵已复核通过。
 - Python `scripts.convention_check` 和 `unittest discover -s scripts/tests -p "test_*.py"` 通过（19 tests）；`git diff --check` 已通过。
 - 2026-09-10 后续复核：隔离 MySQL 3306、订单夹具 18082/18081、Agent 8090/8091、前端 5173 均曾运行；健康检查 `UP`，HTTP acceptance runner、真实 DeepSeek 合成查询与催发货黄金路径、快照故障矩阵、页面刷新恢复和四尺寸布局 smoke 通过。`1536×730` SSE 断线恢复与错误焦点通过；原 `MySQL84` Windows 服务仍因服务控制权限无法直接启动。
 - 定向回归：`mvn.cmd -pl commerce-guardian-agent-infrastructure -am '-Dtest=AgentTurnRuntimeServiceTest,MybatisAgentWorkflowRunStoreVersionTest' '-Dsurefire.failIfNoSpecifiedTests=false' test` 通过（Core 18、Infrastructure 4）；新增未知编排版本错误码和 Runtime 受控失败断言通过。
