@@ -34,6 +34,8 @@ public final class AgentGraphSnapshotEntity {
     private Long workflowVersion;
     @TableField("FACTS_FINGERPRINT")
     private String factsFingerprint;
+    @TableField("ORCHESTRATION_VERSION")
+    private String orchestrationVersion;
     @TableField("CREATED_AT")
     private Instant createdAt;
     @TableField("UPDATED_AT")
@@ -57,6 +59,8 @@ public final class AgentGraphSnapshotEntity {
     public void setWorkflowVersion(Long workflowVersion) { this.workflowVersion = workflowVersion; }
     public String getFactsFingerprint() { return factsFingerprint; }
     public void setFactsFingerprint(String factsFingerprint) { this.factsFingerprint = factsFingerprint; }
+    public String getOrchestrationVersion() { return orchestrationVersion; }
+    public void setOrchestrationVersion(String orchestrationVersion) { this.orchestrationVersion = orchestrationVersion; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

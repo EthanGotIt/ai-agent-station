@@ -32,7 +32,10 @@ class MybatisLangGraphCheckpointSaverTest {
         MybatisLangGraphCheckpointSaver saver = new MybatisLangGraphCheckpointSaver(
                 mapper(state), new ObjectMapper(),
                 Clock.fixed(Instant.parse("2026-08-27T00:00:00Z"), ZoneOffset.UTC));
-        RunnableConfig config = RunnableConfig.builder().threadId("run-1").build();
+        RunnableConfig config = RunnableConfig.builder().threadId("run-1").build()
+                .updateMetadata(Map.of("workflowVersion", 3L,
+                        "factsFingerprint", "facts-v1",
+                        "orchestrationVersion", "EXPEDITE_GRAPH_V1"));
         Checkpoint first = checkpoint("checkpoint-1", "VERIFY_FACTS", "SWITCH_REQUIREMENTS", 3L, "facts-v1");
 
         RunnableConfig returned = saver.put(config, first);
@@ -42,20 +45,45 @@ class MybatisLangGraphCheckpointSaverTest {
         assertEquals("run-1", state.entity.getRunId());
         assertEquals(3L, state.entity.getWorkflowVersion());
         assertEquals("facts-v1", state.entity.getFactsFingerprint());
+        assertEquals("EXPEDITE_GRAPH_V1", state.entity.getOrchestrationVersion());
         assertEquals("VERIFY_FACTS", saver.get(config).orElseThrow().getNodeId());
 
         Checkpoint replacement = checkpoint("checkpoint-1", "AUTHORIZE", "EXECUTE_ACTION", 4L, "facts-v2");
-        saver.put(returned, replacement);
+        RunnableConfig replacementConfig = returned.updateMetadata(Map.of("workflowVersion", 4L,
+                "factsFingerprint", "facts-v2", "orchestrationVersion", "EXPEDITE_GRAPH_V1"));
+        saver.put(replacementConfig, replacement);
 
         assertEquals(1, state.entities.size());
-        assertEquals("AUTHORIZE", saver.get(config).orElseThrow().getNodeId());
+        assertEquals("AUTHORIZE", saver.get(replacementConfig).orElseThrow().getNodeId());
         assertEquals(4L, state.entity.getWorkflowVersion());
-        assertTrue(saver.list(config).stream().anyMatch(item -> "EXECUTE_ACTION".equals(item.getNextNodeId())));
+        assertTrue(saver.list(replacementConfig).stream().anyMatch(item -> "EXECUTE_ACTION".equals(item.getNextNodeId())));
+    }
+
+    @Test
+    void rejectsSnapshotWhenRequestedBusinessMetadataDoesNotMatch() throws Exception {
+        State state = new State();
+        MybatisLangGraphCheckpointSaver saver = new MybatisLangGraphCheckpointSaver(
+                mapper(state), new ObjectMapper(),
+                Clock.fixed(Instant.parse("2026-08-27T00:00:00Z"), ZoneOffset.UTC));
+        RunnableConfig valid = RunnableConfig.builder().threadId("run-1").build()
+                .updateMetadata(Map.of("workflowVersion", 3L,
+                        "factsFingerprint", "facts-v1",
+                        "orchestrationVersion", "EXPEDITE_GRAPH_V1"));
+        saver.put(valid, checkpoint("checkpoint-1", "VERIFY_FACTS", "SWITCH_REQUIREMENTS", 3L, "facts-v1"));
+
+        RunnableConfig changedFacts = RunnableConfig.builder().threadId("run-1").build()
+                .updateMetadata(Map.of("workflowVersion", 4L,
+                        "factsFingerprint", "facts-v2",
+                        "orchestrationVersion", "EXPEDITE_GRAPH_V1"));
+
+        assertTrue(saver.get(changedFacts).isEmpty());
+        assertTrue(saver.list(changedFacts).isEmpty());
     }
 
     private Checkpoint checkpoint(String id, String node, String next, long version, String fingerprint) {
         return Checkpoint.builder().id(id).nodeId(node).nextNodeId(next)
-                .state(Map.of("workflowVersion", version, "factsFingerprint", fingerprint, "orderId", "order-1"))
+                .state(Map.of("workflowVersion", version, "factsFingerprint", fingerprint,
+                        "orchestrationVersion", "EXPEDITE_GRAPH_V1", "orderId", "order-1"))
                 .build();
     }
 

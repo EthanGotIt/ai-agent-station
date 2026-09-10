@@ -6,6 +6,7 @@ import cn.ethan.core.agent.action.ExternalActionStatusEnum;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.thread.AgentItemTypeEnum;
+import cn.ethan.core.agent.thread.AgentThreadConflictException;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentThreadStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnInputKindEnum;
@@ -20,6 +21,7 @@ import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowDecisionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowEngine;
+import cn.ethan.core.agent.workflow.AgentWorkflowOrchestrationVersionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
@@ -53,6 +55,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -64,6 +67,143 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class LangGraphAgentWorkflowEngineTest {
 
     private static final Instant NOW = Instant.parse("2026-08-27T00:00:00Z");
+
+    @Test
+    void explicitExpediteOrderUsesPilotOrchestrationVersionWhenEnabled() {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-EXPEDITE")), false, true);
+
+        AgentWorkflowEngine.StartResult started = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "EXPEDITE", "orderId", "ORDER-EXPEDITE"));
+
+        assertEquals(AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V1,
+                fixture.runs.current.orchestrationVersion());
+        assertNotNull(started.checkpoint());
+        assertEquals(0, fixture.commands.values.size());
+    }
+
+    @Test
+    void pilotGraphPersistsEligibilityPhaseBeforeApprovalAndHandsOffOnlyAfterApproval() throws Exception {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-EXPEDITE")), false, true);
+
+        AgentWorkflowEngine.StartResult started = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "EXPEDITE", "orderId", "ORDER-EXPEDITE"));
+
+        assertEquals(0, fixture.commands.values.size());
+        assertTrue(fixture.runs.current.stateJson().contains("CONFIRMATION_READY"));
+        assertTrue(fixture.runs.current.stateJson().contains("expedite-facts-v1:"));
+
+        fixture.checkpoints.decide("user-1", started.checkpoint().checkpointId(), 0,
+                AgentWorkflowDecisionEnum.APPROVE, started.checkpoint().factsFingerprint());
+        AgentWorkflowEngine.ResumeResult resumed = fixture.engine.resume(
+                fixture.thread, decisionTurn(started), Map.of());
+
+        assertEquals("APPROVED", resumed.resultStatus());
+        assertEquals(1, fixture.commands.values.size());
+        assertEquals(AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, fixture.runs.current.status());
+        assertTrue(fixture.runs.current.stateJson().contains("HANDOFF_TO_WORKER"));
+    }
+
+    @Test
+    void pilotApprovalAfterProcessRestartRebuildsFromBusinessFacts() {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-EXPEDITE")), false, true);
+        AgentWorkflowEngine.StartResult started = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "EXPEDITE", "orderId", "ORDER-EXPEDITE"));
+        fixture.checkpoints.decide("user-1", started.checkpoint().checkpointId(), 0,
+                AgentWorkflowDecisionEnum.APPROVE, started.checkpoint().factsFingerprint());
+
+        LangGraphAgentWorkflowEngine restarted = new LangGraphAgentWorkflowEngine(
+                Clock.fixed(NOW, ZoneOffset.UTC), fixture.commands, new ObjectMapper(), fixture.runs,
+                fixture.orders, null, fixture.items, null, null, fixture.questions, fixture.checkpoints, true);
+        AgentWorkflowEngine.ResumeResult resumed = restarted.resume(
+                fixture.thread, decisionTurn(started), Map.of());
+
+        assertEquals("APPROVED", resumed.resultStatus());
+        assertEquals(1, fixture.commands.values.size());
+    }
+
+    @Test
+    void persistentPilotGraphRebuildsWhenTechnicalSnapshotIsLostAfterRestart() {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-EXPEDITE")), true, true);
+        AgentWorkflowEngine.StartResult started = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "EXPEDITE", "orderId", "ORDER-EXPEDITE"));
+        assertTrue(fixture.saver.snapshotCount() > 0);
+        fixture.saver.clearSnapshots();
+        fixture.checkpoints.decide("user-1", started.checkpoint().checkpointId(), 0,
+                AgentWorkflowDecisionEnum.APPROVE, started.checkpoint().factsFingerprint());
+
+        LangGraphAgentWorkflowEngine restarted = new LangGraphAgentWorkflowEngine(
+                Clock.fixed(NOW, ZoneOffset.UTC), fixture.commands, new ObjectMapper(), fixture.runs,
+                fixture.orders, null, fixture.items, null, null, fixture.questions, fixture.checkpoints,
+                fixture.saver, true);
+        AgentWorkflowEngine.ResumeResult resumed = restarted.resume(
+                fixture.thread, decisionTurn(started), Map.of());
+
+        assertEquals("APPROVED", resumed.resultStatus());
+        assertEquals(1, fixture.commands.values.size());
+        assertTrue(fixture.saver.snapshotCount() > 0);
+    }
+
+    @Test
+    void explicitExpediteOrderUsesLegacyVersionWhenPilotIsDisabled() {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-EXPEDITE")));
+
+        fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "EXPEDITE", "orderId", "ORDER-EXPEDITE"));
+
+        assertEquals(AgentWorkflowOrchestrationVersionEnum.LEGACY_V1,
+                fixture.runs.current.orchestrationVersion());
+    }
+
+    @Test
+    void missingOrderKeepsLegacyOrchestrationVersionEvenWhenPilotIsEnabled() {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-1"), fixtureOrder("ORDER-2")), false, true);
+
+        AgentWorkflowEngine.StartResult started = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "EXPEDITE"));
+
+        assertEquals(AgentWorkflowOrchestrationVersionEnum.LEGACY_V1,
+                fixture.runs.current.orchestrationVersion());
+        assertNotNull(started.questionCard());
+    }
+
+    @Test
+    void repeatedStartReturnsTheExistingRunInsteadOfCreatingAnotherCommandOrCheckpoint() {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-EXPEDITE")), false, true);
+
+        AgentWorkflowEngine.StartResult first = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "EXPEDITE", "orderId", "ORDER-EXPEDITE"));
+        AgentWorkflowEngine.StartResult repeated = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "EXPEDITE", "orderId", "ORDER-EXPEDITE"));
+
+        assertEquals(first.runId(), repeated.runId());
+        assertEquals(first.checkpoint().checkpointId(), repeated.checkpoint().checkpointId());
+        assertEquals(1, fixture.checkpoints.values.size());
+        assertEquals(0, fixture.commands.values.size());
+    }
+
+    @Test
+    void repeatedSourceWithDifferentOrderIsRejected() {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-EXPEDITE"), fixtureOrder("ORDER-OTHER")), false, true);
+
+        fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "EXPEDITE", "orderId", "ORDER-EXPEDITE"));
+
+        assertThrows(AgentThreadConflictException.class, () -> fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "EXPEDITE", "orderId", "ORDER-OTHER")));
+    }
+
+    @Test
+    void repeatedCandidateSelectionReturnsTheExistingQuestionCard() {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-1"), fixtureOrder("ORDER-2")), false, true);
+
+        AgentWorkflowEngine.StartResult first = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "EXPEDITE"));
+        AgentWorkflowEngine.StartResult repeated = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "EXPEDITE"));
+
+        assertEquals(first.runId(), repeated.runId());
+        assertEquals(first.questionCard().questionId(), repeated.questionCard().questionId());
+    }
 
     @Test
     void startsWithIndependentWorkflowCheckpointAndCreatesCommandOnlyAfterApproval() {
@@ -94,6 +234,42 @@ class LangGraphAgentWorkflowEngineTest {
         assertEquals(ExternalActionStatusEnum.PENDING, resumed.command().status());
         assertEquals(AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, fixture.runs.current.status());
         assertEquals(1, fixture.commands.values.size());
+    }
+
+    @Test
+    void repeatedApprovalReturnsExistingCommandWithoutCreatingAnotherCommand() {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-1")));
+        AgentWorkflowEngine.StartResult started = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "EXPEDITE", "orderId", "ORDER-1"));
+        fixture.checkpoints.decide("user-1", started.checkpoint().checkpointId(), 0,
+                AgentWorkflowDecisionEnum.APPROVE, started.checkpoint().factsFingerprint());
+
+        AgentWorkflowEngine.ResumeResult first = fixture.engine.resume(
+                fixture.thread, decisionTurn(started), Map.of());
+        AgentWorkflowEngine.ResumeResult repeated = fixture.engine.resume(
+                fixture.thread, decisionTurn(started), Map.of());
+
+        assertEquals("APPROVED", first.resultStatus());
+        assertEquals(first.command().commandId(), repeated.command().commandId());
+        assertEquals(1, fixture.commands.values.size());
+    }
+
+    @Test
+    void repeatedRejectionReturnsTheExistingTerminalResult() {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-1")));
+        AgentWorkflowEngine.StartResult started = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "EXPEDITE", "orderId", "ORDER-1"));
+        fixture.checkpoints.decide("user-1", started.checkpoint().checkpointId(), 0,
+                AgentWorkflowDecisionEnum.REJECT, "changed-by-reject-is-ignored");
+
+        AgentWorkflowEngine.ResumeResult first = fixture.engine.resume(
+                fixture.thread, decisionTurn(started, AgentWorkflowDecisionEnum.REJECT), Map.of());
+        AgentWorkflowEngine.ResumeResult repeated = fixture.engine.resume(
+                fixture.thread, decisionTurn(started, AgentWorkflowDecisionEnum.REJECT), Map.of());
+
+        assertEquals("REJECTED", first.resultStatus());
+        assertEquals("REJECTED", repeated.resultStatus());
+        assertEquals(AgentWorkflowStatusEnum.REJECTED, fixture.runs.current.status());
     }
 
     @Test
@@ -265,25 +441,31 @@ class LangGraphAgentWorkflowEngineTest {
         private final LangGraphAgentWorkflowEngine engine;
 
         private Fixture(List<OrderSnapshotModel> values) {
-            this(values, false);
+            this(values, false, false);
         }
 
         private Fixture(List<OrderSnapshotModel> values, boolean recordSnapshotOrder) {
+            this(values, recordSnapshotOrder, false);
+        }
+
+        private Fixture(List<OrderSnapshotModel> values, boolean recordSnapshotOrder,
+                        boolean expediteGraphEnabled) {
             orders = new FakeOrders(values);
             saver = recordSnapshotOrder ? new RecordingSaver(runs) : null;
             engine = saver == null
                     ? new LangGraphAgentWorkflowEngine(
                     Clock.fixed(NOW, ZoneOffset.UTC), commands, new ObjectMapper(), runs, orders,
-                    null, items, null, null, questions, checkpoints)
+                    null, items, null, null, questions, checkpoints, expediteGraphEnabled)
                     : new LangGraphAgentWorkflowEngine(
                     Clock.fixed(NOW, ZoneOffset.UTC), commands, new ObjectMapper(), runs, orders,
-                    null, items, null, null, questions, checkpoints, saver);
+                    null, items, null, null, questions, checkpoints, saver, expediteGraphEnabled);
         }
     }
 
     private static final class RecordingSaver extends AbstractCheckpointSaver {
         private final FakeRuns runs;
         private boolean allWritesObservedRun = true;
+        private final Map<String, LinkedList<Checkpoint>> snapshots = new LinkedHashMap<>();
 
         private RecordingSaver(FakeRuns runs) {
             this.runs = runs;
@@ -291,25 +473,39 @@ class LangGraphAgentWorkflowEngineTest {
 
         @Override
         protected LinkedList<Checkpoint> loadCheckpoints(RunnableConfig config) {
-            return new LinkedList<>();
+            return new LinkedList<>(snapshots.getOrDefault(config.threadId().orElse(""), new LinkedList<>()));
         }
 
         @Override
         protected void insertedCheckpoint(
                 RunnableConfig config, LinkedList<Checkpoint> checkpoints, Checkpoint checkpoint) {
             allWritesObservedRun &= runs.current != null;
+            save(config, checkpoints);
         }
 
         @Override
         protected void updatedCheckpoint(
                 RunnableConfig config, LinkedList<Checkpoint> checkpoints, Checkpoint checkpoint) {
             allWritesObservedRun &= runs.current != null;
+            save(config, checkpoints);
         }
 
         @Override
         protected BaseCheckpointSaver.Tag releaseCheckpoints(
                 RunnableConfig config, LinkedList<Checkpoint> checkpoints) {
             return new BaseCheckpointSaver.Tag(config.threadId().orElse(""), List.copyOf(checkpoints));
+        }
+
+        private void save(RunnableConfig config, LinkedList<Checkpoint> checkpoints) {
+            snapshots.put(config.threadId().orElse(""), new LinkedList<>(checkpoints));
+        }
+
+        private int snapshotCount() {
+            return snapshots.values().stream().mapToInt(List::size).sum();
+        }
+
+        private void clearSnapshots() {
+            snapshots.clear();
         }
     }
 
@@ -358,6 +554,16 @@ class LangGraphAgentWorkflowEngineTest {
         }
 
         @Override
+        public Optional<AgentWorkflowRunModel> findBySource(
+                String userId, String turnId, AgentWorkflowTypeEnum workflowType
+        ) {
+            return Optional.ofNullable(current)
+                    .filter(value -> value.userId().equals(userId))
+                    .filter(value -> value.turnId().equals(turnId))
+                    .filter(value -> value.workflowType() == workflowType);
+        }
+
+        @Override
         public void update(AgentWorkflowRunModel run) {
             current = run;
         }
@@ -376,6 +582,12 @@ class LangGraphAgentWorkflowEngineTest {
         public Optional<AgentQuestionCardModel> findOpen(String userId, String threadId) {
             return Optional.ofNullable(openId).flatMap(id -> find(userId, id))
                     .filter(value -> value.threadId().equals(threadId));
+        }
+
+        @Override
+        public Optional<AgentQuestionCardModel> findOpenByRun(String userId, String runId) {
+            return Optional.ofNullable(openId).flatMap(id -> find(userId, id))
+                    .filter(value -> runId.equals(value.runId()));
         }
 
         @Override
@@ -423,6 +635,12 @@ class LangGraphAgentWorkflowEngineTest {
         public Optional<AgentWorkflowCheckpointModel> findOpen(String userId, String threadId) {
             return Optional.ofNullable(openId).flatMap(id -> find(userId, id))
                     .filter(value -> value.threadId().equals(threadId));
+        }
+
+        @Override
+        public Optional<AgentWorkflowCheckpointModel> findOpenByRun(String userId, String runId) {
+            return Optional.ofNullable(openId).flatMap(id -> find(userId, id))
+                    .filter(value -> runId.equals(value.runId()));
         }
 
         @Override

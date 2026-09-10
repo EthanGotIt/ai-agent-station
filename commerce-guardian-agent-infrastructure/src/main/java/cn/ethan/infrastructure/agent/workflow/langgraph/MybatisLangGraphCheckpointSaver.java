@@ -40,6 +40,7 @@ public class MybatisLangGraphCheckpointSaver extends AbstractCheckpointSaver {
     private static final TypeReference<Map<String, Object>> STATE_TYPE = new TypeReference<>() { };
     private static final String WORKFLOW_VERSION = "workflowVersion";
     private static final String FACTS_FINGERPRINT = "factsFingerprint";
+    private static final String ORCHESTRATION_VERSION = "orchestrationVersion";
 
     private final AgentGraphSnapshotMapper mapper;
     private final ObjectMapper objectMapper;
@@ -56,7 +57,15 @@ public class MybatisLangGraphCheckpointSaver extends AbstractCheckpointSaver {
         String graphThreadId = graphThreadId(config);
         LinkedList<Checkpoint> checkpoints = new LinkedList<>();
         for (AgentGraphSnapshotEntity entity : mapper.selectByGraphThreadId(graphThreadId)) {
-            checkpoints.add(toCheckpoint(entity));
+            try {
+                Map<String, Object> state = decodeState(entity.getStateJson());
+                if (isCompatible(config, graphThreadId, entity, state,
+                        config.checkPointId().isPresent())) {
+                    checkpoints.add(toCheckpoint(entity, state));
+                }
+            } catch (RuntimeException invalidSnapshot) {
+                // 技术快照不是业务授权事实；损坏快照必须让上层从 WorkflowRun 重建，而不是阻断恢复。
+            }
         }
         return checkpoints;
     }
@@ -99,7 +108,8 @@ public class MybatisLangGraphCheckpointSaver extends AbstractCheckpointSaver {
         entity.setNextNodeId(checkpoint.getNextNodeId());
         entity.setStateJson(stateJson);
         entity.setWorkflowVersion(workflowVersion(config, state));
-        entity.setFactsFingerprint(factsFingerprint(state, stateJson));
+        entity.setFactsFingerprint(factsFingerprint(config, state, stateJson));
+        entity.setOrchestrationVersion(orchestrationVersion(config, state));
         entity.setUpdatedAt(now);
         if (existing == null) {
             mapper.insert(entity);
@@ -108,18 +118,55 @@ public class MybatisLangGraphCheckpointSaver extends AbstractCheckpointSaver {
         }
     }
 
-    private Checkpoint toCheckpoint(AgentGraphSnapshotEntity entity) {
+    private Checkpoint toCheckpoint(AgentGraphSnapshotEntity entity, Map<String, Object> state) {
+        return Checkpoint.builder()
+                .id(entity.getCheckpointId())
+                .state(state)
+                .nodeId(entity.getNodeId())
+                .nextNodeId(entity.getNextNodeId())
+                .build();
+    }
+
+    private Map<String, Object> decodeState(String stateJson) {
         try {
-            Map<String, Object> state = objectMapper.readValue(entity.getStateJson(), STATE_TYPE);
-            return Checkpoint.builder()
-                    .id(entity.getCheckpointId())
-                    .state(state)
-                    .nodeId(entity.getNodeId())
-                    .nextNodeId(entity.getNextNodeId())
-                    .build();
+            return objectMapper.readValue(stateJson, STATE_TYPE);
         } catch (Exception failure) {
             throw new IllegalStateException("无法恢复 LangGraph 技术快照", failure);
         }
+    }
+
+    private boolean isCompatible(
+            RunnableConfig config,
+            String graphThreadId,
+            AgentGraphSnapshotEntity entity,
+            Map<String, Object> state,
+            boolean updatingCheckpoint
+    ) {
+        if (!graphThreadId.equals(entity.getRunId()) || !graphThreadId.equals(entity.getGraphThreadId())
+                || blank(entity.getCheckpointId()) || blank(entity.getNodeId())
+                || blank(entity.getStateJson()) || entity.getWorkflowVersion() == null
+                || blank(entity.getFactsFingerprint()) || blank(entity.getOrchestrationVersion())) {
+            return false;
+        }
+        if (!sameLong(entity.getWorkflowVersion(), state.get(WORKFLOW_VERSION))
+                || !Objects.equals(entity.getFactsFingerprint(), text(state.get(FACTS_FINGERPRINT)))
+                || !Objects.equals(entity.getOrchestrationVersion(), text(state.get(ORCHESTRATION_VERSION)))) {
+            return false;
+        }
+        if (updatingCheckpoint) {
+            // AbstractCheckpointSaver 先读取旧 Checkpoint，再用新状态覆盖；更新时允许新版本元数据。
+            return true;
+        }
+        OptionalLongValue expectedVersion = optionalLong(config.metadata(WORKFLOW_VERSION).orElse(null));
+        if (expectedVersion.present() && entity.getWorkflowVersion() != expectedVersion.value()) {
+            return false;
+        }
+        String expectedFingerprint = text(config.metadata(FACTS_FINGERPRINT).orElse(null));
+        if (!expectedFingerprint.isBlank() && !expectedFingerprint.equals(entity.getFactsFingerprint())) {
+            return false;
+        }
+        String expectedOrchestration = text(config.metadata(ORCHESTRATION_VERSION).orElse(null));
+        return expectedOrchestration.isBlank() || expectedOrchestration.equals(entity.getOrchestrationVersion());
     }
 
     private String encodeState(Map<String, Object> state) {
@@ -146,7 +193,11 @@ public class MybatisLangGraphCheckpointSaver extends AbstractCheckpointSaver {
         return 0L;
     }
 
-    private String factsFingerprint(Map<String, Object> state, String stateJson) {
+    private String factsFingerprint(RunnableConfig config, Map<String, Object> state, String stateJson) {
+        Object configured = config.metadata(FACTS_FINGERPRINT).orElse(null);
+        if (configured != null && !configured.toString().isBlank()) {
+            return configured.toString();
+        }
         Object value = state.get(FACTS_FINGERPRINT);
         if (value != null && !value.toString().isBlank()) {
             return value.toString();
@@ -158,6 +209,41 @@ public class MybatisLangGraphCheckpointSaver extends AbstractCheckpointSaver {
             throw new IllegalStateException("JDK 缺少 SHA-256", failure);
         }
     }
+
+    private String orchestrationVersion(RunnableConfig config, Map<String, Object> state) {
+        Object configured = config.metadata(ORCHESTRATION_VERSION).orElse(null);
+        String value = configured == null ? text(state.get(ORCHESTRATION_VERSION)) : configured.toString();
+        return value.isBlank() ? "LEGACY_V1" : value;
+    }
+
+    private boolean sameLong(long expected, Object actual) {
+        OptionalLongValue value = optionalLong(actual);
+        return value.present() && value.value() == expected;
+    }
+
+    private OptionalLongValue optionalLong(Object value) {
+        if (value instanceof Number number) {
+            return new OptionalLongValue(true, number.longValue());
+        }
+        if (value != null) {
+            try {
+                return new OptionalLongValue(true, Long.parseLong(value.toString()));
+            } catch (NumberFormatException ignored) {
+                // invalid metadata is treated as an unusable technical snapshot
+            }
+        }
+        return new OptionalLongValue(false, 0L);
+    }
+
+    private String text(Object value) {
+        return value == null ? "" : value.toString().trim();
+    }
+
+    private boolean blank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private record OptionalLongValue(boolean present, long value) { }
 
     private String graphThreadId(RunnableConfig config) {
         return config.threadId().filter(value -> !value.isBlank())
