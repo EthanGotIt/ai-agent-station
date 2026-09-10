@@ -70,6 +70,37 @@ class MybatisAgentTurnStoreVersionTest {
         assertEquals(0, updates.get());
     }
 
+    @Test
+    void workflowOwnerLookupUsesUserAndRunIdentity() {
+        AtomicReference<Object[]> arguments = new AtomicReference<>();
+        AgentTurnMapper mapper = mapper(AgentTurnMapper.class, (method, values) -> {
+            if (method.equals("selectWorkflowOwnerByRunId")) {
+                arguments.set(values);
+                AgentTurnEntity entity = new AgentTurnEntity();
+                entity.setTurnId("owner-turn");
+                entity.setThreadId("thread-1");
+                entity.setUserId("user-1");
+                entity.setClientRequestId("owner-request");
+                entity.setInputText("message");
+                entity.setStatus(AgentTurnStatusEnum.COMPLETED.name());
+                entity.setInputKind("MESSAGE");
+                entity.setCreatedAt(NOW);
+                entity.setVersionNo(1L);
+                return entity;
+            }
+            return defaultValue(method);
+        });
+
+        AgentTurnModel owner = store(mapper)
+                .findWorkflowOwnerTurnByRunId("user-1", "run-1")
+                .orElseThrow();
+
+        assertEquals("user-1", arguments.get()[0]);
+        assertEquals("run-1", arguments.get()[1]);
+        assertEquals("owner-turn", owner.turnId());
+        assertEquals("thread-1", owner.threadId());
+    }
+
     private MybatisAgentTurnStore store(AgentTurnMapper mapper) {
         return new MybatisAgentTurnStore(
                 mapper,

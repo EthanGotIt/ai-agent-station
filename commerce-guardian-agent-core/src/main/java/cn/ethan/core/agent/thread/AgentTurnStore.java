@@ -57,4 +57,18 @@ public interface AgentTurnStore {
     default List<AgentWorkflowOwnerRecoveryCandidate> listWorkflowOwnerRecoveryCandidates() {
         return List.of();
     }
+
+    /**
+     * 按 WorkflowRun 找到不可变的 owner Turn，供人工等待后的异步结果续跑恢复事项根和轮次。
+     *
+     * <p>内存适配器可以使用空结果兼容旧测试；持久化适配器必须按用户和 Run 双重归属查询，
+     * 不能只按 Turn 或 Thread 推断 owner。</p>
+     *
+     * @param userId 用户标识
+     * @param workflowRunId WorkflowRun 标识
+     * @return 对应 WorkflowRun 的 owner Turn，或空
+     */
+    default Optional<AgentTurnModel> findWorkflowOwnerTurnByRunId(String userId, String workflowRunId) {
+        return Optional.empty();
+    }
 }

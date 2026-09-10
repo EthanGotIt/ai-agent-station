@@ -35,6 +35,29 @@ public class MybatisAgentItemStore implements AgentItemStore {
         if (thread == null) {
             throw new IllegalStateException("Thread 不存在：" + item.threadId());
         }
+        return appendLocked(item, thread);
+    }
+
+    /**
+     * 以 Thread 行锁串行化幂等 Item 检查和 Sequence 分配，避免并发重放产生第二条超限事实。
+     */
+    @Override
+    @Transactional
+    public AppendResult appendItemIfAbsent(AgentItemModel item) {
+        AgentThreadEntity thread = threadMapper.selectForUpdate(item.threadId());
+        if (thread == null) {
+            throw new IllegalStateException("Thread 不存在：" + item.threadId());
+        }
+        AgentItemEntity existing = itemMapper.selectById(item.itemId());
+        if (existing != null) {
+            verifySameFact(item, existing);
+            return new AppendResult(toModel(existing), false);
+        }
+        long sequence = appendLocked(item, thread);
+        return new AppendResult(withSequence(item, sequence), true);
+    }
+
+    private long appendLocked(AgentItemModel item, AgentThreadEntity thread) {
         long sequence = thread.getNextSequence() == null || thread.getNextSequence() < 1
                 ? 1L : thread.getNextSequence();
         AgentItemEntity entity = new AgentItemEntity();
@@ -80,6 +103,21 @@ public class MybatisAgentItemStore implements AgentItemStore {
     private static AgentItemModel toModel(AgentItemEntity entity) {
         return new AgentItemModel(entity.getItemId(), entity.getThreadId(), entity.getTurnId(), value(entity.getSequenceNo()),
                 AgentItemTypeEnum.valueOf(entity.getItemType()), entity.getPayloadJson(), entity.getCreatedAt());
+    }
+
+    private static AgentItemModel withSequence(AgentItemModel item, long sequence) {
+        return new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), sequence,
+                item.type(), item.payload(), item.createdAt());
+    }
+
+    private static void verifySameFact(AgentItemModel requested, AgentItemEntity existing) {
+        if (!requested.itemId().equals(existing.getItemId())
+                || !requested.threadId().equals(existing.getThreadId())
+                || !java.util.Objects.equals(requested.turnId(), existing.getTurnId())
+                || !requested.type().name().equals(existing.getItemType())
+                || !requested.payload().equals(existing.getPayloadJson())) {
+            throw new IllegalStateException("幂等 ItemId 已绑定到不同事实：" + requested.itemId());
+        }
     }
 
     private static long value(Long value) {

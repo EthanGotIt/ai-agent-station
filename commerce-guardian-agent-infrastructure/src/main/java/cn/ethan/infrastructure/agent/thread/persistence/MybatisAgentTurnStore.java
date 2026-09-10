@@ -178,6 +178,15 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
                 .toList();
     }
 
+    @Override
+    public Optional<AgentTurnModel> findWorkflowOwnerTurnByRunId(String userId, String workflowRunId) {
+        if (userId == null || userId.isBlank() || workflowRunId == null || workflowRunId.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(mapper.selectWorkflowOwnerByRunId(userId, workflowRunId))
+                .map(this::toModel);
+    }
+
     private AgentTurnEntity toEntity(AgentTurnModel model) {
         AgentTurnEntity entity = new AgentTurnEntity();
         entity.setTurnId(model.turnId());

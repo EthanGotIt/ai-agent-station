@@ -26,6 +26,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -120,15 +121,24 @@ public final class TransactionalAgentContinuationGateway implements AgentContinu
                 || !triggerItem.threadId().equals(command.threadId())) {
             return AdmissionResult.none();
         }
-        int cycleNo = parent.continuationInput() == null
-                ? 1 : parent.continuationInput().cycleNo() + 1;
+        AgentTurnModel owner = turns.findWorkflowOwnerTurnByRunId(command.userId(), command.runId()).orElse(null);
+        if (owner != null && (!owner.userId().equals(command.userId())
+                || !owner.threadId().equals(command.threadId()))) {
+            // Run/Turn 归属不一致时不能猜测事项根，避免跨 Thread 或跨用户恢复。
+            return AdmissionResult.none();
+        }
+        if (owner == null && parent.continuationInput() == null && parent.orderActionInput() == null) {
+            // 普通历史 Turn 没有 owner 或续跑锚点时无法可靠关联事项，停止自动恢复，等待用户主动发起新请求。
+            return AdmissionResult.none();
+        }
+        int cycleNo = nextCycle(parent, owner);
+        AgentContinuationInput input = new AgentContinuationInput(
+                rootTurnId(parent, owner), parent.turnId(), command.runId(), command.commandId(),
+                command.status().name(), Math.max(0L, triggerItem.sequence()), cycleNo);
         if (cycleNo > maxAgentCycles) {
-            return stopLimit(parent, command, cycleNo, now);
+            return stopLimit(parent, command, input, now);
         }
 
-        AgentContinuationInput input = new AgentContinuationInput(
-                rootTurnId(parent), parent.turnId(), command.runId(), command.commandId(),
-                command.status().name(), Math.max(0L, triggerItem.sequence()), cycleNo);
         String requestId = input.idempotencyKey();
         Optional<AgentTurnModel> duplicate = turns.findTurnByRequestForUpdate(command.userId(), requestId);
         if (duplicate.isPresent()) {
@@ -166,29 +176,58 @@ public final class TransactionalAgentContinuationGateway implements AgentContinu
     private AdmissionResult stopLimit(
             AgentTurnModel parent,
             ExternalActionCommandModel command,
-            int cycleNo,
+            AgentContinuationInput input,
             Instant now
     ) {
-        AgentItemModel decision = append(new AgentItemModel(
-                UUID.randomUUID().toString(), parent.threadId(), parent.turnId(), 0,
+        AgentItemStore.AppendResult decision = appendIfAbsent(new AgentItemModel(
+                stopLimitItemId(input, "decision"), parent.threadId(), parent.turnId(), 0,
                 AgentItemTypeEnum.AGENT_DECISION,
                 AgentTurnItemPayloads.decision(AgentDecisionTypeEnum.STOP_LIMIT,
-                        maxAgentCycles, command.runId(), "MAX_AGENT_CYCLES"), now));
-        AgentItemModel message = append(new AgentItemModel(
-                UUID.randomUUID().toString(), parent.threadId(), parent.turnId(), 0,
+                        input.cycleNo(), command.runId(), "MAX_AGENT_CYCLES"), now));
+        AgentItemStore.AppendResult message = appendIfAbsent(new AgentItemModel(
+                stopLimitItemId(input, "message"), parent.threadId(), parent.turnId(), 0,
                 AgentItemTypeEnum.ASSISTANT_MESSAGE,
                 "已达到本次订单处理的最大自动决策轮次，请继续使用查询或人工操作。", now));
-        return AdmissionResult.stopLimit(List.of(decision, message), cycleNo);
+        List<AgentItemModel> newlyAppended = List.of(decision, message).stream()
+                .filter(AgentItemStore.AppendResult::inserted)
+                .map(AgentItemStore.AppendResult::item)
+                .toList();
+        return AdmissionResult.stopLimit(newlyAppended, input.cycleNo());
     }
 
-    private String rootTurnId(AgentTurnModel parent) {
-        if (parent.continuationInput() != null) {
-            return parent.continuationInput().rootTurnId();
+    private int nextCycle(AgentTurnModel parent, AgentTurnModel owner) {
+        return Math.max(cycleOf(parent), cycleOf(owner)) + 1;
+    }
+
+    private int cycleOf(AgentTurnModel turn) {
+        return turn == null || turn.continuationInput() == null
+                ? 0 : turn.continuationInput().cycleNo();
+    }
+
+    private String rootTurnId(AgentTurnModel parent, AgentTurnModel owner) {
+        if (owner != null) {
+            return rootTurnId(owner);
         }
-        if (parent.orderActionInput() != null) {
-            return parent.orderActionInput().sourceTurnId();
+        return rootTurnId(parent);
+    }
+
+    private String rootTurnId(AgentTurnModel turn) {
+        if (turn.continuationInput() != null) {
+            return turn.continuationInput().rootTurnId();
         }
-        return parent.turnId();
+        if (turn.orderActionInput() != null) {
+            return turn.orderActionInput().sourceTurnId();
+        }
+        return turn.turnId();
+    }
+
+    private String stopLimitItemId(AgentContinuationInput input, String kind) {
+        return "stop-" + UUID.nameUUIDFromBytes(
+                (input.idempotencyKey() + "|" + kind).getBytes(StandardCharsets.UTF_8));
+    }
+
+    private AgentItemStore.AppendResult appendIfAbsent(AgentItemModel item) {
+        return items.appendItemIfAbsent(item);
     }
 
     private AgentItemModel append(AgentItemModel item) {

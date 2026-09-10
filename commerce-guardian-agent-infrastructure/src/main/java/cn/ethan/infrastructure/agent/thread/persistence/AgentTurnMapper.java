@@ -28,6 +28,17 @@ public interface AgentTurnMapper extends BaseMapper<AgentTurnEntity> {
     long countActiveByThread(String userId, String threadId);
 
     @Select("""
+            SELECT T.*
+            FROM AGENT_TURN T
+            JOIN AGENT_WORKFLOW_RUN R ON R.TURN_ID = T.TURN_ID
+            WHERE R.USER_ID = #{userId}
+              AND R.RUN_ID = #{workflowRunId}
+              AND T.USER_ID = #{userId}
+            LIMIT 1
+            """)
+    AgentTurnEntity selectWorkflowOwnerByRunId(String userId, String workflowRunId);
+
+    @Select("""
             SELECT T.TURN_ID, T.USER_ID, T.WORKFLOW_RUN_ID,
                    R.STATUS AS WORKFLOW_RUN_STATUS,
                    CASE WHEN EXISTS (
