@@ -1,5 +1,6 @@
 package cn.ethan.infrastructure.agent.coordination.springai;
 
+import cn.ethan.core.agent.thread.AgentItemPayloadModel;
 import cn.ethan.core.commerce.order.LogisticsEventModel;
 import cn.ethan.core.commerce.order.OrderLookupResultModel;
 import cn.ethan.core.commerce.order.OrderSearchCriteria;
@@ -17,6 +18,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -249,7 +251,7 @@ public final class SpringAiOrderToolSupport {
                 : Arrays.stream(statuses.split(","))
                 .map(String::trim)
                 .filter(value -> !value.isEmpty())
-                .map(value -> OrderStatusEnum.valueOf(value.toUpperCase()))
+                .map(value -> OrderStatusEnum.valueOf(value.toUpperCase(Locale.ROOT)))
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
         return new OrderSearchCriteria(
                 parseBoundary("createdFrom", createdFrom, false),
@@ -294,29 +296,6 @@ public final class SpringAiOrderToolSupport {
     }
 
     public static String escapeJson(String value) {
-        if (value == null || value.isEmpty()) {
-            return "";
-        }
-        StringBuilder escaped = new StringBuilder(value.length());
-        for (char current : value.toCharArray()) {
-            switch (current) {
-                case '\\' -> escaped.append("\\\\");
-                case '"' -> escaped.append("\\\"");
-                case '\b' -> escaped.append("\\b");
-                case '\f' -> escaped.append("\\f");
-                case '\n' -> escaped.append("\\n");
-                case '\r' -> escaped.append("\\r");
-                case '\t' -> escaped.append("\\t");
-                default -> {
-                    if (current < 0x20) {
-                        escaped.append(String.format("\\u%04x", (int) current));
-                    }
-                    else {
-                        escaped.append(current);
-                    }
-                }
-            }
-        }
-        return escaped.toString();
+        return AgentItemPayloadModel.escapeJson(value);
     }
 }

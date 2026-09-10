@@ -165,6 +165,18 @@ class LangGraphAgentWorkflowEngineTest {
     }
 
     @Test
+    void explicitOrderSelectionAcceptsCanonicalIdWithDifferentCase() {
+        Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-1")));
+
+        AgentWorkflowEngine.StartResult started = fixture.engine.start(fixture.thread, fixture.owner,
+                "ORDER_SERVICE", Map.of("intent", "EXPEDITE", "orderId", "order-1"));
+
+        assertNull(started.questionCard());
+        assertNotNull(started.checkpoint());
+        assertEquals("ORDER-1", started.checkpoint().orderId());
+    }
+
+    @Test
     void missingOrderKeepsLegacyOrchestrationVersionEvenWhenPilotIsEnabled() {
         Fixture fixture = new Fixture(List.of(fixtureOrder("ORDER-1"), fixtureOrder("ORDER-2")), false, true);
 
@@ -538,7 +550,7 @@ class LangGraphAgentWorkflowEngineTest {
 
         @Override
         public OrderLookupResultModel findOrder(String orderId, String userId) {
-            return values.stream().filter(value -> value.orderId().equals(orderId))
+            return values.stream().filter(value -> value.orderId().equalsIgnoreCase(orderId))
                     .findFirst().map(OrderLookupResultModel::found)
                     .orElseGet(OrderLookupResultModel::notFound);
         }

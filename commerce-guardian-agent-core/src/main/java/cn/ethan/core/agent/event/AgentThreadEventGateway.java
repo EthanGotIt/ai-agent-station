@@ -2,6 +2,8 @@ package cn.ethan.core.agent.event;
 
 import cn.ethan.core.agent.thread.AgentItemModel;
 
+import java.util.Locale;
+
 /**
  * 类型职责：发布持久化 Item 的实时事件。
  *
@@ -33,7 +35,7 @@ public interface AgentThreadEventGateway {
 
     default void itemCreated(AgentItemModel item) {
         publish(new AgentThreadEvent(
-                item.itemId(), item.threadId(), item.turnId(), "item." + item.type().name().toLowerCase(),
+                item.itemId(), item.threadId(), item.turnId(), "item." + item.type().name().toLowerCase(Locale.ROOT),
                 item.payload(), item.sequence(), item.createdAt()
         ));
     }

@@ -33,26 +33,7 @@ class AgentThreadControllerTest {
     void staleItemsDoNotAdvertiseAnotherHistoryPage() {
         AgentThreadModel thread = new AgentThreadModel("thread-1", "user-1", "Thread",
                 AgentThreadStatusEnum.ACTIVE, null, null, 4, NOW, NOW);
-        AgentThreadStore threads = new AgentThreadStore() {
-            @Override
-            public void createThread(AgentThreadModel value) {
-            }
-
-            @Override
-            public Optional<AgentThreadModel> findThread(String userId, String threadId) {
-                return "user-1".equals(userId) && "thread-1".equals(threadId)
-                        ? Optional.of(thread) : Optional.empty();
-            }
-
-            @Override
-            public List<AgentThreadModel> listThreads(String userId) {
-                return List.of(thread);
-            }
-
-            @Override
-            public void updateThread(AgentThreadModel value) {
-            }
-        };
+        AgentThreadStore threads = ownedThread(thread);
         AgentItemStore items = new AgentItemStore() {
             @Override
             public long appendItem(AgentItemModel item) {
@@ -79,6 +60,59 @@ class AgentThreadControllerTest {
         assertEquals(List.of("new-3"), page.items().stream().map(AgentItemDto::itemId).toList());
         assertEquals(3, page.nextAfterSequence());
         assertFalse(page.hasMore());
+    }
+
+    @Test
+    void duplicateSequenceStopsPaginationWithoutReturningDuplicateItems() {
+        AgentThreadModel thread = new AgentThreadModel("thread-1", "user-1", "Thread",
+                AgentThreadStatusEnum.ACTIVE, null, null, 4, NOW, NOW);
+        AgentThreadStore threads = ownedThread(thread);
+        AgentItemStore items = new AgentItemStore() {
+            @Override
+            public long appendItem(AgentItemModel item) {
+                return item.sequence();
+            }
+
+            @Override
+            public List<AgentItemModel> listItems(String userId, String threadId,
+                                                  long afterSequence, int limit) {
+                return List.of(item("item-3-a", 3), item("item-3-b", 3));
+            }
+        };
+        AgentThreadController controller = new AgentThreadController(
+                new AgentThreadService(threads, items, Clock.fixed(NOW, ZoneOffset.UTC)),
+                new AgentUserContext(), null, null);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("X-User-Id", "user-1");
+
+        AgentItemPageResponseDto page = controller.items("thread-1", 0, 1, request);
+
+        assertEquals(List.of("item-3-a"), page.items().stream().map(AgentItemDto::itemId).toList());
+        assertEquals(3, page.nextAfterSequence());
+        assertFalse(page.hasMore());
+    }
+
+    private AgentThreadStore ownedThread(AgentThreadModel thread) {
+        return new AgentThreadStore() {
+            @Override
+            public void createThread(AgentThreadModel value) {
+            }
+
+            @Override
+            public Optional<AgentThreadModel> findThread(String userId, String threadId) {
+                return "user-1".equals(userId) && "thread-1".equals(threadId)
+                        ? Optional.of(thread) : Optional.empty();
+            }
+
+            @Override
+            public List<AgentThreadModel> listThreads(String userId) {
+                return List.of(thread);
+            }
+
+            @Override
+            public void updateThread(AgentThreadModel value) {
+            }
+        };
     }
 
     private AgentItemModel item(String itemId, long sequence) {

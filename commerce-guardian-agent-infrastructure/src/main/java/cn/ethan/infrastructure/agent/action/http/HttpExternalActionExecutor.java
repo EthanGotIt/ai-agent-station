@@ -6,6 +6,7 @@ import cn.ethan.core.agent.action.ExternalActionResultModel;
 import cn.ethan.core.agent.action.ExternalActionResultStatusEnum;
 import cn.ethan.core.agent.action.ExternalActionResultStore;
 import cn.ethan.core.agent.action.ExternalActionTypeEnum;
+import cn.ethan.core.agent.thread.AgentItemPayloadModel;
 import cn.ethan.core.commerce.order.OrderActionGateway;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -70,7 +71,7 @@ public final class HttpExternalActionExecutor implements ExternalActionExecutor 
             results.createIfAbsent(new ExternalActionResultModel(
                     "result-" + UUID.randomUUID(), command.commandId(), command.idempotencyKey(), command.type(),
                     ExternalActionResultStatusEnum.SUCCEEDED,
-                    "{\"status\":\"" + escape(mutation.code()) + "\"}", Instant.now(clock)));
+                    "{\"status\":\"" + AgentItemPayloadModel.escapeJson(mutation.code()) + "\"}", Instant.now(clock)));
             return new ExternalActionResult(true, false, mutation.code(), mutation.message());
         } catch (RuntimeException failure) {
             return new ExternalActionResult(false, true, "REMOTE_ACTION_EXCEPTION", "订单服务暂时不可用");
@@ -82,7 +83,4 @@ public final class HttpExternalActionExecutor implements ExternalActionExecutor 
                 "ORDER_HISTORY_ACTION_REMOVED", "订单隐藏/恢复功能已移除，请直接删除订单记录");
     }
 
-    private static String escape(String value) {
-        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
 }

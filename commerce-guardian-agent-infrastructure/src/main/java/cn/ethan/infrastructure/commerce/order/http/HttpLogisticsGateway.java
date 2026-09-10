@@ -21,6 +21,7 @@ import java.net.URISyntaxException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * HTTP 物流网关：约束外部订单服务的物流时间线接口，失败时不泄露外部细节。
@@ -73,20 +74,22 @@ public final class HttpLogisticsGateway implements LogisticsGateway {
         if (orderId == null || orderId.isBlank() || userId == null || userId.isBlank()) {
             return List.of();
         }
+        String normalizedOrderId = orderId.strip();
+        String normalizedUserId = userId.strip();
         try {
             List<HttpLogisticsEventDto> response = client.get()
-                    .uri(uri -> uri.path("/orders/{id}/logistics").build(orderId))
-                    .header("X-User-Id", userId)
+                    .uri(uri -> uri.path("/orders/{id}/logistics").build(normalizedOrderId))
+                    .header("X-User-Id", normalizedUserId)
                     .accept(MediaType.APPLICATION_JSON)
                     .retrieve()
                     .body(new ParameterizedTypeReference<>() { });
             return response == null ? List.of() : response.stream()
-                    .filter(event -> event.eventId() != null && event.status() != null
-                            && event.description() != null && event.occurredAt() != null)
-                    .map(event -> new LogisticsEventModel(
-                            event.eventId(), orderId, event.status(), event.location(), event.description(),
-                            event.occurredAt()
-                    ))
+                    .filter(event -> event != null && event.eventId() != null && !event.eventId().isBlank()
+                            && event.status() != null && !event.status().isBlank()
+                            && event.description() != null && !event.description().isBlank()
+                            && event.occurredAt() != null)
+                    .map(event -> toModelOrNull(event, normalizedOrderId))
+                    .filter(Objects::nonNull)
                     .sorted(java.util.Comparator.comparing(LogisticsEventModel::occurredAt))
                     .toList();
         } catch (HttpClientErrorException.NotFound | HttpClientErrorException.Forbidden unavailable) {
@@ -95,6 +98,17 @@ public final class HttpLogisticsGateway implements LogisticsGateway {
             LOGGER.warn("HTTP 物流查询降级为空列表，exception={}",
                     temporaryFailure.getClass().getSimpleName());
             return List.of();
+        }
+    }
+
+    private LogisticsEventModel toModelOrNull(HttpLogisticsEventDto event, String orderId) {
+        try {
+            return new LogisticsEventModel(
+                    event.eventId(), orderId, event.status(), event.location(), event.description(),
+                    event.occurredAt());
+        } catch (RuntimeException malformed) {
+            // 单条外部物流记录损坏时保留同一响应中的其他可验证事件。
+            return null;
         }
     }
 

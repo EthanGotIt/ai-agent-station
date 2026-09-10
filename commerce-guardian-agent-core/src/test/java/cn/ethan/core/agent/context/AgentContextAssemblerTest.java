@@ -311,6 +311,30 @@ class AgentContextAssemblerTest {
     }
 
     @Test
+    void wrapsSnapshotChainReadFailureAsHistoryError() {
+        List<AgentItemModel> history = List.of(
+                new AgentItemModel("first", "thread-1", "turn-1", 1,
+                        AgentItemTypeEnum.USER_MESSAGE, "first", NOW),
+                new AgentItemModel("second", "thread-1", "turn-2", 2,
+                        AgentItemTypeEnum.USER_MESSAGE, "second", NOW)
+        );
+        RecordingSnapshots snapshots = new RecordingSnapshots();
+        snapshots.saved.add(new AgentContextSnapshotModel(
+                "latest", "thread-1", 2, 2,
+                AgentContextTokenEstimator.estimateText("valid summary"), "valid summary", NOW,
+                2, "base", 2, 1, "context-summary-v2", 2_048));
+        snapshots.findSnapshotFailure = new IllegalStateException("snapshot backend unavailable");
+
+        AgentContextHistoryException failure = assertThrows(AgentContextHistoryException.class,
+                () -> new AgentContextAssembler(new RecordingItems(history), snapshots,
+                        Clock.fixed(NOW, ZoneOffset.UTC), 2_000, 1_500, 256, 128)
+                        .assembleWithReport(thread(), null, "继续"));
+
+        assertEquals("CONTEXT_HISTORY_INVALID", failure.code());
+        assertEquals("snapshot backend unavailable", failure.getCause().getMessage());
+    }
+
+    @Test
     void rejectsHistoryThatEndsBeforeTheCapturedWatermark() {
         AgentItemStore invalid = new RecordingItems(List.of(
                 new AgentItemModel("first", "thread-1", "turn-1", 1,
@@ -665,6 +689,7 @@ class AgentContextAssemblerTest {
 
     private static final class RecordingSnapshots implements AgentContextSnapshotStore {
         private final List<AgentContextSnapshotModel> saved = new ArrayList<>();
+        private RuntimeException findSnapshotFailure;
 
         @Override
         public Optional<AgentContextSnapshotModel> findLatestSnapshot(String userId, String threadId) {
@@ -673,6 +698,9 @@ class AgentContextAssemblerTest {
 
         @Override
         public Optional<AgentContextSnapshotModel> findSnapshot(String userId, String threadId, String snapshotId) {
+            if (findSnapshotFailure != null) {
+                throw findSnapshotFailure;
+            }
             return saved.stream()
                     .filter(snapshot -> snapshot.snapshotId().equals(snapshotId))
                     .filter(snapshot -> snapshot.threadId().equals(threadId))

@@ -206,6 +206,12 @@ class SpringAiAgentToolBoundaryTest {
         assertTrue(json.path("truncated").asBoolean());
     }
 
+    @Test
+    void escapesJsonControlCharactersForToolFacts() {
+        assertEquals("\\\"\\\\\\b\\f\\n\\r\\t\\u0000\\u001f",
+                SpringAiOrderToolSupport.escapeJson("\"\\\b\f\n\r\t\u0000\u001f"));
+    }
+
     private SpringAiAgentTurnCoordinator.WorkflowInvocation invocation() {
         return new SpringAiAgentTurnCoordinator.WorkflowInvocation(
                 null, Clock.fixed(NOW, ZoneOffset.UTC), AgentRuntimeMetrics.noop());

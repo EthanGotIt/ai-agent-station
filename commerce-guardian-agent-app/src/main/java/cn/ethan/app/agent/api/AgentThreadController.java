@@ -17,7 +17,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -121,14 +123,26 @@ public final class AgentThreadController {
         var loaded = threads.listItems(userContext.currentUserId(request), threadId,
                 safeAfterSequence, safeLimit + 1);
         var items = loaded == null ? java.util.List.<AgentItemModel>of() : loaded;
-        var ordered = items.stream()
+        var sorted = items.stream()
                 .filter(item -> item != null && item.sequence() > safeAfterSequence)
                 .sorted(Comparator.comparingLong(AgentItemModel::sequence))
                 .toList();
+        List<AgentItemModel> ordered = new ArrayList<>(sorted.size());
+        long previousSequence = safeAfterSequence;
+        boolean invalidPage = false;
+        for (AgentItemModel item : sorted) {
+            if (item.sequence() <= previousSequence) {
+                invalidPage = true;
+                continue;
+            }
+            ordered.add(item);
+            previousSequence = item.sequence();
+        }
         var page = ordered.stream().limit(safeLimit).toList();
         long next = page.stream().mapToLong(AgentItemModel::sequence)
                 .max().orElse(safeAfterSequence);
-        boolean hasMore = ordered.size() > safeLimit && next > safeAfterSequence;
+        // 重复或非严格前进的持久化页只能安全收口，不能让客户端依据失真的 hasMore 无限追读。
+        boolean hasMore = !invalidPage && ordered.size() > safeLimit && next > safeAfterSequence;
         return new AgentItemPageResponseDto(page.stream().map(AgentItemDto::from).toList(),
                 safeAfterSequence, next, hasMore);
     }

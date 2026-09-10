@@ -36,7 +36,7 @@ class HttpOrderGatewayTest {
                         {"accessDenied":false,"orderId":"ORDER-001","userId":"user-1","status":"PAID"}
                         """));
 
-        var result = gateway(transport).findOrder("ORDER-001", "user-1");
+        var result = gateway(transport).findOrder(" ORDER-001 ", " user-1 ");
 
         assertEquals(OrderLookupStatusEnum.FOUND, result.status());
         assertEquals("user-1", result.order().userId());
@@ -78,6 +78,24 @@ class HttpOrderGatewayTest {
         assertEquals("OK", action.code());
         assertEquals("action-1", transport.requests().get(1).headers().getFirst("Idempotency-Key"));
         assertTrue(transport.requests().get(0).uri().getQuery().contains("visibility=ACTIVE"));
+    }
+
+    @Test
+    void skipsMalformedSearchRowsWithoutDiscardingValidOrders() {
+        FakeClientHttpRequestFactoryTest transport = new FakeClientHttpRequestFactoryTest(request ->
+                FakeClientHttpRequestFactoryTest.Response.json(200, """
+                        [
+                          {"orderId":"ORDER-BAD","userId":"user-1","status":"PAID","paidAmount":-1},
+                          {"orderId":"ORDER-OK","userId":"user-1","status":"PAID","paidAmount":9.90}
+                        ]
+                        """));
+
+        var result = gateway(transport).searchOrders(OrderSearchCriteria.latest(5), " user-1 ");
+
+        assertEquals(OrderSearchStatusEnum.SUCCESS, result.status());
+        assertEquals(1, result.orders().size());
+        assertEquals("ORDER-OK", result.orders().get(0).orderId());
+        assertEquals("user-1", transport.requests().get(0).headers().getFirst("X-User-Id"));
     }
 
     @Test

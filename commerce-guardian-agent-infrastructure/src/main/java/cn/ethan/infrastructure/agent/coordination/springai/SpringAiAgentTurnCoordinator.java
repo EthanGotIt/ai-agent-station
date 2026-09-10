@@ -48,6 +48,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.ArrayDeque;
@@ -809,7 +810,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             if (invocation.decision != null) {
                 return "Agent 决策已记录。";
             }
-            String normalized = outcome == null ? "" : outcome.trim().toUpperCase();
+            String normalized = outcome == null ? "" : outcome.trim().toUpperCase(Locale.ROOT);
             AgentDecisionTypeEnum decision = switch (normalized) {
                 case "FINISH" -> AgentDecisionTypeEnum.FINISH;
                 default -> throw new IllegalArgumentException("Agent 轮次 outcome 只能是 FINISH");

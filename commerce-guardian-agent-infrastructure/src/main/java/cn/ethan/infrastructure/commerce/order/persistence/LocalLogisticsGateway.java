@@ -7,6 +7,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 本地物流网关：先验证订单归属，再返回时间正序的物流轨迹。
@@ -28,17 +29,28 @@ public final class LocalLogisticsGateway implements LogisticsGateway {
 
     @Override
     public List<LogisticsEventModel> findTrace(String orderId, String userId) {
-        if (orders.findOrder(orderId, userId).status() != cn.ethan.core.commerce.order.OrderLookupStatusEnum.FOUND) {
+        var lookup = orders.findOrder(orderId, userId);
+        if (lookup == null || lookup.status() != cn.ethan.core.commerce.order.OrderLookupStatusEnum.FOUND) {
             return List.of();
         }
-        return mapper.selectList(new LambdaQueryWrapper<DemoLogisticsEventEntity>()
-                        .eq(DemoLogisticsEventEntity::getOrderId, orderId)
-                        .orderByAsc(DemoLogisticsEventEntity::getOccurredAt))
-                .stream()
-                .map(event -> new LogisticsEventModel(
-                        event.getEventId(), event.getOrderId(), event.getStatus(), event.getLocation(),
-                        event.getDescription(), event.getOccurredAt()
-                ))
+        List<DemoLogisticsEventEntity> rows = mapper.selectList(new LambdaQueryWrapper<DemoLogisticsEventEntity>()
+                        .eq(DemoLogisticsEventEntity::getOrderId, orderId.strip())
+                        .orderByAsc(DemoLogisticsEventEntity::getOccurredAt));
+        return (rows == null ? List.<DemoLogisticsEventEntity>of() : rows).stream()
+                .filter(Objects::nonNull)
+                .map(this::toModelOrNull)
+                .filter(Objects::nonNull)
                 .toList();
+    }
+
+    private LogisticsEventModel toModelOrNull(DemoLogisticsEventEntity event) {
+        try {
+            return new LogisticsEventModel(
+                    event.getEventId(), event.getOrderId(), event.getStatus(), event.getLocation(),
+                    event.getDescription(), event.getOccurredAt());
+        } catch (RuntimeException malformed) {
+            // 数据库单行损坏不应遮蔽同一订单仍可用的物流事实。
+            return null;
+        }
     }
 }

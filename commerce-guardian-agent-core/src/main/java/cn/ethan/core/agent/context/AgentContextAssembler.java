@@ -296,8 +296,8 @@ public final class AgentContextAssembler {
             throw new AgentContextHistoryException("无法读取上下文摘要快照", failure);
         }
         // 快照水位不能领先于本次固定水位；否则必须从原始 Items 重建，不能跳过早期事实。
-        AgentContextSnapshotModel snapshot = validSnapshotChain(
-                thread.userId(), thread.threadId(), latestSnapshot, watermark) ? latestSnapshot : null;
+        AgentContextSnapshotModel snapshot = validSnapshotOrNull(
+                thread.userId(), thread.threadId(), latestSnapshot, watermark);
         long snapshotThrough = snapshot == null ? 0L : Math.max(0L, snapshot.throughSequence());
         String summary = snapshot == null ? "" : snapshot.summary();
         List<AgentItemModel> raw = readItems(thread, snapshotThrough, watermark, guard);
@@ -356,7 +356,22 @@ public final class AgentContextAssembler {
         }
         AgentContextSnapshotModel latest = snapshots.findLatestSnapshot(thread.userId(), thread.threadId())
                 .orElse(null);
-        return validSnapshotChain(thread.userId(), thread.threadId(), latest, watermark) ? latest : null;
+        return validSnapshotOrNull(thread.userId(), thread.threadId(), latest, watermark);
+    }
+
+    private AgentContextSnapshotModel validSnapshotOrNull(
+            String userId,
+            String threadId,
+            AgentContextSnapshotModel snapshot,
+            long watermark
+    ) {
+        try {
+            return validSnapshotChain(userId, threadId, snapshot, watermark) ? snapshot : null;
+        } catch (AgentExecutionCancelledException | AgentExecutionTimeoutException failure) {
+            throw failure;
+        } catch (RuntimeException failure) {
+            throw new AgentContextHistoryException("无法校验上下文摘要快照", failure);
+        }
     }
 
     /**
@@ -736,8 +751,7 @@ public final class AgentContextAssembler {
     }
 
     private String escape(String value) {
-        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t");
+        return AgentItemPayloadModel.escapeJson(value);
     }
 
     private long saturatingAdd(long left, long right) {

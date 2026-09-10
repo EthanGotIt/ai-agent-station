@@ -23,6 +23,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 本地订单网关：通过 MyBatis-Plus 访问演示订单数据。
@@ -65,13 +66,15 @@ public class LocalOrderGateway implements OrderGateway, OrderActionGateway {
         if (orderId == null || orderId.isBlank() || userId == null || userId.isBlank()) {
             return OrderLookupResultModel.notFound();
         }
+        String normalizedOrderId = orderId.strip();
+        String normalizedUserId = userId.strip();
 
         try {
-            DemoOrderEntity order = mapper.selectById(orderId);
+            DemoOrderEntity order = mapper.selectById(normalizedOrderId);
             if (order == null) {
                 return OrderLookupResultModel.notFound();
             }
-            if (!userId.equals(order.getUserId())) {
+            if (!normalizedUserId.equals(order.getUserId())) {
                 return OrderLookupResultModel.denied();
             }
             return OrderLookupResultModel.found(new OrderSnapshotModel(
@@ -137,9 +140,12 @@ public class LocalOrderGateway implements OrderGateway, OrderActionGateway {
                         .or().le(DemoOrderEntity::getLastLogisticsAt, cutoff));
             }
             query.orderByDesc(DemoOrderEntity::getCreatedAt);
-            List<OrderSnapshotModel> orders = mapper.selectList(query).stream()
+            List<DemoOrderEntity> rows = mapper.selectList(query);
+            List<OrderSnapshotModel> orders = (rows == null ? List.<DemoOrderEntity>of() : rows).stream()
+                    .filter(Objects::nonNull)
+                    .map(this::toSnapshotOrNull)
+                    .filter(Objects::nonNull)
                     .limit(criteria.limit())
-                    .map(this::toSnapshot)
                     .toList();
             return new OrderSearchResultModel(OrderSearchStatusEnum.SUCCESS, orders);
         } catch (RuntimeException failure) {
@@ -291,6 +297,15 @@ public class LocalOrderGateway implements OrderGateway, OrderActionGateway {
                 order.getDaysSinceDelivery(), order.getCreatedAt(), order.getExpectedDeliveryAt(),
                 order.getLastLogisticsAt(), order.getLogisticsStatus(), order.getPaidAmount(),
                 order.getCurrency(), order.getItemSummary(), order.getHiddenAt());
+    }
+
+    private OrderSnapshotModel toSnapshotOrNull(DemoOrderEntity order) {
+        try {
+            return toSnapshot(order);
+        } catch (RuntimeException malformed) {
+            // 单行数据不满足 Core 快照不变量时，保留同批次其他用户可见事实。
+            return null;
+        }
     }
 
 }

@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
 import java.util.function.Consumer;
@@ -183,7 +184,7 @@ public final class AgentThreadEventStream implements AutoCloseable {
         }
         deliverLocked(new AgentThreadEventDto(
                 item.itemId(), threadId, item.turnId(), item.itemId(),
-                "item." + item.type().name().toLowerCase(), item.payloadJson(),
+                "item." + item.type().name().toLowerCase(Locale.ROOT), item.payloadJson(),
                 item.sequence(), item.createdAt()), true);
     }
 

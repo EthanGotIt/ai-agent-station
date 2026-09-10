@@ -6,6 +6,7 @@ import cn.ethan.core.agent.coordination.AgentOrderActionTypeEnum;
 import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
 import cn.ethan.core.agent.execution.AgentExecutionContext;
 import cn.ethan.core.agent.thread.AgentItemModel;
+import cn.ethan.core.agent.thread.AgentItemPayloadModel;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowEngine;
@@ -149,7 +150,7 @@ public final class DeterministicAgentOrderActionCoordinator implements AgentOrde
             boolean first = true;
             for (Map.Entry<?, ?> entry : map.entrySet()) {
                 if (!first) result.append(',');
-                result.append('"').append(escape(String.valueOf(entry.getKey()))).append("\":")
+                result.append('"').append(AgentItemPayloadModel.escapeJson(String.valueOf(entry.getKey()))).append("\":")
                         .append(json(entry.getValue()));
                 first = false;
             }
@@ -168,11 +169,6 @@ public final class DeterministicAgentOrderActionCoordinator implements AgentOrde
         if (value instanceof Number || value instanceof Boolean) {
             return String.valueOf(value);
         }
-        return "\"" + escape(String.valueOf(value)) + "\"";
-    }
-
-    private String escape(String value) {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\r", "\\r").replace("\n", "\\n");
+        return "\"" + AgentItemPayloadModel.escapeJson(String.valueOf(value)) + "\"";
     }
 }

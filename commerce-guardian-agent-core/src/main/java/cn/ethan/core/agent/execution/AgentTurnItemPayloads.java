@@ -162,7 +162,7 @@ public final class AgentTurnItemPayloads {
     }
 
     public static String escape(String value) {
-        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
+        return AgentItemPayloadModel.escapeJson(value);
     }
 
     private static String quotedOrNull(String value) {

@@ -1010,7 +1010,9 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
     private SelectedOrder selectCandidate(WorkflowRequest request, ResolvedCandidates candidates, String userId) {
         OrderSnapshotModel selected = request.orderId().isBlank()
                 ? candidates.orders().size() == 1 ? candidates.orders().get(0) : null
-                : candidates.orders().stream().filter(order -> request.orderId().equals(order.orderId())).findFirst().orElse(null);
+                : candidates.orders().stream()
+                        .filter(order -> order != null && request.orderId().equalsIgnoreCase(order.orderId()))
+                        .findFirst().orElse(null);
         return selected == null ? null : selectedOrder(selected, userId);
     }
 

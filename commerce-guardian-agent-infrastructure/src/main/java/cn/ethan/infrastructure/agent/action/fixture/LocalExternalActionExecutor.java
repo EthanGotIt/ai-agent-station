@@ -6,6 +6,7 @@ import cn.ethan.core.agent.action.ExternalActionResultModel;
 import cn.ethan.core.agent.action.ExternalActionResultStatusEnum;
 import cn.ethan.core.agent.action.ExternalActionResultStore;
 import cn.ethan.core.agent.action.ExternalActionTypeEnum;
+import cn.ethan.core.agent.thread.AgentItemPayloadModel;
 import cn.ethan.core.commerce.order.OrderActionGateway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -124,7 +125,7 @@ public final class LocalExternalActionExecutor implements ExternalActionExecutor
         results.createIfAbsent(new ExternalActionResultModel(
                 "result-" + UUID.randomUUID(), command.commandId(), command.idempotencyKey(), command.type(),
                 ExternalActionResultStatusEnum.SUCCEEDED,
-                "{\"status\":\"" + escape(mutation.code()) + "\"}", Instant.now(clock)));
+                "{\"status\":\"" + AgentItemPayloadModel.escapeJson(mutation.code()) + "\"}", Instant.now(clock)));
         return new ExternalActionResult(true, false, mutation.code(), mutation.message());
     }
 
@@ -142,10 +143,6 @@ public final class LocalExternalActionExecutor implements ExternalActionExecutor
         } catch (RuntimeException failure) {
             return null;
         }
-    }
-
-    private static String escape(String value) {
-        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private record ActionPayload(String orderId, String reason) {

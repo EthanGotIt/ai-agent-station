@@ -37,6 +37,35 @@ public record AgentItemPayloadModel(
                 + "\",\"data\":" + data + "}";
     }
 
+    /**
+     * 转义 JSON 字符串内容，确保所有 ASCII 控制字符都不会破坏 Item envelope。
+     */
+    public static String escapeJson(String value) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        StringBuilder escaped = new StringBuilder(value.length());
+        for (char current : value.toCharArray()) {
+            switch (current) {
+                case '\\' -> escaped.append("\\\\");
+                case '"' -> escaped.append("\\\"");
+                case '\b' -> escaped.append("\\b");
+                case '\f' -> escaped.append("\\f");
+                case '\n' -> escaped.append("\\n");
+                case '\r' -> escaped.append("\\r");
+                case '\t' -> escaped.append("\\t");
+                default -> {
+                    if (current < 0x20) {
+                        escaped.append(String.format("\\u%04x", (int) current));
+                    } else {
+                        escaped.append(current);
+                    }
+                }
+            }
+        }
+        return escaped.toString();
+    }
+
     private static boolean isCurrentEnvelope(AgentItemTypeEnum type, String value) {
         String compact = value.stripLeading();
         return compact.startsWith("{\"schemaVersion\":1")
@@ -51,10 +80,6 @@ public record AgentItemPayloadModel(
     }
 
     private static String quote(String value) {
-        return "\"" + value.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\r", "\\r")
-                .replace("\n", "\\n")
-                .replace("\t", "\\t") + "\"";
+        return "\"" + escapeJson(value) + "\"";
     }
 }

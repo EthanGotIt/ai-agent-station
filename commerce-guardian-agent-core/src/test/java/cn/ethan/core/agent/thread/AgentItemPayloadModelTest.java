@@ -46,4 +46,17 @@ class AgentItemPayloadModelTest {
         assertTrue(AgentTurnItemPayloads.workflowCheckpoint(checkpoint)
                 .contains("\"kind\":\"WORKFLOW_CHECKPOINT\""));
     }
+
+    @Test
+    void escapesAllJsonControlCharacters() {
+        String escaped = AgentItemPayloadModel.escapeJson("\"\\\b\f\n\r\t\u0000\u001f");
+
+        assertEquals("\\\"\\\\\\b\\f\\n\\r\\t\\u0000\\u001f", escaped);
+        AgentItemModel item = new AgentItemModel("item-control", "thread-1", "turn-1", 3,
+                AgentItemTypeEnum.ASSISTANT_MESSAGE, "\"\\\b\f\n\r\t\u0000\u001f", Instant.EPOCH);
+        assertTrue(item.payloadJson().contains("\\u0000"));
+        assertTrue(item.payloadJson().contains("\\u001f"));
+        assertTrue(item.payloadJson().contains("\\b"));
+        assertTrue(item.payloadJson().contains("\\f"));
+    }
 }

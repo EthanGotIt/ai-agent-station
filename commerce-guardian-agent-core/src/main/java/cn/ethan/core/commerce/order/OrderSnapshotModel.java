@@ -3,6 +3,7 @@ package cn.ethan.core.commerce.order;
 
 import java.time.Instant;
 import java.math.BigDecimal;
+import java.util.Locale;
 
 /**
  * 订单快照模型：用于生成确定性回复的只读订单数据。
@@ -37,7 +38,7 @@ public record OrderSnapshotModel(
         if (paidAmount != null && paidAmount.signum() < 0) {
             throw new IllegalArgumentException("paidAmount must not be negative");
         }
-        currency = currency == null || currency.isBlank() ? null : currency.strip().toUpperCase();
+        currency = currency == null || currency.isBlank() ? null : currency.strip().toUpperCase(Locale.ROOT);
         itemSummary = itemSummary == null || itemSummary.isBlank() ? null : itemSummary.strip();
     }
 

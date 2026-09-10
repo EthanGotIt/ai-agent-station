@@ -84,11 +84,13 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
         if (orderId == null || orderId.isBlank() || userId == null || userId.isBlank()) {
             return OrderLookupResultModel.notFound();
         }
+        String normalizedOrderId = orderId.strip();
+        String normalizedUserId = userId.strip();
 
         try {
             HttpOrderResponseDto response = client.get()
-                    .uri(uri -> uri.path("/orders/{id}").build(orderId))
-                    .header("X-User-Id", userId)
+                    .uri(uri -> uri.path("/orders/{id}").build(normalizedOrderId))
+                    .header("X-User-Id", normalizedUserId)
                     .accept(MediaType.APPLICATION_JSON)
                     .retrieve()
                     .body(HttpOrderResponseDto.class);
@@ -98,10 +100,10 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
             if (Boolean.TRUE.equals(response.accessDenied())) {
                 return OrderLookupResultModel.denied();
             }
-            if (response.userId() == null || !userId.equals(response.userId())) {
+            if (response.userId() == null || !normalizedUserId.equals(response.userId())) {
                 return OrderLookupResultModel.denied();
             }
-            if (!orderId.equalsIgnoreCase(response.orderId())
+            if (!normalizedOrderId.equalsIgnoreCase(response.orderId())
                     || response.status() == null
                     || response.status().isBlank()) {
                 return OrderLookupResultModel.temporaryFailure();
@@ -138,6 +140,7 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
         if (criteria == null || userId == null || userId.isBlank()) {
             return OrderSearchResultModel.success(List.of());
         }
+        String normalizedUserId = userId.strip();
         try {
             List<HttpOrderResponseDto> response = client.get()
                     .uri(uri -> {
@@ -168,7 +171,7 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
                         builder.queryParam("limit", criteria.limit());
                         return builder.build();
                     })
-                    .header("X-User-Id", userId.strip())
+                    .header("X-User-Id", normalizedUserId)
                     .accept(MediaType.APPLICATION_JSON)
                     .retrieve()
                     .body(new ParameterizedTypeReference<List<HttpOrderResponseDto>>() { });
@@ -177,10 +180,13 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
             }
             List<OrderSnapshotModel> orders = response.stream()
                     .filter(Objects::nonNull)
-                    .filter(order -> userId.equals(order.userId()))
-                    .filter(order -> order.orderId() != null && order.status() != null
+                    .filter(order -> normalizedUserId.equals(order.userId()))
+                    .filter(order -> order.orderId() != null && !order.orderId().isBlank()
+                            && order.status() != null
                             && !order.status().isBlank())
-                    .map(this::toSnapshot)
+                    // 单条脏记录不能让同批次的有效订单整体降级为临时失败。
+                    .map(this::toSnapshotOrNull)
+                    .filter(Objects::nonNull)
                     .limit(criteria.limit())
                     .toList();
             return new OrderSearchResultModel(OrderSearchStatusEnum.SUCCESS, orders);
@@ -340,6 +346,15 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
                 response.daysSinceDelivery(), response.createdAt(), response.expectedDeliveryAt(),
                 response.lastLogisticsAt(), response.logisticsStatus(), response.paidAmount(),
                 response.currency(), response.itemSummary(), response.hiddenAt());
+    }
+
+    private OrderSnapshotModel toSnapshotOrNull(HttpOrderResponseDto response) {
+        try {
+            return toSnapshot(response);
+        } catch (RuntimeException malformed) {
+            // OrderSnapshotModel 负责业务不变量校验；外部搜索结果只丢弃当前无效行。
+            return null;
+        }
     }
 
     private static Duration normalizeTimeout(Duration timeout) {
