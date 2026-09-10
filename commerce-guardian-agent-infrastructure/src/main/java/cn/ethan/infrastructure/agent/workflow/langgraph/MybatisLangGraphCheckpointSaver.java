@@ -228,7 +228,7 @@ public class MybatisLangGraphCheckpointSaver extends AbstractCheckpointSaver {
         if (value != null) {
             try {
                 return new OptionalLongValue(true, Long.parseLong(value.toString()));
-            } catch (NumberFormatException ignored) {
+            } catch (NumberFormatException failure) {
                 // invalid metadata is treated as an unusable technical snapshot
             }
         }
