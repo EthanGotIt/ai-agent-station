@@ -18,6 +18,7 @@ export type OrderActionRequest = {
 export type OrderActionProjection = {
   request: OrderActionRequest;
   state: OrderActionViewState;
+  externalActionStatus: ExternalActionStatus | null;
   receipt: ExternalActionReceipt | null;
   runId: string | null;
   error: string | null;
@@ -128,6 +129,7 @@ function stateFromWorkflowResult(status: unknown): OrderActionViewState {
 export function projectOrderAction(turn: ThreadViewTurn, request: OrderActionRequest): OrderActionProjection {
   const actionItems = turn.items.filter((item) => item.turnId === request.turnId);
   let state: OrderActionViewState = "queued";
+  let externalActionStatus: ExternalActionStatus | null = null;
   let receipt: ExternalActionReceipt | null = null;
   let runId: string | null = null;
   let error: string | null = null;
@@ -154,8 +156,9 @@ export function projectOrderAction(turn: ThreadViewTurn, request: OrderActionReq
       state = workflowResultState;
       runId = stringValue(data?.runId) ?? runId;
     } else if (item.type === "EXTERNAL_ACTION_STATUS" && data && externalStatus(data.status)) {
+      externalActionStatus = data.status;
       state = data.status === "SUCCEEDED" ? "done" : data.status === "MANUAL_RETRY_REQUIRED" ? "error" : "active";
-      if (data.status === "SUCCEEDED") workflowResultState = "done";
+      workflowResultState = data.status === "SUCCEEDED" ? "done" : workflowResultState;
       retryable = data.status === "MANUAL_RETRY_REQUIRED";
       runId = stringValue(data.runId) ?? runId;
       receipt = { ...(receipt ?? {}), ...externalReceipt(data) };
@@ -171,5 +174,13 @@ export function projectOrderAction(turn: ThreadViewTurn, request: OrderActionReq
     }
   }
   if (hasBusinessFact && (request.actionType === "QUERY_LOGISTICS" || request.actionType === "REFRESH_ORDER")) state = "done";
-  return { request, state, receipt, runId, error, rejected, retryable, deleted };
+  // 外部动作回执是业务事实源。后续模型续接失败、技术 Turn 失败或
+  // WORKFLOW_RESULT=APPROVED 的完成态都不能覆盖已经提交的外部结果。
+  if (externalActionStatus) {
+    state = externalActionStatus === "SUCCEEDED" ? "done"
+      : externalActionStatus === "MANUAL_RETRY_REQUIRED" ? "error" : "active";
+  } else if (workflowResultState) {
+    state = workflowResultState;
+  }
+  return { request, state, externalActionStatus, receipt, runId, error, rejected, retryable, deleted };
 }

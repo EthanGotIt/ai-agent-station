@@ -15,8 +15,12 @@ function statusCopy(view: OrderActionProjection) {
   if (view.receipt?.verificationStatus === "VERIFIED") return view.receipt.verificationMessage ?? "最新订单状态已核验";
   if (view.state === "queued") return "已提交，正在排队";
   if (view.state === "waiting") return "需要确认，确认面板已打开";
+  if (view.externalActionStatus === "PENDING") return "已创建业务操作，等待执行";
+  if (view.externalActionStatus === "PROCESSING") return "正在提交业务操作";
+  if (view.externalActionStatus === "RETRY_WAIT") return "外部系统暂未完成，系统会自动重试";
+  if (view.externalActionStatus === "MANUAL_RETRY_REQUIRED") return "自动重试已耗尽，需要人工重试";
   if (view.state === "active") {
-    return "正在处理业务操作";
+    return "已确认，等待外部系统处理";
   }
   if (view.state === "error") {
     if (view.receipt?.attemptCount && view.receipt.maxAttempts) {

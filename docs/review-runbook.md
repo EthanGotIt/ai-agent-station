@@ -32,6 +32,8 @@ python -m scripts.acceptance `
 
 runner 会创建新的 Thread，并核对 Thread/Turn/Item 契约、Item 刷新恢复、开放交互重复读取、`clientRequestId` 幂等和执行轨迹回放；随后用独立订单夹具验证物流详情、退款重放和催发货临时失败重试。输出中的 `scenarios=...` 只记录场景名，不保存 Prompt、Thinking、密钥或完整响应。
 
+2026-09-10 HTTP acceptance runner 已在 `5173/8090/18080` 完成 Thread/Turn/Item 恢复、开放交互唯一性、刷新恢复、Turn 幂等、执行回放、物流、退款幂等和催发货三次失败后的人工恢复；删除场景仍按默认开关保持 gated。真实 DeepSeek 浏览器 smoke 使用合成订单完成结构化查询，产生 12 个持久化 Item，刷新后事实仍可恢复。Playwright 在 `1920×900`、`1440×900`、`1024×768`、`390×844` 检查输入区、工作台和横向溢出，均通过；移动对话抽屉、Escape、控制台无错误及深浅主题/reduced-motion smoke 已记录。确认接口成功后 checkpoint 弹窗即时收起，前端回归测试覆盖该边界；完整催发货真实模型黄金路径、SSE 重连和错误焦点仍需现场补录。
+
 只有在操作者已经确认夹具数据库属于本次验收且可丢弃时，才执行删除场景：
 
 ```powershell
@@ -76,9 +78,9 @@ python -m scripts.acceptance `
 
 | 视口 | 主题 | 键盘/Esc | reduced-motion | SSE 重连 | 刷新恢复 | 结论/提交 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1920×900 | light/dark | pending | pending | pending | pending | pending |
-| 1440×900 | light/dark | pending | pending | pending | pending | pending |
-| 1024×768 | light/dark | pending | pending | pending | pending | pending |
-| 390×844 | light/dark | pending | pending | pending | pending | pending |
+| 1920×900 | light/dark smoke | 移动抽屉 Esc 已验 | reduce smoke | pending | 已通过 | 合成订单查询 smoke 通过；完整黄金路径待补录 |
+| 1440×900 | light/dark smoke | pending | pending | pending | 已通过 | 布局与刷新恢复通过；其余矩阵待补录 |
+| 1024×768 | light/dark smoke | 移动抽屉 Esc 已验 | pending | pending | 已通过 | 抽屉布局通过；其余矩阵待补录 |
+| 390×844 | light/dark smoke | 移动抽屉 Esc 已验 | reduce smoke | pending | 已通过 | 移动布局通过；其余矩阵待补录 |
 
 复核记录只写结论、尺寸、端口和提交号，不记录 API key、完整 Prompt、Thinking、用户身份明文或原始订单服务响应。

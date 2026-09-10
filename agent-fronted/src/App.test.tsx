@@ -1043,6 +1043,55 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/workflow-runs/run-checkpoint/checkpoints/checkpoint-new/decisions"))).toBe(true));
     const decisionCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/workflow-runs/run-checkpoint/checkpoints/checkpoint-new/decisions"));
     expect(JSON.parse(String(decisionCall?.[1]?.body))).toEqual(expect.objectContaining({ expectedVersion: 2, decision: "APPROVE", factsFingerprint: "facts-v1" }));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "请确认这项订单操作" })).toBeNull());
+  });
+
+  it("决策请求返回前收到更新的确认卡时不清掉新交互", async () => {
+    const thread = threadRecord("thread-1", "确认竞态 Thread");
+    const newCheckpoint = {
+      schemaVersion: 1,
+      kind: "WORKFLOW_CHECKPOINT",
+      data: {
+        checkpointId: "checkpoint-new", runId: "run-race", nodeId: "AUTHORIZE", actionType: "EXPEDITE",
+        orderId: "ORDER-NEW", impactSummary: "事实变化后的新确认", factsFingerprint: "facts-new", version: 2
+      }
+    };
+    const newEvent = itemEvent("item-checkpoint-new-race", "thread-1", "turn-new", "WORKFLOW_CHECKPOINT", 2, newCheckpoint);
+    const encoder = new TextEncoder();
+    const eventControllerRef: { current: ReadableStreamDefaultController<Uint8Array> | null } = { current: null };
+    const decisionResolverRef: { current: ((response: Response) => void) | null } = { current: null };
+    const decisionResponse = new Promise<Response>((resolve) => { decisionResolverRef.current = resolve; });
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      if (url.includes("/threads/thread-1/items")) return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      if (url.endsWith("/threads/thread-1/interaction")) return Promise.resolve(json({
+        type: "WORKFLOW_CHECKPOINT", interactionId: "checkpoint-old", threadId: "thread-1", runId: "run-race",
+        turnId: "turn-old", status: "OPEN", version: 1, resumeTarget: null, title: null, prompt: null, fieldsJson: null,
+        nodeId: "AUTHORIZE", actionType: "EXPEDITE", orderId: "ORDER-OLD", impactSummary: "旧确认",
+        factsFingerprint: "facts-old", decision: null
+      }));
+      if (url.includes("/threads/thread-1/events")) {
+        return Promise.resolve(new Response(new ReadableStream<Uint8Array>({
+          start(controller) { eventControllerRef.current = controller; }
+        })));
+      }
+      if (url.endsWith("/workflow-runs/run-race/checkpoints/checkpoint-old/decisions")) return decisionResponse;
+      throw new Error(`unexpected request: ${url} ${String(init?.body ?? "")}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("ORDER-OLD")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "确认并执行" }));
+    await waitFor(() => expect(eventControllerRef.current).not.toBeNull());
+    eventControllerRef.current!.enqueue(encoder.encode(newEvent));
+    await waitFor(() => expect(screen.getByText("ORDER-NEW")).not.toBeNull());
+    decisionResolverRef.current!(json({ turnId: "decision-old" }));
+
+    await waitFor(() => expect(screen.getByText("ORDER-NEW")).not.toBeNull());
+    eventControllerRef.current!.close();
   });
 });
 
