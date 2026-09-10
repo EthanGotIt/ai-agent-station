@@ -37,7 +37,7 @@
 
 | 验收面 | 当前结论 | 直接证据 | 未闭合事项 |
 | --- | --- | --- | --- |
-| 图路由与编排版本 | 已接入，默认关闭 | `LangGraphAgentWorkflowEngine` 仅为明确订单号的催发货新 Run 选择 `EXPEDITE_GRAPH_V1`；历史和其他动作保持 `LEGACY_V1`；V11 迁移、版本读取和未知版本拒绝由 `MybatisAgentWorkflowRunStoreVersionTest` 与 Workflow MySQL IT 覆盖；未知版本现在以 `UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION` 受控失败 | 生产开关仍需按部署环境单独启用 |
+| 图路由与编排版本 | 已接入，默认关闭 | `LangGraphAgentWorkflowEngine` 仅为明确订单号的催发货新 Run 选择 `EXPEDITE_GRAPH_V1`；历史和其他动作保持 `LEGACY_V1`；V11/V12 迁移、Run/图快照版本读取和未知版本拒绝由 `MybatisAgentWorkflowRunStoreVersionTest` 与两个 Workflow MySQL IT 覆盖；未知版本现在以 `UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION` 受控失败 | 生产开关仍需按部署环境单独启用 |
 | 节点、确认与命令边界 | 已通过定向测试 | `LangGraphWorkflowGraphFactory`/Engine 覆盖订单读取、资格核验、AUTHORIZE、Worker 交接和结果返回；批准事务锁读 Run/Checkpoint 并只创建唯一 `ExternalActionCommand`；确认前无外部写入 | 完整真实模型催发货路径仍待补录 |
 | 技术快照恢复 | 已通过一次性副本现场验收 | `MybatisLangGraphCheckpointSaver` 保存节点、状态、Workflow 版本、事实指纹和编排版本；删除、损坏 `STATE_JSON`、版本失配和跨进程重启均从 Run/Checkpoint/订单事实重建，不以快照授予授权；`safeLogistics` 使用有序结构，事实指纹跨 JVM 稳定 | 生产副本和真实第三方订单平台仍按部署环境验收 |
 | Worker 结果闭环 | 已通过本地、HTTP 和真实模型黄金路径 | Worker 以 PENDING/RETRY_WAIT/PROCESSING Lease 领取命令，结果写入 `EXTERNAL_ACTION_STATUS`/Workflow 事实；三次失败后人工恢复与零失败成功路径均验证同一幂等键只产生一次业务变更；成功结果已接回模型续接总结 | 无本轮代码阻塞 |
@@ -83,7 +83,7 @@
 | 本地 acceptance runner | 真实 Agent 与夹具 HTTP 完整验收通过 | PR #5 / `b002922`、基线合并提交 `f739203` 的 `scripts/acceptance/runner.py` 检查 Item 游标、刷新恢复、开放交互唯一性、Turn 幂等、执行回放；2026-09-05 在真实 Agent `8090` + 独立 SQLite 夹具 `18080` 实测通过 `thread-list`、`thread-create`、`item-recovery`、`interaction-uniqueness`、`refresh-recovery`、`turn-accepted`、`turn-idempotency`、`execution-replay`、`logistics`、`refund-idempotency`、`expedite-retry`、`delete-gated`；`scripts/tests/test_acceptance.py` 5 个单测覆盖重放、游标拒绝和删除开关 | 第三方生产订单平台鉴权仍按部署环境验收 |
 | 第 2 周 36 次质量基线 | 确定性基线 36/36 安全、36/36 路由 | 已合入集成的 `codex/agent-quality-eval@d858d45` 执行 `python -m scripts.runtime_eval --repetitions 3`；该 runner 不连接真实模型 | 当前环境没有 `DEEPSEEK_API_KEY`/真实模型服务，真实模型 36 次需在本机凭据可用后重跑 |
 | 浏览器验收矩阵 | 2A-1 黄金路径及四尺寸布局 smoke 通过 | 2026-09-05 Playwright 连接真实前端，完成订单查询、催发货拒绝/批准、重试完成和刷新恢复；四尺寸均确认输入区、工作台存在且无横向溢出，深色主题/reduced-motion 媒体设置 smoke 通过，确认成功后弹窗即时收口并有前端回归断言 | 完整矩阵的主题对照、Tab/Enter、SSE 重连和错误焦点仍需逐项补录 |
-| V7→V8→V9→V10→V11 一次性副本 | V11 已通过自动化编译与迁移场景 | `AgentItemStoreMySqlIT` 在随机临时库以 V9 基线执行 V10、V11，验证旧数据保持、V2 快照写入、Run 编排版本读取、归属隔离和 CAS；生产库迁移仍按运行手册单独执行 | 2B-2 生产图快照故障注入和真实生产数据库不在本单元范围 |
+| V7→V8→V9→V10→V11→V12 一次性副本 | V12 已通过自动化编译与迁移场景；V9→V11 为此前证据 | `AgentItemStoreMySqlIT` 与 `AgentWorkflowMySqlIT` 在随机临时库以 V9 基线执行 V10、V11、V12，验证旧数据保持、V2 快照写入、Run/图快照编排版本读取、归属隔离和 CAS；生产库迁移仍按运行手册单独执行 | 2B-2 生产图快照故障注入和真实生产数据库不在本单元范围 |
 | 本地门禁 | Java、Python、MySQL acceptance 和前端门禁通过 | `D:\Application\miniconda3\python.exe -m scripts.convention_check` 通过，脚本单测 19 项通过；完整 reactor `mvn -pl commerce-guardian-agent-app -am '-DskipTests=false' test`（Core 86/Infrastructure 115/App 20）通过，初始 `clean` 仅受本机运行进程占用 App jar 影响；加载模块 `.env` 后的 `context-acceptance,workflow-acceptance`（Core 82/Infrastructure 106 + 9 IT/App 20 + 5 MySQL IT），前端 typecheck/Vitest 66/build 均通过；规则门禁修复提交为 `8dea5d5` | 2B-2 生产图快照故障注入、完整催发货真实模型路径、生产库迁移和浏览器 SSE/错误焦点矩阵仍需逐项补录；本分支不改用户工作区资产 |
 
 ## 第三周：显式 Agent 决策收口（已实现，PR #4 已合入）
@@ -135,7 +135,7 @@
 - `mvn dependency:analyze -DskipTests`：通过，三个 Maven 模块均无依赖问题；删除未使用的 `jspecify` 测试声明并移除 App Controller 冗余 `@Autowired`。
 - `npm --prefix agent-fronted run typecheck`、`npm --prefix agent-fronted test -- --run`（35 项）和 `npm --prefix agent-fronted run build`：均通过。
 - 代码评审回归：提交后入队和过期 Continuation 重试均重新读取最新 Turn；批准 Checkpoint 的事实变化会先失效并重核验，动作不再允许时安全失败且不创建命令，拒绝决策仍直接终止；Agent QuestionCard 允许 `runId: null`；无引用的旧 Workflow Answer 类型已删除；QuestionCard/Checkpoint Store 可被事务代理，Workflow Decision codec 已注册为 Bean。
-- `mvn verify` 已按配置进入真实 `*IT`；`HttpOrderGatewayIT` 7 项与 `HttpExternalActionExecutorIT` 2 项全部通过，未再出现 loopback 错误。
+- `mvn verify` 已按配置进入真实 `*IT`；`HttpOrderGatewayIT` 6 项与 `HttpExternalActionExecutorIT` 2 项全部通过，未再出现 loopback 错误。
 - 本轮实际启动检查：第一次使用未加载 `.env` 的脚本时因 MySQL 空密码失败；随后修复两个 HTTP 网关的多构造器注入标记并从用户级 `.env` 注入数据库配置，应用完成 Tomcat `8090` 初始化、MySQL 连接和 V7→V8→V9 迁移，`GET /actuator/health` 返回 `200 UP`。订单夹具直接删除同一订单两次均返回 `ORDER_DELETED`，订单和物流查询均为 `404`；未修改项目代码以规避 Windows/JDK loopback。
 - 本轮已重新运行数据库副本 V7→V8→V9；真实模型请求和浏览器黄金路径仍未重跑，下方历史现场证据继续保留，但不替代本轮重跑。
 

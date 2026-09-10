@@ -63,7 +63,7 @@ CI 的 Maven Job 使用 MySQL 8.4 服务运行同一 profile。未启用 profile
 
 ### 2A-2 压缩与恢复复核
 
-2A-2 使用 `V10__persist_context_compaction_metadata.sql` 为已有库增加 V2 快照元数据；先在一次性克隆库执行迁移并核对 `FORMAT_VERSION`、来源 Sequence 和摘要版本列，再在应用重启后验证原始 Item 数量与 Sequence 不变。V1 快照会被忽略并从原始历史重建，快照提交按所属 Thread 锁和最新快照标识 CAS；并发压缩只有一个摘要胜者，失败方不重复调用摘要模型。2B-1 继续执行 `V11__persist_workflow_orchestration_version.sql`，为历史 Run 写入 `LEGACY_V1`，明确订单号催发货的新 Run 才能在开关打开时写入 `EXPEDITE_GRAPH_V1`。新增 `AgentWorkflowMySqlIT` 使用模块 `.env` 注入连接信息，在随机临时库从 V9 基线迁移到 V11，并通过 Spring 事务代理、`SqlSessionTemplate` 与生产 MyBatis Store 验证确认事务回滚、锁读、CAS 竞争、来源版本读取和命令幂等；Flyway 检查通过 API 和 `INFORMATION_SCHEMA` 查询，避免依赖 Windows 表名大小写。2B-1 的催发货图状态、2B-2 的生产技术快照恢复都已实现，生产副本故障注入和跨进程恢复属于单独现场门禁。
+2A-2 使用 `V10__persist_context_compaction_metadata.sql` 为已有库增加 V2 快照元数据；先在一次性克隆库执行迁移并核对 `FORMAT_VERSION`、来源 Sequence 和摘要版本列，再在应用重启后验证原始 Item 数量与 Sequence 不变。V1 快照会被忽略并从原始历史重建，快照提交按所属 Thread 锁和最新快照标识 CAS；并发压缩只有一个摘要胜者，失败方不重复调用摘要模型。2B-1 继续执行 `V11__persist_workflow_orchestration_version.sql` 与 `V12__persist_langgraph_orchestration_version.sql`，为历史 Run 写入 `LEGACY_V1`，明确订单号催发货的新 Run 才能在开关打开时写入 `EXPEDITE_GRAPH_V1`。新增 `AgentWorkflowMySqlIT` 与 `AgentItemStoreMySqlIT` 使用模块 `.env` 注入连接信息，在随机临时库从 V9 基线迁移到 V12，并通过 Spring 事务代理、`SqlSessionTemplate` 与生产 MyBatis Store 验证确认事务回滚、锁读、CAS 竞争、来源版本读取、图快照版本和命令幂等；Flyway 检查通过 API 和 `INFORMATION_SCHEMA` 查询，避免依赖 Windows 表名大小写。2B-1 的催发货图状态、2B-2 的生产技术快照恢复都已实现，生产副本故障注入和跨进程恢复属于单独现场门禁。 此前 V9→V11 的运行结果仅作为历史证据保留。
 
 ### 2B-1 / 2B-2 Workflow 复核
 

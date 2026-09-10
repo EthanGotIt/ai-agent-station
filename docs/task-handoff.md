@@ -21,11 +21,13 @@ Completed:
 - 2026-09-10 真实 HTTP acceptance runner 通过：Thread/Turn/Item 恢复、开放交互唯一性、刷新恢复、Turn 入队与幂等、执行轨迹回放，以及物流、退款幂等、催发货三次失败后人工恢复；删除场景保持 gated。
 - 2026-09-10 带网络权限的真实浏览器验收通过合成订单查询：DeepSeek Tool Calling、`lookup_order`/`search_orders`、`FINISH`、12 个持久化 Item、完成态投影和刷新恢复均通过；1920×900、1440×900、1024×768、390×844 页面可渲染，移动对话抽屉与 Escape 关闭通过，控制台无错误。
 - 2A-1/2A-2 已完成固定水位连续读取、Harness 式裁剪/摘要、V2 快照 CAS、溢出恢复和 V9→V10 集成验收；原始 Item 与 SSE 序号不被压缩改写。
-- 2B-1 已完成明确订单号催发货图试点的版本路由、订单/资格/确认/命令边界、Worker 结果闭环和 V9→V11 Workflow MySQL 验收；2B-2 技术快照恢复代码已接入，默认开关仍关闭。
+- 2B-1 已完成明确订单号催发货图试点的版本路由、订单/资格/确认/命令边界、Worker 结果闭环和 V9→V12 Workflow MySQL 验收；此前 V9→V11 结果仅保留为历史证据；2B-2 技术快照恢复代码已接入，默认开关仍关闭。
 - 第三阶段已完成事项级 Continuation owner 锚定、跨问答/审批不重置计数、后台 `RETRY_WAIT` 不唤醒模型、缺失归属安全停止和 `STOP_LIMIT` 幂等，阶段提交为 `86fcbf5`。
 - 第四阶段已完成并提交为 `122a659`：确认等待、PENDING/PROCESSING/RETRY_WAIT、成功、成功待核验和人工重试均有明确投影；成功业务结果优先于后续续接失败，前端回归共 66 项。
 - 交付文档已同步 2A/2B-1/2B-2 边界、事项级恢复规则、演示步骤、状态语义和现场剩余限制。
 - 约定检查器已纳入 `.playwright-cli/` 本地工具产物忽略范围，快照恢复器的可降级异常命名已修正，独立提交为 `8dea5d5`。
+- 本轮聚焦微调已完成：时间线通过 `AgentItemStore.listTurnItems` 按 Turn 目标分页，Runtime 订单事实改为固定水位 300 条流式读取；排队超时 Future 在取消、出队和过期时统一清理，Runtime/SSE 调度器隔离并验证关闭策略。
+- 新增/恢复 `AgentItemStoreMySqlIT` 与 `AgentWorkflowMySqlIT`，覆盖 V9→V12 临时库迁移、图快照编排版本、快照 CAS/归属、Workflow 回滚和命令幂等；验收 profile 由约定检查器强制要求匹配的 `@EnabledIfSystemProperty` `*IT.java`。
 - 2026-09-10 追加提交 `003a82f` 完成上下文压缩、Prompt 压力恢复、共享输出额度和受控冲突错误；提交 `9db5d49` 完成 Workflow 编排版本路由、V10/V11 SQL 与持久化边界；`f145a3f` 修复跨 JVM 物流事实指纹不稳定。
 - 2026-09-10 2B-2 现场收口：隔离 `AcceptanceData` 开启试点后，删除、损坏 `STATE_JSON`、快照版本失配均在重启后从业务事实重建；未知 Run 版本以 `UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION` 失败且不创建命令。零失败合成夹具完成查询→催发货→批准→Worker→核验→模型总结，命令一次成功、`EXPEDITE_REQUESTED`、幂等记录和业务变更各 1。
 - 2026-09-10 浏览器专项在 `1536×730` 通过离线/在线后 `events?afterSequence=18` 重订阅、刷新 Item/SSE 恢复和 QuestionCard 空提交焦点；必填框为 `active + invalid`，出现 `role=alert`，控制台 errors/warnings 为 0。
@@ -34,12 +36,13 @@ Decisions:
 
 - 本轮按计划完成 2A-1、2A-2、2B-1、2B-2 现场收口、事项级恢复和结果展示；生产开关、第三方订单平台鉴权和删除动作仍按部署环境独立 gated。
 - 保留 Spring AI 2.0.0、同 Thread FIFO、现有恢复路线和 Workflow 事实归属；不增加正常工具调用总次数上限或语义“无进展”判断器。
-- 不持久化或展示原始 Thinking；本轮已获得用户授权，提交与推送只包含本阶段明确文件，不纳入 `.impeccable/critique/`。
+- 保留旧 `AgentItemStore.listItems` 端口与现有 HTTP/SSE、Thread→Turn→Item 契约；新增 Turn 目标读取为兼容默认方法，MyBatis 使用既有 `(TURN_ID, SEQUENCE_NO)` 索引。
+- 不持久化或展示原始 Thinking；本轮已获得用户授权，提交与推送只包含本阶段明确文件，并纳入已确认跟踪范围的 `.impeccable` critique/live 资产。
 - 现有 `D:\Environment\MySQL\Data` 不做递归接管或删除；本次验收使用 `D:\Environment\MySQL\AcceptanceData` 隔离实例。基线已包含当前 V9 结构，验收进程关闭 Flyway 自动迁移以避免重复执行 V9，不修改迁移脚本；V10/V11 集成测试使用随机临时库。
 
 TODO:
 
-- 无。后续只需在目标部署环境按运行手册复核生产开关、第三方鉴权、删除动作和其余视口的专项矩阵。
+- 无。后续只需在目标部署环境按运行手册复核生产开关、第三方鉴权、删除动作和其余视口的专项矩阵；本轮新增 MySQL IT 需在具备连接变量的环境启用对应 profile。
 
 Blocked:
 
@@ -52,6 +55,7 @@ Next action:
 Validation:
 
 - `mvn.cmd -pl commerce-guardian-agent-app -am '-DskipTests=false' test` 本轮完整 reactor 通过（Core 87、Infrastructure 116、App 20，`BUILD SUCCESS`）；此前 `clean` 曾受本地 Agent 占用 jar 影响，因此本轮使用不清理的完整 reactor 门禁。
+- 本轮定向回归：`mvn -pl commerce-guardian-agent-core "-Dtest=AgentTurnRuntimeServiceTest,AgentExecutionTimelineServiceTest" test` 通过（Core 21）；`mvn -pl commerce-guardian-agent-app -am "-Dtest=AgentConfigurationTest" "-Dsurefire.failIfNoSpecifiedTests=false" test` 通过（App 1）。
 - `npm --prefix agent-fronted run typecheck`、`npm --prefix agent-fronted test`（66 tests）和 `npm --prefix agent-fronted run build` 通过。
 - 第四阶段前端定向验证：`OrderActionStatus.test.tsx` 8 项通过，包含确认等待、PENDING/PROCESSING/RETRY_WAIT、成功待核验刷新、成功回执、人工重试和成功优先级；本轮完整 Maven/Python/前端矩阵已复核通过。
 - Python `scripts.convention_check` 和 `unittest discover -s scripts/tests -p "test_*.py"` 通过（19 tests）；`git diff --check` 已通过。
@@ -60,6 +64,6 @@ Validation:
 
 Preserve:
 
-- 保留用户已有的 `.impeccable/critique/` 资产及其他未纳入本阶段的工作区改动，不删除、不暂存、不提交。
+- 保留并提交本阶段已确认纳入跟踪范围的 `.impeccable` critique/live 资产；其他未纳入本阶段的工作区改动不删除、不暂存、不提交。
 - 保留数据库中的原始业务事实与旧快照；不保存 Prompt、Thinking、API key、完整敏感响应或真实模型原文。
 - `AGENTS.md` 是完整长期规范；本 handoff 只保留当前恢复所需的最小事实。

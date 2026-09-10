@@ -129,6 +129,7 @@ class ConventionChecker:
         self._check_direct_dependencies()
         self._check_time_boundaries()
         self._check_build_safety()
+        self._check_acceptance_profiles()
         return tuple(sorted(set(self.issues)))
 
     def _check_java_sources(self) -> None:
@@ -363,6 +364,42 @@ class ConventionChecker:
                 pom,
                 "application.yml 禁止开启 Maven 资源过滤，避免密钥被写入制品",
             )
+
+    def _check_acceptance_profiles(self) -> None:
+        """确保 Maven 验收 profile 不会因没有任何启用条件测试而假绿。"""
+
+        pom = self.root / "pom.xml"
+        if not pom.exists():
+            return
+        namespace = {"m": "http://maven.apache.org/POM/4.0.0"}
+        try:
+            root = ElementTree.parse(pom).getroot()
+        except ElementTree.ParseError:
+            return
+        acceptance_root = self.root / "commerce-guardian-agent-app/src/test/java"
+        test_files = sorted(acceptance_root.rglob("*IT.java")) if acceptance_root.exists() else []
+        for profile in root.findall("m:profiles/m:profile", namespace):
+            profile_id = profile.findtext("m:id", default="", namespaces=namespace)
+            if not profile_id.endswith("-acceptance"):
+                continue
+            variables = profile.findall(
+                "m:build/m:plugins/m:plugin/m:configuration/m:systemPropertyVariables/*",
+                namespace,
+            )
+            for variable in variables:
+                property_name = variable.tag.rsplit("}", 1)[-1]
+                if not any(
+                    re.search(
+                        rf"@EnabledIfSystemProperty\s*\(\s*named\s*=\s*\"{re.escape(property_name)}\"",
+                        path.read_text(encoding="utf-8"),
+                    )
+                    for path in test_files
+                ):
+                    self._add(
+                        "MAVEN_ACCEPTANCE_PROFILE",
+                        pom,
+                        f"验收 profile {profile_id} 的系统属性 {property_name} 没有匹配的 *IT.java",
+                    )
 
     def _check_direct_dependencies(self) -> None:
         """校验源码直接使用且跨版本敏感的基础库显式由模块声明。"""

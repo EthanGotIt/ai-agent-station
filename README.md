@@ -2,7 +2,7 @@
 
 Commerce Guardian Agent 是一个 Agent-first 执行平台：业务订单、物流、退款和催发货只是验证夹具，核心价值在可恢复上下文、编排边界、持久化 HITL 与可靠运行时。
 
-四个工程亮点：
+五个工程亮点：
 
 1. `Thread → Turn → Item`：Thread 是上下文根，Turn 表示一次执行，Item 是消息和轨迹的事实来源；历史按 sequence 游标恢复。
 2. ReAct / Workflow 混合编排：Spring AI 协调 Agent 只调用只读工具或启动 Workflow，关键写操作由 Java 显式状态机负责。
