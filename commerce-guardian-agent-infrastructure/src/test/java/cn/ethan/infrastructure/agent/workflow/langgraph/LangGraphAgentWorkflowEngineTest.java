@@ -27,6 +27,7 @@ import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
 import cn.ethan.core.commerce.order.OrderGateway;
+import cn.ethan.core.commerce.order.LogisticsEventModel;
 import cn.ethan.core.commerce.order.OrderLookupResultModel;
 import cn.ethan.core.commerce.order.OrderSearchCriteria;
 import cn.ethan.core.commerce.order.OrderSearchResultModel;
@@ -79,6 +80,15 @@ class LangGraphAgentWorkflowEngineTest {
                 fixture.runs.current.orchestrationVersion());
         assertNotNull(started.checkpoint());
         assertEquals(0, fixture.commands.values.size());
+    }
+
+    @Test
+    void logisticsFactsUseExplicitFieldOrderForCrossProcessFingerprints() {
+        LogisticsEventModel event = new LogisticsEventModel(
+                "event-1", "ORDER-EXPEDITE", "已揽收", "杭州分拨中心", "包裹已揽收", NOW);
+
+        assertEquals(List.of("eventId", "status", "location", "description", "occurredAt"),
+                new ArrayList<>(LangGraphAgentWorkflowEngine.safeLogistics(event).keySet()));
     }
 
     @Test

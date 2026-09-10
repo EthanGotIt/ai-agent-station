@@ -1067,7 +1067,7 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             appendItem(thread, turn, AgentItemTypeEnum.ORDER_DETAIL, writeJson(safeOrder(selected.order())), now);
             appendItem(thread, turn, AgentItemTypeEnum.LOGISTICS_TIMELINE, writeJson(Map.of(
                     "orderId", selected.order().orderId(), "events", selected.events().stream()
-                            .map(this::safeLogistics).toList())), now);
+                            .map(LangGraphAgentWorkflowEngine::safeLogistics).toList())), now);
         }
     }
 
@@ -1159,7 +1159,8 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
                 : candidates.stream().limit(MAX_CANDIDATES).map(OrderSnapshotModel::orderId).toList());
         if (selected != null) {
             result.put("selectedOrder", safeOrder(selected.order()));
-            result.put("logistics", selected.events().stream().map(this::safeLogistics).toList());
+            result.put("logistics", selected.events().stream()
+                    .map(LangGraphAgentWorkflowEngine::safeLogistics).toList());
         }
         return result;
     }
@@ -1226,7 +1227,7 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             facts.put("logistics", selected.events().stream()
                     .sorted(Comparator.comparing(LogisticsEventModel::eventId)
                             .thenComparing(LogisticsEventModel::occurredAt))
-                    .map(this::safeLogistics).toList());
+                    .map(LangGraphAgentWorkflowEngine::safeLogistics).toList());
         }
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -1267,9 +1268,15 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         return value;
     }
 
-    private Map<String, Object> safeLogistics(LogisticsEventModel event) {
-        return Map.of("eventId", event.eventId(), "status", event.status(), "location", event.location(),
-                "description", event.description(), "occurredAt", event.occurredAt().toString());
+    static Map<String, Object> safeLogistics(LogisticsEventModel event) {
+        // 事实指纹要跨 JVM 稳定；Map.of 的遍历顺序未定义，不能直接参与摘要序列化。
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("eventId", event.eventId());
+        value.put("status", event.status());
+        value.put("location", event.location());
+        value.put("description", event.description());
+        value.put("occurredAt", event.occurredAt().toString());
+        return value;
     }
 
     private Map<String, Object> fieldJson(AgentQuestionFieldModel field) {
