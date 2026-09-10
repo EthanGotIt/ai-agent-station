@@ -27,6 +27,42 @@ public interface AgentItemStore {
     List<AgentItemModel> listItems(String userId, String threadId, long afterSequence, int limit);
 
     /**
+     * 只读取指定 Turn 的 Item。默认适配器通过 Thread 游标分页兜底，数据库适配器应使用 Turn 复合索引覆盖。
+     */
+    default List<AgentItemModel> listTurnItems(
+            String userId, String threadId, String turnId, long afterSequence, int limit
+    ) {
+        int pageSize = Math.max(1, Math.min(limit, 500));
+        List<AgentItemModel> result = new java.util.ArrayList<>();
+        long cursor = Math.max(0L, afterSequence);
+        for (;;) {
+            List<AgentItemModel> page = listItems(userId, threadId, cursor, pageSize);
+            if (page == null || page.isEmpty()) {
+                return result;
+            }
+            long next = cursor;
+            long pageCursor = cursor;
+            for (AgentItemModel item : page) {
+                if (item == null || item.sequence() <= pageCursor) {
+                    return result;
+                }
+                next = item.sequence();
+                pageCursor = item.sequence();
+                if (item.turnId() != null && item.turnId().equals(turnId)) {
+                    result.add(item);
+                    if (result.size() >= pageSize) {
+                        return result;
+                    }
+                }
+            }
+            if (next <= cursor || page.size() < pageSize) {
+                return result;
+            }
+            cursor = next;
+        }
+    }
+
+    /**
      * 捕获本次上下文读取的已提交水位。水位只界定读取范围，不表示事实已经被摘要覆盖。
      *
      * <p>没有专用索引的适配器使用游标分页兜底；数据库适配器应覆盖该方法，直接读取 Thread 的最大序号。</p>

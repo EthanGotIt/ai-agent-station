@@ -16,6 +16,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -47,8 +48,7 @@ class AgentExecutionTimelineServiceTest {
         persistence.items.add(new AgentItemModel("item-other", thread.threadId(), "turn-other", 3,
                 AgentItemTypeEnum.USER_MESSAGE, "other", NOW));
 
-        AgentThreadService threads = new AgentThreadService(persistence, persistence, Clock.fixed(NOW, ZoneOffset.UTC));
-        AgentExecutionTimelineModel timeline = new AgentExecutionTimelineService(persistence, threads)
+        AgentExecutionTimelineModel timeline = new AgentExecutionTimelineService(persistence, persistence)
                 .get("user-1", "turn-1");
 
         assertEquals(List.of("item-1", "item-2"), timeline.items().stream()
@@ -69,12 +69,36 @@ class AgentExecutionTimelineServiceTest {
                     turn.turnId(), sequence, AgentItemTypeEnum.ASSISTANT_MESSAGE, "item", NOW));
         }
 
-        AgentThreadService threads = new AgentThreadService(persistence, persistence, Clock.fixed(NOW, ZoneOffset.UTC));
-        AgentExecutionTimelineModel timeline = new AgentExecutionTimelineService(persistence, threads)
+        AgentExecutionTimelineModel timeline = new AgentExecutionTimelineService(persistence, persistence)
                 .get("user-1", "turn-1");
 
         assertEquals(500, timeline.items().size());
         assertEquals(2, persistence.listItemCalls);
+    }
+
+    @Test
+    void readsSparseTurnHistoryThroughTargetTurnStoreWithoutThreadScan() {
+        TimelinePersistence persistence = new TimelinePersistence();
+        AgentThreadModel thread = new AgentThreadModel("thread-1", "user-1", "Thread",
+                AgentThreadStatusEnum.ACTIVE, null, null, 2_001, NOW, NOW);
+        persistence.threads.add(thread);
+        AgentTurnModel turn = new AgentTurnModel("turn-target", thread.threadId(), thread.userId(), "request-target",
+                "查询", AgentTurnStatusEnum.COMPLETED, 1, null, null, NOW, NOW, NOW);
+        persistence.turns.add(turn);
+        persistence.turnItems.add(new AgentItemModel("target-item", thread.threadId(), turn.turnId(), 2_000,
+                AgentItemTypeEnum.ASSISTANT_MESSAGE, "done", NOW));
+        for (int sequence = 1; sequence < 2_000; sequence++) {
+            persistence.items.add(new AgentItemModel("other-" + sequence, thread.threadId(), "other-turn",
+                    sequence, AgentItemTypeEnum.ASSISTANT_MESSAGE, "other", NOW));
+        }
+
+        AgentExecutionTimelineModel timeline = new AgentExecutionTimelineService(persistence, persistence)
+                .get("user-1", turn.turnId());
+
+        assertEquals(List.of("target-item"), timeline.items().stream()
+                .map(AgentItemModel::itemId).toList());
+        assertEquals(1, persistence.turnPageCalls);
+        assertEquals(0, persistence.listItemCalls);
     }
 
     private static final class TimelinePersistence implements AgentThreadStore, AgentTurnStore, AgentItemStore {
@@ -82,7 +106,9 @@ class AgentExecutionTimelineServiceTest {
         private final List<AgentTurnModel> turns = new ArrayList<>();
         private final List<AgentItemModel> items = new ArrayList<>();
         private final List<AgentItemModel> repeatedPage = new ArrayList<>();
+        private final List<AgentItemModel> turnItems = new ArrayList<>();
         private int listItemCalls;
+        private int turnPageCalls;
 
         @Override
         public void createThread(AgentThreadModel thread) { threads.add(thread); }
@@ -130,7 +156,23 @@ class AgentExecutionTimelineServiceTest {
             listItemCalls++;
             if (!repeatedPage.isEmpty()) return repeatedPage;
             return items.stream().filter(value -> value.threadId().equals(threadId)
-                    && value.sequence() > afterSequence).toList();
+                    && value.sequence() > afterSequence)
+                    .sorted(Comparator.comparingLong(AgentItemModel::sequence)).toList();
+        }
+
+        @Override
+        public List<AgentItemModel> listTurnItems(
+                String userId, String threadId, String turnId, long afterSequence, int limit
+        ) {
+            turnPageCalls++;
+            if (turnItems.isEmpty()) {
+                return listItems(userId, threadId, afterSequence, limit).stream()
+                        .filter(item -> item != null && turnId.equals(item.turnId()))
+                        .toList();
+            }
+            return turnItems.stream().filter(value -> value.threadId().equals(threadId)
+                    && value.turnId().equals(turnId) && value.sequence() > afterSequence)
+                    .toList();
         }
     }
 }

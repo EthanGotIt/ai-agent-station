@@ -41,6 +41,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -60,6 +61,84 @@ class AgentTurnRuntimeServiceTest {
     private static final Instant NOW = Instant.parse("2026-08-20T00:00:00Z");
 
     @Test
+    void closesPersistedTurnWhenExecutionExecutorRejectsAfterAdmission() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "执行器关闭 Thread", null, null);
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, threads,
+                new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
+                (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
+                        "不会执行", List.of(), null, false, AgentDecisionTypeEnum.FINISH, "TEST_FINISH"),
+                new RecordingEvents(), command -> {
+                    throw new RejectedExecutionException("executor is closed");
+                }, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256);
+
+        AgentTurnModel submitted = runtime.submitTurn(
+                "user-1", thread.threadId(), "executor-rejected", "提交后执行器关闭");
+
+        AgentTurnModel failed = persistence.findTurn("user-1", submitted.turnId()).orElseThrow();
+        assertEquals(AgentTurnStatusEnum.FAILED, failed.status());
+        assertEquals("RUNTIME_EXECUTOR_REJECTED", failed.errorCode());
+        scheduler.shutdownNow();
+    }
+
+    @Test
+    void closesPersistedTurnWhenQueueTimeoutSchedulerRejectsAfterAdmission() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "定时器关闭 Thread", null, null);
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        scheduler.shutdownNow();
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, threads,
+                new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
+                (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
+                        "不会执行", List.of(), null, false, AgentDecisionTypeEnum.FINISH, "TEST_FINISH"),
+                new RecordingEvents(), executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256);
+
+        AgentTurnModel submitted = runtime.submitTurn(
+                "user-1", thread.threadId(), "scheduler-rejected", "提交后定时器关闭");
+
+        AgentTurnModel failed = persistence.findTurn("user-1", submitted.turnId()).orElseThrow();
+        assertEquals(AgentTurnStatusEnum.FAILED, failed.status());
+        assertEquals("RUNTIME_SCHEDULER_REJECTED", failed.errorCode());
+    }
+
+    @Test
+    void finishesActiveTurnWithCurrentVersionWhenDeadlineSchedulerRejects() {
+        InMemoryPersistence persistence = new InMemoryPersistence();
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        AgentThreadService threads = new AgentThreadService(persistence, persistence, clock);
+        AgentThreadModel thread = threads.create("user-1", "激活定时器关闭 Thread", null, null);
+        ManualExecutor executor = new ManualExecutor();
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
+                persistence, persistence, persistence, threads,
+                new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
+                (current, turn, history, answer) -> new AgentTurnCoordinator.AgentCoordinatorResult(
+                        "完成", List.of(), null, false, AgentDecisionTypeEnum.FINISH, "TEST_FINISH"),
+                new RecordingEvents(), executor, scheduler, clock,
+                4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMillis(1), 256);
+
+        AgentTurnModel submitted = runtime.submitTurn(
+                "user-1", thread.threadId(), "activation-scheduler-rejected", "等待执行");
+        scheduler.shutdownNow();
+        executor.runAll();
+
+        AgentTurnModel failed = persistence.findTurn("user-1", submitted.turnId()).orElseThrow();
+        assertEquals(AgentTurnStatusEnum.FAILED, failed.status());
+        assertEquals("TURN_ACTIVATION_FAILED", failed.errorCode());
+        scheduler.shutdownNow();
+    }
+
+    @Test
     void cancelsQueuedTurnAndRunsNextTurnInOrder() {
         InMemoryPersistence persistence = new InMemoryPersistence();
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
@@ -69,6 +148,7 @@ class AgentTurnRuntimeServiceTest {
                 persistence, persistence, clock, 2_000, 1_000, 256, 128);
         ManualExecutor executor = new ManualExecutor();
         ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
+        scheduler.setRemoveOnCancelPolicy(true);
         RecordingEvents events = new RecordingEvents();
         AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
                 persistence, persistence, persistence,
@@ -85,15 +165,18 @@ class AgentTurnRuntimeServiceTest {
         AgentTurnModel second = runtime.submitTurn("user-1", thread.threadId(), "request-2", "第二条");
 
         assertEquals(first.turnId(), duplicate.turnId());
+        assertEquals(2, scheduler.getQueue().size(), "每个排队 Turn 应有一个超时任务");
         assertEquals(AgentTurnStatusEnum.QUEUED, persistence.findTurnByRequest("user-1", first.clientRequestId())
                 .orElseThrow().status());
         assertEquals(AgentTurnStatusEnum.QUEUED, second.status());
         assertTrue(runtime.cancel("user-1", first.turnId()));
+        assertEquals(1, scheduler.getQueue().size(), "取消排队 Turn 必须移除超时任务");
         assertEquals(AgentTurnStatusEnum.CANCELLED, persistence.findTurnByRequest("user-1", first.clientRequestId())
                 .orElseThrow().status());
 
         executor.runAll();
 
+        assertEquals(0, scheduler.getQueue().size(), "出队执行的 Turn 不应遗留超时任务");
         assertEquals(AgentTurnStatusEnum.COMPLETED, persistence.findTurnByRequest("user-1", second.clientRequestId())
                 .orElseThrow().status());
         assertTrue(events.published.stream().anyMatch(event -> event.type().equals("item.assistant_message")));

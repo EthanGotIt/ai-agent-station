@@ -97,11 +97,20 @@ public class AgentConfiguration {
         return WebClient.builder().clientConnector(new ReactorClientHttpConnector(client));
     }
 
-    @Bean(destroyMethod = "shutdown")
-    public ScheduledExecutorService agentQueueTimeoutScheduler() {
+    @Bean(name = "agentRuntimeTimeoutScheduler", destroyMethod = "shutdown")
+    public ScheduledExecutorService agentRuntimeTimeoutScheduler() {
+        return daemonScheduler("agent-queue-timeout-");
+    }
+
+    @Bean(name = "agentSseHeartbeatScheduler", destroyMethod = "shutdown")
+    public ScheduledExecutorService agentSseHeartbeatScheduler() {
+        return daemonScheduler("agent-sse-heartbeat-");
+    }
+
+    private ScheduledExecutorService daemonScheduler(String threadPrefix) {
         AtomicInteger threadNumber = new AtomicInteger();
         ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1, task -> {
-            Thread thread = new Thread(task, "agent-queue-timeout-" + threadNumber.incrementAndGet());
+            Thread thread = new Thread(task, threadPrefix + threadNumber.incrementAndGet());
             thread.setDaemon(true);
             return thread;
         });
@@ -146,9 +155,9 @@ public class AgentConfiguration {
     @Bean
     public AgentExecutionTimelineService agentExecutionTimelineService(
             AgentTurnStore turns,
-            AgentThreadService threads
+            AgentItemStore items
     ) {
-        return new AgentExecutionTimelineService(turns, threads);
+        return new AgentExecutionTimelineService(turns, items);
     }
 
     @Bean
@@ -185,7 +194,8 @@ public class AgentConfiguration {
             AgentOrderActionCoordinator orderActionCoordinator,
             AgentThreadEventGateway events,
             ThreadPoolTaskExecutor agentTaskExecutor,
-            ScheduledExecutorService agentQueueTimeoutScheduler,
+            @org.springframework.beans.factory.annotation.Qualifier("agentRuntimeTimeoutScheduler")
+            ScheduledExecutorService agentRuntimeTimeoutScheduler,
             Clock clock,
             AgentRuntimeProperties runtimeProperties,
             AgentThreadProperties threadProperties,
@@ -195,7 +205,7 @@ public class AgentConfiguration {
     ) {
         AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
                 threadStore, turns, items, threads, contextAssembler, coordinator,
-                events, agentTaskExecutor, agentQueueTimeoutScheduler, clock,
+                events, agentTaskExecutor, agentRuntimeTimeoutScheduler, clock,
                 runtimeProperties.queue().maxPendingPerThread(),
                 runtimeProperties.queue().maxPendingGlobal(),
                 runtimeProperties.queue().waitTimeout(),

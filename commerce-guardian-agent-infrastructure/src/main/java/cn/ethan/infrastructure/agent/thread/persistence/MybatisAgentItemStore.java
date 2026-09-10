@@ -86,6 +86,20 @@ public class MybatisAgentItemStore implements AgentItemStore {
     }
 
     @Override
+    public List<AgentItemModel> listTurnItems(
+            String userId, String threadId, String turnId, long afterSequence, int limit
+    ) {
+        AgentThreadEntity owned = threadMapper.selectOne(new QueryWrapper<AgentThreadEntity>()
+                .eq("THREAD_ID", threadId).eq("USER_ID", userId));
+        if (owned == null) {
+            return List.of();
+        }
+        return itemMapper.selectTurnAfter(threadId, turnId, Math.max(0L, afterSequence),
+                        Math.max(1, Math.min(limit, 500)))
+                .stream().map(MybatisAgentItemStore::toModel).toList();
+    }
+
+    @Override
     public long captureWatermark(String userId, String threadId) {
         AgentThreadEntity owned = threadMapper.selectOne(new QueryWrapper<AgentThreadEntity>()
                 .eq("THREAD_ID", threadId).eq("USER_ID", userId));

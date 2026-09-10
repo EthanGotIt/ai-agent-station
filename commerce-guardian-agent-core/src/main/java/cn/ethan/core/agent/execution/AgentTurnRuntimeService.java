@@ -34,6 +34,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
@@ -62,6 +63,8 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
 
     private static final String SAFE_EXECUTION_ERROR = "Agent 执行失败";
     private static final String AGENT_DECISION_MISSING = "AGENT_DECISION_MISSING";
+    private static final String RUNTIME_EXECUTOR_REJECTED = "RUNTIME_EXECUTOR_REJECTED";
+    private static final String RUNTIME_SCHEDULER_REJECTED = "RUNTIME_SCHEDULER_REJECTED";
     private static final Logger LOGGER = Logger.getLogger(AgentTurnRuntimeService.class.getName());
 
     private final AgentThreadStore threadStore;
@@ -236,7 +239,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                 QueuedTurn queued = new QueuedTurn(
                         persisted, persisted.questionAnswerInput(),
                         new AtomicBoolean(false),
-                        new AtomicBoolean(false), new AtomicReference<>());
+                        new AtomicBoolean(false), new AtomicReference<>(), new AtomicReference<>());
                 slot.queue.addLast(queued);
                 pendingGlobal.incrementAndGet();
                 if (!queued.continuation()) {
@@ -305,7 +308,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
             QueuedTurn queued = new QueuedTurn(
                     current, current.questionAnswerInput(),
                     new AtomicBoolean(false),
-                    new AtomicBoolean(false), new AtomicReference<>());
+                    new AtomicBoolean(false), new AtomicReference<>(), new AtomicReference<>());
             slot.queue.addLast(queued);
             pendingGlobal.incrementAndGet();
             if (!queued.continuation()) {
@@ -412,7 +415,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
             }
             appendItem(turn, AgentItemTypeEnum.TURN_STATE, AgentTurnItemPayloads.turnState(turn.status(), null));
             queued = new QueuedTurn(turn, null, new AtomicBoolean(false),
-                    new AtomicBoolean(false), new AtomicReference<>());
+                    new AtomicBoolean(false), new AtomicReference<>(), new AtomicReference<>());
             slot.queue.addLast(queued);
             pendingGlobal.incrementAndGet();
             scheduleQueueTimeout(ownerThreadId, queued);
@@ -497,7 +500,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
             }
             appendItem(turn, AgentItemTypeEnum.TURN_STATE, AgentTurnItemPayloads.turnState(turn.status(), null));
             QueuedTurn queued = new QueuedTurn(turn, null, new AtomicBoolean(false),
-                    new AtomicBoolean(false), new AtomicReference<>());
+                    new AtomicBoolean(false), new AtomicReference<>(), new AtomicReference<>());
             slot.queue.addLast(queued);
             pendingGlobal.incrementAndGet();
             scheduleQueueTimeout(ownerThreadId, queued);
@@ -513,11 +516,11 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         ThreadSlot slot = slots.computeIfAbsent(turn.threadId(), ignored -> new ThreadSlot());
         QueuedTurn queuedToCancel = null;
         QueuedTurn activeToCancel = null;
-        boolean activeContextCancelled = false;
         synchronized (slot) {
             for (QueuedTurn queued : slot.queue) {
                 if (queued.turn.turnId().equals(turnId)) {
                     queued.cancelled.set(true);
+                    cancelQueueTimeout(queued);
                     slot.queue.remove(queued);
                     pendingGlobal.decrementAndGet();
                     queuedToCancel = queued;
@@ -529,7 +532,6 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                 AgentExecutionContext context = slot.active.executionContext.get();
                 if (context != null) {
                     context.cancel();
-                    activeContextCancelled = true;
                 }
                 activeToCancel = slot.active;
             }
@@ -537,6 +539,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                 for (QueuedTurn deferred : slot.deferred) {
                     if (deferred.turn.turnId().equals(turnId)) {
                         deferred.cancelled.set(true);
+                        cancelQueueTimeout(deferred);
                         slot.deferred.remove(deferred);
                         pendingGlobal.decrementAndGet();
                         queuedToCancel = deferred;
@@ -556,9 +559,27 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
     }
 
     private void schedule(ThreadSlot slot, AgentThreadModel thread) {
-        if (slot.running) return;
-        slot.running = true;
-        executor.execute(() -> drain(slot, thread));
+        synchronized (slot) {
+            if (slot.running) return;
+            slot.running = true;
+        }
+        try {
+            executor.execute(() -> drain(slot, thread));
+        } catch (RuntimeException schedulingFailure) {
+            metrics.observeFailure(RUNTIME_EXECUTOR_REJECTED);
+            List<QueuedTurn> stranded = new ArrayList<>();
+            synchronized (slot) {
+                slot.running = false;
+                while (!slot.queue.isEmpty()) {
+                    stranded.add(slot.queue.pollFirst());
+                }
+                while (!slot.deferred.isEmpty()) {
+                    stranded.add(slot.deferred.pollFirst());
+                }
+                stranded.forEach(ignored -> pendingGlobal.decrementAndGet());
+            }
+            failQueued(stranded, RUNTIME_EXECUTOR_REJECTED);
+        }
     }
 
     private void drain(ThreadSlot slot, AgentThreadModel thread) {
@@ -573,6 +594,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                         return;
                     }
                     slot.active = execution;
+                    cancelQueueTimeout(execution);
                     pendingGlobal.decrementAndGet();
                 }
                 runOne(slot, thread, execution);
@@ -625,8 +647,8 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
             finish(turn, AgentTurnStatusEnum.FAILED, "QUESTION_GATE_FAILED");
             return;
         }
-        AgentTurnModel active;
-        AgentExecutionContext executionContext;
+        AgentTurnModel active = turn;
+        AgentExecutionContext executionContext = null;
         ScheduledFuture<?> timeout;
         try {
             active = turn.active(started);
@@ -670,16 +692,22 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                 finish(active, AgentTurnStatusEnum.COMPLETED, "MAX_AGENT_CYCLES");
                 return;
             }
+            AgentExecutionContext timeoutContext = executionContext;
             timeout = scheduler.schedule(
                     () -> {
                         execution.timedOut.set(true);
                         execution.cancelled.set(true);
-                        executionContext.cancel();
+                        timeoutContext.cancel();
                     }, turnTimeout.toMillis(), TimeUnit.MILLISECONDS
             );
         } catch (RuntimeException activationFailure) {
             metrics.observeFailure("TURN_ACTIVATION_FAILED");
-            finish(turn, AgentTurnStatusEnum.FAILED, "TURN_ACTIVATION_FAILED");
+            try {
+                finish(active, AgentTurnStatusEnum.FAILED, "TURN_ACTIVATION_FAILED");
+            } finally {
+                execution.executionContext.set(null);
+                slot.active = null;
+            }
             return;
         }
         try {
@@ -1095,63 +1123,119 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
 
     private boolean sourceContainsOrderFact(AgentTurnModel source, String orderId) {
         String marker = "\"orderId\":\"" + AgentTurnItemPayloads.escape(orderId) + "\"";
-        List<AgentItemModel> threadItems = allItems(source.userId(), source.threadId());
         Set<String> foldedTurnIds = new HashSet<>();
         foldedTurnIds.add(source.turnId());
-        boolean changed;
-        do {
-            changed = false;
-            for (AgentItemModel item : threadItems) {
-                if (item == null || item.turnId() == null || foldedTurnIds.contains(item.turnId())) {
-                    continue;
-                }
-                String payload = item.payloadJson() == null ? "" : item.payloadJson();
-                boolean belongsToSource = item.type() == AgentItemTypeEnum.ORDER_ACTION_REQUEST
-                        && payload.contains("\"sourceTurnId\":\""
-                        + AgentTurnItemPayloads.escape(source.turnId()) + "\"");
-                if (!belongsToSource && item.type() == AgentItemTypeEnum.AGENT_CONTINUATION) {
-                    belongsToSource = payload.contains("\"rootTurnId\":\""
-                            + AgentTurnItemPayloads.escape(source.turnId()) + "\"");
-                }
-                if (belongsToSource) {
-                    changed |= foldedTurnIds.add(item.turnId());
-                }
-            }
-        } while (changed);
-        return threadItems.stream()
-                .filter(item -> item != null && foldedTurnIds.contains(item.turnId()))
-                .filter(item -> item.type() == AgentItemTypeEnum.ORDER_DETAIL
-                        || item.type() == AgentItemTypeEnum.ORDER_LIST)
-                .anyMatch(item -> item.payloadJson() != null && item.payloadJson().contains(marker));
-    }
-
-    /** 统一取完整 Item 链，避免订单事实在长 Thread 中落出最近 500 条窗口。 */
-    private List<AgentItemModel> allItems(String userId, String threadId) {
-        List<AgentItemModel> result = new java.util.ArrayList<>();
+        Set<String> factTurns = new HashSet<>();
+        long watermark;
+        try {
+            watermark = items.captureWatermark(source.userId(), source.threadId());
+        } catch (RuntimeException failure) {
+            return false;
+        }
         long cursor = 0L;
-        for (int pageNo = 0; pageNo < 100; pageNo++) {
-            List<AgentItemModel> page = items.listItems(userId, threadId, cursor, 501);
+        for (;;) {
+            List<AgentItemModel> page;
+            try {
+                page = items.listItemsThrough(source.userId(), source.threadId(), cursor, watermark, 300);
+            } catch (RuntimeException failure) {
+                return false;
+            }
             if (page == null || page.isEmpty()) {
-                break;
+                return false;
             }
             long next = cursor;
             for (AgentItemModel item : page) {
-                if (item == null || item.sequence() <= cursor) {
-                    continue;
+                if (item == null || item.sequence() <= cursor || item.sequence() > watermark) {
+                    return false;
                 }
-                result.add(item);
-                next = Math.max(next, item.sequence());
+                next = item.sequence();
+                String payload = item.payloadJson() == null ? "" : item.payloadJson();
+                if ((item.type() == AgentItemTypeEnum.ORDER_DETAIL
+                        || item.type() == AgentItemTypeEnum.ORDER_LIST)
+                        && foldedTurnIds.contains(item.turnId())
+                        && payload.contains(marker)) {
+                    factTurns.add(item.turnId());
+                }
+                if (item.turnId() != null && !foldedTurnIds.contains(item.turnId())
+                        && item.type() == AgentItemTypeEnum.ORDER_ACTION_REQUEST
+                        && referencesFoldedTurn(payload, "sourceTurnId", foldedTurnIds)) {
+                    foldedTurnIds.add(item.turnId());
+                    if (factTurns.contains(item.turnId())) {
+                        return true;
+                    }
+                }
+                if (item.turnId() != null && !foldedTurnIds.contains(item.turnId())
+                        && item.type() == AgentItemTypeEnum.AGENT_CONTINUATION
+                        && referencesFoldedTurn(payload, "rootTurnId", foldedTurnIds)) {
+                    foldedTurnIds.add(item.turnId());
+                    if (factTurns.contains(item.turnId())) {
+                        return true;
+                    }
+                }
+                if (foldedTurnIds.contains(item.turnId()) && factTurns.contains(item.turnId())) {
+                    return true;
+                }
             }
-            if (next <= cursor || page.size() < 501) {
-                break;
+            if (next <= cursor) {
+                return false;
             }
             cursor = next;
         }
-        return result;
+    }
+
+    private boolean referencesFoldedTurn(String payload, String field, Set<String> foldedTurnIds) {
+        for (String turnId : foldedTurnIds) {
+            if (payload.contains("\"" + field + "\":\""
+                    + AgentTurnItemPayloads.escape(turnId) + "\"")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void scheduleQueueTimeout(String threadId, QueuedTurn queued) {
-        scheduler.schedule(() -> expireQueued(threadId, queued), waitTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        try {
+            ScheduledFuture<?> future = scheduler.schedule(
+                    () -> expireQueued(threadId, queued), waitTimeout.toMillis(), TimeUnit.MILLISECONDS);
+            ScheduledFuture<?> previous = queued.timeoutFuture.getAndSet(future);
+            if (previous != null) {
+                previous.cancel(false);
+            }
+        } catch (RuntimeException schedulingFailure) {
+            metrics.observeFailure(RUNTIME_SCHEDULER_REJECTED);
+            ThreadSlot slot = slots.get(threadId);
+            boolean removed = false;
+            if (slot != null) {
+                synchronized (slot) {
+                    removed = slot.queue.remove(queued) || slot.deferred.remove(queued);
+                    if (removed) {
+                        queued.cancelled.set(true);
+                        pendingGlobal.decrementAndGet();
+                    }
+                }
+            }
+            if (removed) {
+                failQueued(List.of(queued), RUNTIME_SCHEDULER_REJECTED);
+            }
+        }
+    }
+
+    private void cancelQueueTimeout(QueuedTurn queued) {
+        ScheduledFuture<?> future = queued.timeoutFuture.getAndSet(null);
+        if (future != null) {
+            future.cancel(false);
+        }
+    }
+
+    private void failQueued(List<QueuedTurn> queuedTurns, String code) {
+        for (QueuedTurn queued : queuedTurns) {
+            if (queued == null) {
+                continue;
+            }
+            queued.cancelled.set(true);
+            cancelQueueTimeout(queued);
+            finish(queued.turn, AgentTurnStatusEnum.FAILED, code);
+        }
     }
 
     private void promoteDeferredIfReady(ThreadSlot slot, AgentThreadModel thread) {
@@ -1173,7 +1257,8 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         ThreadSlot slot = slots.get(threadId);
         if (slot == null) return;
         synchronized (slot) {
-            if (!slot.queue.remove(target)) return;
+            if (!slot.queue.remove(target) && !slot.deferred.remove(target)) return;
+            cancelQueueTimeout(target);
             target.timedOut.set(true);
             target.cancelled.set(true);
             pendingGlobal.decrementAndGet();
@@ -1304,7 +1389,8 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
             AgentQuestionAnswerInput questionAnswerInput,
             AtomicBoolean cancelled,
             AtomicBoolean timedOut,
-            AtomicReference<AgentExecutionContext> executionContext
+            AtomicReference<AgentExecutionContext> executionContext,
+            AtomicReference<ScheduledFuture<?>> timeoutFuture
     ) {
         private boolean questionAnswer() {
             return questionAnswerInput != null;

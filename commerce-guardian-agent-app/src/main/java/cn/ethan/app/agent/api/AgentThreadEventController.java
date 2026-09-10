@@ -19,6 +19,7 @@ import java.util.UUID;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 /**
  * 类型职责：恢复 Item 游标后订阅 Thread 实时事件，并维护 SSE 心跳生命周期。
@@ -43,7 +44,7 @@ public final class AgentThreadEventController {
             AgentRuntimeProperties properties,
             AgentUserContext userContext,
             Clock clock,
-            ScheduledExecutorService scheduler
+            @Qualifier("agentSseHeartbeatScheduler") ScheduledExecutorService scheduler
     ) {
         this.threads = threads;
         this.events = events;
