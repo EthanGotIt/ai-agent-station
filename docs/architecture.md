@@ -128,7 +128,7 @@ SSE 事件包含完整 envelope：`eventId、threadId、turnId、itemId（可选
 
 2B-1 试点由 `AI_AGENT_EXPEDITE_GRAPH_ENABLED` 控制，默认关闭。开关打开后，只有明确订单号的催发货新 Run 标记为 `EXPEDITE_GRAPH_V1`；补选订单、其他订单操作和已有 Run 使用 `LEGACY_V1` 兼容路径。聊天 Tool 和订单卡片都进入同一个 `AgentWorkflowEngine` 路由。图节点依次记录订单读取、资格核验、确认等待和交给 Worker 的受控阶段；确认事务保存 Run、Checkpoint、开放交互指针和 Items，批准事务锁定并复核 Run/Checkpoint 后才创建唯一命令。恢复先校验 Run 编排版本，再读取 QuestionCard、Workflow Checkpoint 和订单事实；未知版本直接失败，不回退另一条路径。重复来源 Turn 返回原有交互，参数变化收口为冲突。试点创建命令后保持 `WAITING_EXTERNAL_ACTION`，Worker 继续负责外部执行与结果结算；图的技术 END 不投影为业务成功。
 
-2B-2 的生产快照恢复代码已接入：`MybatisLangGraphCheckpointSaver` 按 Run 保存技术节点、状态、业务版本、事实指纹和编排版本，缺失/损坏/失配时由业务 Run、Checkpoint 和订单事实重建；快照不授予授权，也不替代业务事实。当前默认仍关闭试点，生产副本故障注入、跨进程恢复和打开开关后的完整验收必须单独执行。
+2B-2 的生产快照恢复代码已接入并完成一次性副本现场验收：`MybatisLangGraphCheckpointSaver` 按 Run 保存技术节点、状态、业务版本、事实指纹和编排版本，缺失/损坏/失配时由业务 Run、Checkpoint 和订单事实重建；快照不授予授权，也不替代业务事实。事实指纹使用跨 JVM 稳定的有序物流字段；未知编排版本以 `UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION` 失败，不回退另一条路径。试点默认仍关闭，生产开关、第三方鉴权和删除动作按部署环境单独验收。
 
 V6 现场迁移先备份配置库并在一次性克隆库执行；V7 首次运行前同样必须备份并在一次性克隆库验证。确认 `INPUT_KIND` 非空、`ORDER_ACTION_JSON` 和 `CONTINUATION_JSON` 可空，历史 Workflow 状态不被重写。外部 HTTP 订单服务、Agent 和前端验收结束后关闭测试进程，MySQL 保持运行。
 
@@ -138,8 +138,8 @@ V6 现场迁移先备份配置库并在一次性克隆库执行；V7 首次运�
 
 `scripts.acceptance` 是本机验收工具，不是生产流量回放器。它先通过 `/api/agent` 验证 Thread → Turn → Item 的恢复、游标、开放交互、Turn 幂等和执行轨迹回放，再可选连接独立 SQLite 订单夹具验证物流、退款、催发货重试和显式授权的删除。夹具动作通过唯一 `Idempotency-Key` 重放并对照 `/_fixture/stats`；删除开关默认关闭，只允许在操作者确认数据库可丢弃后作用于固定演示订单。该工具不保存模型原文、Thinking、密钥或完整订单响应，也不改变 HTTP、SSE 或 Item 事实协议；V2 ContextSnapshot 和 Workflow 编排版本都是可校验的派生/路由元数据。
 
-Week 4 的真实模型质量报告、数据库副本迁移和四尺寸浏览器矩阵属于外部验收证据，不能由确定性 runner 或前端组件测试推断完成；本轮已在真实 Agent + 独立订单夹具上完成 HTTP Thread/Turn/Item、开放交互、幂等、执行回放、物流、退款和催发货重试验收，并以合成订单完成真实 DeepSeek 查询和刷新恢复。四尺寸页面、移动抽屉/Escape、控制台无错误及深浅主题/reduced-motion smoke 已记录；2B-2 生产快照故障注入、完整催发货模型黄金路径、SSE 重连和错误焦点仍按运行手册逐项记录。
+Week 4 的真实模型质量报告、数据库副本迁移和浏览器矩阵属于外部验收证据，不能由确定性 runner 或前端组件测试推断完成；本轮已在真实 Agent + 独立订单夹具上完成 HTTP Thread/Turn/Item、开放交互、幂等、执行回放、物流、退款、催发货重试和完整催发货黄金路径，并以合成订单完成真实 DeepSeek 查询、Worker 结果核验、模型续接总结和刷新恢复。四尺寸页面、移动抽屉/Escape、控制台无错误及深浅主题/reduced-motion smoke 已记录；`1536×730` 另完成离线/在线后的带游标 SSE 重订阅和 QuestionCard 错误焦点，其他尺寸专项证据仍按运行手册逐项补录。
 
 ## 阶段七验收状态（2026-09-10）
 
-本轮规范检查、脚本测试、运行时确定性门禁、后端全量单测和前端 typecheck/Vitest/生产构建均通过；2A-2 的 Core/Infrastructure 回归覆盖裁剪、摘要、V2 快照和溢出恢复边界，2B-1 增加试点图阶段、事实指纹、进程重启业务重建、锁读和命令幂等测试，事项级恢复与前端动作状态投影已补齐成功优先级。模块 `.env` 已加载到 Maven 测试进程，`context-acceptance` 与 `workflow-acceptance` profile 在随机临时库通过 V9→V11 Flyway 迁移、Run 版本读取、归属隔离、事务回滚和 CAS 验收；HTTP acceptance runner 和合成订单 DeepSeek 查询、四尺寸页面 smoke 已通过。2B-2 的生产图快照故障注入/启用、完整催发货真实模型路径和浏览器 SSE/错误焦点矩阵仍属于独立验收，不能以确定性测试替代。
+本轮规范检查、脚本测试、运行时确定性门禁、后端全量单测和前端 typecheck/Vitest/生产构建均通过；2A-2 的 Core/Infrastructure 回归覆盖裁剪、摘要、V2 快照和溢出恢复边界，2B-1 增加试点图阶段、事实指纹、进程重启业务重建、锁读和命令幂等测试，事项级恢复与前端动作状态投影已补齐成功优先级。模块 `.env` 已加载到 Maven 测试进程，`context-acceptance` 与 `workflow-acceptance` profile 在随机临时库通过 V9→V11 Flyway 迁移、Run 版本读取、归属隔离、事务回滚和 CAS 验收；HTTP acceptance runner、合成订单 DeepSeek 完整黄金路径、快照故障注入和 `1536×730` 浏览器 SSE/错误焦点专项均已通过。删除动作、生产开关和第三方鉴权仍是部署环境门禁。

@@ -37,10 +37,19 @@
 
 | 验收面 | 当前结论 | 直接证据 | 未闭合事项 |
 | --- | --- | --- | --- |
-| 图路由与编排版本 | 已接入，默认关闭 | `LangGraphAgentWorkflowEngine` 仅为明确订单号的催发货新 Run 选择 `EXPEDITE_GRAPH_V1`；历史和其他动作保持 `LEGACY_V1`；V11 迁移、版本读取和未知版本拒绝由 `MybatisAgentWorkflowRunStoreVersionTest` 与 Workflow MySQL IT 覆盖 | 生产开关启用前仍需完成现场回归 |
+| 图路由与编排版本 | 已接入，默认关闭 | `LangGraphAgentWorkflowEngine` 仅为明确订单号的催发货新 Run 选择 `EXPEDITE_GRAPH_V1`；历史和其他动作保持 `LEGACY_V1`；V11 迁移、版本读取和未知版本拒绝由 `MybatisAgentWorkflowRunStoreVersionTest` 与 Workflow MySQL IT 覆盖；未知版本现在以 `UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION` 受控失败 | 生产开关仍需按部署环境单独启用 |
 | 节点、确认与命令边界 | 已通过定向测试 | `LangGraphWorkflowGraphFactory`/Engine 覆盖订单读取、资格核验、AUTHORIZE、Worker 交接和结果返回；批准事务锁读 Run/Checkpoint 并只创建唯一 `ExternalActionCommand`；确认前无外部写入 | 完整真实模型催发货路径仍待补录 |
-| 技术快照恢复 | 已实现，现场故障注入待完成 | `MybatisLangGraphCheckpointSaver` 保存节点、状态、Workflow 版本、事实指纹和编排版本；`MybatisLangGraphCheckpointSaverTest` 覆盖元数据校验，缺失/损坏/失配时 Engine 从业务事实重建，不以快照授予授权 | 2B-2 生产副本删除/损坏快照、跨进程恢复和启用验收 |
-| Worker 结果闭环 | 本地及独立 HTTP 边界已通过 | Worker 以 PENDING/RETRY_WAIT/PROCESSING Lease 领取命令，结果写入 `EXTERNAL_ACTION_STATUS`/Workflow 事实；HTTP acceptance runner 覆盖催发货三次失败、人工重试和单次业务变更 | 真实模型从批准到结果再到总结的黄金路径 |
+| 技术快照恢复 | 已通过一次性副本现场验收 | `MybatisLangGraphCheckpointSaver` 保存节点、状态、Workflow 版本、事实指纹和编排版本；删除、损坏 `STATE_JSON`、版本失配和跨进程重启均从 Run/Checkpoint/订单事实重建，不以快照授予授权；`safeLogistics` 使用有序结构，事实指纹跨 JVM 稳定 | 生产副本和真实第三方订单平台仍按部署环境验收 |
+| Worker 结果闭环 | 已通过本地、HTTP 和真实模型黄金路径 | Worker 以 PENDING/RETRY_WAIT/PROCESSING Lease 领取命令，结果写入 `EXTERNAL_ACTION_STATUS`/Workflow 事实；三次失败后人工恢复与零失败成功路径均验证同一幂等键只产生一次业务变更；成功结果已接回模型续接总结 | 无本轮代码阻塞 |
+
+## 2B-2 生产快照现场与真实模型闭环（2026-09-10）
+
+| 验收面 | 当前结论 | 直接证据 | 未闭合事项 |
+| --- | --- | --- | --- |
+| 删除/损坏/版本失配 | 已通过 | 隔离 `AcceptanceData` 开启 `AI_AGENT_EXPEDITE_GRAPH_ENABLED=true`；Run A 删除快照后重启无 `FACTS_CHANGED`，Run B 损坏 `STATE_JSON`、Run C 快照版本失配均从业务事实重建；原始快照坏行不被重新授权 | 不把一次性副本证据表述为生产库迁移 |
+| 未知编排版本 | 已通过受控失败 | Run D 将 `AGENT_WORKFLOW_RUN.ORCHESTRATION_VERSION` 改为未知值，批准 Turn 失败并持久化 `UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION`，没有 ExternalActionCommand；Store 与 Runtime 回归均覆盖稳定错误码 | 无 |
+| 真实模型黄金路径 | 已通过 | 干净合成订单夹具完成查询、催发货、批准、Worker、结果核验和模型续接；Run `COMPLETED`，命令 attempt 1 成功，订单物流为 `EXPEDITE_REQUESTED`，`idempotencyRecords=1`、`businessMutations=1` | 第三方平台鉴权仍需部署环境验收 |
+| 浏览器 SSE 与错误焦点 | 已通过专项现场复核 | `1536×730` 会话离线/在线后重新请求 `events?afterSequence=18`；刷新先取 Items 再按游标订阅；QuestionCard 空提交后必填框为 `active + invalid`，页面有 `role=alert`；控制台 errors/warnings 均为 0 | 其他四尺寸的专项断线/焦点证据仍按运行手册逐项补录 |
 
 ## 第三阶段事项级恢复（2026-09-10）
 
@@ -56,7 +65,7 @@
 | --- | --- | --- | --- |
 | 动作状态展示 | 已通过前端回归 | `OrderActionProjection`/`OrderActionStatus` 区分确认等待、PENDING、PROCESSING、RETRY_WAIT、SUCCEEDED、成功待核验和 MANUAL_RETRY_REQUIRED；新增 `OrderActionStatus.test.tsx` 覆盖 8 项 | 无代码阻塞 |
 | 业务结果优先级 | 已通过投影测试 | `EXTERNAL_ACTION_STATUS=SUCCEEDED` 在投影末端优先于后续技术 `TURN_STATE=FAILED` 或续接错误；待核验只提供 `REFRESH_ORDER`，人工重试沿用原 Run/命令 API；`threadProjection.test.ts`、`App.test.tsx` 覆盖失败/刷新/竞态 | 完整真实模型浏览器路径仍待补录 |
-| 真实验收与恢复 | 部分完成 | HTTP acceptance runner 已通过 Thread/Turn/Item、交互、幂等、执行回放、物流、退款和催发货重试；合成订单 DeepSeek 查询产生 12 个 Item，刷新恢复和四尺寸页面 smoke 通过 | 2B-2 快照故障注入、完整催发货真实模型路径、SSE 重连和错误焦点 |
+| 真实验收与恢复 | 已完成本轮范围 | HTTP acceptance runner 已通过 Thread/Turn/Item、交互、幂等、执行回放、物流、退款和催发货重试；合成订单 DeepSeek 完成查询→催发货→批准→Worker→结果→总结，刷新恢复、快照故障注入和 `1536×730` SSE/错误焦点均有现场证据 | 生产开关、第三方鉴权、删除动作和其他尺寸专项证据按部署环境继续执行 |
 
 ## 2A 阻断修复（2026-09-05）
 
