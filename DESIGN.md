@@ -13,7 +13,7 @@
 
 页面使用更轻的冷雾灰画布（`#F4F7F6`）和清晰的白色工作面（`#FFFFFF`）；侧栏与右侧检查器以细分隔线而非厚重卡片阴影分区。路线青绿（`#176C60`）表达正常业务流，信号琥珀（`#925515`）表达等待确认或外部系统尚未核验，故障红（`#A33B37`）表达失败与错误。
 
-正文采用 `Segoe UI Variable`、中文系统字体；时间、序号和 Item 类型采用 `Cascadia Mono`。按钮、面板、状态胶囊和输入控件共享 8–12px 圆角与 180ms 状态过渡；所有可触控控件统一使用 `--hit-target: 44px`。模态和抽屉遮罩复用 `--scrim`、`--scrim-hover`、`--scrim-strong` 主题 token。系统深色模式通过同一组语义 token 覆盖，`prefers-reduced-motion` 会收敛过渡和动画。
+正文采用 `Segoe UI Variable`、中文系统字体；时间、序号和 Item 类型采用 `Cascadia Mono`。按钮、面板、状态胶囊和输入控件共享 8–12px 圆角与 180ms 状态过渡；所有可触控控件统一使用 `--hit-target: 44px`。模态和抽屉遮罩复用 `--scrim`、`--scrim-strong` 主题 token，遮罩命中态保持同色，不因 hover 产生色阶跳变；弹窗使用独立的 `--shadow-modal` 深度 token。系统深色模式通过同一组语义 token 覆盖，`prefers-reduced-motion` 会收敛过渡和动画。
 
 ## 交互结果
 
