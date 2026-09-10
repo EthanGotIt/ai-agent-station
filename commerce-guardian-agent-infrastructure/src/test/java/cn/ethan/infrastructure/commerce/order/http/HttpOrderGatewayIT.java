@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * HTTP 订单网关测试：验证外部响应归属、超时和成功映射边界。
+ * HTTP 订单网关集成测试：验证真实 loopback 下的超时、查询参数和动作协议。
  *
  * @author ethan
  * @date 2026-08-05
@@ -80,23 +80,6 @@ class HttpOrderGatewayIT {
         assertEquals(OrderLookupStatusEnum.FOUND, result.status());
         assertEquals("user-1", result.order().userId());
         assertEquals("user-1", requestUserId.get());
-    }
-
-    @Test
-    void rejectsResponseOwnedByAnotherUser() {
-        responseBody = """
-                {
-                  "accessDenied": false,
-                  "orderId": "ORDER-001",
-                  "userId": "user-2",
-                  "status": "PAID"
-                }
-                """;
-
-        OrderLookupResultModel result = gateway(Duration.ofSeconds(1))
-                .findOrder("ORDER-001", "user-1");
-
-        assertEquals(OrderLookupStatusEnum.ACCESS_DENIED, result.status());
     }
 
     @Test

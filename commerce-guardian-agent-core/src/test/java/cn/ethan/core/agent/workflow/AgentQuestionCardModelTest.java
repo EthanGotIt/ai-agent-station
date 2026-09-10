@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * QuestionCard 新契约测试：确认提问模型不承载授权语义，并覆盖回答 Turn 生命周期。
+ * Workflow 契约测试：验证 QuestionCard、Checkpoint 和 WorkflowRun 的状态不变量。
  *
  * @author ethan
  * @date 2026-08-27
@@ -91,5 +91,99 @@ class AgentQuestionCardModelTest {
                 () -> question.validateAnswers(Map.of()));
         assertThrows(IllegalArgumentException.class,
                 () -> question.validateAnswers(Map.of("decision", "CONFIRM")));
+    }
+
+    @Test
+    void approvalAndRejectionAreTerminalDecisions() {
+        AgentWorkflowCheckpointModel checkpoint = checkpoint();
+
+        AgentWorkflowCheckpointModel approved = checkpoint.approve(NOW.plusSeconds(1));
+        AgentWorkflowCheckpointModel rejected = checkpoint.reject(NOW.plusSeconds(1));
+
+        assertEquals(1, approved.version());
+        assertEquals(AgentWorkflowCheckpointStatusEnum.APPROVED, approved.status());
+        assertEquals(AgentWorkflowDecisionEnum.APPROVE, approved.decision());
+        assertEquals(AgentWorkflowCheckpointStatusEnum.REJECTED, rejected.status());
+        assertEquals(AgentWorkflowDecisionEnum.REJECT, rejected.decision());
+        assertThrows(IllegalStateException.class, () -> approved.reject(NOW.plusSeconds(2)));
+    }
+
+    @Test
+    void supersededCheckpointHasNoDecisionAndCannotBeReused() {
+        AgentWorkflowCheckpointModel superseded = checkpoint().supersede(NOW.plusSeconds(1));
+
+        assertEquals(1, superseded.version());
+        assertEquals(AgentWorkflowCheckpointStatusEnum.SUPERSEDED, superseded.status());
+        assertNull(superseded.decision());
+        assertThrows(IllegalStateException.class, () -> superseded.approve(NOW.plusSeconds(2)));
+    }
+
+    @Test
+    void approvedCheckpointCanBeSupersededWhenFactsChangeBeforeExecution() {
+        AgentWorkflowCheckpointModel approved = checkpoint().approve(NOW.plusSeconds(1));
+
+        AgentWorkflowCheckpointModel superseded = approved.supersede(NOW.plusSeconds(2));
+
+        assertEquals(2, superseded.version());
+        assertEquals(AgentWorkflowCheckpointStatusEnum.SUPERSEDED, superseded.status());
+        assertNull(superseded.decision());
+    }
+
+    @Test
+    void checkpointRequiresStableFactsFingerprint() {
+        assertThrows(IllegalArgumentException.class, () -> new AgentWorkflowCheckpointModel(
+                "checkpoint-1", "run-1", "thread-1", "turn-1", "user-1", "AUTHORIZE",
+                "REFUND", "ORDER-1", "退款", "", 0, AgentWorkflowCheckpointStatusEnum.OPEN,
+                null, NOW, null));
+    }
+
+    @Test
+    void manualRetryRequiredCanReturnToExternalActionAndComplete() {
+        AgentWorkflowRunModel manual = run(AgentWorkflowStatusEnum.MANUAL_RETRY_REQUIRED, 1);
+
+        AgentWorkflowRunModel waiting = manual.status(
+                AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, NOW.plusSeconds(1));
+        AgentWorkflowRunModel completed = waiting.status(
+                AgentWorkflowStatusEnum.COMPLETED, NOW.plusSeconds(2));
+
+        assertEquals(2L, waiting.version());
+        assertEquals(AgentWorkflowStatusEnum.COMPLETED, completed.status());
+        assertEquals(AgentWorkflowOrchestrationVersionEnum.LEGACY_V1,
+                completed.orchestrationVersion());
+    }
+
+    @Test
+    void immutableTerminalCannotBeRewritten() {
+        AgentWorkflowRunModel completed = run(AgentWorkflowStatusEnum.COMPLETED, 3);
+
+        assertThrows(IllegalStateException.class,
+                () -> completed.status(AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, NOW));
+    }
+
+    @Test
+    void sameStatusCannotAdvanceVersionWithoutAStateTransition() {
+        AgentWorkflowRunModel waiting = run(AgentWorkflowStatusEnum.WAITING_USER_INPUT, 0);
+
+        assertThrows(IllegalStateException.class,
+                () -> waiting.status(AgentWorkflowStatusEnum.WAITING_USER_INPUT, NOW));
+    }
+
+    @Test
+    void negativeVersionIsRejectedAtPersistenceBoundary() {
+        assertThrows(IllegalArgumentException.class,
+                () -> run(AgentWorkflowStatusEnum.WAITING_USER_INPUT, -1));
+    }
+
+    private AgentWorkflowCheckpointModel checkpoint() {
+        return new AgentWorkflowCheckpointModel(
+                "checkpoint-1", "run-1", "thread-1", "turn-1", "user-1", "AUTHORIZE",
+                "REFUND", "ORDER-1", "退款订单 ORDER-1", "facts-v1", 0,
+                AgentWorkflowCheckpointStatusEnum.OPEN, null, NOW, null);
+    }
+
+    private AgentWorkflowRunModel run(AgentWorkflowStatusEnum status, long version) {
+        return new AgentWorkflowRunModel(
+                "run-1", "thread-1", "turn-1", "user-1", AgentWorkflowTypeEnum.REFUND,
+                status, version, NOW, NOW);
     }
 }
