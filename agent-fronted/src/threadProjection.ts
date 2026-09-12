@@ -340,6 +340,18 @@ function decodePayload(type: string, payload: string, schemaVersion: number): Ag
 
 function normalizeItem(item: AgentItemWire | AgentItem): AgentItem {
   if (typeof item.payload === "object") return item as AgentItem;
+  const wireData = "data" in item ? item.data : undefined;
+  if (wireData !== undefined) {
+    return {
+      ...item,
+      schemaVersion: 1,
+      payload: {
+        schemaVersion: 1,
+        kind: item.type,
+        data: wireData
+      } as AgentItemPayload
+    };
+  }
   return {
     ...item,
     schemaVersion: 1,
@@ -733,7 +745,7 @@ function buildActivities(items: AgentItem[]): BusinessProgress[] {
             : ["ASK_USER", "WAIT_USER"].includes(decision.decision) ? "WAITING" : "DONE", sequence: item.sequence };
       }
       if (item.type === "ERROR") {
-        const errorCode = payloadText(item.payload);
+        const errorCode = stringValue(recordValue(item.payload.data)?.code) ?? payloadText(item.payload);
         const knownStop = ["CONTEXT_BUDGET_EXCEEDED", "OUTPUT_BUDGET_EXCEEDED", "TOOL_REPEATED_FAILURE", "CONTEXT_HISTORY_INVALID"]
           .includes(errorCode);
         const label = errorCode === "CONTEXT_HISTORY_INVALID" ? "上下文历史读取失败"
@@ -834,8 +846,10 @@ function buildTurn(turnId: string, sourceItems: AgentItem[]): ThreadViewTurn {
       if (externalSucceeded) {
         current.continuationWarning = "业务操作已完成，后续 Agent 续接未完成；可以继续提问或稍后查看。";
       } else {
-        current.error = payloadText(item.payload);
         const errorData = recordValue(item.payload.data);
+        current.error = stringValue(errorData?.message)
+          ?? stringValue(errorData?.code)
+          ?? payloadText(item.payload);
         current.errorCode = stringValue(errorData?.code)
           ?? (current.error === "AGENT_DECISION_MISSING" ? current.error : current.errorCode);
         current.status = "FAILED";

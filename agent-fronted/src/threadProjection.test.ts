@@ -21,6 +21,25 @@ function item(
 }
 
 describe("thread projection", () => {
+  it("accepts the additive structured data field from Items API", () => {
+    const normalized = normalizeItem({
+      itemId: "item-1",
+      turnId: "turn-1",
+      sequence: 1,
+      type: "TURN_STATE",
+      schemaVersion: 1,
+      payload: "",
+      data: { status: "COMPLETED" },
+      createdAt: "2026-08-28T00:00:01Z"
+    });
+
+    expect(normalized.payload).toEqual({
+      schemaVersion: 1,
+      kind: "TURN_STATE",
+      data: { status: "COMPLETED" }
+    });
+  });
+
   it("projects the Workflow order shape and decimal strings from the final receipt", () => {
     const sourceTurnId = "turn-source";
     const actionTurnId = "turn-action";
@@ -257,6 +276,21 @@ describe("thread projection", () => {
       decision: "FINISH", correctionAttempt: true
     }));
     expect(findOpenInteraction(items)).toBeNull();
+  });
+
+  it("reads the error code and message from the structured ERROR payload", () => {
+    const items = [
+      item("ERROR", 1, "turn-structured-error", { code: "ORDER_NOT_FOUND", message: "订单不存在" }),
+      item("TURN_STATE", 2, "turn-structured-error", { status: "FAILED", errorCode: "ORDER_NOT_FOUND" })
+    ].map(normalizeItem);
+
+    const [turn] = rebuildTurns(items);
+
+    expect(turn.errorCode).toBe("ORDER_NOT_FOUND");
+    expect(turn.error).toBe("订单不存在");
+    expect(turn.activities).toContainEqual(expect.objectContaining({
+      label: "处理遇到问题", detail: "可以检查结果后重试", status: "ERROR"
+    }));
   });
 
   it("projects resource stop decisions with their exact reason and error state", () => {

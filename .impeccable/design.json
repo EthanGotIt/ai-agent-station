@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-10T13:30:00+08:00",
+  "title": "Design System: Commerce Guardian Agent",
+  "extensions": {
+    "colorMeta": {
+      "canvas": {"role":"neutral","displayName":"Cool Mist","canonical":"#f4f7f6","tonalRamp":["#202c28","#364a43","#527066","#71988b","#9bb6ad","#bed0ca","#dce5e2","#f0f4f3"]},
+      "surface": {"role":"neutral","displayName":"Paper Surface","canonical":"#ffffff","tonalRamp":["#262626","#404040","#616161","#858585","#a8a8a8","#c7c7c7","#e0e0e0","#f2f2f2"]},
+      "surface-muted": {"role":"neutral","displayName":"Quiet Fog","canonical":"#f6f9f8","tonalRamp":["#1f2e29","#334c44","#4e7467","#6c9d8d","#97baae","#bcd2cb","#dae7e2","#f0f5f3"]},
+      "ink": {"role":"neutral","displayName":"Deep Pine Ink","canonical":"#142522","tonalRamp":["#1b322e","#2d534c","#447e74","#60a99c","#8ec2b9","#b6d8d2","#d7eae6","#eef6f5"]},
+      "muted": {"role":"neutral","displayName":"Sage Slate","canonical":"#526660","tonalRamp":["#222a28","#394743","#566b65","#77928a","#9fb2ac","#c1cdc9","#dde4e2","#f1f4f3"]},
+      "quiet": {"role":"neutral","displayName":"Soft Sage","canonical":"#5e716a","tonalRamp":["#26302d","#3f514b","#5c746b","#7c9a8f","#a1bcb3","#c2d4ce","#dfeae6","#f2f7f5"]},
+      "line": {"role":"neutral","displayName":"Mist Divider","canonical":"#d3e0db","tonalRamp":["#202d28","#354b42","#507265","#6f9a89","#99b7ac","#bdd1c9","#dbe6e2","#f0f4f3"]},
+      "line-strong": {"role":"neutral","displayName":"Assertive Divider","canonical":"#b7cbc3","tonalRamp":["#202c27","#354a42","#517164","#719889","#9ab6ab","#bed0c9","#dbe5e1","#f0f4f3"]},
+      "rail": {"role":"neutral","displayName":"Pine Rail","canonical":"#142522","tonalRamp":["#1b322e","#2d534c","#447e74","#60a99c","#8ec2b9","#b6d8d2","#d7eae6","#eef6f5"]},
+      "route": {"role":"primary","displayName":"Route Teal","canonical":"#176c60","tonalRamp":["#0d3f38","#16695d","#22a08e","#35d4be","#70e1d1","#a2ebe1","#cdf4ef","#eafbf8"]},
+      "route-strong": {"role":"primary","displayName":"Deep Route Teal","canonical":"#0e554b","tonalRamp":["#0b423a","#126d61","#1ba693","#2ddcc4","#6ae6d5","#9fefe4","#caf6f0","#e9fbf9"]},
+      "route-soft": {"role":"primary","displayName":"Route Wash","canonical":"#d8ebe5","tonalRamp":["#1a332b","#2b5447","#42806c","#5dac93","#8cc4b3","#b5d9ce","#d7eae4","#eef6f4"]},
+      "amber": {"role":"secondary","displayName":"Signal Amber","canonical":"#925515","tonalRamp":["#43270a","#6f4110","#a96318","#e08729","#e9aa67","#f1c89d","#f7e1c9","#fcf2e9"]},
+      "amber-soft": {"role":"secondary","displayName":"Signal Wash","canonical":"#f6eadb","tonalRamp":["#3d290f","#664419","#9b6727","#ce8d3b","#dcae74","#e9cba5","#f3e2ce","#faf3eb"]},
+      "danger": {"role":"tertiary","displayName":"Fault Red","canonical":"#a33b37","tonalRamp":["#391513","#5f2320","#913431","#c14c48","#d3817d","#e3adab","#f0d2d1","#f9ecec"]},
+      "danger-soft": {"role":"tertiary","displayName":"Fault Wash","canonical":"#f8e2df","tonalRamp":["#3f140e","#692117","#9f3223","#d34936","#e07e71","#ebaca3","#f4d1cd","#faecea"]},
+      "success": {"role":"primary","displayName":"Verified Green","canonical":"#20735c","tonalRamp":["#113c30","#1c6450","#2a9879","#3fcaa3","#77d9be","#a7e7d5","#cff2e8","#ebf9f5"]},
+      "success-soft": {"role":"primary","displayName":"Verified Wash","canonical":"#dceddf","tonalRamp":["#1a331e","#2b5433","#42804d","#5dac6b","#8cc496","#b5d9bb","#d7eada","#eef6f0"]},
+      "focus": {"role":"primary","displayName":"Focus Teal","canonical":"#188c79","tonalRamp":["#0b4138","#136d5e","#1ca58f","#2edbbf","#6be6d2","#9fefe2","#cbf6ef","#e9fbf8"]},
+      "button-ink": {"role":"neutral","displayName":"Button Mint","canonical":"#f3fbf8","tonalRamp":["#0e2b25","#1b4d42","#2b7968","#3f9e8a","#66baaa","#94d3c7","#c4e8e0","#e9f9f5"]},
+      "scrim": {"role":"neutral","displayName":"Calm Scrim","canonical":"rgb(7 20 17 / 25%)","tonalRamp":["rgb(7 20 17 / 85%)","rgb(7 20 17 / 75%)","rgb(7 20 17 / 65%)","rgb(7 20 17 / 55%)","rgb(7 20 17 / 45%)","rgb(7 20 17 / 35%)","rgb(7 20 17 / 25%)","rgb(7 20 17 / 15%)"]},
+      "scrim-strong": {"role":"neutral","displayName":"Strong Scrim","canonical":"rgb(7 20 17 / 48%)","tonalRamp":["rgb(7 20 17 / 95%)","rgb(7 20 17 / 85%)","rgb(7 20 17 / 75%)","rgb(7 20 17 / 65%)","rgb(7 20 17 / 55%)","rgb(7 20 17 / 45%)","rgb(7 20 17 / 35%)","rgb(7 20 17 / 25%)"]}
+    },
+    "typographyMeta": {
+      "headline": {"displayName":"Top Bar Headline","purpose":"Product name in the sticky application bar."},
+      "title": {"displayName":"Workbench Title","purpose":"Current Thread, empty state, and decision-card headings."},
+      "label": {"displayName":"Ledger Label","purpose":"Sparse uppercase section metadata and operational markers."},
+      "mono": {"displayName":"Audit Metadata","purpose":"Order IDs, timestamps, sequence numbers, fingerprints, and controlled JSON."}
+    },
+    "shadows": [
+      {"name":"ambient-surface","value":"0 12px 30px rgb(20 53 47 / 8%)","purpose":"Account/help and order overflow popovers."},
+      {"name":"close-surface","value":"0 6px 16px rgb(20 53 47 / 8%)","purpose":"Composer and connection recovery card."},
+      {"name":"modal-depth","value":"0 24px 60px rgb(20 53 47 / 18%), 0 2px 8px rgb(20 53 47 / 10%)","purpose":"QuestionCard and Workflow Checkpoint modal surfaces."}
+    ],
+    "motion": [
+      {"name":"ease-standard","value":"cubic-bezier(.22, .8, .25, 1)","purpose":"Default state transition easing."},
+      {"name":"state-transition","value":"180ms","purpose":"Button, menu, focus, and compact state changes."},
+      {"name":"surface-reveal","value":"220ms","purpose":"Turn, modal, and mobile drawer reveal."},
+      {"name":"reduced-motion","value":"none","purpose":"Disable authored animation and transition under prefers-reduced-motion."}
+    ],
+    "breakpoints": [
+      {"name":"inspector-drawer","value":"1179px"},
+      {"name":"mobile-drawers","value":"760px"},
+      {"name":"narrow-actions","value":"430px"},
+      {"name":"coarse-pointer","value":"pointer: coarse"},
+      {"name":"forced-colors","value":"forced-colors: active"}
+    ]
+  },
+  "components": [
+    {
+      "name":"Primary Button",
+      "kind":"button",
+      "refersTo":"button-primary",
+      "description":"The committed action for sending a request, confirming a decision, or retrying recovery.",
+      "html":"<button class='ds-btn-primary' type='button'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='m5 12 4 4L19 6'/></svg>确认并执行</button>",
+      "css":".ds-btn-primary { display: inline-flex; min-height: 44px; align-items: center; gap: 6px; border: 1px solid var(--route); border-radius: 8px; padding: 8px 12px; color: var(--button-ink); background: var(--route); font: 750 14px/1.2 var(--font-sans, 'Segoe UI Variable', sans-serif); cursor: pointer; transition: background-color 180ms var(--ease), border-color 180ms var(--ease), box-shadow 180ms var(--ease), transform 180ms var(--ease); } .ds-btn-primary svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; } .ds-btn-primary:hover { border-color: var(--route-strong); background: var(--route-strong); box-shadow: 0 7px 15px color-mix(in srgb, var(--route) 24%, transparent); transform: translateY(-1px); } .ds-btn-primary:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }"
+    },
+    {
+      "name":"Secondary Button",
+      "kind":"button",
+      "refersTo":"button-secondary",
+      "description":"A quiet action for navigation, inspection, cancellation, and non-committed order operations.",
+      "html":"<button class='ds-btn-secondary' type='button'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M3 12h18M13 6l6 6-6 6'/></svg>查物流</button>",
+      "css":".ds-btn-secondary { display: inline-flex; min-height: 44px; align-items: center; gap: 6px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 8px 12px; color: var(--ink); background: transparent; font: 750 14px/1.2 var(--font-sans, 'Segoe UI Variable', sans-serif); cursor: pointer; transition: background-color 180ms var(--ease), border-color 180ms var(--ease), color 180ms var(--ease); } .ds-btn-secondary svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; } .ds-btn-secondary:hover { border-color: var(--route); color: var(--route-strong); background: var(--route-soft); } .ds-btn-secondary:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }"
+    },
+    {
+      "name":"Text Input / Composer",
+      "kind":"input",
+      "refersTo":"input",
+      "description":"The persistent request field for order IDs, logistics questions, and after-sales intent.",
+      "html":"<label class='ds-field'><span>输入请求</span><textarea class='ds-input' placeholder='输入订单号、物流问题或售后诉求…'></textarea></label>",
+      "css":".ds-field { display: grid; gap: 6px; color: var(--ink); font: 750 12px/1.35 var(--font-sans, 'Segoe UI Variable', sans-serif); } .ds-field span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); } .ds-input { width: 100%; min-height: 70px; border: 0; border-radius: 14px; padding: 12px 14px; color: var(--ink); background: var(--surface); caret-color: var(--route); font: 400 14px/1.5 var(--font-sans, 'Segoe UI Variable', sans-serif); resize: vertical; outline: 1px solid var(--line-strong); outline-offset: -1px; box-shadow: 0 6px 16px rgb(20 53 47 / 8%); } .ds-input::placeholder { color: var(--quiet); opacity: 1; } .ds-input:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }"
+    },
+    {
+      "name":"Thread Navigation",
+      "kind":"nav",
+      "refersTo":"navigation",
+      "description":"The persistent Thread rail for search, switching context, and inline rename.",
+      "html":"<aside class='ds-thread-nav'><div class='ds-nav-heading'><strong>对话记录</strong><button class='ds-nav-new' type='button'>新建</button></div><input class='ds-nav-search' type='search' placeholder='搜索对话'><button class='ds-nav-row ds-nav-row-selected' type='button'><span><strong>订单售后跟进</strong><small>订单售后</small></span><em>进行中</em></button><button class='ds-nav-row' type='button'><span><strong>物流状态查询</strong><small>订单售后</small></span><em>历史</em></button></aside>",
+      "css":".ds-thread-nav { width: 260px; min-height: 360px; padding: 20px 18px; border-right: 1px solid var(--line); color: var(--ink); background: var(--surface); font-family: var(--font-sans, 'Segoe UI Variable', sans-serif); } .ds-nav-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--line); } .ds-nav-heading strong { font-size: 16px; } .ds-nav-new { min-height: 44px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 8px 10px; color: var(--ink); background: transparent; font-weight: 750; } .ds-nav-search { width: 100%; min-height: 44px; margin-top: 12px; border: 1px solid var(--line-strong); border-radius: 7px; padding: 8px 9px; color: var(--ink); background: var(--surface); font: 400 14px var(--font-sans, sans-serif); } .ds-nav-row { display: flex; width: 100%; min-height: 64px; align-items: flex-start; justify-content: space-between; gap: 6px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 10px 5px 10px 8px; color: var(--ink); background: transparent; text-align: left; } .ds-nav-row-selected { box-shadow: inset 1px 0 0 var(--route); background: var(--surface-muted); } .ds-nav-row span { display: grid; gap: 5px; min-width: 0; } .ds-nav-row strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; } .ds-nav-row small, .ds-nav-row em { color: var(--muted); font-size: 12px; font-style: normal; } .ds-nav-row em { color: var(--success); font-weight: 800; } .ds-nav-row:focus-visible, .ds-nav-new:focus-visible, .ds-nav-search:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }"
+    },
+    {
+      "name":"Status Chip",
+      "kind":"chip",
+      "refersTo":"status-success",
+      "description":"Compact semantic state for Thread, Turn, order, and external-action status.",
+      "html":"<span class='ds-status ds-status-success'>已核验</span><span class='ds-status ds-status-warning'>等待确认</span><span class='ds-status ds-status-error'>执行失败</span>",
+      "css":".ds-status { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 7px; font: 800 12px/1 var(--font-sans, 'Segoe UI Variable', sans-serif); white-space: nowrap; } .ds-status-success { color: var(--success); background: var(--success-soft); } .ds-status-warning { color: var(--amber); background: var(--amber-soft); } .ds-status-error { color: var(--danger); background: var(--danger-soft); }"
+    },
+    {
+      "name":"Structured Order Card",
+      "kind":"card",
+      "refersTo":"order-card",
+      "description":"Business-first order fact surface with status, logistics, and in-context actions.",
+      "html":"<article class='ds-order-card'><header><div><strong>无线耳机</strong><code>ORDER-001</code></div><span class='ds-status ds-status-success'>已支付</span></header><div class='ds-order-meta'><span>CNY 129.00</span><span>待发货</span><span>下单 9/10 11:43</span></div><div class='ds-order-actions'><button class='ds-btn-secondary' type='button'>查物流</button><button class='ds-btn-secondary' type='button'>申请退款</button></div></article>",
+      "css":".ds-order-card { border: 1px solid var(--line); border-radius: 8px; padding: 13px; color: var(--ink); background: var(--surface-muted); font-family: var(--font-sans, 'Segoe UI Variable', sans-serif); } .ds-order-card header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; } .ds-order-card header div { display: grid; gap: 4px; min-width: 0; } .ds-order-card strong { font-size: 15px; } .ds-order-card code { color: var(--muted); font: 500 12px var(--mono, monospace); } .ds-order-meta { display: flex; flex-wrap: wrap; gap: 6px 13px; margin-top: 9px; color: var(--muted); font-size: 12px; } .ds-order-meta span:first-child { color: var(--route-strong); font-weight: 800; } .ds-order-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; } .ds-order-actions button { min-height: 44px; }"
+    },
+    {
+      "name":"Decision Modal",
+      "kind":"custom",
+      "refersTo":"decision-card",
+      "description":"Protected-focus QuestionCard or Workflow Checkpoint for missing information and external-action authorization.",
+      "html":"<div class='ds-modal-shell'><div class='ds-modal'><div class='ds-modal-heading'><span class='ds-modal-icon'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='m5 12 4 4L19 6'/></svg></span><div><small>需要补充信息</small><h2>请确认这项订单操作</h2></div></div><p>确认后才会向外部订单系统提交写操作。</p><div class='ds-modal-actions'><button class='ds-btn-primary' type='button'>确认并执行</button><button class='ds-btn-secondary' type='button'>拒绝执行</button></div></div></div>",
+      "css":".ds-modal-shell { position: relative; min-height: 330px; display: grid; place-items: center; padding: 24px; background: var(--scrim); } .ds-modal { width: min(100%, 620px); border: 1px solid color-mix(in srgb, var(--route) 48%, var(--line-strong)); border-radius: 12px; padding: 18px; color: var(--ink); background: var(--surface); box-shadow: 0 24px 60px rgb(20 53 47 / 18%), 0 2px 8px rgb(20 53 47 / 10%); font-family: var(--font-sans, 'Segoe UI Variable', sans-serif); } .ds-modal-heading { display: flex; align-items: flex-start; gap: 11px; } .ds-modal-icon { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border: 1px solid color-mix(in srgb, var(--route) 55%, var(--line)); border-radius: 9px; color: var(--route-strong); background: var(--route-soft); } .ds-modal-icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; } .ds-modal-heading small { color: var(--route-strong); font: 800 12px var(--mono, monospace); letter-spacing: .04em; } .ds-modal h2 { margin: 3px 0 0; font-size: 16px; } .ds-modal p { margin: 13px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; } .ds-modal-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }"
+    },
+    {
+      "name":"Item Inspector",
+      "kind":"custom",
+      "refersTo":"item-inspector",
+      "description":"An on-demand, ledger-style view of persisted Item sequence and controlled payloads.",
+      "html":"<aside class='ds-inspector'><header><strong>运行详情</strong><small>18 个持久化 Item</small></header><ol><li><b>018</b><div><strong>WORKFLOW_RESULT</strong><time>14:16:02</time><pre>{ status: 'WAITING_EXTERNAL_ACTION' }</pre></div></li><li><b>017</b><div><strong>ORDER_ACTION_REQUEST</strong><time>14:15:58</time><pre>{ orderId: 'ORDER-001' }</pre></div></li></ol></aside>",
+      "css":".ds-inspector { width: 340px; min-height: 360px; color: var(--ink); background: var(--surface); border-left: 1px solid var(--line); font-family: var(--font-sans, 'Segoe UI Variable', sans-serif); } .ds-inspector header { display: grid; gap: 5px; padding: 20px 18px 16px; border-bottom: 1px solid var(--line); } .ds-inspector header strong { font-size: 16px; } .ds-inspector header small, .ds-inspector time { color: var(--muted); font: 500 12px var(--mono, monospace); } .ds-inspector ol { margin: 0; padding: 0; list-style: none; } .ds-inspector li { position: relative; display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 8px; min-height: 78px; padding: 12px 16px; border-bottom: 1px solid var(--line); } .ds-inspector li:not(:last-child)::before { position: absolute; top: 42px; bottom: -1px; left: 31px; width: 1px; content: ''; background: var(--line-strong); } .ds-inspector b { color: var(--route-strong); font: 800 12px var(--mono, monospace); } .ds-inspector li div { display: grid; gap: 5px; min-width: 0; } .ds-inspector li strong { font-size: 13px; } .ds-inspector pre { max-height: 76px; margin: 0; overflow: auto; color: var(--quiet); font: 500 12px/1.48 var(--mono, monospace); white-space: pre-wrap; }"
+    },
+    {
+      "name":"Logistics Timeline",
+      "kind":"custom",
+      "refersTo":"order-card",
+      "description":"Compact ordered logistics events nested inside the order fact surface.",
+      "html":"<ol class='ds-timeline'><li><span></span><div><strong>已揽收</strong><time>9/9 12:43</time><small>杭州分拨中心</small><p>包裹已揽收</p></div></li><li><span></span><div><strong>待发货</strong><time>9/10 12:43</time><small>运输途中</small><p>物流状态：待发货</p></div></li></ol>",
+      "css":".ds-timeline { display: grid; gap: 8px; margin: 12px 0 0; padding: 0 0 0 4px; list-style: none; color: var(--ink); font-family: var(--font-sans, 'Segoe UI Variable', sans-serif); } .ds-timeline li { position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 8px; } .ds-timeline li:not(:last-child)::before { position: absolute; top: 10px; bottom: -10px; left: 4px; width: 1px; content: ''; background: var(--line-strong); } .ds-timeline li > span { z-index: 1; width: 10px; height: 10px; margin-top: 3px; border: 2px solid var(--route); border-radius: 50%; background: var(--surface); } .ds-timeline li > div { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; } .ds-timeline strong { font-size: 13px; } .ds-timeline time { color: var(--muted); font: 500 12px var(--mono, monospace); } .ds-timeline small { grid-column: 1 / -1; color: var(--route-strong); font-size: 12px; } .ds-timeline p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }"
+    }
+  ],
+  "narrative": {
+    "northStar":"The Dispatch Ledger",
+    "overview":"Commerce Guardian Agent is an Operate-mode workbench for developers and technical reviewers who need to resolve an order issue, see the business fact that supports it, and understand whether an external action is merely queued, awaiting confirmation, or actually verified. The visual language treats the interface as a dispatch ledger: calm surfaces, strict sequence, compact status signals, and an explicit receipt at the point where the user makes a decision.\n\nThe incumbent world is intentionally quiet and operational. A cool mist canvas holds white work surfaces; thin dividers establish the Thread, Turn, and Item hierarchy without turning the page into a monitoring dashboard. Green marks the normal route, amber marks an unresolved handoff, and red marks a fault. Chinese UI copy leads, while mono numerals and identifiers make timestamps, sequence numbers, and order IDs easy to scan.",
+    "keyCharacteristics":["Ledger-like, business-first hierarchy with technology details available on demand.","Cool white-and-mist surfaces with thin sage dividers instead of heavy card chrome.","Route teal for normal flow, amber for waiting or unverified external state, and red for failure.","Responsive three-column workbench that becomes focused drawers on narrower screens.","Structured order facts and action receipts remain authoritative after refresh or reconnection."],
+    "rules":[
+      {"name":"The Ledger-First Rule","body":"Show the business result and its current receipt before exposing the execution trail; the Item sequence is an inspector, not the main conversation.","section":"overview"},
+      {"name":"The Semantic Signal Rule","body":"A color must name a real operational state and travel with readable copy, iconography, or structure; never turn the palette into decoration.","section":"colors"},
+      {"name":"The Measured Metadata Rule","body":"Use mono for data that benefits from alignment or auditability, never for ordinary Chinese copy or an entire screen.","section":"typography"},
+      {"name":"The Tonal Layer Rule","body":"Permanent structure uses white, mist, and dividers; elevation is reserved for transient focus, recovery, and confirmation surfaces.","section":"elevation"}
+    ],
+    "dos":["Do put structured business facts and the current action receipt ahead of technical execution details.","Do use Route Teal, Signal Amber, and Fault Red only for their semantic operational states, with text and icons alongside color.","Do keep permanent surfaces flat and let thin dividers, tonal layering, and spacing establish hierarchy.","Do use Cascadia Mono for order IDs, timestamps, sequence values, and controlled JSON.","Do preserve the single Thread → Turn → Item relationship when adding new UI patterns.","Do keep keyboard focus, Escape close, reduced-motion, forced-colors, and 44px hit targets intact."],
+    "donts":["Don't introduce a marketing hero, metric dashboard, decorative gradients, glass blur, or progress-ring substitute for the ledger.","Don't expose raw Thinking or let a generic TURN_STATE=COMPLETED label override a failed, waiting, or unverified business result.","Don't create a second global action dialog or success badge when the order card already owns the receipt.","Don't use color as the only signal, or use mono as a costume for ordinary copy.","Don't add hidden/recoverable order actions that the product does not support; deletion remains explicitly irreversible.","Don't replace the calm dispatch-list metaphor with a dense monitoring-wall composition."]
+  }
+}

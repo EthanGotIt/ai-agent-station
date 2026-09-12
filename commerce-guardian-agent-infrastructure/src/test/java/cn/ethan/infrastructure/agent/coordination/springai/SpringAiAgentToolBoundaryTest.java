@@ -1,6 +1,11 @@
 package cn.ethan.infrastructure.agent.coordination.springai;
 
 import cn.ethan.core.agent.execution.AgentRuntimeMetrics;
+import cn.ethan.core.agent.event.AgentThreadEventGateway;
+import cn.ethan.core.agent.thread.AgentItemJournal;
+import cn.ethan.core.agent.thread.AgentItemModel;
+import cn.ethan.core.agent.thread.AgentItemStore;
+import cn.ethan.core.agent.thread.AgentItemTypeEnum;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowEngine;
@@ -9,6 +14,7 @@ import cn.ethan.core.commerce.order.OrderSnapshotModel;
 import cn.ethan.core.commerce.order.OrderGateway;
 import cn.ethan.core.commerce.order.OrderSearchResultModel;
 import cn.ethan.core.commerce.order.OrderStatusEnum;
+import cn.ethan.infrastructure.agent.thread.persistence.JacksonAgentItemPayloadCodec;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -17,9 +23,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -210,6 +218,65 @@ class SpringAiAgentToolBoundaryTest {
     void escapesJsonControlCharactersForToolFacts() {
         assertEquals("\\\"\\\\\\b\\f\\n\\r\\t\\u0000\\u001f",
                 SpringAiOrderToolSupport.escapeJson("\"\\\b\f\n\r\t\u0000\u001f"));
+    }
+
+    @Test
+    void productionInvocationUsesTypedCodecForToolFacts() {
+        List<AgentItemModel> persisted = new ArrayList<>();
+        AtomicLong nextSequence = new AtomicLong();
+        AgentItemStore items = new AgentItemStore() {
+            @Override
+            public long appendItem(AgentItemModel item) {
+                long sequence = nextSequence.incrementAndGet();
+                persisted.add(new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), sequence,
+                        item.type(), item.payload(), item.createdAt()));
+                return sequence;
+            }
+
+            @Override
+            public List<AgentItemModel> listItems(String userId, String threadId, long afterSequence, int limit) {
+                return List.of();
+            }
+        };
+        AgentItemJournal journal = new AgentItemJournal() {
+            @Override
+            public AgentItemModel append(AgentItemModel item) {
+                items.appendItem(item);
+                return persisted.get(persisted.size() - 1);
+            }
+
+            @Override
+            public AgentItemStore.AppendResult appendIfAbsent(AgentItemModel item) {
+                AgentItemModel saved = append(item);
+                return new AgentItemStore.AppendResult(saved, true);
+            }
+        };
+        AgentThreadEventGateway events = event -> { };
+        JacksonAgentItemPayloadCodec codec = new JacksonAgentItemPayloadCodec(new ObjectMapper());
+        SpringAiAgentTurnCoordinator.WorkflowInvocation invocation =
+                new SpringAiAgentTurnCoordinator.WorkflowInvocation(
+                        null, Clock.fixed(NOW, ZoneOffset.UTC), AgentRuntimeMetrics.noop(),
+                        new AgentThreadModel("thread-1", "user-1", "测试",
+                                cn.ethan.core.agent.thread.AgentThreadStatusEnum.ACTIVE,
+                                null, null, 0, NOW, NOW),
+                        new AgentTurnModel("turn-1", "thread-1", "user-1", "request-1", "查询订单",
+                                cn.ethan.core.agent.thread.AgentTurnStatusEnum.ACTIVE,
+                                0, null, null, NOW, NOW, null),
+                        items, journal, codec, events, 512);
+
+        SpringAiAgentTurnCoordinator.ReadOnlyTools tools = new SpringAiAgentTurnCoordinator.ReadOnlyTools(
+                "user-1", (orderId, userId) -> OrderLookupResultModel.notFound(),
+                (orderId, userId) -> List.of(), invocation);
+        tools.lookupOrder("ORDER-1");
+
+        assertEquals(2, persisted.size());
+        assertEquals("TOOL_CALL", persisted.get(0).type().name());
+        assertEquals("lookup_order", codec.decode(AgentItemTypeEnum.TOOL_CALL,
+                persisted.get(0).payloadJson()).path("tool").asString());
+        assertEquals("SUCCESS", codec.decode(AgentItemTypeEnum.TOOL_RESULT,
+                persisted.get(1).payloadJson()).path("status").asString());
+        assertFalse(codec.decode(AgentItemTypeEnum.TOOL_CALL,
+                persisted.get(0).payloadJson()).has("type"));
     }
 
     private SpringAiAgentTurnCoordinator.WorkflowInvocation invocation() {

@@ -8,6 +8,8 @@ import cn.ethan.core.agent.coordination.AgentDecisionTypeEnum;
 import cn.ethan.core.agent.execution.AgentTurnItemPayloads;
 import cn.ethan.core.agent.execution.AgentTurnQueue;
 import cn.ethan.core.agent.thread.AgentItemModel;
+import cn.ethan.core.agent.thread.AgentItemJournal;
+import cn.ethan.core.agent.thread.AgentItemPayloadCodec;
 import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.thread.AgentItemTypeEnum;
 import cn.ethan.core.agent.thread.AgentTurnInputKindEnum;
@@ -46,6 +48,8 @@ public final class TransactionalAgentContinuationGateway implements AgentContinu
     private static final Logger LOGGER = LoggerFactory.getLogger(TransactionalAgentContinuationGateway.class);
     private final AgentTurnStore turns;
     private final AgentItemStore items;
+    private final AgentItemJournal itemJournal;
+    private final AgentItemPayloadCodec itemPayloadCodec;
     private final AgentTurnQueue queue;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
@@ -57,13 +61,16 @@ public final class TransactionalAgentContinuationGateway implements AgentContinu
     public TransactionalAgentContinuationGateway(
             AgentTurnStore turns,
             AgentItemStore items,
+            AgentItemJournal itemJournal,
+            AgentItemPayloadCodec itemPayloadCodec,
             AgentTurnQueue queue,
             PlatformTransactionManager transactionManager,
             Clock clock,
             @Value("${ai-agent.runtime.continuation-enabled:true}") boolean enabled,
             @Value("${ai-agent.runtime.max-agent-cycles:3}") int maxAgentCycles
     ) {
-        this(turns, items, queue, transactionManager, clock, enabled, maxAgentCycles, true);
+        this(turns, items, itemJournal, itemPayloadCodec, queue, transactionManager, clock, enabled, maxAgentCycles,
+                true);
     }
 
     /** 测试边界：允许使用内存 Store 和显式 Clock，不依赖 Spring 事务。 */
@@ -75,12 +82,14 @@ public final class TransactionalAgentContinuationGateway implements AgentContinu
             boolean enabled,
             int maxAgentCycles
     ) {
-        this(turns, items, queue, null, clock, enabled, maxAgentCycles, false);
+        this(turns, items, null, null, queue, null, clock, enabled, maxAgentCycles, false);
     }
 
     private TransactionalAgentContinuationGateway(
             AgentTurnStore turns,
             AgentItemStore items,
+            AgentItemJournal itemJournal,
+            AgentItemPayloadCodec itemPayloadCodec,
             AgentTurnQueue queue,
             PlatformTransactionManager transactionManager,
             Clock clock,
@@ -90,6 +99,8 @@ public final class TransactionalAgentContinuationGateway implements AgentContinu
     ) {
         this.turns = turns;
         this.items = items;
+        this.itemJournal = itemJournal;
+        this.itemPayloadCodec = itemPayloadCodec;
         this.queue = queue;
         this.transactionTemplate = transactionManager == null ? null : new TransactionTemplate(transactionManager);
         this.clock = clock == null ? Clock.systemUTC() : clock;
@@ -152,16 +163,26 @@ public final class TransactionalAgentContinuationGateway implements AgentContinu
                 AgentTurnInputKindEnum.AGENT_CONTINUATION, null, input);
         AgentItemModel initial = new AgentItemModel(
                 UUID.randomUUID().toString(), command.threadId(), continuation.turnId(), 0,
-                AgentItemTypeEnum.AGENT_CONTINUATION, AgentTurnItemPayloads.continuation(input), now);
+                AgentItemTypeEnum.AGENT_CONTINUATION,
+                itemPayloadCodec == null
+                        ? AgentTurnItemPayloads.continuation(input)
+                        : itemPayloadCodec.encode(AgentItemTypeEnum.AGENT_CONTINUATION,
+                        AgentTurnItemPayloads.continuationValue(input)), now);
         try {
             long sequence = turns.createTurnWithInitialItem(continuation, initial);
             AgentItemModel persistedInitial = sequence > 0
                     ? AgentTurnItemPayloads.withSequence(initial, sequence)
                     : append(initial);
+            if (sequence > 0 && itemJournal != null) {
+                itemJournal.publish(persistedInitial);
+            }
             AgentItemModel queuedState = append(new AgentItemModel(
                     UUID.randomUUID().toString(), command.threadId(), continuation.turnId(), 0,
                     AgentItemTypeEnum.TURN_STATE,
-                    AgentTurnItemPayloads.turnState(AgentTurnStatusEnum.QUEUED, null), now));
+                    itemPayloadCodec == null
+                            ? AgentTurnItemPayloads.turnState(AgentTurnStatusEnum.QUEUED, null)
+                            : itemPayloadCodec.encode(AgentItemTypeEnum.TURN_STATE,
+                            AgentTurnItemPayloads.turnStateValue(AgentTurnStatusEnum.QUEUED, null)), now));
             enqueueAfterCommit(continuation);
             return new AdmissionResult(continuation, List.of(persistedInitial, queuedState), true, false, cycleNo);
         } catch (RuntimeException creationFailure) {
@@ -179,11 +200,15 @@ public final class TransactionalAgentContinuationGateway implements AgentContinu
             AgentContinuationInput input,
             Instant now
     ) {
+        var structuredDecision = AgentTurnItemPayloads.decisionValue(
+                AgentDecisionTypeEnum.STOP_LIMIT, input.cycleNo(), command.runId(), "MAX_AGENT_CYCLES", false);
         AgentItemStore.AppendResult decision = appendIfAbsent(new AgentItemModel(
                 stopLimitItemId(input, "decision"), parent.threadId(), parent.turnId(), 0,
                 AgentItemTypeEnum.AGENT_DECISION,
-                AgentTurnItemPayloads.decision(AgentDecisionTypeEnum.STOP_LIMIT,
-                        input.cycleNo(), command.runId(), "MAX_AGENT_CYCLES"), now));
+                itemPayloadCodec == null
+                        ? AgentTurnItemPayloads.decision(AgentDecisionTypeEnum.STOP_LIMIT,
+                        input.cycleNo(), command.runId(), "MAX_AGENT_CYCLES")
+                        : itemPayloadCodec.encode(AgentItemTypeEnum.AGENT_DECISION, structuredDecision), now));
         AgentItemStore.AppendResult message = appendIfAbsent(new AgentItemModel(
                 stopLimitItemId(input, "message"), parent.threadId(), parent.turnId(), 0,
                 AgentItemTypeEnum.ASSISTANT_MESSAGE,
@@ -227,12 +252,29 @@ public final class TransactionalAgentContinuationGateway implements AgentContinu
     }
 
     private AgentItemStore.AppendResult appendIfAbsent(AgentItemModel item) {
-        return items.appendItemIfAbsent(item);
+        AgentItemModel encoded = encodeItem(item);
+        return itemJournal == null ? items.appendItemIfAbsent(encoded) : itemJournal.appendIfAbsent(encoded);
     }
 
     private AgentItemModel append(AgentItemModel item) {
-        long sequence = items.appendItem(item);
-        return AgentTurnItemPayloads.withSequence(item, sequence);
+        AgentItemModel encoded = encodeItem(item);
+        if (itemJournal != null) {
+            return itemJournal.append(encoded);
+        }
+        long sequence = items.appendItem(encoded);
+        return AgentTurnItemPayloads.withSequence(encoded, sequence);
+    }
+
+    private AgentItemModel encodeItem(AgentItemModel item) {
+        if (itemPayloadCodec == null) {
+            return item;
+        }
+        return new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), item.sequence(), item.type(),
+                encodePayload(item.type(), item.payload()), item.createdAt());
+    }
+
+    private String encodePayload(AgentItemTypeEnum type, String payload) {
+        return itemPayloadCodec == null ? payload : itemPayloadCodec.encodeJsonText(type, payload);
     }
 
     private void enqueueAfterCommit(AgentTurnModel turn) {

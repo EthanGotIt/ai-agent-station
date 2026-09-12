@@ -3,7 +3,6 @@ package cn.ethan.infrastructure.agent.workflow.transaction;
 import cn.ethan.core.agent.execution.AgentQuestionAnswerAdmission;
 import cn.ethan.core.agent.execution.AgentQuestionAnswerAdmissionCommand;
 import cn.ethan.core.agent.execution.AgentQuestionAnswerAdmissionResult;
-import cn.ethan.core.agent.execution.AgentTurnItemPayloads;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemTypeEnum;
 import cn.ethan.core.agent.thread.AgentQuestionAnswerInput;
@@ -15,6 +14,7 @@ import cn.ethan.core.agent.workflow.AgentQuestionCardAnswerActionEnum;
 import cn.ethan.core.agent.workflow.AgentQuestionCardModel;
 import cn.ethan.core.agent.workflow.AgentQuestionCardStatusEnum;
 import cn.ethan.core.agent.workflow.AgentQuestionCardStore;
+import cn.ethan.infrastructure.agent.thread.persistence.JacksonAgentItemPayloadCodec;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -37,17 +37,20 @@ public final class TransactionalAgentQuestionAnswerAdmission implements AgentQue
 
     private final AgentQuestionCardStore questions;
     private final AgentTurnStore turns;
+    private final JacksonAgentItemPayloadCodec itemPayloadCodec;
     private final Clock clock;
     private final TransactionTemplate transactionTemplate;
 
     public TransactionalAgentQuestionAnswerAdmission(
             AgentQuestionCardStore questions,
             AgentTurnStore turns,
+            JacksonAgentItemPayloadCodec itemPayloadCodec,
             Clock clock,
             PlatformTransactionManager transactionManager
     ) {
         this.questions = questions;
         this.turns = turns;
+        this.itemPayloadCodec = itemPayloadCodec;
         this.clock = clock;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -94,7 +97,9 @@ public final class TransactionalAgentQuestionAnswerAdmission implements AgentQue
                 createdAt, null, null, input);
         AgentItemModel initialItem = new AgentItemModel(
                 UUID.randomUUID().toString(), turn.threadId(), turn.turnId(), 0,
-                AgentItemTypeEnum.QUESTION_ANSWER, AgentTurnItemPayloads.questionAnswer(input), createdAt);
+                AgentItemTypeEnum.QUESTION_ANSWER,
+                itemPayloadCodec.encode(AgentItemTypeEnum.QUESTION_ANSWER,
+                        cn.ethan.core.agent.execution.AgentTurnItemPayloads.questionAnswerValue(input)), createdAt);
         long sequence = turns.createTurnWithInitialItem(turn, initialItem);
         if (sequence < 1) {
             throw new IllegalStateException("QuestionCard 回答 admission 必须原子持久化首个 Item");

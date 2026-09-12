@@ -5,6 +5,7 @@ import cn.ethan.core.agent.coordination.AgentOrderActionInput;
 import cn.ethan.core.agent.coordination.AgentOrderActionTypeEnum;
 import cn.ethan.core.agent.coordination.AgentTurnCoordinator;
 import cn.ethan.core.agent.execution.AgentExecutionContext;
+import cn.ethan.core.agent.execution.AgentTurnItemPayloads;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemPayloadModel;
 import cn.ethan.core.agent.thread.AgentThreadModel;
@@ -70,20 +71,23 @@ public final class DeterministicAgentOrderActionCoordinator implements AgentOrde
         if (lookup == null || lookup.status() != OrderLookupStatusEnum.FOUND || lookup.order() == null) {
             return new AgentTurnCoordinator.AgentCoordinatorResult(
                     "", List.of(new AgentTurnCoordinator.AgentItemDraft(
-                    "ERROR", errorPayload(errorCode(lookup), "订单事实暂不可用，请稍后重试。"))),
+                    "ERROR", errorPayload(errorCode(lookup), "订单事实暂不可用，请稍后重试。"),
+                    AgentTurnItemPayloads.errorValue(errorCode(lookup), "订单事实暂不可用，请稍后重试。"))),
                     null, false);
         }
         OrderSnapshotModel order = lookup.order();
         List<AgentTurnCoordinator.AgentItemDraft> facts = new ArrayList<>();
         if (input.actionType() == AgentOrderActionTypeEnum.REFRESH_ORDER
                 || input.actionType() == AgentOrderActionTypeEnum.QUERY_LOGISTICS) {
-            facts.add(new AgentTurnCoordinator.AgentItemDraft("ORDER_DETAIL", orderPayload(order)));
+            facts.add(new AgentTurnCoordinator.AgentItemDraft("ORDER_DETAIL", orderPayload(order),
+                    AgentTurnItemPayloads.orderDetailValue(order)));
         }
         if (input.actionType() == AgentOrderActionTypeEnum.QUERY_LOGISTICS) {
             List<LogisticsEventModel> trace = logistics.findTrace(order.orderId(), thread.userId());
             executionContext.checkActive();
             facts.add(new AgentTurnCoordinator.AgentItemDraft(
-                    "LOGISTICS_TIMELINE", logisticsPayload(order.orderId(), trace)));
+                    "LOGISTICS_TIMELINE", logisticsPayload(order.orderId(), trace),
+                    AgentTurnItemPayloads.logisticsTimelineValue(order.orderId(), trace)));
         }
         return new AgentTurnCoordinator.AgentCoordinatorResult("", facts, null, false);
     }

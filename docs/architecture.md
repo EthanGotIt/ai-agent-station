@@ -60,11 +60,11 @@ Thread
 └── ContextSnapshot（截至某个 sequence 的版本化摘要）
 ```
 
-Item 是唯一事实来源。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersion=1` 和 `kind` 判别 envelope；`TURN_STATE` 记录 QUEUED、ACTIVE、WAITING、终态等生命周期事实，模型最终消息、工具调用/结果、Workflow 状态、订单动作请求和错误均即时持久化。模型内部可以流式消费，但 SSE 对外只发送 `ready`、`heartbeat` 和 `item.*`，不再暴露 `assistant.delta` 或瞬时 `turn.*`；客户端断线时先按 `afterSequence` 读取 Items，再订阅事件，不重放丢失的文本增量。
+Item 是唯一事实来源。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersion=1` 和 `kind` 判别 envelope；`TURN_STATE` 记录 QUEUED、ACTIVE、WAITING、终态等生命周期事实，模型最终消息、工具调用/结果、Workflow 状态、订单动作请求和错误均即时持久化。新写入的结构化 payload 由 Infrastructure 的 `JacksonAgentItemPayloadCodec` 统一编码，序号、幂等追加和提交后事件由 `AgentItemJournal` 收口；历史列和旧 envelope 继续可读。Items API 在保留 `payload` 字符串兼容字段的同时提供 envelope 内的结构化 `data`，前端可按 `schemaVersion/kind/data` 消费；模型内部可以流式消费，但 SSE 对外只发送 `ready`、`heartbeat` 和 `item.*`，不再暴露 `assistant.delta` 或瞬时 `turn.*`；客户端断线时先按 `afterSequence` 读取 Items，再订阅事件，不重放丢失的文本增量。
 
 2A-1 生产路径先捕获已提交最大 Sequence，再按每页 300 条读取 `(afterSequence, watermark]`，300 只是分页大小，不限制历史总量。重复、乱序、越界、缺口或未覆盖水位的页面以 `CONTEXT_HISTORY_INVALID` 失败收口；上下文超出输入预算时不把部分历史发送给模型，并以 `CONTEXT_BUDGET_EXCEEDED` 受控失败。2A-2 在此基础上启用 Harness 式模型视图：完整 Prompt 达到总预算 80% 时先在副本裁剪超大 Tool Result，仍有压力才摘要最旧的完整 Turn/Tool 批次，保留最近 16% 和当前请求。原始 Items、Sequence 与 SSE 不删除或改写，摘要只写入可校验的 V2 派生快照；V1 快照忽略并从原始 Items 重建，CAS 冲突采用胜出快照而不重复调用摘要模型。摘要通过无 Tool 的 `ChatModel` 调用，共用 Turn 截止时间和 8,192 token 输出预算；供应商明确上下文溢出时，只有视图已严格缩减才允许一次有限重试。请求前压力处理没有有效缩减但完整 Prompt 仍在硬预算内时继续发送；供应商已拒绝且无法严格缩减，或硬预算不足时，以 `CONTEXT_BUDGET_EXCEEDED` 停止。每次组装记录读取水位、覆盖范围、条数、完整性、当前/峰值估算、固定限长与压力裁剪计数和压缩状态；不记录 Prompt、Thinking 或敏感原文。`WORKFLOW_STEP`、`WORKFLOW_CHECKPOINT`、`WORKFLOW_DECISION` 与 `AGENT_DECISION` 是模型可见的受控事实；`AGENT_CONTINUATION` 只作为运行元数据和前端折叠依据，不直接注入模型文本。
 
-Runtime 的输入边界由 `AgentTurnExecutionRouter` 按 `MESSAGE`、`QUESTION_ANSWER`、`WORKFLOW_DECISION` 和 `ORDER_ACTION` 分派；`AgentTurnInputValidator` 与 `AgentTurnItemPayloads` 只负责无副作用的规范化和 Item envelope 构造。Spring AI 协调器保留模型调用与受控 Tool 生命周期，订单 Tool 的参数解析、字段白名单和输出截断由 `SpringAiOrderToolSupport` 承担；QuestionCard schema 与 Workflow Checkpoint schema 分属各自 Core 模型。历史 `WORKFLOW_ANSWER` Turn 只按消息兼容读取，不进入新 Runtime 路径。这样拆分不改变同 Thread FIFO、持久化 Item、事务边界或外部动作幂等契约。
+Runtime 的输入边界由 `AgentTurnExecutionRouter` 按 `MESSAGE`、`QUESTION_ANSWER`、`WORKFLOW_DECISION` 和 `ORDER_ACTION` 分派；`AgentTurnInputValidator` 与 `AgentTurnItemPayloads` 负责无副作用的规范化和兼容 payload 构造，新的写入路径通过 `AgentItemJournal` 追加并发布事实。Spring AI 协调器保留模型调用与受控 Tool 生命周期，订单 Tool 的参数解析、字段白名单和输出截断由 `SpringAiOrderToolSupport` 承担；QuestionCard schema 与 Workflow Checkpoint schema 分属各自 Core 模型。历史 `WORKFLOW_ANSWER` Turn 只按消息兼容读取，不进入新 Runtime 路径。这样拆分不改变同 Thread FIFO、持久化 Item、事务边界或外部动作幂等契约。
 
 ## 编排和审批
 
@@ -140,6 +140,6 @@ V6 现场迁移先备份配置库并在一次性克隆库执行；V7 首次运�
 
 Week 4 的真实模型质量报告、数据库副本迁移和浏览器矩阵属于外部验收证据，不能由确定性 runner 或前端组件测试推断完成；本轮已在真实 Agent + 独立订单夹具上完成 HTTP Thread/Turn/Item、开放交互、幂等、执行回放、物流、退款、催发货重试和完整催发货黄金路径，并以合成订单完成真实 DeepSeek 查询、Worker 结果核验、模型续接总结和刷新恢复。四尺寸页面、移动抽屉/Escape、控制台无错误及深浅主题/reduced-motion smoke 已记录；`1536×730` 另完成离线/在线后的带游标 SSE 重订阅和 QuestionCard 错误焦点，其他尺寸专项证据仍按运行手册逐项补录。
 
-## 阶段七验收状态（2026-09-10）
+## 阶段七验收状态（更新至 2026-09-13）
 
-本轮规范检查、脚本测试、运行时确定性门禁、后端全量单测和前端 typecheck/Vitest/生产构建均通过；2A-2 的 Core/Infrastructure 回归覆盖裁剪、摘要、V2 快照和溢出恢复边界，2B-1 增加试点图阶段、事实指纹、进程重启业务重建、锁读和命令幂等测试，事项级恢复与前端动作状态投影已补齐成功优先级。模块 `.env` 已加载到 Maven 测试进程，`context-acceptance` 与 `workflow-acceptance` profile 在随机临时库通过 V9→V11 Flyway 迁移、Run 版本读取、归属隔离、事务回滚和 CAS 验收；HTTP acceptance runner、合成订单 DeepSeek 完整黄金路径、快照故障注入和 `1536×730` 浏览器 SSE/错误焦点专项均已通过。删除动作、生产开关和第三方鉴权仍是部署环境门禁。
+本轮规范检查、脚本测试、运行时确定性门禁、后端全量单测和前端 typecheck/Vitest/生产构建均通过；2A-2 的 Core/Infrastructure 回归覆盖裁剪、摘要、V2 快照和溢出恢复边界，2B-1/2B-2 增加试点图阶段、事实指纹、进程重启业务重建、锁读、命令幂等和技术快照故障恢复测试，事项级恢复与前端动作状态投影已补齐成功优先级。模块 `.env` 已加载到 Maven 测试进程，`context-acceptance` 与 `workflow-acceptance` profile 在随机临时库通过 V9→V12 Flyway 迁移、Run/图快照版本读取、归属隔离、事务回滚和 CAS 验收；HTTP acceptance runner、合成订单 DeepSeek 完整黄金路径、快照故障注入和 `1536×730` 浏览器 SSE/错误焦点专项均已通过。2026-09-12 LangGraph 定向回归 27/27 通过；2026-09-13 Codec/Journal 已接入 18 类 Core Item 值模型及 Runtime、Spring AI Tool、LangGraph、Worker Outcome、Continuation、订单事实、外部动作状态、执行事件、错误、QuestionCard/Workflow Decision 生产写入，Items API 新增兼容 `data` 字段，完整 reactor 与追加回归通过。删除动作、生产开关和第三方鉴权仍是部署环境门禁。

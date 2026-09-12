@@ -1,6 +1,7 @@
 package cn.ethan.infrastructure.agent.coordination.springai;
 
 import cn.ethan.core.agent.thread.AgentItemPayloadModel;
+import cn.ethan.core.agent.thread.AgentToolResultPayloadModel;
 import cn.ethan.core.commerce.order.LogisticsEventModel;
 import cn.ethan.core.commerce.order.OrderLookupResultModel;
 import cn.ethan.core.commerce.order.OrderSearchCriteria;
@@ -175,6 +176,28 @@ public final class SpringAiOrderToolSupport {
     public static String boundToolResult(
             String tool, String invocationId, String status, String result, int maxCharacters, String toolBatchId
     ) {
+        BoundedToolResult boundedResult = calculateBoundToolResult(
+                tool, invocationId, status, result, maxCharacters, toolBatchId);
+        return toolResultJson(boundedResult.tool(), boundedResult.invocationId(), boundedResult.status(),
+                boundedResult.result(), boundedResult.truncated(), boundedResult.toolBatchId());
+    }
+
+    /**
+     * 生成与受控 JSON 结果完全一致的结构化值，供统一 Item Codec 使用。
+     */
+    public static AgentToolResultPayloadModel boundToolResultValue(
+            String tool, String invocationId, String status, String result, int maxCharacters, String toolBatchId
+    ) {
+        BoundedToolResult boundedResult = calculateBoundToolResult(
+                tool, invocationId, status, result, maxCharacters, toolBatchId);
+        return new AgentToolResultPayloadModel(boundedResult.tool(), boundedResult.invocationId(),
+                boundedResult.toolBatchId(), boundedResult.status(), boundedResult.result(),
+                boundedResult.truncated());
+    }
+
+    private static BoundedToolResult calculateBoundToolResult(
+            String tool, String invocationId, String status, String result, int maxCharacters, String toolBatchId
+    ) {
         int limit = Math.max(64, maxCharacters);
         String safeTool = tool == null ? "" : tool;
         String safeInvocationId = invocationId == null ? "" : invocationId;
@@ -210,7 +233,18 @@ public final class SpringAiOrderToolSupport {
             }
             candidate = toolResultJson(boundedTool, boundedInvocationId, boundedStatus, bounded, truncated, safeToolBatchId);
         }
-        return candidate;
+        return new BoundedToolResult(boundedTool, boundedInvocationId, boundedStatus, bounded,
+                truncated, safeToolBatchId);
+    }
+
+    private record BoundedToolResult(
+            String tool,
+            String invocationId,
+            String status,
+            String result,
+            boolean truncated,
+            String toolBatchId
+    ) {
     }
 
     private static String trimToJsonLimit(

@@ -19,8 +19,12 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.thread.AgentItemModel;
+import cn.ethan.core.agent.thread.AgentItemJournal;
+import cn.ethan.core.agent.thread.AgentItemPayloadCodec;
 import cn.ethan.core.agent.thread.AgentItemPayloadModel;
 import cn.ethan.core.agent.thread.AgentItemTypeEnum;
+import cn.ethan.core.agent.thread.AgentExternalActionStatusPayloadModel;
+import cn.ethan.core.agent.action.ExternalActionCommandModel;
 import cn.ethan.core.agent.context.AgentModelContext;
 import cn.ethan.core.agent.context.AgentContextPressureException;
 import cn.ethan.core.agent.context.AgentModelContextOverflowException;
@@ -74,6 +78,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
     private final LogisticsGateway logistics;
     private final AgentWorkflowEngine workflowEngine;
     private final AgentItemStore items;
+    private final AgentItemJournal itemJournal;
+    private final AgentItemPayloadCodec itemPayloadCodec;
     private final AgentThreadEventGateway events;
     private final Clock clock;
     private final AgentRuntimeMetrics metrics;
@@ -91,7 +97,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             Clock clock,
             AgentRuntimeMetrics metrics
     ) {
-        this(chatClient, orders, logistics, workflowEngine, items, events, clock, metrics, null, 3, 8_000);
+        this(chatClient, orders, logistics, workflowEngine, items, events, clock, metrics,
+                null, null, null, 3, 8_000);
     }
 
     /** 保留旧测试装配边界；新生产装配额外注入 QuestionCard Store。 */
@@ -106,8 +113,26 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             AgentRuntimeMetrics metrics,
             @Value("${ai-agent.runtime.max-agent-cycles:3}") int maxAgentCycles
     ) {
-        this(chatClient, orders, logistics, workflowEngine, items, events, clock, metrics, null, maxAgentCycles,
-                8_000);
+        this(chatClient, orders, logistics, workflowEngine, items, events, clock, metrics,
+                null, null, null, maxAgentCycles, 8_000);
+    }
+
+    /** 保留已有 QuestionCard 测试和手工装配边界；统一 Item 适配器默认关闭。 */
+    public SpringAiAgentTurnCoordinator(
+            @Qualifier("agentChatClient") ChatClient chatClient,
+            OrderGateway orders,
+            LogisticsGateway logistics,
+            AgentWorkflowEngine workflowEngine,
+            AgentItemStore items,
+            AgentThreadEventGateway events,
+            Clock clock,
+            AgentRuntimeMetrics metrics,
+            AgentQuestionCardStore questionCards,
+            int maxAgentCycles,
+            int toolResultMaxCharacters
+    ) {
+        this(chatClient, orders, logistics, workflowEngine, items, events, clock, metrics,
+                null, null, questionCards, maxAgentCycles, toolResultMaxCharacters);
     }
 
     /** 生产装配边界：向 Workflow Tool 传递续跑上限并持久化 request_user_input QuestionCard。 */
@@ -121,6 +146,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             AgentThreadEventGateway events,
             Clock clock,
             AgentRuntimeMetrics metrics,
+            AgentItemJournal itemJournal,
+            AgentItemPayloadCodec itemPayloadCodec,
             AgentQuestionCardStore questionCards,
             @Value("${ai-agent.runtime.max-agent-cycles:3}") int maxAgentCycles,
             @Value("${ai-agent.thread.tool-result-max-characters:8000}") int toolResultMaxCharacters
@@ -130,6 +157,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         this.logistics = logistics;
         this.workflowEngine = workflowEngine;
         this.items = items;
+        this.itemJournal = itemJournal;
+        this.itemPayloadCodec = itemPayloadCodec;
         this.events = events;
         this.clock = clock;
         this.metrics = metrics == null ? AgentRuntimeMetrics.noop() : metrics;
@@ -188,6 +217,32 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 answer, executionContext, correctionAttempt);
     }
 
+    private AgentExternalActionStatusPayloadModel externalActionStatusValue(ExternalActionCommandModel command) {
+        String orderId = null;
+        try {
+            orderId = new ObjectMapper().readTree(command.payloadJson()).path("orderId").asString("").strip();
+            if (orderId.isBlank()) {
+                orderId = null;
+            }
+        } catch (RuntimeException parseFailure) {
+            // payloadJson 的订单字段仅用于展示；命令本身仍以持久化 run/status 为准。
+        }
+        return AgentTurnItemPayloads.externalActionStatusValue(command.commandId(), command.runId(),
+                command.status().name(), command.attemptCount(), command.retryCycleAttemptCount(),
+                command.maxAttempts(), command.type().name(), orderId,
+                command.nextAttemptAt() == null ? null : command.nextAttemptAt().toString(),
+                command.lastErrorCode(), command.lastErrorMessage(), null, null, null);
+    }
+
+    private AgentItemDraft workflowResultDraft(AgentTurnModel turn, AgentWorkflowEngine.ResumeResult resumed) {
+        String runId = resumed.command() == null ? turn.workflowRunId() : resumed.command().runId();
+        if (runId == null || runId.isBlank()) {
+            return new AgentItemDraft("WORKFLOW_RESULT", resumed.resultStatus());
+        }
+        return new AgentItemDraft("WORKFLOW_RESULT", resumed.resultStatus(),
+                AgentTurnItemPayloads.workflowResultValue(runId, resumed.resultStatus(), resumed.message()));
+    }
+
     private AgentCoordinatorResult runInternal(
             AgentThreadModel thread,
             AgentTurnModel turn,
@@ -203,9 +258,10 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             AgentWorkflowEngine.ResumeResult resumed = workflowEngine.resume(thread, turn, answer);
             List<AgentItemDraft> items = new ArrayList<>();
             if (resumed.command() != null) {
-                items.add(new AgentItemDraft("EXTERNAL_ACTION_STATUS", resumed.command().payloadJson()));
+                items.add(new AgentItemDraft("EXTERNAL_ACTION_STATUS", resumed.command().payloadJson(),
+                        externalActionStatusValue(resumed.command())));
             }
-            items.add(new AgentItemDraft("WORKFLOW_RESULT", resumed.resultStatus()));
+            items.add(workflowResultDraft(turn, resumed));
             return new AgentCoordinatorResult(
                     resumed.message(),
                     items,
@@ -227,9 +283,10 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             AgentWorkflowEngine.ResumeResult resumed = workflowEngine.resume(thread, turn, Map.of());
             List<AgentItemDraft> items = new ArrayList<>();
             if (resumed.command() != null) {
-                items.add(new AgentItemDraft("EXTERNAL_ACTION_STATUS", resumed.command().payloadJson()));
+                items.add(new AgentItemDraft("EXTERNAL_ACTION_STATUS", resumed.command().payloadJson(),
+                        externalActionStatusValue(resumed.command())));
             }
-            items.add(new AgentItemDraft("WORKFLOW_RESULT", resumed.resultStatus()));
+            items.add(workflowResultDraft(turn, resumed));
             return new AgentCoordinatorResult(resumed.message(), items, turn.workflowRunId(),
                     resumed.questionCard() != null || resumed.checkpoint() != null,
                     AgentDecisionTypeEnum.FINISH, "WORKFLOW_DECISION_RECORDED",
@@ -237,7 +294,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         }
 
         WorkflowInvocation invocation = new WorkflowInvocation(
-                executionContext, clock, metrics, thread, turn, items, events, toolResultMaxCharacters);
+                executionContext, clock, metrics, thread, turn, items, itemJournal, itemPayloadCodec, events,
+                toolResultMaxCharacters);
         try {
             StringBuilder content = new StringBuilder();
             String systemPrompt = """
@@ -833,6 +891,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         private final AgentThreadModel thread;
         private final AgentTurnModel turn;
         private final AgentItemStore items;
+        private final AgentItemJournal itemJournal;
+        private final AgentItemPayloadCodec itemPayloadCodec;
         private final AgentThreadEventGateway events;
         private final int toolResultMaxCharacters;
         private final Map<String, Instant> toolStartedAt = new LinkedHashMap<>();
@@ -845,7 +905,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 Clock clock,
                 AgentRuntimeMetrics metrics
         ) {
-            this(executionContext, clock, metrics, null, null, null, null, 8_000);
+            this(executionContext, clock, metrics, null, null, null, null, null, null, 8_000);
         }
 
         WorkflowInvocation(
@@ -857,7 +917,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 AgentItemStore items,
                 AgentThreadEventGateway events
         ) {
-            this(executionContext, clock, metrics, thread, turn, items, events, 8_000);
+            this(executionContext, clock, metrics, thread, turn, items, null, null, events, 8_000);
         }
 
         WorkflowInvocation(
@@ -867,6 +927,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 AgentThreadModel thread,
                 AgentTurnModel turn,
                 AgentItemStore items,
+                AgentItemJournal itemJournal,
+                AgentItemPayloadCodec itemPayloadCodec,
                 AgentThreadEventGateway events,
                 int toolResultMaxCharacters
         ) {
@@ -876,6 +938,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             this.thread = thread;
             this.turn = turn;
             this.items = items;
+            this.itemJournal = itemJournal;
+            this.itemPayloadCodec = itemPayloadCodec;
             this.events = events;
             this.toolResultMaxCharacters = Math.max(256, toolResultMaxCharacters);
         }
@@ -887,16 +951,20 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         private synchronized String recordCall(String tool, Map<String, String> arguments) {
             String invocationId = UUID.randomUUID().toString();
             toolStartedAt.put(invocationId, clock.instant());
-            recordImmediate(new AgentItemDraft("TOOL_CALL", json(tool, invocationId, arguments, null, null,
-                    activeToolBatchId)));
+            recordImmediate(new AgentItemDraft("TOOL_CALL",
+                    json(tool, invocationId, arguments, null, null, activeToolBatchId),
+                    AgentTurnItemPayloads.toolCallValue(tool, invocationId, activeToolBatchId, arguments)));
             return invocationId;
         }
 
         private synchronized void recordResult(
                 String invocationId, String tool, String status, String value
         ) {
+            String bounded = SpringAiOrderToolSupport.boundToolResult(
+                    tool, invocationId, status, value, toolResultDataMaxCharacters(), activeToolBatchId);
             recordImmediate(new AgentItemDraft(
-                    "TOOL_RESULT", SpringAiOrderToolSupport.boundToolResult(
+                    "TOOL_RESULT", bounded,
+                    SpringAiOrderToolSupport.boundToolResultValue(
                             tool, invocationId, status, value, toolResultDataMaxCharacters(), activeToolBatchId)));
             Instant started = toolStartedAt.remove(invocationId);
             if (started != null) {
@@ -1040,7 +1108,12 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
 
         private synchronized void recordQuestionCard(AgentQuestionCardModel question) {
             questionCard = question;
-            recordImmediate(new AgentItemDraft("QUESTION_CARD", AgentTurnItemPayloads.questionCard(question)));
+            String payload = itemPayloadCodec == null
+                    ? AgentTurnItemPayloads.questionCard(question)
+                    : itemPayloadCodec.encode(AgentItemTypeEnum.QUESTION_CARD,
+                    AgentTurnItemPayloads.questionCardValue(question));
+            recordImmediate(new AgentItemDraft("QUESTION_CARD", payload,
+                    AgentTurnItemPayloads.questionCardValue(question)));
         }
 
         private void recordImmediate(AgentItemDraft draft) {
@@ -1049,25 +1122,43 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 return;
             }
             AgentItemModel item;
-            long sequence;
             try {
                 AgentItemTypeEnum type = AgentItemTypeEnum.valueOf(draft.type());
+                String payload = encodeDraftPayload(type, draft);
                 item = new AgentItemModel(UUID.randomUUID().toString(), thread.threadId(),
-                        turn.turnId(), 0, type, draft.payload(), clock.instant());
-                sequence = items.appendItem(item);
+                        turn.turnId(), 0, type, payload, clock.instant());
+                if (itemJournal != null) {
+                    itemJournal.append(item);
+                    return;
+                }
+                long sequence = items.appendItem(item);
+                item = new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), sequence,
+                        item.type(), item.payload(), item.createdAt());
             } catch (RuntimeException persistenceFailure) {
                 this.persistenceFailed = true;
                 throw persistenceFailure;
             }
             try {
-                events.itemCreated(new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), sequence,
-                        item.type(), item.payload(), item.createdAt()));
+                events.itemCreated(item);
             } catch (RuntimeException eventFailure) {
                 // Item 已经持久化；SSE 断线可从游标回放，不能把已提交 Tool 事实当成调用失败。
                 metrics.observeFailure("SSE_PUBLISH_FAILED");
                 LOGGER.warn("Tool 事实已提交但实时事件发布失败，itemId={}, threadId={}, errorType={}",
                         item.itemId(), item.threadId(), eventFailure.getClass().getSimpleName());
             }
+        }
+
+        private String encodeDraftPayload(AgentItemTypeEnum type, AgentItemDraft draft) {
+            if (itemPayloadCodec == null) {
+                return draft.payload();
+            }
+            if (draft.structuredPayload() != null) {
+                if (draft.structuredPayload().type() != type) {
+                    throw new IllegalArgumentException("Item payload kind 与类型不匹配：" + type);
+                }
+                return itemPayloadCodec.encode(type, draft.structuredPayload());
+            }
+            return itemPayloadCodec.encodeJsonText(type, draft.payload());
         }
 
         private static String json(

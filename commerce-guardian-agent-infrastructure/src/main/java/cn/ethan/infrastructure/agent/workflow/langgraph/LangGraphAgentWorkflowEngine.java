@@ -6,6 +6,9 @@ import cn.ethan.core.agent.action.ExternalActionStatusEnum;
 import cn.ethan.core.agent.action.ExternalActionTypeEnum;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.execution.AgentTurnItemPayloads;
+import cn.ethan.core.agent.thread.AgentItemJournal;
+import cn.ethan.core.agent.thread.AgentItemPayloadCodec;
+import cn.ethan.core.agent.thread.AgentItemPayloadValue;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.thread.AgentItemTypeEnum;
@@ -110,6 +113,8 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
     private final OrderGateway orders;
     private final LogisticsGateway logistics;
     private final AgentItemStore items;
+    private final AgentItemJournal itemJournal;
+    private final AgentItemPayloadCodec itemPayloadCodec;
     private final AgentTurnStore turns;
     private final AgentThreadEventGateway events;
     private final AgentQuestionCardStore questionCards;
@@ -130,6 +135,8 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             OrderGateway orders,
             LogisticsGateway logistics,
             AgentItemStore items,
+            AgentItemJournal itemJournal,
+            AgentItemPayloadCodec itemPayloadCodec,
             AgentTurnStore turns,
             AgentThreadEventGateway events,
             AgentQuestionCardStore questionCards,
@@ -139,7 +146,8 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             @Value("${ai-agent.workflow.graph-recursion-limit:32}") int recursionLimit,
             @Value("${ai-agent.workflow.expedite-graph-enabled:false}") boolean expediteGraphEnabled
     ) {
-        this(clock, commands, objectMapper, workflowRuns, orders, logistics, items, turns, events,
+        this(clock, commands, objectMapper, workflowRuns, orders, logistics, items, itemJournal, itemPayloadCodec,
+                turns, events,
                 questionCards, checkpoints, transactionManager, saver, recursionLimit, true,
                 expediteGraphEnabled);
     }
@@ -158,7 +166,7 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             AgentQuestionCardStore questionCards,
             AgentWorkflowCheckpointStore checkpoints
     ) {
-        this(clock, commands, objectMapper, workflowRuns, orders, logistics, items, turns, events,
+        this(clock, commands, objectMapper, workflowRuns, orders, logistics, items, null, null, turns, events,
                 questionCards, checkpoints, null, null, 32, false, false);
     }
 
@@ -177,7 +185,7 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             AgentWorkflowCheckpointStore checkpoints,
             boolean expediteGraphEnabled
     ) {
-        this(clock, commands, objectMapper, workflowRuns, orders, logistics, items, turns, events,
+        this(clock, commands, objectMapper, workflowRuns, orders, logistics, items, null, null, turns, events,
                 questionCards, checkpoints, null, null, 32, false, expediteGraphEnabled);
     }
 
@@ -196,7 +204,7 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             AgentWorkflowCheckpointStore checkpoints,
             BaseCheckpointSaver saver
     ) {
-        this(clock, commands, objectMapper, workflowRuns, orders, logistics, items, turns, events,
+        this(clock, commands, objectMapper, workflowRuns, orders, logistics, items, null, null, turns, events,
                 questionCards, checkpoints, null, saver, 32, false, false);
     }
 
@@ -216,7 +224,7 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             BaseCheckpointSaver saver,
             boolean expediteGraphEnabled
     ) {
-        this(clock, commands, objectMapper, workflowRuns, orders, logistics, items, turns, events,
+        this(clock, commands, objectMapper, workflowRuns, orders, logistics, items, null, null, turns, events,
                 questionCards, checkpoints, null, saver, 32, false, expediteGraphEnabled);
     }
 
@@ -228,6 +236,8 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             OrderGateway orders,
             LogisticsGateway logistics,
             AgentItemStore items,
+            AgentItemJournal itemJournal,
+            AgentItemPayloadCodec itemPayloadCodec,
             AgentTurnStore turns,
             AgentThreadEventGateway events,
             AgentQuestionCardStore questionCards,
@@ -245,6 +255,8 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         this.orders = orders;
         this.logistics = logistics;
         this.items = items;
+        this.itemJournal = itemJournal;
+        this.itemPayloadCodec = itemPayloadCodec;
         this.turns = turns;
         this.events = events;
         this.questionCards = questionCards;
@@ -389,11 +401,13 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         if (question != null) {
             questionCards.create(question);
             appendItem(thread, turn, AgentItemTypeEnum.QUESTION_CARD,
-                    AgentTurnItemPayloads.questionCard(question), now);
+                    AgentTurnItemPayloads.questionCard(question),
+                    AgentTurnItemPayloads.questionCardValue(question), now);
         } else {
             checkpoints.create(checkpoint);
             appendItem(thread, turn, AgentItemTypeEnum.WORKFLOW_CHECKPOINT,
-                    AgentTurnItemPayloads.workflowCheckpoint(checkpoint), now);
+                    AgentTurnItemPayloads.workflowCheckpoint(checkpoint),
+                    AgentTurnItemPayloads.workflowCheckpointValue(checkpoint), now);
         }
         appendWorkflowSteps(thread, turn, run.runId(), question == null
                 ? LangGraphWorkflowGraphFactory.AUTHORIZE
@@ -491,14 +505,16 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         if (nextQuestion != null) {
             questionCards.create(nextQuestion);
             appendItem(thread, answerTurn, AgentItemTypeEnum.QUESTION_CARD,
-                    AgentTurnItemPayloads.questionCard(nextQuestion), now);
+                    AgentTurnItemPayloads.questionCard(nextQuestion),
+                    AgentTurnItemPayloads.questionCardValue(nextQuestion), now);
             projectOwner(thread, run, AgentTurnStatusEnum.WAITING_USER_INPUT,
                     "还需要补充一项订单信息。", now);
             return new ResumeResult("还需要补充一项订单信息。", "WAITING_USER_INPUT", null, nextQuestion, null);
         }
         checkpoints.create(nextCheckpoint);
         appendItem(thread, answerTurn, AgentItemTypeEnum.WORKFLOW_CHECKPOINT,
-                AgentTurnItemPayloads.workflowCheckpoint(nextCheckpoint), now);
+                AgentTurnItemPayloads.workflowCheckpoint(nextCheckpoint),
+                AgentTurnItemPayloads.workflowCheckpointValue(nextCheckpoint), now);
         projectOwner(thread, run, AgentTurnStatusEnum.WAITING_USER_INPUT,
                 "订单信息已核验，请确认是否执行。", now);
         return new ResumeResult("订单信息已核验，请确认是否执行。", "WAITING_USER_INPUT", null,
@@ -659,7 +675,8 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
             appendWorkflowStep(thread, decisionTurn, run.runId(), LangGraphWorkflowGraphFactory.VERIFY_FACTS,
                     "WAITING", "FACTS_CHANGED", now);
             appendItem(thread, decisionTurn, AgentItemTypeEnum.WORKFLOW_CHECKPOINT,
-                    AgentTurnItemPayloads.workflowCheckpoint(next), now);
+                    AgentTurnItemPayloads.workflowCheckpoint(next),
+                    AgentTurnItemPayloads.workflowCheckpointValue(next), now);
             projectOwner(thread, run, AgentTurnStatusEnum.WAITING_USER_INPUT,
                     "订单事实已更新，请重新确认执行内容。", now);
             return new ResumeResult("订单事实已更新，请重新确认执行内容。", "FACTS_CHANGED", null,
@@ -770,7 +787,11 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         appendItem(thread, decisionTurn, AgentItemTypeEnum.EXTERNAL_ACTION_STATUS,
                 writeJson(Map.of("commandId", command.commandId(), "runId", lockedRun.runId(),
                         "status", command.status().name(), "actionType", command.type().name(),
-                        "orderId", selected.order().orderId())), now);
+                        "orderId", selected.order().orderId())),
+                AgentTurnItemPayloads.externalActionStatusValue(command.commandId(), lockedRun.runId(),
+                        command.status().name(), command.attemptCount(), command.retryCycleAttemptCount(),
+                        command.maxAttempts(), command.type().name(), selected.order().orderId(), null, null,
+                        null, null, null, null), now);
         projectOwner(thread, lockedRun, AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION,
                 "已确认，订单动作已进入可靠执行队列。", now);
         return new ResumeResult("已确认，订单动作已进入可靠执行队列。", "APPROVED", command,
@@ -1063,13 +1084,16 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         if (candidates != null && !candidates.isEmpty()) {
             appendItem(thread, turn, AgentItemTypeEnum.ORDER_LIST, writeJson(Map.of(
                     "status", "SUCCESS", "orders", candidates.stream().limit(MAX_CANDIDATES)
-                            .map(this::safeOrder).toList())), now);
+                            .map(this::safeOrder).toList())),
+                    AgentTurnItemPayloads.orderListValue(candidates.stream().limit(MAX_CANDIDATES).toList()), now);
         }
         if (selected != null) {
-            appendItem(thread, turn, AgentItemTypeEnum.ORDER_DETAIL, writeJson(safeOrder(selected.order())), now);
+            appendItem(thread, turn, AgentItemTypeEnum.ORDER_DETAIL, writeJson(safeOrder(selected.order())),
+                    AgentTurnItemPayloads.orderDetailValue(selected.order()), now);
             appendItem(thread, turn, AgentItemTypeEnum.LOGISTICS_TIMELINE, writeJson(Map.of(
                     "orderId", selected.order().orderId(), "events", selected.events().stream()
-                            .map(LangGraphAgentWorkflowEngine::safeLogistics).toList())), now);
+                            .map(LangGraphAgentWorkflowEngine::safeLogistics).toList())),
+                    AgentTurnItemPayloads.logisticsTimelineValue(selected.order().orderId(), selected.events()), now);
         }
     }
 
@@ -1092,22 +1116,42 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
     private AgentItemModel appendWorkflowStep(AgentThreadModel thread, AgentTurnModel turn, String runId,
                                               String node, String status, String branch, Instant now) {
         return appendItem(thread, turn, AgentItemTypeEnum.WORKFLOW_STEP,
-                AgentTurnItemPayloads.workflowStep(runId, node, status, branch, null, 0L), now);
+                AgentTurnItemPayloads.workflowStep(runId, node, status, branch, null, 0L),
+                AgentTurnItemPayloads.workflowStepValue(runId, node, status, branch, null, 0L), now);
     }
 
     private AgentItemModel appendAnswerResult(AgentThreadModel thread, AgentTurnModel turn, String runId,
                                               String status, Instant now) {
         return appendItem(thread, turn, AgentItemTypeEnum.WORKFLOW_RESULT,
-                writeJson(Map.of("runId", runId, "status", status)), now);
+                writeJson(Map.of("runId", runId, "status", status)),
+                AgentTurnItemPayloads.workflowResultValue(runId, status, null), now);
     }
 
     private AgentItemModel appendItem(AgentThreadModel thread, AgentTurnModel turn, AgentItemTypeEnum type,
                                       String payload, Instant createdAt) {
+        return appendItem(thread, turn, type, payload, null, createdAt);
+    }
+
+    private AgentItemModel appendItem(AgentThreadModel thread, AgentTurnModel turn, AgentItemTypeEnum type,
+                                      String payload, AgentItemPayloadValue structuredPayload, Instant createdAt) {
+        String encodedPayload = itemPayloadCodec == null || structuredPayload == null
+                ? itemPayloadCodec == null ? payload : itemPayloadCodec.encodeJsonText(type, payload)
+                : encodeStructuredPayload(type, structuredPayload);
         return appendItem(new AgentItemModel(UUID.randomUUID().toString(), thread.threadId(), turn.turnId(), 0,
-                type, payload, createdAt));
+                type, encodedPayload, createdAt));
+    }
+
+    private String encodeStructuredPayload(AgentItemTypeEnum type, AgentItemPayloadValue payload) {
+        if (payload.type() != type) {
+            throw new IllegalArgumentException("Item payload kind 与类型不匹配：" + type);
+        }
+        return itemPayloadCodec.encode(type, payload);
     }
 
     private AgentItemModel appendItem(AgentItemModel draft) {
+        if (itemJournal != null) {
+            return itemJournal.append(draft);
+        }
         if (items == null) {
             return draft;
         }
@@ -1138,10 +1182,12 @@ public final class LangGraphAgentWorkflowEngine implements AgentWorkflowEngine {
         }
         if (message != null && !message.isBlank()) {
             appendItem(thread, next, AgentItemTypeEnum.WORKFLOW_RESULT,
-                    writeJson(Map.of("runId", run.runId(), "status", target.name(), "message", message)), now);
+                    writeJson(Map.of("runId", run.runId(), "status", target.name(), "message", message)),
+                    AgentTurnItemPayloads.workflowResultValue(run.runId(), target.name(), message), now);
         }
         appendItem(thread, next, AgentItemTypeEnum.TURN_STATE,
-                AgentTurnItemPayloads.turnState(target, null), now);
+                AgentTurnItemPayloads.turnState(target, null),
+                AgentTurnItemPayloads.turnStateValue(target, null), now);
     }
 
     private boolean isTerminal(AgentTurnStatusEnum status) {

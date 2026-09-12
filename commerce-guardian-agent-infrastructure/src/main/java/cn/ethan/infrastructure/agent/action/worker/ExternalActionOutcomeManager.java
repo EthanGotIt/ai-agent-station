@@ -5,6 +5,8 @@ import cn.ethan.core.agent.action.ExternalActionCommandStore;
 import cn.ethan.core.agent.action.ExternalActionStatusEnum;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.thread.AgentItemModel;
+import cn.ethan.core.agent.thread.AgentItemJournal;
+import cn.ethan.core.agent.thread.AgentItemPayloadCodec;
 import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.thread.AgentItemTypeEnum;
 import cn.ethan.core.agent.thread.AgentThreadConflictException;
@@ -47,8 +49,15 @@ public final class ExternalActionOutcomeManager {
     private final AgentTurnStore turns;
     private final AgentWorkflowRunStore workflowRuns;
     private final ObjectMapper objectMapper;
+    private final AgentItemJournal itemJournal;
+    private final AgentItemPayloadCodec itemPayloadCodec;
     private final TransactionTemplate transactionTemplate;
     private final AgentContinuationGateway continuationGateway;
+
+    /** Worker 是否应由本地 Journal 负责本次投影的提交后事件。 */
+    public boolean eventsHandledByJournal() {
+        return itemJournal != null;
+    }
 
     @Autowired
     public ExternalActionOutcomeManager(
@@ -57,10 +66,14 @@ public final class ExternalActionOutcomeManager {
             AgentTurnStore turns,
             AgentWorkflowRunStore workflowRuns,
             ObjectMapper objectMapper,
+            AgentItemJournal itemJournal,
+            AgentItemPayloadCodec itemPayloadCodec,
             PlatformTransactionManager transactionManager,
             AgentContinuationGateway continuationGateway
     ) {
         this(commands, items, turns, workflowRuns, objectMapper,
+                itemJournal,
+                itemPayloadCodec,
                 transactionManager == null ? null : new TransactionTemplate(transactionManager),
                 continuationGateway);
     }
@@ -75,7 +88,7 @@ public final class ExternalActionOutcomeManager {
             AgentWorkflowRunStore workflowRuns,
             ObjectMapper objectMapper
     ) {
-        this(commands, items, turns, workflowRuns, objectMapper, (TransactionTemplate) null,
+        this(commands, items, turns, workflowRuns, objectMapper, null, null, (TransactionTemplate) null,
                 null);
     }
 
@@ -89,6 +102,8 @@ public final class ExternalActionOutcomeManager {
             PlatformTransactionManager transactionManager
     ) {
         this(commands, items, turns, workflowRuns, objectMapper,
+                null,
+                null,
                 transactionManager == null ? null : new TransactionTemplate(transactionManager),
                 null);
     }
@@ -99,6 +114,8 @@ public final class ExternalActionOutcomeManager {
             AgentTurnStore turns,
             AgentWorkflowRunStore workflowRuns,
             ObjectMapper objectMapper,
+            AgentItemJournal itemJournal,
+            AgentItemPayloadCodec itemPayloadCodec,
             TransactionTemplate transactionTemplate,
             AgentContinuationGateway continuationGateway
     ) {
@@ -107,6 +124,8 @@ public final class ExternalActionOutcomeManager {
         this.turns = turns;
         this.workflowRuns = workflowRuns;
         this.objectMapper = objectMapper;
+        this.itemJournal = itemJournal;
+        this.itemPayloadCodec = itemPayloadCodec;
         this.transactionTemplate = transactionTemplate;
         this.continuationGateway = continuationGateway;
     }
@@ -264,8 +283,18 @@ public final class ExternalActionOutcomeManager {
                 data.put("verifiedAt", verification.verifiedAt().toString());
             }
         }
+        String legacyPayload = writeJson(data);
+        var structuredPayload = AgentTurnItemPayloads.externalActionStatusValue(
+                command.commandId(), command.runId(), command.status().name(), command.attemptCount(),
+                command.retryCycleAttemptCount(), command.maxAttempts(), command.type().name(), orderId,
+                command.nextAttemptAt() == null ? null : command.nextAttemptAt().toString(), resultCode,
+                resultMessage, verification == null ? null : verification.verified() ? "VERIFIED" : "PENDING",
+                verification == null ? null : verification.message(),
+                verification == null || verification.verifiedAt() == null ? null : verification.verifiedAt().toString());
+        String payload = itemPayloadCodec == null ? legacyPayload
+                : itemPayloadCodec.encode(AgentItemTypeEnum.EXTERNAL_ACTION_STATUS, structuredPayload);
         return append(new AgentItemModel(UUID.randomUUID().toString(), command.threadId(), command.turnId(), 0,
-                AgentItemTypeEnum.EXTERNAL_ACTION_STATUS, writeJson(data), now));
+                AgentItemTypeEnum.EXTERNAL_ACTION_STATUS, payload, now));
     }
 
     private AgentItemModel appendOrderDetail(
@@ -273,8 +302,12 @@ public final class ExternalActionOutcomeManager {
             OrderSnapshotModel order,
             Instant now
     ) {
+        String legacyPayload = writeJson(safeOrder(order));
+        String payload = itemPayloadCodec == null ? legacyPayload
+                : itemPayloadCodec.encode(AgentItemTypeEnum.ORDER_DETAIL,
+                AgentTurnItemPayloads.orderDetailValue(order));
         return append(new AgentItemModel(UUID.randomUUID().toString(), command.threadId(), command.turnId(), 0,
-                AgentItemTypeEnum.ORDER_DETAIL, writeJson(safeOrder(order)), now));
+                AgentItemTypeEnum.ORDER_DETAIL, payload, now));
     }
 
     private AgentItemModel appendLogistics(
@@ -294,8 +327,12 @@ public final class ExternalActionOutcomeManager {
             node.put("description", event.description());
             node.put("occurredAt", event.occurredAt().toString());
         }
+        String legacyPayload = writeJson(data);
+        String payload = itemPayloadCodec == null ? legacyPayload
+                : itemPayloadCodec.encode(AgentItemTypeEnum.LOGISTICS_TIMELINE,
+                AgentTurnItemPayloads.logisticsTimelineValue(orderId, events));
         return append(new AgentItemModel(UUID.randomUUID().toString(), command.threadId(), command.turnId(), 0,
-                AgentItemTypeEnum.LOGISTICS_TIMELINE, writeJson(data), now));
+                AgentItemTypeEnum.LOGISTICS_TIMELINE, payload, now));
     }
 
     private ObjectNode safeOrder(OrderSnapshotModel order) {
@@ -325,8 +362,12 @@ public final class ExternalActionOutcomeManager {
     private AgentItemModel appendTurnState(AgentTurnModel turn, Instant now) {
         ObjectNode data = objectMapper.createObjectNode();
         data.put("status", turn.status().name());
+        String legacyPayload = writeJson(data);
+        String payload = itemPayloadCodec == null ? legacyPayload
+                : itemPayloadCodec.encode(AgentItemTypeEnum.TURN_STATE,
+                AgentTurnItemPayloads.turnStateValue(turn.status(), null));
         return append(new AgentItemModel(UUID.randomUUID().toString(), turn.threadId(), turn.turnId(), 0,
-                AgentItemTypeEnum.TURN_STATE, writeJson(data), now));
+                AgentItemTypeEnum.TURN_STATE, payload, now));
     }
 
     private AgentItemModel appendWorkflowStep(
@@ -338,15 +379,27 @@ public final class ExternalActionOutcomeManager {
             long elapsedMillis,
             Instant now
     ) {
+        var structuredPayload = AgentTurnItemPayloads.workflowStepValue(
+                command.runId(), node, status, branch, code, elapsedMillis);
+        String legacyPayload = AgentTurnItemPayloads.workflowStep(
+                command.runId(), node, status, branch, code, elapsedMillis);
+        String payload = itemPayloadCodec == null
+                ? legacyPayload : itemPayloadCodec.encode(AgentItemTypeEnum.WORKFLOW_STEP, structuredPayload);
         return append(new AgentItemModel(UUID.randomUUID().toString(), command.threadId(), command.turnId(), 0,
                 AgentItemTypeEnum.WORKFLOW_STEP,
-                AgentTurnItemPayloads.workflowStep(command.runId(), node, status, branch, code, elapsedMillis), now));
+                payload, now));
     }
 
     private AgentItemModel append(AgentItemModel item) {
-        long sequence = items.appendItem(item);
-        return new AgentItemModel(item.itemId(), item.threadId(), item.turnId(), sequence,
-                item.type(), item.payload(), item.createdAt());
+        AgentItemModel encoded = itemPayloadCodec == null ? item : new AgentItemModel(
+                item.itemId(), item.threadId(), item.turnId(), item.sequence(), item.type(),
+                itemPayloadCodec.encodeJsonText(item.type(), item.payload()), item.createdAt());
+        if (itemJournal != null) {
+            return itemJournal.append(encoded);
+        }
+        long sequence = items.appendItem(encoded);
+        return new AgentItemModel(encoded.itemId(), encoded.threadId(), encoded.turnId(), sequence,
+                encoded.type(), encoded.payload(), encoded.createdAt());
     }
 
     private String writeJson(ObjectNode data) {

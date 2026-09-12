@@ -9,6 +9,7 @@ import cn.ethan.core.agent.thread.AgentThreadStore;
 import cn.ethan.core.agent.thread.AgentThreadService;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import tools.jackson.databind.JsonNode;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -60,6 +61,7 @@ class AgentThreadControllerTest {
         assertEquals(List.of("new-3"), page.items().stream().map(AgentItemDto::itemId).toList());
         assertEquals(3, page.nextAfterSequence());
         assertFalse(page.hasMore());
+        assertEquals("\"message\"", ((JsonNode) page.items().get(0).data()).toString());
     }
 
     @Test
@@ -90,6 +92,39 @@ class AgentThreadControllerTest {
         assertEquals(List.of("item-3-a"), page.items().stream().map(AgentItemDto::itemId).toList());
         assertEquals(3, page.nextAfterSequence());
         assertFalse(page.hasMore());
+    }
+
+    @Test
+    void structuredPayloadDataSurvivesItemsApiRecovery() {
+        AgentThreadModel thread = new AgentThreadModel("thread-1", "user-1", "Thread",
+                AgentThreadStatusEnum.ACTIVE, null, null, 3, NOW, NOW);
+        AgentThreadStore threads = ownedThread(thread);
+        AgentItemStore items = new AgentItemStore() {
+            @Override
+            public long appendItem(AgentItemModel item) {
+                return item.sequence();
+            }
+
+            @Override
+            public List<AgentItemModel> listItems(String userId, String threadId,
+                                                  long afterSequence, int limit) {
+                return List.of(new AgentItemModel("error-1", "thread-1", "turn-1", 1,
+                        AgentItemTypeEnum.ERROR,
+                        "{\"schemaVersion\":1,\"kind\":\"ERROR\",\"data\":{\"code\":\"ORDER_NOT_FOUND\",\"message\":\"订单不存在\"}}",
+                        NOW));
+            }
+        };
+        AgentThreadController controller = new AgentThreadController(
+                new AgentThreadService(threads, items, Clock.fixed(NOW, ZoneOffset.UTC)),
+                new AgentUserContext(), null, null);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("X-User-Id", "user-1");
+
+        AgentItemPageResponseDto page = controller.items("thread-1", 0, 10, request);
+
+        JsonNode data = (JsonNode) page.items().get(0).data();
+        assertEquals("ORDER_NOT_FOUND", data.path("code").asString());
+        assertEquals("订单不存在", data.path("message").asString());
     }
 
     private AgentThreadStore ownedThread(AgentThreadModel thread) {

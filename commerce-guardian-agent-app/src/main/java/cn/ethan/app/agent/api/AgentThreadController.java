@@ -8,6 +8,7 @@ import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStore;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -36,17 +38,32 @@ public final class AgentThreadController {
     private final AgentUserContext userContext;
     private final AgentQuestionCardStore questions;
     private final AgentWorkflowCheckpointStore checkpoints;
+    private final ObjectMapper objectMapper;
 
+    /** 供 Spring 使用的完整 HTTP payload 转换构造器。 */
+    @Autowired
+    public AgentThreadController(
+            AgentThreadService threads,
+            AgentUserContext userContext,
+            AgentQuestionCardStore questions,
+            AgentWorkflowCheckpointStore checkpoints,
+            ObjectMapper objectMapper
+    ) {
+        this.threads = threads;
+        this.userContext = userContext;
+        this.questions = questions;
+        this.checkpoints = checkpoints;
+        this.objectMapper = objectMapper == null ? new ObjectMapper() : objectMapper;
+    }
+
+    /** 保留无 JSON 依赖的测试/嵌入式装配入口。 */
     public AgentThreadController(
             AgentThreadService threads,
             AgentUserContext userContext,
             AgentQuestionCardStore questions,
             AgentWorkflowCheckpointStore checkpoints
     ) {
-        this.threads = threads;
-        this.userContext = userContext;
-        this.questions = questions;
-        this.checkpoints = checkpoints;
+        this(threads, userContext, questions, checkpoints, new ObjectMapper());
     }
 
     @PostMapping("/threads")
@@ -143,7 +160,7 @@ public final class AgentThreadController {
                 .max().orElse(safeAfterSequence);
         // 重复或非严格前进的持久化页只能安全收口，不能让客户端依据失真的 hasMore 无限追读。
         boolean hasMore = !invalidPage && ordered.size() > safeLimit && next > safeAfterSequence;
-        return new AgentItemPageResponseDto(page.stream().map(AgentItemDto::from).toList(),
+        return new AgentItemPageResponseDto(page.stream().map(item -> AgentItemDto.from(item, objectMapper)).toList(),
                 safeAfterSequence, next, hasMore);
     }
 }

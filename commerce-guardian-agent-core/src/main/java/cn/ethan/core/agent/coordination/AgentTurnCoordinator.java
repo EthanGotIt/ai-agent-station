@@ -5,6 +5,7 @@ import cn.ethan.core.agent.workflow.AgentQuestionCardModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointModel;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
+import cn.ethan.core.agent.thread.AgentItemPayloadValue;
 import cn.ethan.core.agent.execution.AgentExecutionContext;
 import cn.ethan.core.agent.context.AgentModelContext;
 
@@ -135,6 +136,10 @@ public interface AgentTurnCoordinator {
         }
     }
 
-    record AgentItemDraft(String type, String payload) {
+    record AgentItemDraft(String type, String payload, AgentItemPayloadValue structuredPayload) {
+
+        public AgentItemDraft(String type, String payload) {
+            this(type, payload, null);
+        }
     }
 }

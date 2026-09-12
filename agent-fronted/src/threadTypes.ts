@@ -75,10 +75,17 @@ export type AgentItemPayload =
   | { schemaVersion: 1; kind: "WORKFLOW_CHECKPOINT"; data: WorkflowCheckpointState }
   | { schemaVersion: 1; kind: "WORKFLOW_DECISION"; data: WorkflowDecisionFact }
   | { schemaVersion: 1; kind: "WORKFLOW_QUESTION"; data: QuestionCardState }
+  | { schemaVersion: 1; kind: "WORKFLOW_RESULT"; data: { runId: string; status: string; message?: string | null } }
+  | { schemaVersion: 1; kind: "EXTERNAL_ACTION_STATUS"; data: ExternalActionStatusFact }
+  | { schemaVersion: 1; kind: "ORDER_LIST"; data: { status: string; orders: OrderFact[] } }
+  | { schemaVersion: 1; kind: "ORDER_DETAIL"; data: OrderFact }
+  | { schemaVersion: 1; kind: "LOGISTICS_TIMELINE"; data: { orderId: string; events: LogisticsEvent[] } }
   | { schemaVersion: 1; kind: "ORDER_ACTION_REQUEST"; data: { sourceTurnId: string; orderId: string; actionType: OrderActionType } }
   | { schemaVersion: 1; kind: "WORKFLOW_STEP"; data: WorkflowStepFact }
   | { schemaVersion: 1; kind: "AGENT_CONTINUATION"; data: AgentContinuationFact }
   | { schemaVersion: 1; kind: "AGENT_DECISION"; data: AgentDecisionFact }
+  | { schemaVersion: 1; kind: "EXECUTION_EVENT"; data: ExecutionEventFact }
+  | { schemaVersion: 1; kind: "ERROR"; data: ErrorFact }
   | { schemaVersion: 1; kind: AgentItemType; data: unknown };
 
 export type AgentItemWire = {
@@ -88,6 +95,8 @@ export type AgentItemWire = {
   type: AgentItemType;
   schemaVersion: number;
   payload: string;
+  /** 新版 Items API 可直接提供 envelope.data；旧服务仍只返回 payload。 */
+  data?: unknown;
   createdAt: string;
 };
 
@@ -228,6 +237,48 @@ export type AgentDecisionFact = {
   runId?: string | null;
   code?: string | null;
   correctionAttempt?: boolean;
+};
+
+export type ExecutionEventFact = {
+  eventKind: string;
+  estimatedTokens?: number;
+  inputBudget?: number;
+  snapshotThroughSequence?: number;
+  compressed?: boolean;
+  degraded?: boolean;
+  droppedItems?: number;
+  readWatermark?: number;
+  coveredThroughSequence?: number;
+  readItemCount?: number;
+  historyComplete?: boolean;
+  peakEstimatedTokens?: number;
+  pressurePrunedToolResults?: number;
+};
+
+export type ErrorFact = {
+  code: string;
+  message?: string | null;
+};
+
+export type ExternalActionStatusFact = ExternalActionReceipt & {
+  commandId?: string;
+  runId: string;
+  status: ExternalActionStatus | string;
+};
+
+export type OrderFact = {
+  orderId: string;
+  status?: string;
+  orderStatus?: string;
+  daysSinceDelivery?: number | null;
+  createdAt?: string | null;
+  expectedDeliveryAt?: string | null;
+  lastLogisticsAt?: string | null;
+  logisticsStatus?: string | null;
+  paidAmount?: number | string | null;
+  currency?: string | null;
+  itemSummary?: string | null;
+  visibility?: string;
 };
 
 export type OrderCard = {

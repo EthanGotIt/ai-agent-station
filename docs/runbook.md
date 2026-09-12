@@ -41,7 +41,9 @@ Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8090/api/agent/threads/$thr
 # 已返回的 turnId 可用于只读轨迹回放：GET /api/agent/turns/{turnId}/execution
 ```
 
-退款或催发货请求在固定 Workflow 的 `AUTHORIZE` 节点生成独立 `WORKFLOW_CHECKPOINT`；批准后命令进入 Worker，缺少订单号或退款原因时才生成 `QUESTION_CARD`。外部动作成功或核验/重试需要 Agent 继续判断时，会追加最多 3 轮的 `AGENT_CONTINUATION` Turn；可通过 Items 和 SSE 观察 `TOOL_*`、`WORKFLOW_*`、`WORKFLOW_STEP`、`AGENT_DECISION`、`EXTERNAL_ACTION_STATUS` 和 Turn 终态。续跑与 Workflow 结果仍以持久化 Items 为准，SSE 只负责实时体验和断线恢复。
+Items 响应保留 `payload` 字符串以兼容旧客户端，并新增结构化 `data` 字段；新客户端按 `schemaVersion`、`type/kind` 和 `data` 处理已知事实，遇到旧历史或无法解析的 payload 时回退到 `payload` 文本。
+
+退款或催发货请求在固定 Workflow 的 `AUTHORIZE` 节点生成独立 `WORKFLOW_CHECKPOINT`；批准后命令进入 Worker，缺少订单号或退款原因时才生成 `QUESTION_CARD`。外部动作成功或核验/重试需要 Agent 继续判断时，会追加最多 3 轮的 `AGENT_CONTINUATION` Turn；可通过 Items 和 SSE 观察 `TOOL_*`、`WORKFLOW_*`、`WORKFLOW_STEP`、订单事实、`AGENT_DECISION`、`EXTERNAL_ACTION_STATUS`、`EXECUTION_EVENT`、`ERROR` 和 Turn 终态。续跑与 Workflow 结果仍以持久化 Items 为准，SSE 只负责实时体验和断线恢复。
 
 前端订单卡片的动作回执按业务事实区分：确认卡打开时为“需要确认”，命令为 PENDING/PROCESSING/RETRY_WAIT 时分别显示等待执行、提交中或等待自动重试，SUCCEEDED 显示成功；若成功回执的核验状态为 PENDING，则显示“已受理、最新状态暂未核验”并只发起 REFRESH_ORDER 查询；重试耗尽显示“需要人工重试”。后续 Agent 续接失败或预算/历史停止只作为非阻断提示，不覆盖已成功的外部动作。
 
@@ -76,7 +78,7 @@ mvn spring-boot:run -pl commerce-guardian-agent-app
 
 验证新 Run 的 Items 依次出现订单读取、资格核验、AUTHORIZE 确认和 Worker 交接；批准前不得出现外部命令，批准后保持 WAITING_EXTERNAL_ACTION，Worker 结算后才出现 EXTERNAL_ACTION_STATUS。重启发生在确认前、命令等待中或重试等待中时，复核同一 Run/Command 被恢复，不创建第二个命令或第二次业务写入。非明确订单号、其他动作和已有 Run 必须继续使用 LEGACY_V1。
 
-2B-2 的 MybatisLangGraphCheckpointSaver 将技术节点和版本元数据写入 AGENT_GRAPH_SNAPSHOT；故障注入时删除、损坏或篡改技术快照，应用应根据 WorkflowRun、QuestionCard、Checkpoint 和订单事实重建，并拒绝未知编排版本。生产库复核必须使用已备份的一次性副本；当前开关仍默认关闭，未完成故障注入和跨进程现场证据前不得宣称试点已默认启用。
+2B-2 的 MybatisLangGraphCheckpointSaver 将技术节点和版本元数据写入 AGENT_GRAPH_SNAPSHOT；删除、损坏或篡改技术快照时，应用已在隔离验收副本中根据 WorkflowRun、QuestionCard、Checkpoint 和订单事实完成重建，并拒绝未知编排版本。生产库复核仍必须使用已备份的一次性副本；当前开关默认关闭，完成生产开关、第三方鉴权和删除动作验收后才能在目标环境启用试点。
 
 使用真实 `ChatClient`/`ChatModel`、唯一 `ToolCallingAdvisor` 和假流式模型复核以下顺序：完整 Prompt 达到 80% 后先裁剪 Tool Result，裁剪已解除压力时不调用摘要；仍有压力时只摘要完整 Turn/Tool 批次，保留最近 16% 和当前请求。摘要失败、空响应、断流、取消、额度不足、CAS 冲突或持久化失败均保留最后有效视图。模拟供应商 `context_length_exceeded` 只允许在严格缩减后重试一次，普通 400、网络错误和摘要模型错误不得进入溢出重试。日志和 `EXECUTION_EVENT` 只允许出现范围、计数、估算和版本，不得输出 Prompt、Thinking、摘要正文或敏感事实。
 

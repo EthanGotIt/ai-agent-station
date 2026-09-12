@@ -1,6 +1,5 @@
 package cn.ethan.infrastructure.agent.workflow.transaction;
 
-import cn.ethan.core.agent.execution.AgentTurnItemPayloads;
 import cn.ethan.core.agent.execution.AgentWorkflowDecisionAdmission;
 import cn.ethan.core.agent.execution.AgentWorkflowDecisionAdmissionCommand;
 import cn.ethan.core.agent.execution.AgentWorkflowDecisionAdmissionResult;
@@ -14,6 +13,7 @@ import cn.ethan.core.agent.thread.AgentWorkflowDecisionInput;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStore;
+import cn.ethan.infrastructure.agent.thread.persistence.JacksonAgentItemPayloadCodec;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -34,17 +34,20 @@ public final class TransactionalAgentWorkflowDecisionAdmission implements AgentW
 
     private final AgentWorkflowCheckpointStore checkpoints;
     private final AgentTurnStore turns;
+    private final JacksonAgentItemPayloadCodec itemPayloadCodec;
     private final Clock clock;
     private final TransactionTemplate transactionTemplate;
 
     public TransactionalAgentWorkflowDecisionAdmission(
             AgentWorkflowCheckpointStore checkpoints,
             AgentTurnStore turns,
+            JacksonAgentItemPayloadCodec itemPayloadCodec,
             Clock clock,
             PlatformTransactionManager transactionManager
     ) {
         this.checkpoints = checkpoints;
         this.turns = turns;
+        this.itemPayloadCodec = itemPayloadCodec;
         this.clock = clock;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -79,7 +82,9 @@ public final class TransactionalAgentWorkflowDecisionAdmission implements AgentW
                 cn.ethan.core.agent.thread.AgentTurnInputKindEnum.WORKFLOW_DECISION, null, null, input);
         AgentItemModel initialItem = new AgentItemModel(
                 UUID.randomUUID().toString(), turn.threadId(), turn.turnId(), 0,
-                AgentItemTypeEnum.WORKFLOW_DECISION, AgentTurnItemPayloads.workflowDecision(input), createdAt);
+                AgentItemTypeEnum.WORKFLOW_DECISION,
+                itemPayloadCodec.encode(AgentItemTypeEnum.WORKFLOW_DECISION,
+                        cn.ethan.core.agent.execution.AgentTurnItemPayloads.workflowDecisionValue(input)), createdAt);
         long sequence = turns.createTurnWithInitialItem(turn, initialItem);
         if (sequence < 1) {
             throw new IllegalStateException("Workflow Checkpoint 决策必须原子持久化首个 Item");

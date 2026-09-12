@@ -291,6 +291,9 @@ public final class ExternalActionWorker implements DisposableBean {
     }
 
     private void publishSafely(ExternalActionOutcomeManager.Projection projection) {
+        if (outcomes.eventsHandledByJournal()) {
+            return;
+        }
         try {
             for (AgentItemModel item : projection.items()) {
                 events.itemCreated(item);

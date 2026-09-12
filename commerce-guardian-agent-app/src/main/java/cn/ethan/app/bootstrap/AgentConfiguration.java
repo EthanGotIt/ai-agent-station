@@ -4,6 +4,8 @@ import cn.ethan.app.agent.stream.InMemoryAgentEventBus;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.thread.AgentThreadStore;
 import cn.ethan.core.agent.thread.AgentItemStore;
+import cn.ethan.core.agent.thread.AgentItemJournal;
+import cn.ethan.core.agent.thread.AgentItemPayloadCodec;
 import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.context.AgentContextAssembler;
 import cn.ethan.core.agent.context.AgentContextSnapshotStore;
@@ -188,6 +190,8 @@ public class AgentConfiguration {
             AgentThreadStore threadStore,
             AgentTurnStore turns,
             AgentItemStore items,
+            AgentItemJournal itemJournal,
+            AgentItemPayloadCodec itemPayloadCodec,
             AgentThreadService threads,
             AgentContextAssembler contextAssembler,
             AgentTurnCoordinator coordinator,
@@ -212,7 +216,8 @@ public class AgentConfiguration {
                 threadProperties.turnTimeout(),
                 threadProperties.toolResultMaxCharacters(), metrics, orderActionCoordinator,
                 runtimeProperties.continuationEnabled(), runtimeProperties.maxAgentCycles(), questionCards, checkpoints,
-                runtimeProperties.maxOutputTokensPerTurn(), runtimeProperties.repeatedToolFailureThreshold());
+                itemJournal, itemPayloadCodec, runtimeProperties.maxOutputTokensPerTurn(),
+                runtimeProperties.repeatedToolFailureThreshold());
         runtime.recoverPersistedTurns();
         return runtime;
     }
