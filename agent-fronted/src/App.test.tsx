@@ -30,6 +30,47 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     expect(screen.queryByText(/已选择 .* 路径/)).toBeNull();
   });
 
+  it("API 权限错误显示可理解的恢复提示，不泄露服务端原文", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ code: "PERMISSION_DENIED", message: "internal stack trace" }),
+      { status: 403, headers: { "Content-Type": "application/json" } }
+    )));
+    render(<App />);
+    expect((await screen.findAllByText("当前账户没有执行此操作的权限。")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("internal stack trace")).toBeNull();
+  });
+
+  it("切换账户时立即清除旧 Thread 投影，避免短暂泄露上一账户事实", async () => {
+    const firstThread = threadRecord("thread-private", "上一账户对话");
+    const nextThreadList = deferred<Response>();
+    const oldItem = {
+      itemId: "private-item-1", turnId: "private-turn-1", sequence: 1, type: "USER_MESSAGE",
+      schemaVersion: 1, payload: JSON.stringify({ schemaVersion: 1, kind: "USER_MESSAGE", data: "查询上一账户的私密订单" }),
+      createdAt: firstThread.createdAt
+    };
+    let threadListCalls = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") {
+        threadListCalls += 1;
+        return threadListCalls === 1
+          ? Promise.resolve(json({ items: [firstThread], page: 0, size: 100, total: 1 }))
+          : nextThreadList.promise;
+      }
+      if (url.includes("/threads/thread-private/items")) return Promise.resolve(json({ items: [oldItem], afterSequence: 0, nextAfterSequence: 1, hasMore: false }));
+      if (url.includes("/threads/thread-private/events")) return Promise.resolve(pendingStreamResponse());
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("查询上一账户的私密订单")).not.toBeNull();
+    fireEvent.change(screen.getByLabelText("用户标识"), { target: { value: "demo-user-2" } });
+    await waitFor(() => expect(screen.queryByText("查询上一账户的私密订单")).toBeNull());
+    expect(threadListCalls).toBe(2);
+  });
+
   it("Thread 列表不再展示回收站或归档操作", async () => {
     const threadOne = threadRecord("thread-1", "售后咨询");
     const threadTwo = threadRecord("thread-2", "待处理订单");
@@ -179,6 +220,36 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/turns"))).toBe(true));
     const turnCall = fetchMock.mock.calls.find(([input]) => String(input).includes("/turns"));
     expect(JSON.parse(String(turnCall?.[1]?.body)).message).toBe("中文输入");
+  });
+
+  it("取消活动 Turn 时防止重复请求，并在取消完成后恢复发送入口", async () => {
+    const thread = threadRecord("thread-1", "取消处理 Thread");
+    const cancelResponse = deferred<Response>();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/agent/threads?page=0&size=100") return Promise.resolve(json({ items: [thread], page: 0, size: 100, total: 1 }));
+      if (url.includes("/threads/thread-1/items")) return Promise.resolve(json({ items: [], afterSequence: 0, nextAfterSequence: 0, hasMore: false }));
+      if (url.includes("/threads/thread-1/events")) return Promise.resolve(pendingStreamResponse());
+      if (url.endsWith("/threads/thread-1/turns")) return Promise.resolve(json({ turnId: "turn-cancel-1" }));
+      if (url.endsWith("/turns/turn-cancel-1/cancel")) return cancelResponse.promise;
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const composer = await screen.findByRole("textbox", { name: "输入请求" });
+    fireEvent.change(composer, { target: { value: "查询订单" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    const cancelButton = await screen.findByRole("button", { name: "取消处理" });
+    fireEvent.click(cancelButton);
+    expect((await screen.findByRole("button", { name: "正在取消…" })) as HTMLButtonElement).toHaveProperty("disabled", true);
+
+    cancelResponse.resolve(json({}));
+    await waitFor(() => expect(screen.getByRole("button", { name: "发送" })).not.toBeNull());
+    fireEvent.change(composer, { target: { value: "再次查询订单" } });
+    expect((screen.getByRole("button", { name: "发送" })) as HTMLButtonElement).toHaveProperty("disabled", false);
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/turns/turn-cancel-1/cancel"))).toHaveLength(1);
   });
 
   it("动态 QuestionCard 接管输入区，支持三选项、其他自定义值、摘要和受限文本", async () => {
@@ -349,7 +420,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("请求已完成")).not.toBeNull();
+    expect(await screen.findByText("请求已处理")).not.toBeNull();
     expect(screen.queryByText("可以这样问")).toBeNull();
     const detailButton = screen.getByRole("button", { name: /运行详情/ });
     detailButton.focus();
@@ -392,7 +463,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("请求已完成")).not.toBeNull();
+    expect(await screen.findByText("请求已处理")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /运行详情/ }));
     expect(await screen.findByRole("heading", { name: "运行详情" })).not.toBeNull();
     expect(screen.queryByText("#010")).toBeNull();
@@ -460,7 +531,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("请求已完成")).not.toBeNull();
+    expect(await screen.findByText("请求已处理")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /运行详情/ }));
     expect(await screen.findByText("回放暂不可用，已显示当前已恢复事实。")).not.toBeNull();
     expect(screen.getByText("#002")).not.toBeNull();
@@ -510,7 +581,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
     const composer = screen.getByRole("textbox", { name: "输入请求" }) as HTMLTextAreaElement;
     expect(composer.value).toBe("");
     expect(document.querySelector(".order-action-status")).not.toBeNull();
-    expect(screen.getByText("已提交，正在排队")).not.toBeNull();
+    expect(screen.getByText("订单操作已排队，等待处理")).not.toBeNull();
     const actionCall = fetchMock.mock.calls.find(([input]) => String(input).includes("/threads/thread-1/order-actions"));
     expect(JSON.parse(String(actionCall?.[1]?.body))).toMatchObject({
       sourceTurnId: "turn-1", orderId: "ORDER-TODAY-001", actionType: "REFUND"
@@ -825,6 +896,7 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
 
     render(<App />);
 
+    expect(await screen.findByText("订单操作未完成，需要人工重试")).not.toBeNull();
     fireEvent.click(await screen.findByRole("button", { name: "人工重试" }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) =>
       String(input).includes("/workflow-runs/run-retry/retry"))).toBe(true));
@@ -881,8 +953,8 @@ describe("Commerce Guardian Agent Thread 工作区", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("业务操作已完成")).not.toBeNull();
-    expect(await screen.findByText(/业务操作已完成，后续 Agent 续接未完成/)).not.toBeNull();
+    expect(await screen.findByText("订单操作已完成")).not.toBeNull();
+    expect(await screen.findByText(/订单操作已完成；结果整理未完成/)).not.toBeNull();
     expect(screen.queryByText("Agent 续接失败")).toBeNull();
     expect(screen.queryByRole("button", { name: "人工重试" })).toBeNull();
   });

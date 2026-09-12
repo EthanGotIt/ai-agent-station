@@ -63,13 +63,13 @@ describe("OrderActionStatus", () => {
 
     expect(view.state).toBe("waiting");
     renderStatus(view);
-    expect(screen.getByText("需要确认，确认面板已打开")).not.toBeNull();
+    expect(screen.getByText("等待你确认订单操作")).not.toBeNull();
   });
 
   it.each([
-    ["PENDING", "已创建业务操作，等待执行"],
-    ["PROCESSING", "正在提交业务操作"],
-    ["RETRY_WAIT", "外部系统暂未完成，系统会自动重试"]
+    ["PENDING", "订单操作已受理，等待执行"],
+    ["PROCESSING", "订单操作正在提交"],
+    ["RETRY_WAIT", "外部订单系统暂未完成，系统将自动重试"]
   ] as const)("区分外部动作状态 %s", (status, copy) => {
     const view = actionView(item("EXTERNAL_ACTION_STATUS", 2, {
       runId: "run-1",
@@ -95,7 +95,7 @@ describe("OrderActionStatus", () => {
 
     expect(view.state).toBe("done");
     const { onRefresh } = renderStatus(view);
-    expect(screen.getByText("操作已受理，最新状态暂未核验")).not.toBeNull();
+    expect(screen.getByText("订单操作已提交，等待结果核验")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "重新查询" }));
     expect(onRefresh).toHaveBeenCalledWith("ORDER-1");
   });
@@ -128,7 +128,7 @@ describe("OrderActionStatus", () => {
     expect(view.state).toBe("error");
     expect(view.retryable).toBe(true);
     const { onRetry } = renderStatus(view);
-    expect(screen.getByText("自动重试已耗尽，需要人工重试")).not.toBeNull();
+    expect(screen.getByText("订单操作未完成，自动重试已用尽；可以人工重试")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "人工重试" }));
     expect(onRetry).toHaveBeenCalledWith("run-1");
   });
@@ -148,7 +148,7 @@ describe("OrderActionStatus", () => {
     expect(view.state).toBe("done");
     expect(view.externalActionStatus).toBe("SUCCEEDED");
     renderStatus(view);
-    expect(screen.getByText("业务操作已完成")).not.toBeNull();
+    expect(screen.getByText("订单操作已完成")).not.toBeNull();
     expect(screen.queryByRole("button", { name: "人工重试" })).toBeNull();
   });
 });

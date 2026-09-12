@@ -1,5 +1,6 @@
 import { CheckCircle2, CircleAlert, Clock3, RotateCcw } from "lucide-react";
 import { ACTION_LABELS, type OrderActionProjection } from "./orderActionProjection";
+import { clarifyError } from "./userFacingCopy";
 
 type Props = {
   view: OrderActionProjection;
@@ -10,28 +11,28 @@ type Props = {
 };
 
 function statusCopy(view: OrderActionProjection) {
-  if (view.rejected) return "操作已结束，未执行外部动作";
-  if (view.receipt?.verificationStatus === "PENDING") return "操作已受理，最新状态暂未核验";
+  if (view.rejected) return "订单操作已取消，未执行外部动作";
+  if (view.externalActionStatus === "MANUAL_RETRY_REQUIRED") return "订单操作未完成，自动重试已用尽；可以人工重试";
+  if (view.state === "done" && view.receipt?.verificationStatus === "PENDING") return "订单操作已提交，等待结果核验";
   if (view.receipt?.verificationStatus === "VERIFIED") return view.receipt.verificationMessage ?? "最新订单状态已核验";
-  if (view.state === "queued") return "已提交，正在排队";
-  if (view.state === "waiting") return "需要确认，确认面板已打开";
-  if (view.externalActionStatus === "PENDING") return "已创建业务操作，等待执行";
-  if (view.externalActionStatus === "PROCESSING") return "正在提交业务操作";
-  if (view.externalActionStatus === "RETRY_WAIT") return "外部系统暂未完成，系统会自动重试";
-  if (view.externalActionStatus === "MANUAL_RETRY_REQUIRED") return "自动重试已耗尽，需要人工重试";
+  if (view.state === "queued") return "订单操作已排队，等待处理";
+  if (view.state === "waiting") return "等待你确认订单操作";
+  if (view.externalActionStatus === "PENDING") return "订单操作已受理，等待执行";
+  if (view.externalActionStatus === "PROCESSING") return "订单操作正在提交";
+  if (view.externalActionStatus === "RETRY_WAIT") return "外部订单系统暂未完成，系统将自动重试";
   if (view.state === "active") {
-    return "已确认，等待外部系统处理";
+    return "订单操作已确认，等待外部系统处理";
   }
   if (view.state === "error") {
     if (view.receipt?.attemptCount && view.receipt.maxAttempts) {
-      return `自动重试 ${view.receipt.attemptCount}/${view.receipt.maxAttempts} 次后仍未完成`;
+      return `订单操作未完成，已自动重试 ${view.receipt.attemptCount}/${view.receipt.maxAttempts} 次`;
     }
-    return view.error ?? "操作未完成，可查看运行详情";
+    return view.error ? clarifyError(view.error) : "订单操作未完成，可查看运行详情";
   }
   if (view.request.actionType === "DELETE_ORDER" && view.deleted) return "订单记录已删除";
   return view.request.actionType === "QUERY_LOGISTICS" || view.request.actionType === "REFRESH_ORDER"
     ? "最新订单事实已更新"
-    : "业务操作已完成";
+    : "订单操作已完成";
 }
 
 function StatusIcon({ state }: { state: OrderActionProjection["state"] }) {

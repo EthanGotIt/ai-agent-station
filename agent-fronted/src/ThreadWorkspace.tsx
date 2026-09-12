@@ -37,6 +37,7 @@ import type {
 import type { useThreadWorkspace } from "./useThreadWorkspace";
 import { OrderActionStatus } from "./OrderActionStatus";
 import { findOrderAction, projectOrderAction, type OrderActionRequest } from "./orderActionProjection";
+import { clarifyConclusion, clarifyError } from "./userFacingCopy";
 
 type Props = { workspace: ReturnType<typeof useThreadWorkspace>; userId: string };
 
@@ -326,18 +327,64 @@ function activityIcon(status: BusinessProgressStatus) {
   return <CheckCircle2 aria-hidden="true" />;
 }
 
+function orderActionView(turn: ThreadViewTurn) {
+  const action = findOrderAction(turn);
+  return action ? projectOrderAction(turn, action) : null;
+}
+
+function orderActionSummary(view: ReturnType<typeof projectOrderAction>) {
+  if (view.rejected) return "订单操作已取消，未执行";
+  if (view.externalActionStatus === "MANUAL_RETRY_REQUIRED" || view.retryable) return "订单操作未完成，需要人工重试";
+  if (view.state === "done" && view.receipt?.verificationStatus === "PENDING") return "订单操作已提交，等待结果核验";
+  if (view.receipt?.verificationStatus === "VERIFIED") return view.receipt.verificationMessage ?? "订单操作已完成，结果已核验";
+  if (view.state === "queued") return "订单操作已排队，等待处理";
+  if (view.state === "waiting") return "等待你确认订单操作";
+  if (view.externalActionStatus === "PENDING") return "订单操作已受理，等待执行";
+  if (view.externalActionStatus === "PROCESSING") return "订单操作正在提交";
+  if (view.externalActionStatus === "RETRY_WAIT") return "订单操作暂未完成，将自动重试";
+  if (view.state === "active") return "订单操作已确认，等待外部系统处理";
+  if (view.state === "error") return "订单操作未完成";
+  if (view.request.actionType === "DELETE_ORDER" && view.deleted) return "订单记录已删除";
+  if (view.request.actionType === "QUERY_LOGISTICS" || view.request.actionType === "REFRESH_ORDER") return "订单事实已更新";
+  return "订单操作已完成";
+}
+
 function turnSummary(turn: ThreadViewTurn) {
+  const actionView = orderActionView(turn);
+  if (actionView) return orderActionSummary(actionView);
+  if (turn.question) return "等待你补充信息";
+  if (turn.workflowCheckpoint) return "等待你确认订单操作";
+  if (turn.status === "WAITING_EXTERNAL_ACTION") return "等待订单系统处理";
+  if (turn.status === "WAITING_USER_INPUT") return "等待你补充信息";
+  if (turn.status === "FAILED") return "请求未完成";
+  if (turn.status === "COMPLETED" && turn.orderCards.length > 0) return "订单事实已更新";
   const last = turn.activities.at(-1);
   if (last) return last.label;
   if (turn.status === "ACTIVE" || turn.status === "QUEUED") return "正在分析请求";
   return statusLabel(turn.status);
 }
 
+function turnSummaryStatus(turn: ThreadViewTurn): BusinessProgressStatus {
+  const actionView = orderActionView(turn);
+  if (actionView) {
+    if (actionView.state === "waiting") return "WAITING";
+    if (actionView.state === "error") return "ERROR";
+    if (actionView.state === "done") return "DONE";
+    return "ACTIVE";
+  }
+  if (turn.question || turn.workflowCheckpoint
+    || turn.status === "WAITING_USER_INPUT" || turn.status === "WAITING_EXTERNAL_ACTION") return "WAITING";
+  if (["FAILED", "CANCELLED", "TIMED_OUT"].includes(turn.status)) return "ERROR";
+  if (turn.status === "COMPLETED") return "DONE";
+  if (turn.status === "ACTIVE" || turn.status === "QUEUED") return "ACTIVE";
+  return turn.activities.at(-1)?.status ?? "ACTIVE";
+}
+
 function connectionMessage(error: string) {
   if (/网络连接暂时不可用|服务不可用/i.test(error)) return "网络连接暂时不可用，请检查网络后重试。";
   if (/HTTP\s+\d{3}/i.test(error)) return "订单服务没有响应，工作区暂时无法加载。";
   if (/网络|连接|超时|不可用/i.test(error)) return "暂时无法连接到订单服务。";
-  return "工作区暂时无法加载。";
+  return error || "工作区暂时无法加载。";
 }
 
 function isConnectionError(error: string) {
@@ -345,18 +392,19 @@ function isConnectionError(error: string) {
 }
 
 function ConnectionRecovery({ error, loading, onRetry }: { error: string; loading: boolean; onRetry: () => void }) {
+  const connectionError = isConnectionError(error);
   return <section className="connection-recovery" role="status" aria-labelledby="connection-recovery-title" aria-live="polite" aria-atomic="true">
     <span className="connection-recovery-icon" aria-hidden="true"><RefreshCw /></span>
     <div className="connection-recovery-copy">
-      <span className="connection-recovery-label">连接状态</span>
-      <h2 id="connection-recovery-title">无法连接到订单服务</h2>
+      <span className="connection-recovery-label">{connectionError ? "连接状态" : "工作区状态"}</span>
+      <h2 id="connection-recovery-title">{connectionError ? "无法连接到订单服务" : "工作区暂时不可用"}</h2>
       <p>{connectionMessage(error)}</p>
-      <p className="connection-recovery-hint">确认本地后端已启动后，再重新连接即可恢复工作区。</p>
+      <p className="connection-recovery-hint">{connectionError ? "确认本地后端已启动后，再重新连接即可恢复工作区。" : "请检查账户权限或刷新工作区后再试。"}</p>
       <details className="connection-diagnostics">
         <summary>查看技术信息</summary>
         <code>{error}</code>
       </details>
-      <button type="button" className="icon-button connection-retry" disabled={loading} aria-busy={loading} onClick={onRetry}><RefreshCw aria-hidden="true" />{loading ? "连接中…" : "重新连接"}</button>
+      <button type="button" className="icon-button connection-retry" disabled={loading} aria-busy={loading} onClick={onRetry}><RefreshCw aria-hidden="true" />{loading ? "处理中…" : connectionError ? "重新连接" : "刷新状态"}</button>
     </div>
   </section>;
 }
@@ -366,7 +414,7 @@ function ConnectionNotice({ error, onRetry }: { error: string; onRetry: () => vo
   return <div className="workspace-alert" role="alert">
     <CircleAlert aria-hidden="true" />
     <div><strong>{connectionError ? "连接暂时中断" : "当前操作无法执行"}</strong><span>{connectionError ? connectionMessage(error) : error}</span></div>
-    {connectionError ? <button type="button" className="secondary compact-action" onClick={onRetry}>重新连接</button> : null}
+    <button type="button" className="secondary compact-action" onClick={onRetry}>{connectionError ? "重新连接" : "刷新状态"}</button>
   </div>;
 }
 
@@ -408,12 +456,15 @@ function WorkflowState({ turn }: { turn: ThreadViewTurn }) {
     VERIFY_OUTCOME: "核对操作结果",
     HANDOFF_AGENT: "整理处理结果"
   } as Record<string, string>)[latestStep.node] ?? "处理订单";
-  const state = latestStep.status === "ERROR" || latestStep.status === "FAILED" ? "error" : latestStep.status === "WAITING" ? "waiting" : latestStep.status === "COMPLETED" || latestStep.status === "DONE" ? "done" : "active";
+  const actionView = orderActionView(turn);
+  const state = actionView
+    ? actionView.state === "error" ? "error" : actionView.state === "waiting" ? "waiting" : actionView.state === "done" ? "done" : "active"
+    : latestStep.status === "ERROR" || latestStep.status === "FAILED" ? "error" : latestStep.status === "WAITING" ? "waiting" : latestStep.status === "COMPLETED" || latestStep.status === "DONE" ? "done" : "active";
   const stateLabel = state === "error" ? "需要处理" : state === "waiting" ? "等待确认" : state === "done" ? "已完成" : "进行中";
-  const summary = state === "error" ? `处理在“${stageLabel}”时遇到问题` : state === "waiting" ? `正在等待你确认${stageLabel}` : state === "done" ? `已完成${stageLabel}` : `正在${stageLabel}`;
+  const summary = state === "error" ? `“${stageLabel}”未完成，请按订单卡片提示处理` : state === "waiting" ? `正在等待你确认${stageLabel}` : state === "done" ? `已完成${stageLabel}` : `正在${stageLabel}`;
   return <section className={`workflow-state workflow-state-${state}`} aria-label="订单处理阶段">
     <div className="workflow-state-heading"><strong>订单处理阶段</strong><span>{stateLabel}</span></div>
-    <div className="workflow-state-summary" role="status"><span className="workflow-state-dot" aria-hidden="true" /><div><strong>{summary}</strong><span>完整节点、耗时和受控数据已收录在运行详情</span></div></div>
+    <div className="workflow-state-summary" role="status"><span className="workflow-state-dot" aria-hidden="true" /><div><strong>{summary}</strong><span>详细步骤和操作记录见运行详情</span></div></div>
   </section>;
 }
 
@@ -431,10 +482,10 @@ function ContinuationNotice({ turn }: { turn: ThreadViewTurn }) {
 }
 
 function AgentConclusion({ value }: { value: string }) {
-  const lines = value.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const lines = clarifyConclusion(value).split(/\n+/).map((line) => line.trim()).filter(Boolean);
   const unique = lines.filter((line, index) => lines.indexOf(line) === index);
   if (unique.length === 0) return null;
-  return <section className="agent-conclusion" aria-label="Agent 结论"><span className="eyebrow">AGENT CONCLUSION</span><RestrictedMarkdown value={unique.join("\n\n")} className="agent-content" /></section>;
+  return <section className="agent-conclusion" aria-label="处理说明"><span className="eyebrow">处理说明</span><RestrictedMarkdown value={unique.join("\n\n")} className="agent-content" /></section>;
 }
 
 function LegacyQuestionCard({ value }: { value: QuestionCardState }) {
@@ -449,17 +500,19 @@ function LegacyQuestionCard({ value }: { value: QuestionCardState }) {
 
 const Turn = memo(function Turn({ turn, busy, pendingAction, retryingRunId, onRetry, onRetryTurn, onInspect, onAction }: { turn: ThreadViewTurn; busy: boolean; pendingAction: PendingOrderAction | null; retryingRunId: string | null; onRetry: (runId: string) => void; onRetryTurn: (turnId: string) => void; onInspect: (turnId: string) => void; onAction: (sourceTurnId: string, orderId: string, actionType: OrderActionType) => void }) {
   const hasStructuredFacts = turn.orderCards.length > 0 || turn.logisticsTimelines.length > 0;
+  const actionView = orderActionView(turn);
+  const summaryStatus = turnSummaryStatus(turn);
   return <article className={`conversation-turn thread-turn turn-${turn.status.toLowerCase()}`}>
     <div className="turn-request"><span className="turn-avatar user-avatar">你</span><div><div className="turn-meta"><strong>你的请求</strong><time>{time(turn.startedAt)}</time><span className={`turn-status status-${turn.status.toLowerCase()}`}>{statusLabel(turn.status)}</span></div><p>{turn.userMessage}</p></div></div>
     <div className="turn-response"><span className="turn-avatar agent-avatar"><Bot aria-label="Agent" /></span><div className="turn-response-body"><div className="turn-meta turn-response-meta"><strong>售后助手</strong><span className="turn-route">业务流</span><button className="detail-trigger" type="button" onClick={() => onInspect(turn.turnId)}><PanelRight aria-hidden="true" />运行详情 <span>{turn.items.length}</span></button></div>
-      <div className={`turn-summary summary-${turn.activities.at(-1)?.status?.toLowerCase() ?? "active"}`}><span className="summary-icon">{activityIcon(turn.activities.at(-1)?.status ?? "ACTIVE")}</span><strong>{turnSummary(turn)}</strong>{duration(turn) ? <time>{duration(turn)}</time> : null}</div>
+      <div className={`turn-summary summary-${summaryStatus.toLowerCase()}`}><span className="summary-icon">{activityIcon(summaryStatus)}</span><strong>{turnSummary(turn)}</strong>{duration(turn) ? <time>{duration(turn)}</time> : null}</div>
       {turn.continuationWarning ? <p className="turn-warning" role="status"><CircleAlert aria-hidden="true" />{turn.continuationWarning}</p> : null}
       <ContinuationNotice turn={turn} />
       <WorkflowState turn={turn} />
       {turn.legacyQuestion ? <LegacyQuestionCard value={turn.legacyQuestion} /> : null}
       {hasStructuredFacts ? <><OrderResults turn={turn} disabled={busy} pendingAction={pendingAction} retryingRunId={retryingRunId} onRetry={onRetry} onAction={onAction} />{turn.content ? <AgentConclusion value={turn.content} /> : null}</> : turn.content ? <RestrictedMarkdown value={turn.content} className="agent-content" /> : turn.status === "ACTIVE" || turn.status === "QUEUED" ? <p className="agent-content loading-copy">正在分析你的请求…</p> : null}
       {!hasStructuredFacts ? <ActionFallbackReceipt turn={turn} disabled={busy} pendingAction={pendingAction} retryingRunId={retryingRunId} onRetry={onRetry} onAction={onAction} /> : null}
-      {turn.error ? <><p className="turn-error" role="alert"><CircleAlert aria-hidden="true" />{turn.error}</p>{turn.errorCode === "AGENT_DECISION_MISSING" ? <button className="secondary retry-agent-button" type="button" disabled={busy} onClick={() => onRetryTurn(turn.turnId)}>再次尝试</button> : null}</> : null}
+      {turn.error && !actionView ? <><p className="turn-error" role="alert"><CircleAlert aria-hidden="true" />{clarifyError(turn.error, turn.errorCode)}</p>{turn.errorCode === "AGENT_DECISION_MISSING" ? <button className="secondary retry-agent-button" type="button" disabled={busy} onClick={() => onRetryTurn(turn.turnId)}>再次尝试</button> : null}</> : null}
     </div></div>
   </article>;
 });
@@ -664,7 +717,7 @@ export function ThreadWorkspace({ workspace }: Props) {
          <div className="thread-context-bar"><div><span className="eyebrow">CURRENT THREAD</span><h2>{contextTitle}</h2><span className="thread-context-summary">{currentThread?.contextId ?? "订单售后"} · {workspace.turns.length} 个请求</span></div><div className="thread-context-actions"><button className="secondary icon-button mobile-thread-toggle" type="button" aria-expanded={mobileSidebarOpen} aria-controls="thread-sidebar" onClick={() => setMobileSidebarOpen(true)}><Menu aria-hidden="true" />对话列表</button><span className={`status status-${contextStatusClass}`}>{contextStatus}</span></div></div>
         {workspace.error && !blockingConnection ? <ConnectionNotice error={workspace.error} onRetry={workspace.retryConnection} /> : null}
         <div className="thread-records">{workspace.loading ? <div className="conversation-empty"><Bot aria-hidden="true" /><h2>正在恢复对话</h2><p>正在读取订单事实和历史结果。</p></div> : blockingConnection ? <ConnectionRecovery error={workspace.error ?? "工作区连接失败"} loading={workspace.loading} onRetry={workspace.retryConnection} /> : workspace.turns.length === 0 ? <div className="conversation-empty"><ShieldCheck aria-hidden="true" /><h2>直接输入请求</h2><p>可以直接输入订单号、物流问题或售后诉求。</p></div> : <>{workspace.turns.map((turn) => <Turn key={turn.turnId} turn={turn} busy={workspace.busy} pendingAction={pendingAction} retryingRunId={workspace.retryingRunId} onRetry={workspace.retry} onRetryTurn={workspace.retryTurn} onInspect={inspect} onAction={executeOrderAction} />)}</>}</div>
-        <form className="composer" onSubmit={submit}><label htmlFor="thread-message">输入请求</label><textarea ref={composerRef} id="thread-message" value={message} disabled={inputDisabled} onKeyDown={keyboard} onChange={(event) => setMessage(event.target.value)} placeholder="输入订单号、物流问题或售后诉求…" /><div className="composer-actions"><WorkspaceHelp /><span className="composer-key-help">Enter 发送 · Shift + Enter 换行</span>{workspace.busy ? <button className="secondary icon-button" type="button" onClick={() => void workspace.cancel()}><Square aria-hidden="true" />取消处理</button> : <button className="icon-button" type="submit" disabled={!message.trim() || inputDisabled}><Send aria-hidden="true" />发送</button>}</div></form>
+        <form className="composer" onSubmit={submit}><label htmlFor="thread-message">输入请求</label><textarea ref={composerRef} id="thread-message" value={message} maxLength={4_000} disabled={inputDisabled} onKeyDown={keyboard} onChange={(event) => setMessage(event.target.value)} placeholder="输入订单号、物流问题或售后诉求…" /><div className="composer-actions"><WorkspaceHelp /><span className="composer-key-help">Enter 发送 · Shift + Enter 换行</span>{workspace.busy && workspace.canCancel ? <button className="secondary icon-button" type="button" disabled={workspace.cancelling} aria-busy={workspace.cancelling} onClick={() => void workspace.cancel()}><Square aria-hidden="true" />{workspace.cancelling ? "正在取消…" : "取消处理"}</button> : <button className="icon-button" type="submit" disabled={!message.trim() || inputDisabled}><Send aria-hidden="true" />发送</button>}</div></form>
       </main>
       {question ? <QuestionModal value={question} disabled={workspace.busy} onSubmit={(answers) => void workspace.answer(answers)} onCancel={() => void workspace.answer({}, "CANCEL")} /> : null}
       {checkpoint ? <WorkflowCheckpointModal value={checkpoint} disabled={workspace.busy} onDecision={(decision) => void workspace.decideCheckpoint(decision)} /> : null}

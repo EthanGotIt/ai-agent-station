@@ -12,6 +12,7 @@ import {
   terminal
 } from "./threadProjection";
 import { threadWorkspaceApi } from "./threadWorkspaceApi";
+import { clarifyRequestFailure } from "./userFacingCopy";
 import type {
   AgentItem,
   AgentItemPage,
@@ -72,6 +73,8 @@ export function useThreadWorkspace(userId: string) {
   const [items, setItems] = useState<AgentItem[]>([]);
   const [interaction, setInteraction] = useState<AgentInteraction | null>(null);
   const [busy, setBusy] = useState(false);
+  const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const cursorRef = useRef(0);
@@ -88,6 +91,7 @@ export function useThreadWorkspace(userId: string) {
   const interactionRef = useRef<AgentInteraction | null>(null);
   const generationRef = useRef(0);
   const retryingRunRef = useRef<string | null>(null);
+  const cancellingRef = useRef(false);
   const executionCacheRef = useRef(new Map<string, AgentItem[]>());
   const executionLoadingRef = useRef(new Set<string>());
   const [executionReplayStates, setExecutionReplayStates] = useState<Record<string, ExecutionReplayStatus>>({});
@@ -106,13 +110,37 @@ export function useThreadWorkspace(userId: string) {
   }, []);
 
   useEffect(() => {
+    // 身份变化时先清空旧投影，避免新账户响应返回前短暂展示上一账户的订单事实。
+    generationRef.current += 1;
+    historyControllerRef.current?.abort();
+    eventControllerRef.current?.abort();
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    threadIdRef.current = null;
+    activeTurnRef.current = null;
+    retryingRunRef.current = null;
+    cancellingRef.current = false;
+    setThreads([]);
+    setThreadId(null);
+    setItems([]);
+    setBusy(false);
+    setActiveTurnId(null);
+    setCancelling(false);
+    setLoading(true);
+    setError(null);
+    updateInteraction(null);
     executionCacheRef.current.clear();
     executionLoadingRef.current.clear();
+    setRetryingRunId(null);
+    itemsRef.current = [];
     itemIndexRef.current.clear();
     projectionCacheRef.current = createThreadProjectionCache();
     openInteractionIndexRef.current = createOpenInteractionIndex();
+    cursorRef.current = 0;
     setExecutionReplayStates({});
-  }, [userId]);
+  }, [updateInteraction, userId]);
 
   const applyItems = useCallback((incoming: Array<AgentItem | AgentItemWire>) => {
     const normalizedIncoming = incoming.map(normalizeItem);
@@ -159,7 +187,17 @@ export function useThreadWorkspace(userId: string) {
         const state = normalized.payload.data as { status?: unknown };
         const status = state?.status;
         if (status === "WAITING_USER_INPUT") setBusy(false);
-        if (typeof status === "string" && terminal(status as AgentTurnStatus)) setBusy(false);
+        if (typeof status === "string" && terminal(status as AgentTurnStatus)) {
+          setBusy(false);
+          if (normalized.turnId === activeTurnRef.current) {
+            activeTurnRef.current = null;
+            setActiveTurnId(null);
+          }
+        }
+        if (status === "WAITING_USER_INPUT" && normalized.turnId === activeTurnRef.current) {
+          activeTurnRef.current = null;
+          setActiveTurnId(null);
+        }
       }
     }
   }, [updateInteraction]);
@@ -252,7 +290,7 @@ export function useThreadWorkspace(userId: string) {
       }
     } catch (failure) {
       if (!controller.signal.aborted && isCurrent()) {
-        setError(failure instanceof Error ? failure.message : "实时事件连接失败");
+        setError(clarifyRequestFailure(failure, "实时事件连接失败"));
         reconnectTimerRef.current = window.setTimeout(
           () => void connect(nextThreadId, cursorRef.current, generation), 1200);
       }
@@ -335,7 +373,7 @@ export function useThreadWorkspace(userId: string) {
       if (!controller.signal.aborted && generationRef.current === generation
         && threadIdRef.current === nextThreadId) {
         setLoading(false);
-        setError(failure instanceof Error ? failure.message : "Thread 历史加载失败");
+        setError(clarifyRequestFailure(failure, "Thread 历史加载失败"));
       }
     } finally {
       if (historyControllerRef.current === controller) historyControllerRef.current = null;
@@ -352,6 +390,9 @@ export function useThreadWorkspace(userId: string) {
     activeTurnRef.current = null;
     retryingRunRef.current = null;
     setRetryingRunId(null);
+    cancellingRef.current = false;
+    setCancelling(false);
+    setActiveTurnId(null);
     setThreadId(null);
     setBusy(false);
     updateInteraction(null);
@@ -376,7 +417,7 @@ export function useThreadWorkspace(userId: string) {
     } catch (failure) {
       if (generationRef.current === generation) {
         setLoading(false);
-        setError(failure instanceof Error ? failure.message : "Thread 列表加载失败");
+        setError(clarifyRequestFailure(failure, "Thread 列表加载失败"));
       }
     }
   }, [selectThread, userId]);
@@ -434,7 +475,7 @@ export function useThreadWorkspace(userId: string) {
       selectThread(created.threadId);
     } catch (failure) {
       if (generationRef.current === generation) {
-        setError(failure instanceof Error ? failure.message : "Thread 创建失败");
+        setError(clarifyRequestFailure(failure, "Thread 创建失败"));
       }
     }
   }, [selectThread, userId]);
@@ -450,11 +491,12 @@ export function useThreadWorkspace(userId: string) {
       const accepted = await threadWorkspaceApi.submitMessage(userId, requestThreadId, id("turn"), message);
       if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
         activeTurnRef.current = accepted.turnId;
+        setActiveTurnId(accepted.turnId);
       }
     } catch (failure) {
       if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
         setBusy(false);
-        setError(failure instanceof Error ? failure.message : "Turn 提交失败");
+        setError(clarifyRequestFailure(failure, "Turn 提交失败"));
       }
     }
   }, [busy, question, threadId, threads, userId]);
@@ -475,11 +517,12 @@ export function useThreadWorkspace(userId: string) {
       );
       if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
         activeTurnRef.current = accepted.turnId;
+        setActiveTurnId(accepted.turnId);
       }
     } catch (failure) {
       if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
         setBusy(false);
-        setError(failure instanceof Error ? failure.message : "再次尝试提交失败");
+        setError(clarifyRequestFailure(failure, "再次尝试提交失败"));
       }
     }
   }, [busy, question, threadId, threads, userId]);
@@ -512,11 +555,12 @@ export function useThreadWorkspace(userId: string) {
       );
       if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
         activeTurnRef.current = accepted.turnId;
+        setActiveTurnId(accepted.turnId);
       }
     } catch (failure) {
       if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
         setBusy(false);
-        setError(failure instanceof Error ? failure.message : "订单动作提交失败");
+        setError(clarifyRequestFailure(failure, "订单动作提交失败"));
       }
     }
   }, [busy, question, threadId, threads, userId]);
@@ -537,11 +581,12 @@ export function useThreadWorkspace(userId: string) {
       );
       if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
         activeTurnRef.current = accepted.turnId;
+        setActiveTurnId(accepted.turnId);
       }
     } catch (failure) {
       if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
         setBusy(false);
-        setError(failure instanceof Error ? failure.message : "QuestionCard 提交失败");
+        setError(clarifyRequestFailure(failure, "QuestionCard 提交失败"));
       }
     }
   }, [busy, question, userId]);
@@ -569,27 +614,40 @@ export function useThreadWorkspace(userId: string) {
           updateInteraction(null);
         }
         activeTurnRef.current = accepted.turnId;
+        setActiveTurnId(accepted.turnId);
       }
     } catch (failure) {
       if (generationRef.current === generation && threadIdRef.current === requestThreadId) {
         setBusy(false);
-        setError(failure instanceof Error ? failure.message : "执行确认提交失败");
+        setError(clarifyRequestFailure(failure, "执行确认提交失败"));
       }
     }
   }, [busy, checkpoint, updateInteraction, userId]);
 
   const cancel = useCallback(async () => {
     const turnId = activeTurnRef.current;
-    if (!turnId) return;
+    if (!turnId || cancellingRef.current) return;
     const generation = generationRef.current;
+    cancellingRef.current = true;
+    setCancelling(true);
+    setError(null);
     try {
       await threadWorkspaceApi.cancelTurn(userId, turnId);
+      if (generationRef.current === generation && activeTurnRef.current === turnId) {
+        activeTurnRef.current = null;
+        setActiveTurnId(null);
+        setBusy(false);
+      }
     } catch (failure) {
       if (generationRef.current === generation) {
-        setError(failure instanceof Error ? failure.message : "取消失败");
+        // 取消失败时保留忙碌态，避免用户在原 Turn 仍可能运行时提交新的请求。
+        setError(clarifyRequestFailure(failure, "取消失败"));
       }
     } finally {
-      if (generationRef.current === generation) setBusy(false);
+      if (generationRef.current === generation) {
+        cancellingRef.current = false;
+        setCancelling(false);
+      }
     }
   }, [userId]);
 
@@ -608,7 +666,7 @@ export function useThreadWorkspace(userId: string) {
         retryingRunRef.current = null;
         setRetryingRunId(null);
         setBusy(false);
-        setError(failure instanceof Error ? failure.message : "人工重试提交失败");
+        setError(clarifyRequestFailure(failure, "人工重试提交失败"));
       }
     }
   }, [busy, userId]);
@@ -655,7 +713,7 @@ export function useThreadWorkspace(userId: string) {
       return true;
     } catch (failure) {
       if (generationRef.current === generation) {
-        setError(failure instanceof Error ? failure.message : "Thread 重命名失败");
+        setError(clarifyRequestFailure(failure, "Thread 重命名失败"));
       }
       return false;
     }
@@ -663,6 +721,8 @@ export function useThreadWorkspace(userId: string) {
 
   return {
     answer,
+    canCancel: Boolean(activeTurnId),
+    cancelling,
     checkpoint,
     decideCheckpoint,
     busy,

@@ -401,6 +401,10 @@ function turnStatusForExternalAction(status: ExternalActionStatus): AgentTurnSta
   return null;
 }
 
+function authoritativeExternalTurnStatus(status: ExternalActionStatus): AgentTurnStatus {
+  return turnStatusForExternalAction(status) ?? "WAITING_EXTERNAL_ACTION";
+}
+
 function workflowResultRawStatus(value: unknown): string | null {
   const data = recordValue(value);
   return stringValue(data?.status) ?? (typeof value === "string" ? stringValue(value) : null);
@@ -589,8 +593,18 @@ function workflowRunFromItem(item: AgentItem): string | null {
 function buildActivities(items: AgentItem[]): BusinessProgress[] {
   const externalSucceededTurns = new Set<string>();
   const externalSucceededRuns = new Set<string>();
+  const externalStatusesByTurn = new Map<string, ExternalActionStatus>();
+  const externalStatusesByRun = new Map<string, ExternalActionStatus>();
   const continuationRuns = new Map<string, string>();
   const workflowResultStatuses = new Map<string, AgentTurnStatus>();
+  for (const item of items) {
+    if (item.type !== "EXTERNAL_ACTION_STATUS") continue;
+    const data = recordValue(item.payload.data);
+    if (!isExternalActionStatus(data?.status)) continue;
+    if (item.turnId) externalStatusesByTurn.set(item.turnId, data.status);
+    const runId = stringValue(data?.runId);
+    if (runId) externalStatusesByRun.set(runId, data.status);
+  }
   return items
     .map((item): BusinessProgress | null => {
       const data = recordValue(item.payload.data);
@@ -613,28 +627,31 @@ function buildActivities(items: AgentItem[]): BusinessProgress[] {
       if ((item.type === "ERROR"
         || (item.type === "TURN_STATE" && data?.status === "FAILED"))
         && externalSucceeded) {
-        return { id: `${item.itemId}-continuation`, label: "业务操作已完成", detail: "后续 Agent 续接未完成", status: "DONE", sequence: item.sequence };
+        return { id: `${item.itemId}-continuation`, label: "订单操作已完成", detail: "结果整理未完成", status: "DONE", sequence: item.sequence };
       }
       if (item.type === "TURN_STATE" && typeof data?.status === "string") {
         const status = data.status;
         const workflowResultStatus = item.turnId
           ? workflowResultStatuses.get(item.turnId) : undefined;
-        const effectiveStatus = status === "COMPLETED"
-          && workflowResultStatus && workflowResultStatus !== "COMPLETED"
-          ? workflowResultStatus : status;
+        const externalActionStatus = (item.turnId ? externalStatusesByTurn.get(item.turnId) : undefined)
+          ?? (runId ? externalStatusesByRun.get(runId) : undefined);
+        const effectiveStatus = status === "COMPLETED" && externalActionStatus
+          ? authoritativeExternalTurnStatus(externalActionStatus)
+          : status === "COMPLETED" && workflowResultStatus && workflowResultStatus !== "COMPLETED"
+            ? workflowResultStatus : status;
         const state = effectiveStatus === "WAITING_USER_INPUT" || effectiveStatus === "WAITING_EXTERNAL_ACTION"
           ? "WAITING"
           : effectiveStatus === "COMPLETED" ? "DONE"
             : ["FAILED", "CANCELLED", "TIMED_OUT"].includes(effectiveStatus) ? "ERROR" : "ACTIVE";
         const label = ({
           QUEUED: "请求已排队",
-          ACTIVE: "正在分析请求",
-          WAITING_USER_INPUT: "等待你的确认",
-          WAITING_EXTERNAL_ACTION: "正在处理业务操作",
-          COMPLETED: "请求已完成",
+          ACTIVE: "正在处理请求",
+          WAITING_USER_INPUT: "等待你补充信息",
+          WAITING_EXTERNAL_ACTION: "订单操作正在处理",
+          COMPLETED: "请求已处理",
           CANCELLED: "请求已取消",
           TIMED_OUT: "请求处理超时",
-          FAILED: "请求未能完成"
+          FAILED: "请求未完成"
         } as Record<string, string>)[effectiveStatus] ?? "正在处理请求";
         return { id: `${item.itemId}-state`, label, detail: null, status: state, sequence: item.sequence };
       }
@@ -656,7 +673,7 @@ function buildActivities(items: AgentItem[]): BusinessProgress[] {
         return { id: `${item.itemId}-logistics`, label: "已生成物流时间线", detail: null, status: "DONE", sequence: item.sequence };
       }
       if (item.type === "WORKFLOW_STARTED") {
-        return { id: `${item.itemId}-workflow`, label: "已启动售后流程", detail: "正在核对订单条件", status: "ACTIVE", sequence: item.sequence };
+        return { id: `${item.itemId}-workflow`, label: "已开始核对订单", detail: "正在核对订单条件", status: "ACTIVE", sequence: item.sequence };
       }
       if (item.type === "QUESTION_CARD") {
         const question = parseQuestion(item.payload);
@@ -688,22 +705,22 @@ function buildActivities(items: AgentItem[]): BusinessProgress[] {
         const rejected = resultStatus === "REJECTED" || resultStatus === "CANCELLED";
         const waiting = mapped === "WAITING_USER_INPUT" || mapped === "WAITING_EXTERNAL_ACTION";
         const failed = mapped === "FAILED";
-        const label = failed ? "售后流程未完成"
-          : waiting ? (mapped === "WAITING_USER_INPUT" ? "等待补充信息" : "等待外部系统处理")
-            : rejected ? "已取消业务操作" : "售后流程已完成";
+        const label = failed ? "订单流程未完成"
+          : waiting ? (mapped === "WAITING_USER_INPUT" ? "等待你补充信息" : "等待订单系统处理")
+            : rejected ? "订单操作已取消" : "订单流程已完成";
         return { id: `${item.itemId}-result`, label, detail: null,
           status: failed ? "ERROR" : waiting ? "WAITING" : "DONE", sequence: item.sequence };
       }
       if (item.type === "EXTERNAL_ACTION_STATUS" && typeof data?.status === "string") {
         const status = data.status;
         const entry = {
-          PENDING: ["已创建业务操作", "等待执行"],
-          PROCESSING: ["正在提交业务操作", null],
-          RETRY_WAIT: ["外部系统暂未完成", "系统会自动重试"],
-          MANUAL_RETRY_REQUIRED: ["需要人工重试业务操作", null],
-          SUCCEEDED: ["业务操作已完成", null]
+          PENDING: ["订单操作已受理", "等待执行"],
+          PROCESSING: ["订单操作正在提交", null],
+          RETRY_WAIT: ["外部订单系统暂未完成", "将自动重试"],
+          MANUAL_RETRY_REQUIRED: ["订单操作未完成", "需要人工重试"],
+          SUCCEEDED: ["订单操作已完成", null]
         } as Record<string, [string, string | null]>;
-        const [label, detail] = entry[status] ?? ["正在处理业务操作", null];
+        const [label, detail] = entry[status] ?? ["正在处理订单操作", null];
         return { id: `${item.itemId}-action`, label, detail, status: status === "SUCCEEDED" ? "DONE" : status === "MANUAL_RETRY_REQUIRED" ? "ERROR" : "ACTIVE", sequence: item.sequence };
       }
       if (item.type === "WORKFLOW_STEP") {
@@ -713,13 +730,13 @@ function buildActivities(items: AgentItem[]): BusinessProgress[] {
           : step.status === "ERROR" || step.status === "FAILED" ? "ERROR"
             : step.status === "WAITING" ? "WAITING" : "ACTIVE";
         const labels: Record<string, string> = {
-          RESOLVE_ORDER: "已解析目标订单",
+          RESOLVE_ORDER: "已找到目标订单",
           VERIFY_FACTS: "已核验订单与物流事实",
-          SWITCH_REQUIREMENTS: "已判断业务分支",
-          AUTHORIZE: "等待授权",
-          EXECUTE_ACTION: "正在执行外部操作",
+          SWITCH_REQUIREMENTS: "已确认处理方式",
+          AUTHORIZE: "等待确认订单操作",
+          EXECUTE_ACTION: "正在执行订单操作",
           VERIFY_OUTCOME: "正在核验操作结果",
-          HANDOFF_AGENT: "已交回 Agent 决策"
+          HANDOFF_AGENT: "正在整理处理结果"
         };
         return { id: `${item.itemId}-workflow-step`, label: labels[step.node] ?? step.node,
           detail: step.branch ?? step.code ?? null, status, sequence: item.sequence };
@@ -732,13 +749,13 @@ function buildActivities(items: AgentItem[]): BusinessProgress[] {
         const historyStop = decision.decision === "STOP_LIMIT"
           && decision.code === "CONTEXT_HISTORY_INVALID";
         const labels: Record<string, string> = {
-          FINISH: "Agent 已完成本轮判断",
-          START_WORKFLOW: "Agent 已启动业务流程",
-          ASK_USER: "等待用户补充信息",
-          WAIT_USER: "等待用户补充信息",
-          STOP_LIMIT: historyStop ? "上下文历史读取失败"
-            : resourceStop ? "已达到本轮资源预算" : "已达到自动决策上限",
-          FALLBACK: "已降级为可控结果"
+          FINISH: "已完成本轮判断",
+          START_WORKFLOW: "已开始受控处理",
+          ASK_USER: "等待你补充信息",
+          WAIT_USER: "等待你补充信息",
+          STOP_LIMIT: historyStop ? "订单历史读取失败"
+            : resourceStop ? "本轮处理已暂停" : "自动处理已暂停",
+          FALLBACK: "已切换为可控结果"
         };
         return { id: `${item.itemId}-agent-decision`, label: labels[decision.decision] ?? "Agent 已作出决策",
           detail: decision.code ?? null, status: decision.decision === "FALLBACK" || resourceStop || historyStop ? "ERROR"
@@ -748,8 +765,8 @@ function buildActivities(items: AgentItem[]): BusinessProgress[] {
         const errorCode = stringValue(recordValue(item.payload.data)?.code) ?? payloadText(item.payload);
         const knownStop = ["CONTEXT_BUDGET_EXCEEDED", "OUTPUT_BUDGET_EXCEEDED", "TOOL_REPEATED_FAILURE", "CONTEXT_HISTORY_INVALID"]
           .includes(errorCode);
-        const label = errorCode === "CONTEXT_HISTORY_INVALID" ? "上下文历史读取失败"
-          : knownStop ? "自动执行已停止" : "执行遇到问题";
+        const label = errorCode === "CONTEXT_HISTORY_INVALID" ? "订单历史读取失败"
+          : knownStop ? "自动处理已停止" : "处理遇到问题";
         return { id: `${item.itemId}-error`, label,
           detail: knownStop ? errorCode : "可以检查结果后重试", status: "ERROR", sequence: item.sequence };
       }
@@ -763,8 +780,18 @@ function buildTurn(turnId: string, sourceItems: AgentItem[]): ThreadViewTurn {
   const orderedItems = [...sourceItems].sort((left, right) => left.sequence - right.sequence);
   const externalSucceededTurns = new Set<string>();
   const externalSucceededRuns = new Set<string>();
+  const externalStatusesByTurn = new Map<string, ExternalActionStatus>();
+  const externalStatusesByRun = new Map<string, ExternalActionStatus>();
   const continuationRuns = new Map<string, string>();
   const workflowResultStatuses = new Map<string, AgentTurnStatus>();
+  for (const item of orderedItems) {
+    if (item.type !== "EXTERNAL_ACTION_STATUS") continue;
+    const data = recordValue(item.payload.data);
+    if (!isExternalActionStatus(data?.status)) continue;
+    if (item.turnId) externalStatusesByTurn.set(item.turnId, data.status);
+    const runId = stringValue(data?.runId);
+    if (runId) externalStatusesByRun.set(runId, data.status);
+  }
   const current: ThreadViewTurn = {
     turnId,
     userMessage: "",
@@ -844,7 +871,7 @@ function buildTurn(turnId: string, sourceItems: AgentItem[]): ThreadViewTurn {
       const externalSucceeded = (item.turnId ? externalSucceededTurns.has(item.turnId) : false)
         || (runId !== null && externalSucceededRuns.has(runId));
       if (externalSucceeded) {
-        current.continuationWarning = "业务操作已完成，后续 Agent 续接未完成；可以继续提问或稍后查看。";
+        current.continuationWarning = "订单操作已完成；结果整理未完成，已完成的操作不受影响。可以继续提问或稍后查看。";
       } else {
         const errorData = recordValue(item.payload.data);
         current.error = stringValue(errorData?.message)
@@ -867,15 +894,23 @@ function buildTurn(turnId: string, sourceItems: AgentItem[]): ThreadViewTurn {
         const externalSucceeded = (item.turnId ? externalSucceededTurns.has(item.turnId) : false)
           || (runId !== null && externalSucceededRuns.has(runId));
         if (status === "FAILED" && externalSucceeded) {
-          current.continuationWarning = "业务操作已完成，后续 Agent 续接未完成；可以继续提问或稍后查看。";
+          current.continuationWarning = "订单操作已完成；结果整理未完成，已完成的操作不受影响。可以继续提问或稍后查看。";
         } else {
           const workflowResultStatus = item.turnId
             ? workflowResultStatuses.get(item.turnId) : undefined;
           // Workflow 引擎完成回答子 Turn 后仍会写入 TURN_STATE=COMPLETED；
           // 该技术状态不能覆盖同一 Turn 已记录的 FAILED/WAITING 回执。
-          current.status = status === "COMPLETED"
-            && workflowResultStatus && workflowResultStatus !== "COMPLETED"
-            ? workflowResultStatus : status;
+          const externalActionStatus = (item.turnId ? externalStatusesByTurn.get(item.turnId) : undefined)
+            ?? (runId ? externalStatusesByRun.get(runId) : undefined);
+          const preservesTerminalFailure = status === "COMPLETED"
+            && externalActionStatus === "SUCCEEDED"
+            && ["FAILED", "CANCELLED", "TIMED_OUT"].includes(current.status);
+          if (!preservesTerminalFailure) {
+            current.status = status === "COMPLETED" && externalActionStatus
+              ? authoritativeExternalTurnStatus(externalActionStatus)
+              : status === "COMPLETED" && workflowResultStatus && workflowResultStatus !== "COMPLETED"
+                ? workflowResultStatus : status;
+          }
           if (terminal(status)) current.finishedAt = item.createdAt;
         }
       }
@@ -920,7 +955,8 @@ function buildTurn(turnId: string, sourceItems: AgentItem[]): ThreadViewTurn {
           if (item.turnId) workflowResultStatuses.delete(item.turnId);
         }
         const nextStatus = turnStatusForExternalAction(action.status);
-        if (nextStatus && !terminal(current.status)) current.status = nextStatus;
+        if (action.status === "MANUAL_RETRY_REQUIRED") current.status = "FAILED";
+        else if (nextStatus && !terminal(current.status)) current.status = nextStatus;
       }
     }
     if (item.type === "WORKFLOW_RESULT") {

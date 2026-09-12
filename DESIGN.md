@@ -1,51 +1,268 @@
-# Commerce Guardian Agent 界面设计记录
+---
+name: Commerce Guardian Agent
+description: 可恢复的订单售后 Thread 工作台，用清晰的业务事实、授权节点和执行回执帮助定位问题。
+colors:
+  canvas: "#f4f7f6"
+  surface: "#ffffff"
+  surface-muted: "#f6f9f8"
+  ink: "#142522"
+  muted: "#526660"
+  quiet: "#5e716a"
+  line: "#d3e0db"
+  line-strong: "#b7cbc3"
+  rail: "#142522"
+  route: "#176c60"
+  route-strong: "#0e554b"
+  route-soft: "#d8ebe5"
+  amber: "#925515"
+  amber-soft: "#f6eadb"
+  danger: "#a33b37"
+  danger-soft: "#f8e2df"
+  success: "#20735c"
+  success-soft: "#dceddf"
+  focus: "#188c79"
+  button-ink: "#f3fbf8"
+  scrim: "rgb(7 20 17 / 25%)"
+  scrim-strong: "rgb(7 20 17 / 48%)"
+typography:
+  headline:
+    fontFamily: 'Segoe UI Variable, Microsoft YaHei, PingFang SC, ui-sans-serif, system-ui, sans-serif'
+    fontSize: "0.98rem"
+    fontWeight: 700
+    letterSpacing: "-0.02em"
+  title:
+    fontFamily: 'Segoe UI Variable, Microsoft YaHei, PingFang SC, ui-sans-serif, system-ui, sans-serif'
+    fontSize: "16px"
+    fontWeight: 700
+    letterSpacing: "-0.02em"
+  body:
+    fontFamily: 'Segoe UI Variable, Microsoft YaHei, PingFang SC, ui-sans-serif, system-ui, sans-serif'
+    fontSize: "14px"
+    fontWeight: 400
+    lineHeight: 1.58
+  label:
+    fontFamily: 'Cascadia Mono, SFMono-Regular, Consolas, monospace'
+    fontSize: "12px"
+    fontWeight: 800
+    letterSpacing: "0.12em"
+  mono:
+    fontFamily: 'Cascadia Mono, SFMono-Regular, Consolas, monospace'
+    fontSize: "12px"
+    fontWeight: 500
+rounded:
+  control: "8px"
+  card: "10px"
+  panel: "12px"
+  modal: "14px"
+  pill: "999px"
+spacing:
+  xs: "4px"
+  sm: "8px"
+  md: "12px"
+  lg: "16px"
+  xl: "20px"
+  xxl: "24px"
+components:
+  button-primary:
+    backgroundColor: "{colors.route}"
+    textColor: "{colors.button-ink}"
+    rounded: "{rounded.control}"
+    padding: "8px 12px"
+    height: "44px"
+  button-secondary:
+    backgroundColor: "transparent"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.control}"
+    padding: "8px 12px"
+    height: "44px"
+  status-success:
+    backgroundColor: "{colors.success-soft}"
+    textColor: "{colors.success}"
+    rounded: "{rounded.pill}"
+    padding: "4px 7px"
+  status-warning:
+    backgroundColor: "{colors.amber-soft}"
+    textColor: "{colors.amber}"
+    rounded: "{rounded.pill}"
+    padding: "4px 7px"
+  status-error:
+    backgroundColor: "{colors.danger-soft}"
+    textColor: "{colors.danger}"
+    rounded: "{rounded.pill}"
+    padding: "4px 7px"
+  input:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.control}"
+    padding: "9px 10px"
+    height: "44px"
+  order-card:
+    backgroundColor: "{colors.surface-muted}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.control}"
+    padding: "13px"
+  decision-card:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.panel}"
+    padding: "18px"
+  item-inspector:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    padding: "0 18px"
+  navigation:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    padding: "20px 18px"
+    width: "clamp(280px, 23.5vw, 376px)"
+---
 
-本文件记录本轮实际落地页面的设计结果，不作为未实现的设计意图或视觉承诺。
+# Design System: Commerce Guardian Agent
 
-## 页面骨架
+## Overview
 
-- 顶部为单行产品栏：`Commerce Guardian Agent｜订单调度台` 在左、当前账户与演示账户切换在右；桌面端不再额外占用一段营销式标题区。Thread 只提供重命名，不提供回收站或归档恢复入口。
-- 工作区在顶栏下直接进入三栏信息层级：宽屏按设计稿比例使用约 23.5% 的 Thread 列、约 49% 的中央 Turn 业务流和约 27.5% 的 Item 检查器（分别钳制为 280–376px 与 340–440px）；1180px 以下检查器改为抽屉。
-- 检查器打开后优先显示当前 Turn 的最新持久化 Item 序列；长历史按 80 条一页加载更早 Item，主流仍保持业务结果优先。
-- 1180px 以下检查器变为右侧抽屉，760px 以下覆盖为全屏面板；移动端 Thread 列表也变为带焦点收束、Esc 关闭的可关闭抽屉。
+**Creative North Star: "The Dispatch Ledger"**
 
-## 视觉系统
+Commerce Guardian Agent is an Operate-mode workbench for developers and technical reviewers who need to resolve an order issue, see the business fact that supports it, and understand whether an external action is merely queued, awaiting confirmation, or actually verified. The visual language treats the interface as a dispatch ledger: calm surfaces, strict sequence, compact status signals, and an explicit receipt at the point where the user makes a decision.
 
-页面使用更轻的冷雾灰画布（`#F4F7F6`）和清晰的白色工作面（`#FFFFFF`）；侧栏与右侧检查器以细分隔线而非厚重卡片阴影分区。路线青绿（`#176C60`）表达正常业务流，信号琥珀（`#925515`）表达等待确认或外部系统尚未核验，故障红（`#A33B37`）表达失败与错误。
+The incumbent world is intentionally quiet and operational. A cool mist canvas holds white work surfaces; thin dividers establish the Thread, Turn, and Item hierarchy without turning the page into a monitoring dashboard. Green marks the normal route, amber marks an unresolved handoff, and red marks a fault. Chinese UI copy leads, while mono numerals and identifiers make timestamps, sequence numbers, and order IDs easy to scan.
 
-正文采用 `Segoe UI Variable`、中文系统字体；时间、序号和 Item 类型采用 `Cascadia Mono`。按钮、面板、状态胶囊和输入控件共享 8–12px 圆角与 180ms 状态过渡；所有可触控控件统一使用 `--hit-target: 44px`。模态和抽屉遮罩复用 `--scrim`、`--scrim-strong` 主题 token，遮罩命中态保持同色，不因 hover 产生色阶跳变；弹窗使用独立的 `--shadow-modal` 深度 token。系统深色模式通过同一组语义 token 覆盖，`prefers-reduced-motion` 会收敛过渡和动画。
+**Key Characteristics:**
+- Ledger-like, business-first hierarchy with technology details available on demand.
+- Cool white-and-mist surfaces with thin sage dividers instead of heavy card chrome.
+- Route teal for normal flow, amber for waiting or unverified external state, and red for failure.
+- Responsive three-column workbench that becomes focused drawers on narrower screens.
+- Structured order facts and action receipts remain authoritative after refresh or reconnection.
 
-## 交互结果
+**The Ledger-First Rule.** Show the business result and its current receipt before exposing the execution trail; the Item sequence is an inspector, not the main conversation.
 
-- 空对话只提示“直接输入请求”，不再渲染固定快捷问。
-- Turn 只展示一行由真实 Item 聚合出的阶段摘要、状态和耗时；订单列表、订单详情与物流时间线在同一 Turn 内以内联结构化卡片呈现。
-- 订单卡片操作走确定性 `order-actions` Turn：查询直接读取订单/物流事实，退款、催发货和直接删除订单记录进入现有 Workflow；不会经过模型，也不会生成可见的模拟问答。删除会同步清理可删除的物流轨迹且不可恢复。缺少业务信息时由 QuestionCard 提问，外部写操作在 `AUTHORIZE` 节点使用独立 Workflow Checkpoint 确认。
-- 订单动作 Turn、QuestionCard 回答 Turn 和 Workflow 决策 Turn 按 `sourceTurnId`、`runId`、`orderId` 折回来源 Turn；刷新后仍由持久化 `ORDER_ACTION_REQUEST`、`QUESTION_ANSWER`、`WORKFLOW_DECISION` 和结构化订单 Item 恢复同一张卡片。历史 `WORKFLOW_QUESTION`/`WORKFLOW_ANSWER` 仅在检查器只读展示。
-- 执行类订单动作在来源 Turn 的对应订单卡片内显示单一状态回执：排队、处理中、等待确认、失败/人工重试和完成均绑定真实动作 Item；查询和刷新完成后直接更新同一张结构化卡片。页面不再显示重复的执行消息气泡或独立动作弹窗。
-- QuestionCard 的普通步骤按钮为“继续”，取消按钮为“结束本次提问”；Workflow Checkpoint 只展示动作、对象、影响和“确认执行/拒绝执行”。QuestionCard 取消不会触发必填字段校验；Checkpoint 拒绝关闭 Workflow 且不创建外部动作。
-- 活跃 QuestionCard 不再嵌入历史 Turn，而是作为页面中央、避开底部 Composer 的模态浮层；它带遮罩、关闭按钮、Esc 取消、焦点收束和独立滚动，底部输入框保留但在确认期间禁用，历史 Turn 只保留阶段摘要与卡内动作回执。
-- `运行详情`显示浅色账本式真实 sequence、时间、Item 类型和受控 JSON；敏感键会被遮蔽，不展示 Thinking。Escape、关闭按钮和遮罩均可退出，抽屉打开时锁定页面滚动并将焦点移至关闭按钮。
-- 连接失败显示可恢复的“重新连接”状态，不把“直接输入请求”与禁用 Composer 同时呈现；实时中断原地续接当前 Thread，历史加载失败重放当前 Thread，技术错误默认收进可展开详情。
-- 主区的七步 Workflow 节点收敛为当前业务阶段摘要，完整节点、耗时和受控数据按需放入运行详情；删除记录收进“更多操作”并明确标注不可恢复。Composer 提供可选工作台提示与搜索、新建、最近详情快捷键。
-- 终态 Turn 首次打开检查器时按需读取并缓存只读执行回放；回放失败时保留已由 Items/SSE 恢复的事实，并在检查器内给出降级提示。
-- QuestionCard 使用后端提供的 `operation`、`step`、`stepNo`；外部动作回执区分已核验与“操作已受理、最新状态暂未核验”，后者提供可编辑的重新查询入口。
-- SSE 增量按 `itemId` 去重；Thread 投影缓存和 `memo` 保持未受影响 Turn/Item 行的引用稳定，长历史使用 `content-visibility` 延迟非可视区域的布局与绘制。
-- SSE 严格递增时按新 Item 增量更新 Turn 索引和开放交互索引；乱序或历史重载自动回退到完整重建，避免每个事件重扫整个 Thread。
-- Item 检查器长序列默认展示最新 80 条，可通过“加载更早的 Item”渐进展开，避免一次性物化全部历史行。
-- QuestionCard 的必填字段暴露 `aria-required`，校验错误以稳定 ID 通过 `aria-describedby` 关联；字段开始修正时同步清除错误状态。
-- 可恢复的连接状态使用 `role="status"` 与 polite live region；需要打断用户的操作错误继续使用 `role="alert"`。
+## Colors
 
-## 受控闭环投影
+The palette is a restrained pine-and-sage system with three semantic signal families. The light theme is the primary reference; the dark theme overrides the same semantic roles through `prefers-color-scheme` and must not be reimplemented with ad-hoc component colors.
 
-- 订单 Workflow 的实际节点固定为 `RESOLVE_ORDER → VERIFY_FACTS → SWITCH_REQUIREMENTS → AUTHORIZE → EXECUTE_ACTION → VERIFY_OUTCOME → HANDOFF_AGENT`。主区只显示当前业务摘要和结果；节点分支、耗时、错误码和 Agent 决策放在运行详情中按需查看。
-- 外部动作成功或人工重试耗尽，以及授权时发现订单事实/执行资格变化后，服务端在本地事务中追加 `AGENT_CONTINUATION` Turn 和触发 Item，事务提交后才进入同 Thread FIFO。续跑最多 3 轮；开放 QuestionCard 存在时延后，不抢占用户回答。
-- 续跑 Turn、Workflow 回答 Turn 和订单动作 Turn 都按 `rootTurnId/sourceTurnId/runId` 折叠回原业务 Turn。用户不会看到技术性的模拟问答；只在检查器中看到完整序列。
-- QuestionCard schema 只描述待补充字段与 `resumeTarget=AGENT|WORKFLOW`；执行确认由 Workflow Checkpoint 的动作摘要、事实指纹和版本单独描述。两种交互均通过各自的回答/决策 Turn 收口，取消或拒绝不创建外部动作。
+### Primary
+- **Route Teal** (`{colors.route}`): The normal business path, primary submit actions, active timeline dots, and positive inline emphasis.
+- **Deep Route Teal** (`{colors.route-strong}`): Text and icon contrast on route washes, IDs that need emphasis, and the hover destination for primary controls.
+- **Route Wash** (`{colors.route-soft}`): Quiet selected states, workflow summaries, action receipts in progress, and inline code-like facts.
 
-## 验收记录
+### Secondary
+- **Signal Amber** (`{colors.amber}`): Waiting for a user answer, unverified external state, and connection recovery.
+- **Signal Wash** (`{colors.amber-soft}`): Background for waiting states and recovery guidance; always pair it with a text label or icon.
 
-- 2026-08-26 受控闭环增量已在一次性克隆库 `COMMERCE_GUARDIAN_AGENT_V7_MIGRATION_20260826` 完成 V6→V7 演练：应用启动触发 Flyway 7 并确认 `AGENT_TURN.CONTINUATION_JSON` 可空、历史 88 条 Turn 保持不变；原配置库保持 V6 且未增加该列。2026-08-27 为 DeepSeek RestClient 切换到项目已有的 Reactor Netty，并为 Tomcat 增加可配置的 NIO2 协议；本机用真实配置启动后端成功，`/actuator/health` 返回 200。当前 Codex Windows 沙箱在真正调用 DeepSeek 时仍会阻断 Netty selector 的 loopback 管道，页面会安全收敛为“Agent 执行失败”，不代表订单数据或数据库异常。
-- `npm.cmd run typecheck`、`npm.cmd test -- --run --fileParallelism=false`、`npm.cmd run build` 已通过；当前 Vitest 为 55 项，覆盖多 Turn/Item 聚合、折叠 Turn 增量等价性、开放交互增量索引、旧 SSE 增量忽略、快捷问消失、Item 检查器分页、回放失败降级、结构化订单卡片直达动作、卡内动作状态回执、居中 QuestionCard 模态浮层和取消后 QuestionCard 收敛。
-- `mvn -q -DskipTests compile`、订单 Workflow/Worker/Spring AI 定向测试和 `mvn -q dependency:analyze -DskipTests` 已通过；Python 脚本单测共 19 项，其中 18 项通过，唯一失败是 convention gate 发现 Impeccable 生成的两个空目录（`agent-fronted/.impeccable/live/annotations`、`agent-fronted/.impeccable/live/sessions`），不是业务代码错误。`scripts.runtime_eval` 使用仓库配置的显式解释器通过。完整 Maven 测试中的 HTTP 适配器测试仍受当前 Windows 环境无法建立 JDK loopback connection 限制，未将环境错误当作产品通过证据。
-- Impeccable detector 扫描 `agent-fronted` 返回空问题集；本机缺少 `htmlparser2`、`css-select`、`css-tree`、`domutils`，因此本次结果是降级正则扫描，未将其当作完整清洁证明。
-- 后端已启动于 `127.0.0.1:8090`，Flyway schema 版本 9，`/actuator/health` 返回 `UP`；前端浏览器复核覆盖 1440×900 与 390×844，包含在线 Thread、Item 分页、移动抽屉和连接恢复语义。正文基准为 14px，业务元数据统一至少 12px；真实后端三条黄金路径仍见 `docs/review-runbook.md`。
+### Tertiary
+- **Fault Red** (`{colors.danger}`): Failed turns, exhausted retries, validation errors, and destructive action affordances.
+- **Fault Wash** (`{colors.danger-soft}`): The supporting surface for errors; never use red as the only state encoding.
+
+### Neutral
+- **Cool Mist** (`{colors.canvas}`): The page canvas and central conversation background.
+- **Paper Surface** (`{colors.surface}`): The top bar, side panels, composer, cards, and dialogs.
+- **Quiet Fog** (`{colors.surface-muted}`): Secondary cards, selected list rows, summaries, and technical detail blocks.
+- **Deep Pine Ink** (`{colors.ink}`): Primary readable text and headings.
+- **Sage Slate** (`{colors.muted}`) and **Soft Sage** (`{colors.quiet}`): Supporting copy, timestamps, and recovery details.
+- **Mist Divider** (`{colors.line}`) and **Assertive Divider** (`{colors.line-strong}`): One-pixel structural borders and control strokes.
+- **Pine Rail** (`{colors.rail}`): The Agent avatar and the deepest neutral anchor.
+- **Focus Teal** (`{colors.focus}`): The 3px keyboard focus ring and caret accent.
+- **Button Mint** (`{colors.button-ink}`): Text on the primary route button.
+- **Calm Scrim** (`{colors.scrim}`) and **Strong Scrim** (`{colors.scrim-strong}`): Modal and drawer backdrops.
+
+**The Semantic Signal Rule.** A color must name a real operational state and travel with readable copy, iconography, or structure; never turn the palette into decoration.
+
+## Typography
+
+**Display Font:** none; this is an operational console, not a marketing surface.
+**Body Font:** Segoe UI Variable (with Microsoft YaHei, PingFang SC, ui-sans-serif, system-ui, sans-serif)
+**Label/Mono Font:** Cascadia Mono (with SFMono-Regular, Consolas, monospace)
+
+**Character:** The variable sans keeps Chinese and interface prose calm at a compact 14px baseline. Cascadia Mono is reserved for measurements, identifiers, timestamps, sequence numbers, and uppercase section metadata so technical information feels precise rather than ornamental.
+
+### Hierarchy
+- **Headline** (700, `0.98rem`, tight tracking): The product name in the sticky top bar.
+- **Title** (700, `16px`, tight tracking): The current Thread title, empty-state heading, and decision-card heading.
+- **Card title** (700, `15px`): Turn actor names and structured order headings.
+- **Body** (400, `14px`, `1.58` line-height): Requests, Agent conclusions, prompts, and business facts; keep long prose within the central 760–820px reading measure.
+- **Label** (800, `12px`, `0.12em` tracking): Sparse uppercase section markers such as `THREADS`, `CURRENT THREAD`, and `STRUCTURED FACTS`.
+- **Mono metadata** (500, `12px`): Order IDs, timestamps, sequence counts, fingerprints, and controlled JSON.
+
+**The Measured Metadata Rule.** Use mono for data that benefits from alignment or auditability, never for ordinary Chinese copy or an entire screen.
+
+## Layout
+
+The desktop workbench is a full-height, sticky-top-bar composition. The top bar is 64px high and contains the product lockup on the left and the current demo account disclosure on the right. Below it, the workspace grid uses a Thread rail of `clamp(280px, 23.5vw, 376px)`, a fluid central Turn stream, and an optional Item inspector of `clamp(340px, 27.5vw, 440px)`. The central conversation, structured facts, and composer share an `820px` maximum width; the business fact and decision cards cap at `760px`.
+
+The rail is a white, border-separated list with a search field, compact rows, and inline rename. The central area is the reading surface: a context bar, scrollable Turn records, and a persistent composer. The inspector is a ledger-style column that prioritizes the latest persisted Items and reveals older entries by 80-item pages. The main rhythm is built from 8, 10, 12, 14, 16, 18, 20, and 24px steps, with larger separation before new content groups.
+
+At widths below 1180px, the inspector becomes a right-side drawer with a strong scrim and a maximum 410px content width. At 760px and below, the Thread rail becomes a left-side drawer and the inspector covers the viewport; the top bar becomes 60px tall, the central padding tightens to 15px, and action groups stack. At 430px, composer actions and recovery actions become full-width rows. All controls preserve a minimum 44px hit target.
+
+## Elevation & Depth
+
+The system is flat by default and relies on tonal layering plus one-pixel dividers for the permanent hierarchy. Shadows appear only where a surface temporarily rises above the workbench: the composer, account/help popovers, recovery card, mobile Thread drawer, and modal dialog. Modal and drawer scrims are stable hit surfaces and do not change shade on hover.
+
+### Shadow Vocabulary
+- **Ambient surface** (`0 12px 30px rgb(20 53 47 / 8%)`): Context fields, help menus, and order overflow menus.
+- **Close surface** (`0 6px 16px rgb(20 53 47 / 8%)`): Composer and connection recovery card, where a small lift separates an active recovery or input surface from the canvas.
+- **Modal depth** (`0 24px 60px rgb(20 53 47 / 18%), 0 2px 8px rgb(20 53 47 / 10%)`): QuestionCard and Workflow Checkpoint surfaces that temporarily interrupt the workbench.
+
+**The Tonal Layer Rule.** Permanent structure uses white, mist, and dividers; elevation is reserved for transient focus, recovery, and confirmation surfaces.
+
+## Shapes
+
+The form language is gently squared and tactile without becoming playful: 8px controls, 8–10px business cards, 12px panels, 14px modals, and 999px status pills. Borders are one pixel and usually sage-toned; there are no thick colored rails on cards. Avatars and timeline markers are circular, while the selected Thread row uses a one-pixel inset route marker to preserve the list silhouette. Textareas remain vertically resizable within decision cards but the composer keeps its own compact 70px minimum.
+
+## Components
+
+### Buttons
+- **Shape:** 8px radius, 44px minimum height, 8px vertical and 12px horizontal padding.
+- **Primary:** Route teal fill with Button Mint text; use for send, confirm, retry connection, and other committed actions.
+- **Hover / Focus:** Deep Route Teal on hover with a one-pixel upward lift and a soft colored shadow; all focusable controls use a 3px Focus Teal outline with 3px offset.
+- **Secondary / Ghost:** Transparent surface with Assertive Divider stroke and Ink text; hover adds Route Wash and Deep Route Teal without a shadow.
+- **Compact icon:** The same 44px hit target with a 15px SVG icon; use for close, rename, and drawer controls.
+
+### Chips
+- **Style:** 12px semibold/800 labels, 4px × 7px padding, and a 999px radius.
+- **State:** Success green indicates active or completed; amber indicates queued, waiting, or unverified; red indicates failed or cancelled; route teal is reserved for order-domain states such as paid, shipped, or refunded.
+
+### Cards / Containers
+- **Turn facts:** White, 10px corners, 15px padding, Assertive Divider border, and no permanent shadow. It is the semantic wrapper for structured order facts.
+- **Order card:** Quiet Fog background, 8px corners, 13px padding, thin divider, and an action row separated by a one-pixel top rule.
+- **Decision card:** White, 12px corners, 18px padding, and a route or amber boundary depending on whether it is a Workflow confirmation or a missing-information question.
+- **Internal padding:** Prefer the 8/10/12/13/15/18px observed steps; add space between groups instead of nesting extra cards.
+
+### Inputs / Fields
+- **Style:** White background, Assertive Divider stroke, 8px radius, 44px minimum height, and 9px × 10px padding. The composer removes the inner stroke and supplies a 14px rounded outer surface.
+- **Focus:** Focus Teal outline and route caret; validation errors use Fault Red stroke plus a subtle red ring.
+- **Error / Disabled:** Error copy is adjacent and announced through a stable `aria-describedby` ID; disabled controls retain layout and reduce opacity rather than disappearing.
+
+### Navigation
+- **Style:** The Thread rail is a white, sticky-height column separated by a single right border. Rows are compact, left-aligned, and divided by one-pixel rules; the active row uses Quiet Fog plus a one-pixel inset Route Teal marker.
+- **Typography:** Thread names use readable sans; context IDs and statuses use 12px metadata styles. Search is a 7px rounded inline field.
+- **Mobile treatment:** Below 760px, the rail becomes a left drawer with a Strong Scrim, focus trap, Escape close, and a 330px/88vw maximum width.
+
+### Status Receipt
+Action receipts stay inside the source order card. They combine an icon, action name, human-readable state, and—when appropriate—`重新查询` or `人工重试`; this prevents a second global success/failure channel from competing with the business fact.
+
+### Decision Modal
+QuestionCard collects only the missing fields and offers “继续” or “结束本次问题”. Workflow Checkpoint shows action, order, impact, and fact fingerprint, then offers “确认并执行” or “拒绝执行”. Both use the same centered modal shell, stable scrim, close button, Escape behavior, independent scrolling, and focus management; the Composer remains visible but disabled underneath.
+
+### Item Inspector
+The inspector is a light ledger rather than a second conversation. Each Item row carries a mono sequence number, type, timestamp, and controlled JSON; a vertical one-pixel connector ties the sequence together. Sensitive keys and raw Thinking are never rendered. On narrow screens it becomes an overlay drawer with the same content and a close-first focus order.
+
+### Logistics Timeline
+The timeline is a compact ordered list inside an order card. A one-pixel neutral connector joins 10px route-outlined dots; each event pairs a status, location, description, and mono timestamp. Empty timelines use a calm sentence rather than a blank container.
+
+## Do's and Don'ts
+
+### Do:
+- **Do** put structured business facts and the current action receipt ahead of technical execution details.
+- **Do** use Route Teal, Signal Amber, and Fault Red only for their semantic operational states, with text and icons alongside color.
+- **Do** keep permanent surfaces flat and let thin dividers, tonal layering, and spacing establish hierarchy.
+- **Do** use Cascadia Mono for order IDs, timestamps, sequence values, and controlled JSON.
+- **Do** preserve the single Thread → Turn → Item relationship when adding new UI patterns.
+- **Do** keep keyboard focus, Escape close, reduced-motion, forced-colors, and 44px hit targets intact.
+
+### Don't:
+- **Don't** introduce a marketing hero, metric dashboard, decorative gradients, glass blur, or progress-ring substitute for the ledger.
+- **Don't** expose raw Thinking or let a generic `TURN_STATE=COMPLETED` label override a failed, waiting, or unverified business result.
+- **Don't** create a second global action dialog or success badge when the order card already owns the receipt.
+- **Don't** use color as the only signal, or use mono as a costume for ordinary copy.
+- **Don't** add hidden/recoverable order actions that the product does not support; deletion remains explicitly irreversible.
+- **Don't** replace the calm dispatch-list metaphor with a dense monitoring-wall composition.

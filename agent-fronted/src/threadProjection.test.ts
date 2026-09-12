@@ -170,7 +170,7 @@ describe("thread projection", () => {
 
     expect(turn.status).toBe("FAILED");
     expect(turn.activities).toContainEqual(expect.objectContaining({
-      label: "售后流程未完成", status: "ERROR"
+      label: "订单流程未完成", status: "ERROR"
     }));
   });
 
@@ -196,7 +196,7 @@ describe("thread projection", () => {
 
     expect(turn.status).toBe("WAITING_USER_INPUT");
     expect(turn.activities).toContainEqual(expect.objectContaining({
-      label: "等待补充信息", status: "WAITING"
+      label: "等待你补充信息", status: "WAITING"
     }));
   });
 
@@ -231,6 +231,26 @@ describe("thread projection", () => {
 
     expect(turn.status).toBe("COMPLETED");
     expect(projectOrderAction(turn, request!)).toMatchObject({ state: "done" });
+  });
+
+  it("keeps manual retry as the authoritative Turn status after a late completed state", () => {
+    const items = [
+      item("ORDER_ACTION_REQUEST", 1, "action-turn", {
+        sourceTurnId: "source-turn", orderId: "ORDER-1", actionType: "REFUND"
+      }),
+      item("EXTERNAL_ACTION_STATUS", 2, "action-turn", {
+        runId: "run-1", status: "MANUAL_RETRY_REQUIRED", orderId: "ORDER-1", actionType: "REFUND"
+      }),
+      item("TURN_STATE", 3, "action-turn", { status: "COMPLETED" }),
+      item("TURN_STATE", 4, "action-turn", { status: "COMPLETED" })
+    ].map(normalizeItem);
+
+    const [turn] = rebuildTurns(items);
+
+    expect(turn.status).toBe("FAILED");
+    expect(turn.activities).not.toContainEqual(expect.objectContaining({ label: "请求已处理" }));
+    expect(turn.activities.at(-1)).toMatchObject({ label: "请求未完成", status: "ERROR" });
+    expect(projectOrderAction(turn, findOrderAction(turn, "ORDER-1")!)).toMatchObject({ state: "error" });
   });
 
   it("does not treat a different folded action failure as a continuation warning", () => {
@@ -309,10 +329,10 @@ describe("thread projection", () => {
 
     expect(turn.status).toBe("FAILED");
     expect(turn.activities).toContainEqual(expect.objectContaining({
-      label: "已达到本轮资源预算", detail: "CONTEXT_BUDGET_EXCEEDED", status: "ERROR"
+      label: "本轮处理已暂停", detail: "CONTEXT_BUDGET_EXCEEDED", status: "ERROR"
     }));
     expect(turn.activities).toContainEqual(expect.objectContaining({
-      label: "自动执行已停止", detail: "CONTEXT_BUDGET_EXCEEDED", status: "ERROR"
+      label: "自动处理已停止", detail: "CONTEXT_BUDGET_EXCEEDED", status: "ERROR"
     }));
   });
 
@@ -329,7 +349,7 @@ describe("thread projection", () => {
 
     expect(turn.status).toBe("FAILED");
     expect(turn.activities).toContainEqual(expect.objectContaining({
-      label: "上下文历史读取失败", detail: "CONTEXT_HISTORY_INVALID", status: "ERROR"
+      label: "订单历史读取失败", detail: "CONTEXT_HISTORY_INVALID", status: "ERROR"
     }));
   });
 
