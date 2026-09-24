@@ -13,6 +13,7 @@ import cn.ethan.core.agent.thread.AgentThreadConflictException;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowOrchestrationVersionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
@@ -178,20 +179,25 @@ public final class ExternalActionOutcomeManager {
         AgentWorkflowRunModel run = workflowRuns.find(next.userId(), next.runId())
                 .orElseThrow(() -> new IllegalStateException("外部动作对应的 WorkflowRun 不存在：" + next.runId()));
         AgentWorkflowStatusEnum targetWorkflowStatus = workflowStatus(next.status());
+        boolean javaWorkflow = run.orchestrationVersion() == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_JAVA_V1;
         if (run.status() != targetWorkflowStatus) {
             if (isImmutableTerminal(run.status())) {
                 throw new IllegalStateException("WorkflowRun 已处于冲突终态：" + run.runId());
             }
-            workflowRuns.update(run.status(targetWorkflowStatus, progressSteps(next.status(), verification),
+            workflowRuns.update(run.status(targetWorkflowStatus, progressSteps(next.status(), verification, run.orchestrationVersion()),
                     run.stateJson(), now));
         } else {
-            workflowRuns.update(run.progress(progressSteps(next.status(), verification), run.stateJson(), now));
+            workflowRuns.update(run.progress(progressSteps(next.status(), verification, run.orchestrationVersion()), run.stateJson(), now));
         }
 
         List<AgentItemModel> projectedItems = new ArrayList<>();
         AgentItemModel statusItem = appendStatus(next, resultCode, resultMessage, now, verification);
         projectedItems.add(statusItem);
-        if (continuationGateway != null) {
+        if (javaWorkflow) {
+            projectedItems.add(appendWorkflowResult(next, workflowResultStatus(next, verification),
+                    workflowResultMessage(next, resultCode, resultMessage, verification), now));
+        }
+        if (continuationGateway != null && !javaWorkflow) {
             projectedItems.add(appendWorkflowStep(next, "VERIFY_OUTCOME",
                     verification == null ? "WAITING" : verification.verified() ? "COMPLETED" : "ERROR",
                     verification == null ? "UNAVAILABLE" : verification.verified() ? "VERIFIED" : "UNVERIFIED",
@@ -209,7 +215,7 @@ public final class ExternalActionOutcomeManager {
         if (projectedTurn != null) {
             projectedItems.add(appendTurnState(projectedTurn, now));
         }
-        if (continuationGateway != null) {
+        if (continuationGateway != null && !javaWorkflow) {
             boolean verified = verification != null && verification.verified();
             projectedItems.add(appendWorkflowStep(next, "HANDOFF_AGENT",
                     verified ? "COMPLETED" : "WAITING",
@@ -217,7 +223,7 @@ public final class ExternalActionOutcomeManager {
                             ? "PENDING_VERIFICATION" : next.status().name(),
                     verified ? null : resultCode, 0L, now));
         }
-        if (continuationGateway != null) {
+        if (continuationGateway != null && !javaWorkflow) {
             projectedItems.addAll(continuationGateway.admit(next, statusItem).items());
         }
         return new Projection(next, projectedTurn, projectedItems);
@@ -390,6 +396,37 @@ public final class ExternalActionOutcomeManager {
                 payload, now));
     }
 
+    private String workflowResultStatus(ExternalActionCommandModel command, Verification verification) {
+        return switch (command.status()) {
+            case SUCCEEDED -> verification != null && verification.verified() ? "COMPLETED" : "APPROVED";
+            case RETRY_WAIT -> "WAITING_EXTERNAL_ACTION";
+            case MANUAL_RETRY_REQUIRED -> "MANUAL_RETRY_REQUIRED";
+            default -> command.status().name();
+        };
+    }
+
+    private String workflowResultMessage(ExternalActionCommandModel command, String resultCode,
+                                         String resultMessage, Verification verification) {
+        if (command.status() == ExternalActionStatusEnum.SUCCEEDED && verification != null) {
+            return verification.message();
+        }
+        return resultMessage == null || resultMessage.isBlank() ? resultCode : resultMessage;
+    }
+
+    private AgentItemModel appendWorkflowResult(ExternalActionCommandModel command, String status,
+                                                String message, Instant now) {
+        ObjectNode data = objectMapper.createObjectNode();
+        data.put("runId", command.runId());
+        data.put("status", status);
+        if (message != null && !message.isBlank()) data.put("message", message);
+        String legacyPayload = writeJson(data);
+        var structuredPayload = AgentTurnItemPayloads.workflowResultValue(command.runId(), status, message);
+        String payload = itemPayloadCodec == null ? legacyPayload
+                : itemPayloadCodec.encode(AgentItemTypeEnum.WORKFLOW_RESULT, structuredPayload);
+        return append(new AgentItemModel(UUID.randomUUID().toString(), command.threadId(), command.turnId(), 0,
+                AgentItemTypeEnum.WORKFLOW_RESULT, payload, now));
+    }
+
     private AgentItemModel append(AgentItemModel item) {
         AgentItemModel encoded = itemPayloadCodec == null ? item : new AgentItemModel(
                 item.itemId(), item.threadId(), item.turnId(), item.sequence(), item.type(),
@@ -410,19 +447,32 @@ public final class ExternalActionOutcomeManager {
         }
     }
 
-    private String progressSteps(ExternalActionStatusEnum status, Verification verification) {
+    private String progressSteps(ExternalActionStatusEnum status, Verification verification,
+                                 AgentWorkflowOrchestrationVersionEnum orchestrationVersion) {
+        boolean javaWorkflow = orchestrationVersion == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_JAVA_V1;
+        boolean versionedExpedite = javaWorkflow
+                || orchestrationVersion == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V2;
+        String executionNode = versionedExpedite ? "HANDOFF_WORKER" : "EXECUTE_ACTION";
         if (status == ExternalActionStatusEnum.RETRY_WAIT) {
-            return OrderWorkflowStepProjection.snapshot(objectMapper, "EXECUTE_ACTION", "WAITING");
+            return OrderWorkflowStepProjection.snapshot(objectMapper, executionNode, "WAITING", orchestrationVersion);
         }
         if (status == ExternalActionStatusEnum.MANUAL_RETRY_REQUIRED) {
-            return OrderWorkflowStepProjection.snapshot(objectMapper, "EXECUTE_ACTION", "ERROR");
+            return OrderWorkflowStepProjection.snapshot(objectMapper, executionNode, "ERROR", orchestrationVersion);
         }
         if (status == ExternalActionStatusEnum.SUCCEEDED) {
+            if (javaWorkflow) {
+                return OrderWorkflowStepProjection.snapshot(objectMapper, "VERIFY_OUTCOME",
+                        verification != null && verification.verified() ? "COMPLETED" : "ERROR", orchestrationVersion);
+            }
+            if (orchestrationVersion == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V2) {
+                return OrderWorkflowStepProjection.snapshot(objectMapper, executionNode,
+                        verification != null && verification.verified() ? "COMPLETED" : "ERROR", orchestrationVersion);
+            }
             return verification != null && verification.verified()
-                    ? OrderWorkflowStepProjection.snapshot(objectMapper, "HANDOFF_AGENT", "COMPLETED")
-                    : OrderWorkflowStepProjection.snapshot(objectMapper, "VERIFY_OUTCOME", "ERROR");
+                    ? OrderWorkflowStepProjection.snapshot(objectMapper, "HANDOFF_AGENT", "COMPLETED", orchestrationVersion)
+                    : OrderWorkflowStepProjection.snapshot(objectMapper, "VERIFY_OUTCOME", "ERROR", orchestrationVersion);
         }
-        return OrderWorkflowStepProjection.snapshot(objectMapper, "EXECUTE_ACTION", "ACTIVE");
+        return OrderWorkflowStepProjection.snapshot(objectMapper, executionNode, "ACTIVE", orchestrationVersion);
     }
 
     private static AgentWorkflowStatusEnum workflowStatus(ExternalActionStatusEnum status) {
