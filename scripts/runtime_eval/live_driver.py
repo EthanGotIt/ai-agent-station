@@ -605,13 +605,19 @@ def _run_long_case(
             nonlocal facts_mutated
             if facts_mutated or not scenario.setup.get("mutateBeforeDecision") or not isolated_order_id:
                 return
-            client.provision_order(
+            # 事实变化必须通过夹具的公开幂等动作产生，不能用预置接口
+            # 静默覆盖订单；这样才能验证批准前重核验和一次业务变更。
+            reason = str(scenario.setup.get("reason") or "评测中的事实变化")
+            status, _ = client.request(
+                "POST",
+                f"/orders/{_path_part(isolated_order_id)}/{action}",
                 user_id,
-                isolated_order_id,
-                action,
-                status="DELIVERED",
-                logistics_status="已签收",
+                {"reason": reason} if action == "refund" else {},
+                extra_headers={"Idempotency-Key": f"live-facts-change-{uuid.uuid4().hex}"},
+                base_url=client.order_service_url,
             )
+            if status not in {200, 201}:
+                raise LiveDriverError(f"长对话场景 {scenario.id} 无法注入事实变化：HTTP {status}")
             facts_mutated = True
 
         settled = _settle_long_turn(
