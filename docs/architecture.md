@@ -4,19 +4,19 @@
 
 长期目标为 Spring AI Agent 负责理解、只读查询和提交事项，确定性 Java Workflow 负责业务核验、补参、授权、命令创建和结果收尾，Worker 独立执行外部动作。Workflow 完成后不自动创建 Agent continuation；后续用户消息作为普通 Turn 进入，并依据持久化 Items 和业务事实了解事项状态。本期 Workflow 成功受理后结束当前 Agent 工具循环；这是一项协调层策略，复合请求中的后续只读查询列为后续增强。
 
-截至 2026-09-24，退款/删除和历史催发货 Run 仍依赖旧执行路径；LangGraph4j 和旧 Run 的 Agent continuation 仍为兼容恢复保留。新催发货 Run 已有 Java Workflow 版本。不能把部分迁移误读为 LangGraph 已退出；前向阶段、排空规则及验收要求见 [长期升级计划](upgrade-plan.md)。
+截至 2026-09-28，退款、催发货和删除的新 Run 均使用 Java Workflow；Worker 结算不创建自动 Agent continuation。历史 `LEGACY_V1`/`EXPEDITE_GRAPH_V1`/`EXPEDITE_GRAPH_V2` 的标识、快照、Turn/Item 字段和迁移脚本仍保留以便读取与排空，生产运行路径不再装配 LangGraph4j。目标环境的旧 Run 归零需通过 [P5 只读盘点脚本](../scripts/maintenance/workflow-inventory.sql) 提供证据。
 
 ## 边界
 
 Core 只表达 `Thread`、`Turn`、`Item`、QuestionCard、ContextSnapshot 和 ExternalActionCommand 的规则与端口；infrastructure 适配 MyBatis-Plus、Spring AI、订单夹具和外部动作；app 只处理配置、HTTP 协议和认证上下文。依赖方向固定为 `app → core`、`app → infrastructure`、`infrastructure → core`。
 
-## 当前实现：LangGraph4j 兼容路径（2026-08 决策）
+## 当前实现：Spring AI 协调与 Java Workflow
 
-生产运行时采用 Spring AI + LangGraph4j 的窄边界混合架构：Spring AI 只负责模型调用、对话协调和 Tool Calling；LangGraph4j 1.8.20 负责固定订单 Workflow 的节点、条件边和中断，节点推进的业务事实仍由 Core 规则和本地持久化端口提交。Core 不依赖任何一个框架，业务 `WorkflowRun`、QuestionCard、Workflow Checkpoint 和 `ExternalActionCommand` 仍是唯一事实源。
+生产运行时采用 Spring AI + 确定性 Java Workflow：Spring AI 负责模型调用、对话协调和 Tool Calling；Java Workflow 负责固定订单事项的事实读取、资格判断、补参、授权、命令创建和恢复。Core 不依赖框架，`WorkflowRun`、QuestionCard、Workflow Checkpoint 和 `ExternalActionCommand` 是业务事实源。结果结算在本地事务中独立完成，后续用户消息作为普通 Turn 读取最新事实。
 
-不引入 LangChain4j、Embabel 或 Koog。LangChain4j 与 Spring AI 在模型、Tool、Memory 和 RAG 层重叠；Embabel 当前 Java 21 要求且动态 Goal Planning 不符合 JDK 17 与确定性写操作边界；Koog 会引入 Kotlin、协程、序列化及第二套 Agent/Tool/Persistence 运行时。重新评估条件仅限于：JDK 升级到 21、确定性 Workflow 边界被产品明确放弃，或 Spring AI/LangGraph4j 无法满足已验收的恢复与持久化契约；在此之前不得并行引入第二套 Agent 运行时。
+不引入 LangChain4j、Embabel 或 Koog。LangChain4j 与 Spring AI 在模型、Tool、Memory 和 RAG 层重叠；Embabel 当前 Java 21 要求且动态 Goal Planning 不符合 JDK 17 与确定性写操作边界；Koog 会引入 Kotlin、协程、序列化及第二套 Agent/Tool/Persistence 运行时。未来若重新评估，必须先有明确的产品边界变化和恢复/持久化契约证据。
 
-LangGraph 的 `runId` 是技术 graph thread ID。项目内 `MybatisLangGraphCheckpointSaver` 只保存节点、下一节点、序列化状态、业务 WorkflowRun 版本和事实指纹到 `AGENT_GRAPH_SNAPSHOT`；不保存或决定业务授权。明确订单催发货试点已接入技术快照校验和跨进程恢复，缺失或失配时从业务事实重建；试点范围及默认关闭的开关见下文。LangGraph4j 内置 AgentExecutor 和内置 MySQL Saver 不进入生产依赖路径，避免第二套业务事实表和 Jackson 2 序列化链。
+历史 LangGraph 的 `runId` 和 `AGENT_GRAPH_SNAPSHOT` 只作为旧数据读取与排空证据保留；运行时代码不再创建、更新或恢复技术图快照。历史编排若在排空后仍被请求，会由 `RetiredAgentWorkflowEngine` 返回 `WORKFLOW_COMPATIBILITY_REQUIRED`，指向兼容版本或明确取消，不按当前 Java 语义猜测恢复。
 
 ## Agent-first 分包
 
@@ -97,19 +97,17 @@ RESOLVE_ORDER → VERIFY_FACTS → SWITCH_REQUIREMENTS → AUTHORIZE
 业务事实平面：
 Thread → Turn → WorkflowRun → Checkpoint → ExternalActionCommand → Worker
   ↑                                                        ↓
-  └────────────── Items / SSE / Agent 续跑 ←───────────────┘
+  └────────────── Items / SSE / 最新业务事实 ←─────────────┘
 
-V2 技术图平面：
-START → RESOLVE_ORDER → VERIFY_FACTS → PREPARE_CONFIRMATION → interrupt
-                                      ↓ AUTHORIZE
-                         REJECT ─────┴─────→ END
-                         APPROVE → REVERIFY_FACTS
-                           ├─ CHANGED_ALLOWED → PREPARE_CONFIRMATION → interrupt
-                           ├─ NOT_ALLOWED → END
-                           └─ UNCHANGED → BUILD_ACTION_COMMAND → HANDOFF_WORKER → END
+Java Workflow 平面：
+RESOLVE_ORDER → VERIFY_FACTS → PREPARE_CONFIRMATION → AUTHORIZE
+                                      ↓                 ↓
+                              QuestionCard       REVERIFY_FACTS
+                                                        ↓
+                                      BUILD_ACTION_COMMAND → HANDOFF_WORKER → VERIFY_OUTCOME
 ```
 
-每次转换都会更新 `STEPS_JSON` 并追加 `WORKFLOW_STEP` Item。外部动作成功后的订单/物流核验发生在本地事务外；核验回执与 continuation Turn 的创建在本地事务中原子提交，提交后才进入 Runtime 队列。授权提交时若订单事实变化，旧 Checkpoint 失效；资格仍允许时重新等待确认，资格不再允许时收口为失败，均不创建外部命令。续跑保留 `rootTurnId`、`parentTurnId`、触发 Run/Command/Sequence 和 `cycleNo`，使用触发事实生成确定性 `clientRequestId`，重启恢复和 Worker 重放不会产生重复 Turn。人工 QuestionCard/Checkpoint 子 Turn 按 Workflow 归属折回来源事项；后台 `RETRY_WAIT` 只等待 Worker，不唤醒模型。无法找到 Workflow owner 或事项锚点时，续跑安全停止并保留原始业务结果。
+每次转换都会更新 `STEPS_JSON` 并追加 `WORKFLOW_STEP` Item。外部动作成功后的订单/物流核验发生在本地事务外，命令状态、Workflow 状态和业务结果 Item 在本地事务中一起提交；提交后由 Worker 独立推进，不唤醒模型。授权提交时若订单事实变化，旧 Checkpoint 失效；资格仍允许时重新等待确认，资格不再允许时收口为失败，均不创建外部命令。人工 QuestionCard/Checkpoint 子 Turn 按 Workflow 归属折回来源事项；后台 `RETRY_WAIT` 只等待 Worker。历史 continuation 字段和 Item 只用于兼容读取，不再创建新的 continuation Turn。
 
 QuestionCard 回答使用 `POST /questions/{questionId}/answers`，请求体携带 `clientRequestId + expectedVersion + answers`，按 QuestionCard 的 `resumeTarget=AGENT|WORKFLOW` 恢复并作为同一 Thread 的新 Turn 进入 FIFO。Workflow Checkpoint 决策使用 `POST /workflow-runs/{runId}/checkpoints/{checkpointId}/decisions`，只接受批准或拒绝；批准时重新校验事实指纹，事实变化则标记 `SUPERSEDED` 并回到 `VERIFY_FACTS`。启动、交互创建和版本关闭受本地事务约束；同一 Thread 同时最多一个开放交互。退款仅允许 PAID/SHIPPED/DELIVERED，催发货仅允许 PAID；原始模型思考内容不进入 API、SSE、数据库或日志。
 
@@ -150,15 +148,15 @@ SSE 事件包含完整 envelope：`eventId、threadId、turnId、itemId（可选
 
 `docs/dev-ops/mysql/commerce-guardian-agent.sql` 是新库的破坏性基线；已有库必须先备份并由 `db/migration/V1__align_workflow_question_recovery.sql` 至 `V7__persist_agent_continuations.sql`、`V8__persist_langgraph_snapshots.sql`、`V9__split_question_cards_and_workflow_checkpoints.sql`、`V10__persist_context_compaction_metadata.sql`、`V11__persist_workflow_orchestration_version.sql`、`V12__persist_langgraph_orchestration_version.sql` 逐版本增量升级。V8 只增加可重建的 `AGENT_GRAPH_SNAPSHOT` 技术表，V9 将提问与执行确认拆为独立事实，V10 为上下文 V2 快照增加格式、来源范围、估算和摘要版本元数据，V11 为每个 `AGENT_WORKFLOW_RUN` 写入不可变的编排版本，V12 为图快照写入同样的不可变编排版本，并将历史记录归入 `LEGACY_V1`；历史业务事实和已有 Run 状态不被重写。旧 `AGENT_WORKFLOW_QUESTION`、Turn 中的旧回答列和旧 `WORKFLOW_ANSWER` 标记在保留期内只读，仅供迁移/历史投影使用，运行时代码不再映射或写入。基线保留这些历史列/表以支持迁移演练，同时创建当前 `AGENT_QUESTION_CARD`、`AGENT_WORKFLOW_CHECKPOINT`、`AGENT_GRAPH_SNAPSHOT`、`EXTERNAL_ACTION_COMMAND` 和 `EXTERNAL_ACTION_RESULT`。同一用户的同一来源 Turn 和 Workflow 类型只能有一个 WorkflowRun；迁移不得重建或覆盖已有业务事实。
 
-> 以下 2B-1/V2 记录描述历史试点实现，继续服务已有编排版本的兼容恢复。P3 新 Run 的选择与恢复规则见下文。
+> 以下 2B-1/V2 记录描述历史试点和数据兼容边界，不代表当前生产执行路径。P5 退出后新 Run 和结果结算均走 Java Workflow。
 
-2B-1/V2 历史试点由 `AI_AGENT_EXPEDITE_GRAPH_MODE=OFF|V1|V2` 控制；缺失新配置时兼容 `AI_AGENT_EXPEDITE_GRAPH_ENABLED=true` 到 `V1`。当时只有明确订单号的催发货新 Run 才能标记 `EXPEDITE_GRAPH_V1` 或 `EXPEDITE_GRAPH_V2`；补选订单、其他订单操作和已有 Run 使用 `LEGACY_V1` 兼容路径。聊天 Tool 和订单卡片都进入同一个 `AgentWorkflowEngine` 路由。V1 按历史通用节点恢复；V2 的 typed 节点完成订单解析、资格核验、确认准备、批准后事实重核验、命令草稿和 Worker 交接。确认事务保存 Run、Checkpoint、开放交互指针和 Items，批准事务锁定并复核 Run/Checkpoint 后才创建唯一命令。恢复先校验 Run 编排版本，再读取 QuestionCard、Workflow Checkpoint 和订单事实；未知版本直接失败，不回退另一条路径。重复来源 Turn 返回原有交互，参数变化收口为冲突。V2 图在 `HANDOFF_WORKER` 技术 END 结束，Worker 继续负责外部执行、结果核验和历史 Agent 续跑；技术 END 不投影为业务成功。
+2B-1/V2 历史试点曾由 `AI_AGENT_EXPEDITE_GRAPH_MODE=OFF|V1|V2` 控制，并使用图快照恢复。现有数据库中的这些版本、快照和 Item 仍可读取；新配置不再打开旧图执行。旧非终态 Run 必须在兼容版本完成或由用户明确取消，排空后由 `RetiredAgentWorkflowEngine` 受控拒绝。
 
-P3 催发货新 Run 由 `AI_AGENT_EXPEDITE_MODE=JAVA` 路由到 `EXPEDITE_JAVA_V1`，默认关闭；新变量缺失时兼容 `AI_AGENT_EXPEDITE_GRAPH_MODE` 和旧布尔开关。路由只影响新 Run，恢复始终按持久化 `WorkflowRun.orchestrationVersion` 选择 Java 或历史 LangGraph 实现。Java 引擎以 `WorkflowRun.stateJson/stepsJson`、QuestionCard、Checkpoint 和 ExternalActionCommand 恢复，不创建或读取图快照；步骤依次为 `RESOLVE_ORDER`、`VERIFY_FACTS`、`PREPARE_CONFIRMATION`、`AUTHORIZE`、`REVERIFY_FACTS`、`BUILD_ACTION_COMMAND`、`HANDOFF_WORKER`、`VERIFY_OUTCOME`。订单缺失或有歧义时通过 QuestionCard 补参，授权继续由 Checkpoint 表达。批准前在事务外重读订单事实，事务内锁定并校验 Run/Checkpoint 版本后创建唯一命令。授权指纹只绑定催发货动作、用户/订单归属、PAID 资格状态和请求确认参数；物流与展示字段变化不使授权失效。Java Run 的 Worker 结果持久化不创建 Agent continuation；V1/V2/Legacy 历史 Run 仍走兼容实现，直到 P5 排空。
+Java 新 Run 由 `AI_AGENT_EXPEDITE_MODE=JAVA`、`AI_AGENT_REFUND_MODE=JAVA` 和 `AI_AGENT_DELETE_MODE=JAVA` 路由到对应编排版本，默认开启；开关只影响新 Run，恢复按持久化版本选择 Java 或退休兼容边界。Java 引擎以 `WorkflowRun.stateJson/stepsJson`、QuestionCard、Checkpoint 和 ExternalActionCommand 恢复，不创建或读取图快照；步骤依次为 `RESOLVE_ORDER`、`VERIFY_FACTS`、`PREPARE_CONFIRMATION`、`AUTHORIZE`、`REVERIFY_FACTS`、`BUILD_ACTION_COMMAND`、`HANDOFF_WORKER`、`VERIFY_OUTCOME`。订单缺失或有歧义时通过 QuestionCard 补参，授权继续由 Checkpoint 表达。批准前在事务外重读订单事实，事务内锁定并校验 Run/Checkpoint 版本后创建唯一命令。三类 Java Run 的 Worker 结果持久化不创建 Agent continuation。
 
-2B-2 的生产快照恢复代码已接入并完成一次性副本现场验收：`MybatisLangGraphCheckpointSaver` 按 Run 保存技术节点、状态、业务版本、事实指纹和编排版本，缺失/损坏/失配时由业务 Run、Checkpoint 和订单事实重建；快照不授予授权，也不替代业务事实。V1 和 V2 使用独立事实指纹前缀，禁止交叉恢复；未知编排版本以 `UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION` 失败，不回退另一条路径。试点默认仍关闭，生产开关、第三方鉴权和删除动作按部署环境单独验收。
+历史快照恢复证据保留在实施追踪中，但运行时不再写入或读取图快照。未知或遗漏的旧编排版本不得回退 Java 语义，而是以 `WORKFLOW_COMPATIBILITY_REQUIRED` 失败并指向兼容版本；历史表和迁移文件保留，支持数据读取、排空和回滚。
 
-V6 现场迁移先备份配置库并在一次性克隆库执行；V7 首次运行前同样必须备份并在一次性克隆库验证。确认 `INPUT_KIND` 非空、`ORDER_ACTION_JSON` 和 `CONTINUATION_JSON` 可空，历史 Workflow 状态不被重写。外部 HTTP 订单服务、Agent 和前端验收结束后关闭测试进程，MySQL 保持运行。
+V6—V13 现场迁移先备份配置库并在一次性克隆库执行；确认 `INPUT_KIND` 非空、`ORDER_ACTION_JSON` 和 `CONTINUATION_JSON` 可空，历史 Workflow 状态不被重写。`CONTINUATION_JSON` 和 `AGENT_GRAPH_SNAPSHOT` 继续保留以支持历史读取，但新 Worker 结算不创建 continuation。P5 目标库排空前必须执行只读盘点并确认旧服务、Worker 和队列已退出。
 
 本地现场复核可使用 `docs/review-runbook.md` 和 `scripts/review/review-services.ps1`。订单夹具通过 `ORDER_SERVICE_FIXTURE_EXPEDITE_TRANSIENT_FAILURES` 注入有限的催发货可重试失败，并在 `/_fixture/stats` 暴露注入次数；注入只持久化验收故障计数，不写入订单服务幂等记录或业务状态。
 

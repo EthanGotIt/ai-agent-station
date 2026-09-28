@@ -1,7 +1,7 @@
 # Commerce Guardian Agent 实现追踪矩阵
 
 > 状态：`active`
-> 更新日期：2026-09-24
+> 更新日期：2026-09-28
 > 目标来源：当前唯一前向计划 [长期调整计划](upgrade-plan.md)、当前工作树、架构文档、SQL、测试和实际运行结果。
 
 本矩阵只把代码、测试和运行结果作为证据。原计划或 [任务交接快照](../.codex/task-handoff.md) 中的“已完成”描述不能单独作为完成证据。
@@ -54,6 +54,14 @@
 - 并发与恢复：新增 `AGENT_ORDER_WRITE_RESERVATION`，按用户/订单阻止未完成写事项跨 Thread 冲突；Worker 在成功核验后释放预留，取消、拒绝和核验失败路径也释放。已有 Java Run 按持久化版本恢复，不依赖部署时开关猜测。
 - 运行时：Workflow Tool 成功启动后沿用协调层批次截断；Worker 结果投影不创建 Java continuation。普通后续 Turn 注入最近 Workflow/Command 事实，明确“命令受理不等于业务成功”。
 - 验证：定向 18 项、Core 102/102、Infrastructure 164/164、App 25/25 单测通过；HTTP 集成 9/9、隔离 MySQL acceptance 13/13 通过；Maven `context-acceptance,workflow-acceptance verify` 成功。真实模型、浏览器和部署回滚仍待 P6/P7。
+
+### P5 排空旧流程并退出 LangGraph4j（2026-09-28）
+
+- 只读盘点：新增 [`scripts/maintenance/workflow-inventory.sql`](../scripts/maintenance/workflow-inventory.sql)，按编排版本统计 Run，单独列出旧非终态 Run、开放 QuestionCard/Checkpoint、未结算命令、待消费 continuation 和图快照；`scripts/tests/test_workflow_inventory.py` 验证脚本没有写入、DDL 或锁表语句，并覆盖全部盘点表。
+- 生产路径：新增 `RetiredAgentWorkflowEngine`，旧持久化编排恢复以 `WORKFLOW_COMPATIBILITY_REQUIRED` 受控拒绝，避免缺少兼容运行时后按 Java 语义猜测执行；`VersionedAgentWorkflowEngine` 新 Run 仅路由 Java 编排，`ExternalActionOutcomeManager` 不再创建 continuation。
+- 依赖与快照：移除 Maven 的 LangGraph4j 依赖、图引擎/节点、技术快照 Entity/Mapper 和生产 continuation gateway；V8/V12 迁移、`AGENT_GRAPH_SNAPSHOT`、`CONTINUATION_JSON`、历史 Item/Turn 类型和编排枚举保留，支持读取、排空和回滚。
+- 配置与文档：移除旧图模式、自动 continuation 配置入口，更新架构、运行手册和执行卡；P5 提交不包含工作区中既有 V2、前端和评测改动。
+- 限制：当前执行环境没有目标 MySQL 的只读凭据，未对真实目标库宣称旧记录已归零。部署前必须执行盘点脚本并保存结果，确认旧服务/Worker/队列退出后才可关闭旧准入。
 
 | 原始阶段 | 当前结论 | 代码与验收对照 | 仍需推进 |
 | --- | --- | --- | --- |

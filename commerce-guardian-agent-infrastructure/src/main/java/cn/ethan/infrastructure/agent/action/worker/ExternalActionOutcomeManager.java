@@ -19,7 +19,6 @@ import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowOrchestrationVersionEnum;
 import cn.ethan.core.agent.workflow.OrderWriteReservationStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
-import cn.ethan.core.agent.coordination.AgentContinuationGateway;
 import cn.ethan.core.agent.execution.AgentTurnItemPayloads;
 import cn.ethan.core.agent.execution.AgentRuntimeMetrics;
 import cn.ethan.core.commerce.order.LogisticsEventModel;
@@ -56,7 +55,6 @@ public final class ExternalActionOutcomeManager {
     private final AgentItemJournal itemJournal;
     private final AgentItemPayloadCodec itemPayloadCodec;
     private final TransactionTemplate transactionTemplate;
-    private final AgentContinuationGateway continuationGateway;
     private final AgentRuntimeMetrics metrics;
     private final OrderWriteReservationStore reservations;
 
@@ -75,7 +73,6 @@ public final class ExternalActionOutcomeManager {
             AgentItemJournal itemJournal,
             AgentItemPayloadCodec itemPayloadCodec,
             PlatformTransactionManager transactionManager,
-            AgentContinuationGateway continuationGateway,
             AgentRuntimeMetrics metrics,
             OrderWriteReservationStore reservations
     ) {
@@ -83,7 +80,7 @@ public final class ExternalActionOutcomeManager {
                 itemJournal,
                 itemPayloadCodec,
                 transactionManager == null ? null : new TransactionTemplate(transactionManager),
-                continuationGateway, metrics, reservations);
+                metrics, reservations);
     }
 
     /**
@@ -97,7 +94,7 @@ public final class ExternalActionOutcomeManager {
             ObjectMapper objectMapper
     ) {
         this(commands, items, turns, workflowRuns, objectMapper, null, null, (TransactionTemplate) null,
-                null, null, null);
+                null, null);
     }
 
     /** 保留既有事务测试和非 Spring 调用边界；续跑由生产装配显式开启。 */
@@ -113,7 +110,7 @@ public final class ExternalActionOutcomeManager {
                 null,
                 null,
                 transactionManager == null ? null : new TransactionTemplate(transactionManager),
-                null, null, null);
+                null, null);
     }
 
     private ExternalActionOutcomeManager(
@@ -125,7 +122,6 @@ public final class ExternalActionOutcomeManager {
             AgentItemJournal itemJournal,
             AgentItemPayloadCodec itemPayloadCodec,
             TransactionTemplate transactionTemplate,
-            AgentContinuationGateway continuationGateway,
             AgentRuntimeMetrics metrics,
             OrderWriteReservationStore reservations
     ) {
@@ -137,7 +133,6 @@ public final class ExternalActionOutcomeManager {
         this.itemJournal = itemJournal;
         this.itemPayloadCodec = itemPayloadCodec;
         this.transactionTemplate = transactionTemplate;
-        this.continuationGateway = continuationGateway;
         this.metrics = metrics == null ? AgentRuntimeMetrics.noop() : metrics;
         this.reservations = reservations;
     }
@@ -223,18 +218,6 @@ public final class ExternalActionOutcomeManager {
         AgentTurnModel projectedTurn = projectTurn(next, now);
         if (projectedTurn != null) {
             projectedItems.add(appendTurnState(projectedTurn, now));
-        }
-        boolean continuationAdmitted = false;
-        if (continuationGateway != null && !javaRun(run.orchestrationVersion())) {
-            var admission = continuationGateway.admit(next, statusItem);
-            projectedItems.addAll(admission.items());
-            continuationAdmitted = admission.newlyAdmitted();
-        }
-        if (continuationAdmitted) {
-            boolean verified = verification != null && verification.verified();
-            projectedItems.add(appendWorkflowStep(next, "HANDOFF_AGENT", "COMPLETED",
-                    verified ? "VERIFIED" : "PENDING_VERIFICATION",
-                    verified ? null : resultCode, 0L, now));
         }
         if (reservations != null && next.status() == ExternalActionStatusEnum.SUCCEEDED
                 && verification != null && verification.verified()) {

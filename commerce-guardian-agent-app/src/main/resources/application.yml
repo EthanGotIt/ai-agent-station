@@ -51,7 +51,6 @@ ai-agent:
   runtime:
     stream-timeout: ${AI_AGENT_STREAM_TIMEOUT:PT245S}
     heartbeat-interval: ${AI_AGENT_SSE_HEARTBEAT_INTERVAL:PT15S}
-    continuation-enabled: ${AI_AGENT_CONTINUATION_ENABLED:true}
     max-agent-cycles: ${AI_AGENT_MAX_CYCLES:3}
     max-output-tokens-per-turn: ${AI_AGENT_MAX_OUTPUT_TOKENS_PER_TURN:8192}
     repeated-tool-failure-threshold: ${AI_AGENT_REPEATED_TOOL_FAILURE_THRESHOLD:3}
@@ -65,11 +64,10 @@ ai-agent:
       queue-capacity: ${AI_AGENT_EXECUTOR_QUEUE_CAPACITY:256}
       await-termination: ${AI_AGENT_EXECUTOR_AWAIT_TERMINATION:PT10S}
   workflow:
-    # 催发货编排新 Run 的路由；JAVA 使用持久化 Java Workflow，默认仍为关闭。
-    expedite-mode: ${AI_AGENT_EXPEDITE_MODE:${AI_AGENT_EXPEDITE_GRAPH_MODE:}}
-    expedite-graph-mode: ${AI_AGENT_EXPEDITE_GRAPH_MODE:${AI_AGENT_EXPEDITE_MODE:}}
-    expedite-graph-enabled: ${AI_AGENT_EXPEDITE_GRAPH_ENABLED:false}
-    graph-recursion-limit: ${AI_AGENT_WORKFLOW_GRAPH_RECURSION_LIMIT:32}
+    # 三类新 Run 默认进入 Java Workflow；开关只影响新 Run，已有 Run 按持久化版本恢复。
+    expedite-mode: ${AI_AGENT_EXPEDITE_MODE:JAVA}
+    refund-mode: ${AI_AGENT_REFUND_MODE:JAVA}
+    delete-mode: ${AI_AGENT_DELETE_MODE:JAVA}
   thread:
     context-max-estimated-tokens: ${AI_AGENT_THREAD_CONTEXT_MAX_ESTIMATED_TOKENS:65536}
     # 兼容旧部署参数；2A-2 不使用该值触发压缩或校验上下文预算。

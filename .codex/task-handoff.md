@@ -25,6 +25,9 @@ updated: 2026-09-28
 - P4：退款与删除已接入 `REFUND_JAVA_V1`/`DELETE_JAVA_V1`，共享确定性授权、事实复核、CAS 命令创建和 Worker 结果投影；新增订单写预留防止同一用户跨 Thread 产生冲突写命令；后续 Turn 注入最新 Workflow/Command 事实。
 - P4 验证：定向 18 项、Core 102 项、Infrastructure 164 项、App 25 项单测通过；HTTP 集成 9 项、隔离 MySQL acceptance 13 项通过；Maven `context-acceptance,workflow-acceptance verify` 成功。
 - 当前提交快照完整验收：规范检查、Python 19 项、前端 typecheck/Vitest 76 项/build 通过；Maven reactor Core 96、Infrastructure 133、App 22 单测及 HTTP 9、MySQL 12 项集成测试通过。
+- P5：新增 `scripts/maintenance/workflow-inventory.sql` 只读盘点旧 Run、开放交互、未结算命令、待消费 continuation 和历史图快照；新增 `RetiredAgentWorkflowEngine`，旧持久化编排以 `WORKFLOW_COMPATIBILITY_REQUIRED` 受控拒绝；新 Run 仅路由 Java Workflow，Worker 结果投影不创建 continuation。
+- P5：移除 Maven LangGraph4j 依赖、图引擎/节点、技术快照 Entity/Mapper 和生产 continuation gateway；保留 V8/V12 迁移、历史快照表、Turn/Item 兼容字段和编排标识以支持读取、排空与回滚。架构、运行手册、升级计划和实施追踪已同步。
+- P5 验证：规范检查、只读盘点脚本单测和暂存 diff 检查通过；干净提交快照的 Maven/前端/脚本全矩阵待提交后执行。当前环境没有目标 MySQL 只读凭据，尚未宣称线上旧 Run/continuation 已归零。
 
 ## Decisions
 
@@ -36,8 +39,8 @@ updated: 2026-09-28
 
 ## TODO
 
-- 执行 P5：盘点并排空旧 LangGraph Run 与 continuation，确认旧事项归零后移除 LangGraph4j 生产执行路径。
-- P5 排空后移除 LangGraph4j；P6 完成真实模型长对话质量评测；P7 完成三类流程隔离端到端、浏览器及部署回滚演练。
+- 用目标环境只读账号执行 `scripts/maintenance/workflow-inventory.sql`，保存 P5 排空报告并确认旧 Worker/服务/队列退出；随后进入 P6 真实模型评测。
+- P6 完成长对话质量评测；P7 完成三类流程隔离端到端、浏览器及部署回滚演练。
 
 ## Blocked
 
@@ -45,11 +48,11 @@ P2 已验证完成。订单服务未提供独立的按幂等键查询 API；本�
 
 ## Next action
 
-盘点未完成的 Legacy/Graph Run、开放交互、未结算命令和 continuation，形成 P5 排空清单；在关闭旧准入前保留按持久化版本恢复的兼容路径。
+获取目标 MySQL 只读凭据并执行 P5 盘点脚本；若报告全为零且旧实例已退出，记录排空证据后进入 P6。
 
 ## Validation
 
-P0—P4 自动化和隔离验收通过项见 [实施追踪](../docs/implementation-traceability.md) 与阶段执行卡。真实订单平台、浏览器、真实模型和发布回滚验收尚未执行；这些仍分别由 P6/P7 覆盖。
+P0—P5 的代码与隔离验收通过项见 [实施追踪](../docs/implementation-traceability.md) 与阶段执行卡。真实目标库 P5 盘点、订单平台、浏览器、真实模型和发布回滚验收尚未执行；这些分别由 P5 运行环境、P6 和 P7 覆盖。
 
 ## Preserve
 

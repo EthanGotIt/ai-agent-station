@@ -102,6 +102,21 @@ class VersionedAgentWorkflowEngineTest {
         assertEquals("write", engine.resume(thread(), decisionTurn, Map.of()).message());
     }
 
+    @Test
+    void oldPersistedRunIsRejectedAfterCompatibilityPathRetirement() {
+        RecordingEngine retired = new RecordingEngine("retired");
+        RecordingEngine expedite = new RecordingEngine("expedite");
+        RecordingEngine write = new RecordingEngine("write");
+        RunStore runs = new RunStore();
+        runs.current = run(AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V1);
+        VersionedAgentWorkflowEngine engine = new VersionedAgentWorkflowEngine(
+                retired, expedite, write, runs, "JAVA", false, "JAVA", "JAVA");
+
+        assertEquals("retired", engine.start(thread(), turn("turn-1"), "ORDER_SERVICE",
+                Map.of("intent", "EXPEDITE")).runId());
+        assertEquals(1, retired.starts);
+    }
+
     private static AgentThreadModel thread() {
         return new AgentThreadModel("thread-1", "user-1", "订单", AgentThreadStatusEnum.ACTIVE,
                 "ORDER", "ORDER-1", 0, NOW, NOW);
