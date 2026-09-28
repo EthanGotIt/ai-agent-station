@@ -28,6 +28,9 @@ public final class OrderWorkflowStepProjection {
     private static final List<String> EXPEDITE_JAVA_V1_NODES = List.of(
             "RESOLVE_ORDER", "VERIFY_FACTS", "PREPARE_CONFIRMATION", "AUTHORIZE",
             "REVERIFY_FACTS", "BUILD_ACTION_COMMAND", "HANDOFF_WORKER", "VERIFY_OUTCOME");
+    private static final List<String> ORDER_WRITE_JAVA_V1_NODES = List.of(
+            "RESOLVE_ORDER", "RESOLVE_REASON", "VERIFY_FACTS", "PREPARE_CONFIRMATION", "AUTHORIZE",
+            "REVERIFY_FACTS", "BUILD_ACTION_COMMAND", "HANDOFF_WORKER", "VERIFY_OUTCOME");
 
     private OrderWorkflowStepProjection() {
     }
@@ -70,12 +73,20 @@ public final class OrderWorkflowStepProjection {
         return NODES;
     }
 
+    public static List<String> nodesFor(AgentWorkflowOrchestrationVersionEnum orchestrationVersion) {
+        return nodes(orchestrationVersion);
+    }
+
     private static List<String> nodes(AgentWorkflowOrchestrationVersionEnum orchestrationVersion) {
         if (orchestrationVersion == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V2) {
             return EXPEDITE_V2_NODES;
         }
         if (orchestrationVersion == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_JAVA_V1) {
             return EXPEDITE_JAVA_V1_NODES;
+        }
+        if (orchestrationVersion == AgentWorkflowOrchestrationVersionEnum.REFUND_JAVA_V1
+                || orchestrationVersion == AgentWorkflowOrchestrationVersionEnum.DELETE_JAVA_V1) {
+            return ORDER_WRITE_JAVA_V1_NODES;
         }
         return NODES;
     }

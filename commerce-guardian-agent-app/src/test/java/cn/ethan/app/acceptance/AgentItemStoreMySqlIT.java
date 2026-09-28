@@ -301,7 +301,7 @@ class AgentItemStoreMySqlIT {
                 .dataSource(dataSource)
                 .locations("classpath:db/migration")
                 .load();
-        assertEquals("13", migrated.info().current().getVersion().getVersion());
+        assertEquals("14", migrated.info().current().getVersion().getVersion());
 
         AgentContextSnapshotModel candidate = snapshot("cas-1", 2L, 1L, "摘要事实");
         AgentContextSnapshotModel otherOwner = new AgentContextSnapshotModel(
@@ -618,6 +618,7 @@ class AgentItemStoreMySqlIT {
 
     private static void prepareV9Schema(DataSource dataSource) throws SQLException {
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+            statement.execute("DROP TABLE AGENT_ORDER_WRITE_RESERVATION");
             statement.execute("ALTER TABLE AGENT_CONTEXT_SNAPSHOT DROP INDEX IDX_AGENT_CONTEXT_SNAPSHOT_BASE");
             statement.execute("ALTER TABLE AGENT_CONTEXT_SNAPSHOT DROP COLUMN SUMMARY_MAX_OUTPUT_TOKENS, "
                     + "DROP COLUMN SUMMARY_PROMPT_VERSION, DROP COLUMN SOURCE_ESTIMATED_TOKENS, "

@@ -13,6 +13,7 @@ import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
+import cn.ethan.core.agent.workflow.OrderWriteReservationStore;
 import cn.ethan.infrastructure.agent.action.persistence.ExternalActionCommandMapper;
 import cn.ethan.infrastructure.agent.action.persistence.MybatisExternalActionCommandStore;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentThreadMapper;
@@ -20,6 +21,8 @@ import cn.ethan.infrastructure.agent.thread.persistence.AgentWorkflowRunMapper;
 import cn.ethan.infrastructure.agent.thread.persistence.MybatisAgentWorkflowRunStore;
 import cn.ethan.infrastructure.agent.workflow.persistence.AgentWorkflowCheckpointMapper;
 import cn.ethan.infrastructure.agent.workflow.persistence.MybatisAgentWorkflowCheckpointStore;
+import cn.ethan.infrastructure.agent.workflow.persistence.MybatisOrderWriteReservationStore;
+import cn.ethan.infrastructure.agent.workflow.persistence.OrderWriteReservationMapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.MybatisSqlSessionFactoryBuilder;
 import org.flywaydb.core.Flyway;
@@ -107,6 +110,8 @@ class AgentWorkflowMySqlIT {
         insertThread("thread-cas");
         insertThread("thread-outcome");
         insertThread("thread-java-approval");
+        insertThread("thread-reserve-a");
+        insertThread("thread-reserve-b");
     }
 
     @AfterAll
@@ -138,7 +143,7 @@ class AgentWorkflowMySqlIT {
     }
 
     @Test
-    void flywayV10ToV13AndManagedStoresPreserveVersionAndOwnership() throws Exception {
+    void flywayV10ToV14AndManagedStoresPreserveVersionAndOwnership() throws Exception {
         try (AnnotationConfigApplicationContext context = persistenceContext()) {
             AgentWorkflowRunStore runs = context.getBean(AgentWorkflowRunStore.class);
             AgentWorkflowRunModel run = run("run-version", "thread-cas", "turn-version",
@@ -164,7 +169,7 @@ class AgentWorkflowMySqlIT {
                 .dataSource(dataSource)
                 .locations("classpath:db/migration")
                 .load();
-        assertEquals("13", migrated.info().current().getVersion().getVersion());
+        assertEquals("14", migrated.info().current().getVersion().getVersion());
     }
 
     @Test
@@ -266,6 +271,42 @@ class AgentWorkflowMySqlIT {
     }
 
     @Test
+    void oneOrderReservationSurvivesRestartAndPreventsCrossThreadWrite() throws Exception {
+        try (AnnotationConfigApplicationContext context = persistenceContext()) {
+            AgentWorkflowRunStore runs = context.getBean(AgentWorkflowRunStore.class);
+            OrderWriteReservationStore reservations = context.getBean(OrderWriteReservationStore.class);
+            TransactionTemplate transaction = new TransactionTemplate(
+                    context.getBean(PlatformTransactionManager.class));
+            AgentWorkflowRunModel first = run("run-reserve-a", "thread-reserve-a", "turn-reserve-a",
+                    AgentWorkflowOrchestrationVersionEnum.REFUND_JAVA_V1);
+            AgentWorkflowRunModel second = run("run-reserve-b", "thread-reserve-b", "turn-reserve-b",
+                    AgentWorkflowOrchestrationVersionEnum.DELETE_JAVA_V1);
+            transaction.executeWithoutResult(status -> {
+                runs.create(first);
+                runs.create(second);
+            });
+
+            CountDownLatch ready = new CountDownLatch(2);
+            ExecutorService executor = Executors.newFixedThreadPool(2);
+            Future<Boolean> one = executor.submit(() -> tryReserve(reservations, transaction,
+                    first.runId(), ready));
+            Future<Boolean> two = executor.submit(() -> tryReserve(reservations, transaction,
+                    second.runId(), ready));
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            assertTrue(one.get(10, TimeUnit.SECONDS) ^ two.get(10, TimeUnit.SECONDS));
+            executor.shutdownNow();
+            assertEquals(1L, count("SELECT COUNT(*) FROM AGENT_ORDER_WRITE_RESERVATION "
+                    + "WHERE USER_ID = 'workflow-it-user' AND ORDER_ID = 'ORDER-RESERVED'"));
+
+            String holder = reservations.reserve(USER_ID, "ORDER-RESERVED", first.runId())
+                    ? first.runId() : second.runId();
+            assertTrue(reservations.reserve(USER_ID, "ORDER-RESERVED", holder));
+            reservations.release(USER_ID, "ORDER-RESERVED", holder);
+            assertTrue(reservations.reserve(USER_ID, "ORDER-RESERVED", "run-reserve-a"));
+        }
+    }
+
+    @Test
     void persistsUnknownOutcomeAndIndependentVerificationBudgetAcrossSessions() {
         try (AnnotationConfigApplicationContext context = persistenceContext()) {
             ExternalActionCommandStore commands = context.getBean(ExternalActionCommandStore.class);
@@ -322,6 +363,18 @@ class AgentWorkflowMySqlIT {
         }
     }
 
+    private static boolean tryReserve(OrderWriteReservationStore reservations, TransactionTemplate transaction,
+                                      String runId, CountDownLatch ready) {
+        ready.countDown();
+        try {
+            ready.await(5, TimeUnit.SECONDS);
+            return Boolean.TRUE.equals(transaction.execute(status ->
+                    reservations.reserve(USER_ID, "ORDER-RESERVED", runId)));
+        } catch (RuntimeException | InterruptedException failure) {
+            return false;
+        }
+    }
+
     private static AnnotationConfigApplicationContext persistenceContext() {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
         context.register(PersistenceTestConfiguration.class);
@@ -339,6 +392,7 @@ class AgentWorkflowMySqlIT {
         @Bean AgentThreadMapper agentThreadMapper(SqlSessionTemplate template) { return template.getMapper(AgentThreadMapper.class); }
         @Bean AgentWorkflowRunMapper agentWorkflowRunMapper(SqlSessionTemplate template) { return template.getMapper(AgentWorkflowRunMapper.class); }
         @Bean AgentWorkflowCheckpointMapper agentWorkflowCheckpointMapper(SqlSessionTemplate template) { return template.getMapper(AgentWorkflowCheckpointMapper.class); }
+        @Bean OrderWriteReservationMapper orderWriteReservationMapper(SqlSessionTemplate template) { return template.getMapper(OrderWriteReservationMapper.class); }
         @Bean ExternalActionCommandMapper externalActionCommandMapper(SqlSessionTemplate template) { return template.getMapper(ExternalActionCommandMapper.class); }
         @Bean PlatformTransactionManager transactionManager(DataSource source) { return new DataSourceTransactionManager(source); }
         @Bean AgentWorkflowRunStore workflowRuns(AgentWorkflowRunMapper mapper) { return new MybatisAgentWorkflowRunStore(mapper); }
@@ -347,6 +401,9 @@ class AgentWorkflowMySqlIT {
         }
         @Bean ExternalActionCommandStore commands(ExternalActionCommandMapper mapper) {
             return new MybatisExternalActionCommandStore(mapper);
+        }
+        @Bean OrderWriteReservationStore reservations(OrderWriteReservationMapper mapper) {
+            return new MybatisOrderWriteReservationStore(mapper);
         }
     }
 
@@ -410,6 +467,7 @@ class AgentWorkflowMySqlIT {
 
     private static void prepareV9Schema(DataSource source) throws SQLException {
         try (Connection connection = source.getConnection(); Statement statement = connection.createStatement()) {
+            statement.execute("DROP TABLE AGENT_ORDER_WRITE_RESERVATION");
             statement.execute("ALTER TABLE AGENT_CONTEXT_SNAPSHOT DROP INDEX IDX_AGENT_CONTEXT_SNAPSHOT_BASE");
             statement.execute("ALTER TABLE AGENT_CONTEXT_SNAPSHOT DROP COLUMN SUMMARY_MAX_OUTPUT_TOKENS, "
                     + "DROP COLUMN SUMMARY_PROMPT_VERSION, DROP COLUMN SOURCE_ESTIMATED_TOKENS, "
@@ -450,6 +508,7 @@ class AgentWorkflowMySqlIT {
         configuration.addMapper(AgentThreadMapper.class);
         configuration.addMapper(AgentWorkflowRunMapper.class);
         configuration.addMapper(AgentWorkflowCheckpointMapper.class);
+        configuration.addMapper(OrderWriteReservationMapper.class);
         configuration.addMapper(ExternalActionCommandMapper.class);
         return new MybatisSqlSessionFactoryBuilder().build(configuration);
     }

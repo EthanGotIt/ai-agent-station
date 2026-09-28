@@ -86,6 +86,9 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
     private final int maxAgentCycles;
     private final AgentQuestionCardStore questionCards;
     private final int toolResultMaxCharacters;
+    private final cn.ethan.core.agent.workflow.AgentWorkflowRunStore workflowRuns;
+    private final cn.ethan.core.agent.action.ExternalActionCommandStore actionCommands;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public SpringAiAgentTurnCoordinator(
             @Qualifier("agentChatClient") ChatClient chatClient,
@@ -136,7 +139,6 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
     }
 
     /** 生产装配边界：向 Workflow Tool 传递续跑上限并持久化 request_user_input QuestionCard。 */
-    @org.springframework.beans.factory.annotation.Autowired
     public SpringAiAgentTurnCoordinator(
             @Qualifier("agentChatClient") ChatClient chatClient,
             OrderGateway orders,
@@ -152,6 +154,30 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             @Value("${ai-agent.runtime.max-agent-cycles:3}") int maxAgentCycles,
             @Value("${ai-agent.thread.tool-result-max-characters:8000}") int toolResultMaxCharacters
     ) {
+        this(chatClient, orders, logistics, workflowEngine, items, events, clock, metrics,
+                itemJournal, itemPayloadCodec, questionCards, maxAgentCycles, toolResultMaxCharacters,
+                null, null);
+    }
+
+    /** 生产路径注入最新 Workflow/Command 事实，防止历史摘要覆盖执行状态。 */
+    @org.springframework.beans.factory.annotation.Autowired
+    public SpringAiAgentTurnCoordinator(
+            @Qualifier("agentChatClient") ChatClient chatClient,
+            OrderGateway orders,
+            LogisticsGateway logistics,
+            AgentWorkflowEngine workflowEngine,
+            AgentItemStore items,
+            AgentThreadEventGateway events,
+            Clock clock,
+            AgentRuntimeMetrics metrics,
+            AgentItemJournal itemJournal,
+            AgentItemPayloadCodec itemPayloadCodec,
+            AgentQuestionCardStore questionCards,
+            @Value("${ai-agent.runtime.max-agent-cycles:3}") int maxAgentCycles,
+            @Value("${ai-agent.thread.tool-result-max-characters:8000}") int toolResultMaxCharacters,
+            cn.ethan.core.agent.workflow.AgentWorkflowRunStore workflowRuns,
+            cn.ethan.core.agent.action.ExternalActionCommandStore actionCommands
+    ) {
         this.chatClient = chatClient;
         this.orders = orders;
         this.logistics = logistics;
@@ -165,6 +191,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
         this.maxAgentCycles = Math.max(1, Math.min(maxAgentCycles, 5));
         this.questionCards = questionCards;
         this.toolResultMaxCharacters = Math.max(256, toolResultMaxCharacters);
+        this.workflowRuns = workflowRuns;
+        this.actionCommands = actionCommands;
     }
 
     @Override
@@ -317,7 +345,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             }
             Flux<String> contentStream = chatClient.prompt()
                     .system(systemPrompt)
-                    .user(renderContext(context, turn))
+                    .user(renderContext(context, turn) + latestWorkflowFacts(thread))
                     .toolContext(Map.of(ControlledToolCallingAdvisor.TOOL_STATE_KEY, invocation))
                     .advisors(advisor -> advisor.param(
                             ControlledToolCallingAdvisor.TOOL_STATE_KEY, invocation))
@@ -458,6 +486,32 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             current = current.getCause();
         }
         return false;
+    }
+
+    String latestWorkflowFacts(AgentThreadModel thread) {
+        if (workflowRuns == null || actionCommands == null) return "";
+        StringBuilder facts = new StringBuilder("\n当前持久化订单事项（优先于历史摘要；命令受理不等于业务成功）：\n");
+        for (var run : workflowRuns.findRecent(thread.userId(), thread.threadId(), 5)) {
+            JsonNode state;
+            try {
+                state = objectMapper.readTree(run.stateJson());
+            } catch (RuntimeException invalidState) {
+                LOGGER.warn("Workflow 状态无法用于 Agent 事实投影，runId={}", run.runId());
+                continue;
+            }
+            String orderId = state.path("orderId").asString("").replaceAll("[\\r\\n]", "").strip();
+            if (orderId.isBlank()) continue;
+            String intent = state.path("intent").asString("").replaceAll("[\\r\\n]", "").strip();
+            var command = actionCommands.findByRunId(thread.userId(), run.runId()).orElse(null);
+            facts.append("订单 ").append(orderId).append("，事项 ").append(intent)
+                    .append("，Workflow ").append(run.status().name());
+            if (command != null) {
+                facts.append("，Command ").append(command.status().name())
+                        .append("，执行结果 ").append(command.outcome().name());
+            }
+            facts.append("。\n");
+        }
+        return facts.toString();
     }
 
     private String renderContext(AgentModelContext context, AgentTurnModel turn) {

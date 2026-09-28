@@ -10,5 +10,7 @@ public enum AgentWorkflowOrchestrationVersionEnum {
     LEGACY_V1,
     EXPEDITE_GRAPH_V1,
     EXPEDITE_GRAPH_V2,
-    EXPEDITE_JAVA_V1
+    EXPEDITE_JAVA_V1,
+    REFUND_JAVA_V1,
+    DELETE_JAVA_V1
 }

@@ -48,6 +48,13 @@
 - 验证：Java Workflow 5 项与版本路由 3 项定向测试通过；Core 100/100、Infrastructure 153/153、App 25/25 单测通过，HTTP 集成 9/9 通过。隔离 MySQL 8.4 Workflow acceptance 6/6 通过，覆盖编排版本往返、V9→V13 迁移、CAS、命令幂等和未知结果预算。
 - 完整门禁还包括 Python 27 项、规范检查、前端 typecheck/Vitest 77/build，均通过。未启用真实订单服务、未做浏览器黄金路径或部署回滚演练；这些分别归入 P7/P6，不视为 P3 代码验收的替代。
 
+### P4 退款、删除与运行时衔接（2026-09-28）
+
+- 实现：新增 `REFUND_JAVA_V1`、`DELETE_JAVA_V1` 及版本路由；退款原因补参、退款金额/币种与删除范围分别纳入授权指纹。三类 Java Workflow 均在批准时重新读取订单事实，并在事务内通过版本校验创建唯一 ExternalActionCommand。
+- 并发与恢复：新增 `AGENT_ORDER_WRITE_RESERVATION`，按用户/订单阻止未完成写事项跨 Thread 冲突；Worker 在成功核验后释放预留，取消、拒绝和核验失败路径也释放。已有 Java Run 按持久化版本恢复，不依赖部署时开关猜测。
+- 运行时：Workflow Tool 成功启动后沿用协调层批次截断；Worker 结果投影不创建 Java continuation。普通后续 Turn 注入最近 Workflow/Command 事实，明确“命令受理不等于业务成功”。
+- 验证：定向 18 项、Core 102/102、Infrastructure 164/164、App 25/25 单测通过；HTTP 集成 9/9、隔离 MySQL acceptance 13/13 通过；Maven `context-acceptance,workflow-acceptance verify` 成功。真实模型、浏览器和部署回滚仍待 P6/P7。
+
 | 原始阶段 | 当前结论 | 代码与验收对照 | 仍需推进 |
 | --- | --- | --- | --- |
 | 1. 运行时硬错误 | 已完成并验证 | ExternalActionCommand 的版本、Lease CAS、重试周期、事务收敛和幂等回放已有 Core/Infrastructure/MySQL 证据 | 无功能缺口 |

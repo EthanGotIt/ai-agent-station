@@ -21,7 +21,9 @@ updated: 2026-09-28
 - P3 验证：Java Workflow 5 项、版本路由 3 项测试通过；Core 100、Infrastructure 153、App 25 单测通过，HTTP 集成 9 项通过；隔离 MySQL Workflow acceptance 6 项通过，覆盖 Java 编排版本往返与并发 Checkpoint 批准。Python 27、前端 Vitest 77、typecheck/build、规范检查通过；`mvn -B -Pworkflow-acceptance '-DskipTests=false' verify` 成功。
 - 历史 Items、上下文、LangGraph V1/V2、Worker 和 Live driver 证据保留为历史实现证据。
 - P0—P3 已分别提交：P0 `5d3790f`、P1 `6ae842c`、P2 `f121afa`、P3 `39e908f`。P3 原先先行提交，随后补齐并验证 P0—P2；保留了此前未提交的 V2、Items 页面恢复及评测工作。
-- 阶段分支 `codex/java-workflow-p0-p3` 已推送，并以 [PR #10](https://github.com/EthanGotIt/ai-agent-station/pull/10) 提交至主力分支审查；尚未合并。
+- P0—P3 阶段分支已通过 [PR #10](https://github.com/EthanGotIt/ai-agent-station/pull/10) 合并到主力分支，合并提交为 `0a5cb00`；后续阶段直接在 `codex/commerce-guardian-agent` 上提交。
+- P4：退款与删除已接入 `REFUND_JAVA_V1`/`DELETE_JAVA_V1`，共享确定性授权、事实复核、CAS 命令创建和 Worker 结果投影；新增订单写预留防止同一用户跨 Thread 产生冲突写命令；后续 Turn 注入最新 Workflow/Command 事实。
+- P4 验证：定向 18 项、Core 102 项、Infrastructure 164 项、App 25 项单测通过；HTTP 集成 9 项、隔离 MySQL acceptance 13 项通过；Maven `context-acceptance,workflow-acceptance verify` 成功。
 - 当前提交快照完整验收：规范检查、Python 19 项、前端 typecheck/Vitest 76 项/build 通过；Maven reactor Core 96、Infrastructure 133、App 22 单测及 HTTP 9、MySQL 12 项集成测试通过。
 
 ## Decisions
@@ -34,7 +36,7 @@ updated: 2026-09-28
 
 ## TODO
 
-- 执行 P4：按现有退款/删除规则分别迁移到 Java Workflow，并在协调层完成成功启动后的工具批次截断与同一订单冲突写入保护。
+- 执行 P5：盘点并排空旧 LangGraph Run 与 continuation，确认旧事项归零后移除 LangGraph4j 生产执行路径。
 - P5 排空后移除 LangGraph4j；P6 完成真实模型长对话质量评测；P7 完成三类流程隔离端到端、浏览器及部署回滚演练。
 
 ## Blocked
@@ -43,11 +45,11 @@ P2 已验证完成。订单服务未提供独立的按幂等键查询 API；本�
 
 ## Next action
 
-检查现有退款与删除资格规则、授权内容和命令契约，制定 P4 的分项迁移顺序；保持三类业务策略独立，复用 P3 的 Java Workflow、授权 CAS 和幂等 Command 边界。
+盘点未完成的 Legacy/Graph Run、开放交互、未结算命令和 continuation，形成 P5 排空清单；在关闭旧准入前保留按持久化版本恢复的兼容路径。
 
 ## Validation
 
-P0—P3 自动化和隔离验收通过项见 [实施追踪](../docs/implementation-traceability.md) 与阶段执行卡。真实订单平台、浏览器、真实模型和发布回滚验收尚未执行；这些仍分别由 P6/P7 覆盖。
+P0—P4 自动化和隔离验收通过项见 [实施追踪](../docs/implementation-traceability.md) 与阶段执行卡。真实订单平台、浏览器、真实模型和发布回滚验收尚未执行；这些仍分别由 P6/P7 覆盖。
 
 ## Preserve
 

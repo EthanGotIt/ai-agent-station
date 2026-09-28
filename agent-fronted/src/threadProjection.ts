@@ -741,6 +741,7 @@ function buildActivities(items: AgentItem[]): BusinessProgress[] {
             : step.status === "WAITING" ? "WAITING" : "ACTIVE";
         const labels: Record<string, string> = {
           RESOLVE_ORDER: "已找到目标订单",
+          RESOLVE_REASON: "等待补充退款原因",
           VERIFY_FACTS: "已核验订单与物流事实",
           SWITCH_REQUIREMENTS: "已确认处理方式",
           AUTHORIZE: "等待确认订单操作",

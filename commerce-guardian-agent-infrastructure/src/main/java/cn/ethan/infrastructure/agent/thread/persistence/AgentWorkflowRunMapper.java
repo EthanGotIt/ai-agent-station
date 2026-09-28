@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Select;
 
+import java.util.List;
+
 /**
  * 类型职责：访问 WorkflowRun 持久化记录。
  *
@@ -22,4 +24,8 @@ public interface AgentWorkflowRunMapper extends BaseMapper<AgentWorkflowRunEntit
     @Select("SELECT * FROM AGENT_WORKFLOW_RUN WHERE USER_ID = #{userId} "
             + "AND TURN_ID = #{turnId} AND WORKFLOW_TYPE = #{workflowType} LIMIT 1")
     AgentWorkflowRunEntity selectBySource(String userId, String turnId, String workflowType);
+
+    @Select("SELECT * FROM AGENT_WORKFLOW_RUN WHERE USER_ID = #{userId} AND THREAD_ID = #{threadId} "
+            + "ORDER BY UPDATED_AT DESC, RUN_ID DESC LIMIT #{limit}")
+    List<AgentWorkflowRunEntity> selectRecent(String userId, String threadId, int limit);
 }

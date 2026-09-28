@@ -1,6 +1,7 @@
 package cn.ethan.core.agent.workflow;
 
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -28,6 +29,11 @@ public interface AgentWorkflowRunStore {
             String userId, String turnId, AgentWorkflowTypeEnum workflowType
     ) {
         return Optional.empty();
+    }
+
+    /** 为新 Agent Turn 注入最近的持久化业务状态；不依赖压缩摘要的时效。 */
+    default List<AgentWorkflowRunModel> findRecent(String userId, String threadId, int limit) {
+        return List.of();
     }
 
     void update(AgentWorkflowRunModel run);

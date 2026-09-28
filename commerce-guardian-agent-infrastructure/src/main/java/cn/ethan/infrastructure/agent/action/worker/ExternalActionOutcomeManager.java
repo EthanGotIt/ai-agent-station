@@ -17,6 +17,7 @@ import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowOrchestrationVersionEnum;
+import cn.ethan.core.agent.workflow.OrderWriteReservationStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import cn.ethan.core.agent.coordination.AgentContinuationGateway;
 import cn.ethan.core.agent.execution.AgentTurnItemPayloads;
@@ -57,6 +58,7 @@ public final class ExternalActionOutcomeManager {
     private final TransactionTemplate transactionTemplate;
     private final AgentContinuationGateway continuationGateway;
     private final AgentRuntimeMetrics metrics;
+    private final OrderWriteReservationStore reservations;
 
     /** Worker 是否应由本地 Journal 负责本次投影的提交后事件。 */
     public boolean eventsHandledByJournal() {
@@ -74,13 +76,14 @@ public final class ExternalActionOutcomeManager {
             AgentItemPayloadCodec itemPayloadCodec,
             PlatformTransactionManager transactionManager,
             AgentContinuationGateway continuationGateway,
-            AgentRuntimeMetrics metrics
+            AgentRuntimeMetrics metrics,
+            OrderWriteReservationStore reservations
     ) {
         this(commands, items, turns, workflowRuns, objectMapper,
                 itemJournal,
                 itemPayloadCodec,
                 transactionManager == null ? null : new TransactionTemplate(transactionManager),
-                continuationGateway, metrics);
+                continuationGateway, metrics, reservations);
     }
 
     /**
@@ -94,7 +97,7 @@ public final class ExternalActionOutcomeManager {
             ObjectMapper objectMapper
     ) {
         this(commands, items, turns, workflowRuns, objectMapper, null, null, (TransactionTemplate) null,
-                null, null);
+                null, null, null);
     }
 
     /** 保留既有事务测试和非 Spring 调用边界；续跑由生产装配显式开启。 */
@@ -110,7 +113,7 @@ public final class ExternalActionOutcomeManager {
                 null,
                 null,
                 transactionManager == null ? null : new TransactionTemplate(transactionManager),
-                null, null);
+                null, null, null);
     }
 
     private ExternalActionOutcomeManager(
@@ -123,7 +126,8 @@ public final class ExternalActionOutcomeManager {
             AgentItemPayloadCodec itemPayloadCodec,
             TransactionTemplate transactionTemplate,
             AgentContinuationGateway continuationGateway,
-            AgentRuntimeMetrics metrics
+            AgentRuntimeMetrics metrics,
+            OrderWriteReservationStore reservations
     ) {
         this.commands = commands;
         this.items = items;
@@ -135,6 +139,7 @@ public final class ExternalActionOutcomeManager {
         this.transactionTemplate = transactionTemplate;
         this.continuationGateway = continuationGateway;
         this.metrics = metrics == null ? AgentRuntimeMetrics.noop() : metrics;
+        this.reservations = reservations;
     }
 
     /**
@@ -220,8 +225,7 @@ public final class ExternalActionOutcomeManager {
             projectedItems.add(appendTurnState(projectedTurn, now));
         }
         boolean continuationAdmitted = false;
-        if (continuationGateway != null
-                && run.orchestrationVersion() != AgentWorkflowOrchestrationVersionEnum.EXPEDITE_JAVA_V1) {
+        if (continuationGateway != null && !javaRun(run.orchestrationVersion())) {
             var admission = continuationGateway.admit(next, statusItem);
             projectedItems.addAll(admission.items());
             continuationAdmitted = admission.newlyAdmitted();
@@ -231,6 +235,11 @@ public final class ExternalActionOutcomeManager {
             projectedItems.add(appendWorkflowStep(next, "HANDOFF_AGENT", "COMPLETED",
                     verified ? "VERIFIED" : "PENDING_VERIFICATION",
                     verified ? null : resultCode, 0L, now));
+        }
+        if (reservations != null && next.status() == ExternalActionStatusEnum.SUCCEEDED
+                && verification != null && verification.verified()) {
+            String orderId = orderId(next.payloadJson());
+            if (orderId != null) reservations.release(next.userId(), orderId, next.runId());
         }
         return new Projection(next, projectedTurn, projectedItems);
     }
@@ -478,7 +487,7 @@ public final class ExternalActionOutcomeManager {
             Verification verification,
             AgentWorkflowOrchestrationVersionEnum orchestrationVersion
     ) {
-        boolean javaRun = orchestrationVersion == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_JAVA_V1;
+        boolean javaRun = javaRun(orchestrationVersion);
         String executionNode = orchestrationVersion == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V2 || javaRun
                 ? "HANDOFF_WORKER" : "EXECUTE_ACTION";
         if (status == ExternalActionStatusEnum.RETRY_WAIT) {
@@ -509,6 +518,12 @@ public final class ExternalActionOutcomeManager {
                     orchestrationVersion);
         }
         return OrderWorkflowStepProjection.snapshot(objectMapper, executionNode, "ACTIVE", orchestrationVersion);
+    }
+
+    private boolean javaRun(AgentWorkflowOrchestrationVersionEnum version) {
+        return version == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_JAVA_V1
+                || version == AgentWorkflowOrchestrationVersionEnum.REFUND_JAVA_V1
+                || version == AgentWorkflowOrchestrationVersionEnum.DELETE_JAVA_V1;
     }
 
     private static AgentWorkflowStatusEnum workflowStatus(ExternalActionStatusEnum status) {

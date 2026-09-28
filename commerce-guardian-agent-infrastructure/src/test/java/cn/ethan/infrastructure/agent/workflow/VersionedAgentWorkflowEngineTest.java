@@ -78,6 +78,30 @@ class VersionedAgentWorkflowEngineTest {
         assertEquals(0, java.starts);
     }
 
+    @Test
+    void routesRefundAndDeleteAliasesToJavaAndResumesByPersistedVersion() {
+        RecordingEngine legacy = new RecordingEngine("legacy");
+        RecordingEngine expedite = new RecordingEngine("expedite");
+        RecordingEngine write = new RecordingEngine("write");
+        RunStore runs = new RunStore();
+        VersionedAgentWorkflowEngine engine = new VersionedAgentWorkflowEngine(
+                legacy, expedite, write, runs, "JAVA", false, "JAVA", "JAVA");
+
+        assertEquals("write", engine.start(thread(), turn("turn-1"), "ORDER_SERVICE",
+                Map.of("intent", "退款")).runId());
+        assertEquals("write", engine.start(thread(), turn("turn-2"), "ORDER_SERVICE",
+                Map.of("intent", "删除订单")).runId());
+        assertEquals(2, write.starts);
+        assertEquals(0, legacy.starts);
+        runs.current = run(AgentWorkflowOrchestrationVersionEnum.DELETE_JAVA_V1);
+        AgentWorkflowDecisionInput input = new AgentWorkflowDecisionInput("run-1", "checkpoint-1", 0,
+                AgentWorkflowDecisionEnum.REJECT, "fingerprint");
+        AgentTurnModel decisionTurn = new AgentTurnModel("turn-3", "thread-1", "user-1", "request-3", "reject",
+                AgentTurnStatusEnum.ACTIVE, 0, "run-1", null, NOW, NOW, null,
+                null, 0, AgentTurnInputKindEnum.WORKFLOW_DECISION, null, null, input);
+        assertEquals("write", engine.resume(thread(), decisionTurn, Map.of()).message());
+    }
+
     private static AgentThreadModel thread() {
         return new AgentThreadModel("thread-1", "user-1", "订单", AgentThreadStatusEnum.ACTIVE,
                 "ORDER", "ORDER-1", 0, NOW, NOW);

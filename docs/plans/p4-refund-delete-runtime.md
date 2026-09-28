@@ -17,3 +17,11 @@ P3 催发货隔离验收通过。先整理退款/删除现有资格规则、授�
 ## 验收、回滚、交接
 
 三类写操作补参、授权、拒绝、并发、恢复、幂等和业务状态覆盖测试；同批后续工具不执行；后续对话读取最新状态；未知结果不误报。按动作关闭新路由，已有 Java Run 仍可恢复。通过后转 P5。
+
+## P4 完成证据（2026-09-28）
+
+- `REFUND_JAVA_V1` 与 `DELETE_JAVA_V1` 已由版本路由选择，恢复按持久化编排版本执行；退款原因补参、授权事实指纹、删除范围和资格判断分别由独立策略表达。
+- `AGENT_ORDER_WRITE_RESERVATION` 以用户和订单为唯一键，在 WorkflowRun 创建时预留，Worker 核验成功或用户取消/拒绝时释放；重复批准通过 Checkpoint 版本校验和 Command 幂等键收口。
+- 协调层在 Workflow Tool 成功启动后截断当前工具批次；Worker 不占用原 Agent Turn，后续 Turn 读取最近 Workflow/Command 状态并明确区分命令受理与业务成功。
+- 验证通过：定向 P4 测试 18 项；Maven Core 102、Infrastructure 164、App 25 单测；HTTP 集成 9 项；隔离 MySQL acceptance 13 项；`mvn -B "-Pcontext-acceptance,workflow-acceptance" "-DskipTests=false" verify` 成功。
+- 回滚边界：关闭退款/删除新 Run 路由即可停止新准入；已有 Java Run 仍按版本恢复。V14 采用增量迁移，历史 Run、Item、Command 和旧快照保留。

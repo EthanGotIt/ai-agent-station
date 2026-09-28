@@ -54,6 +54,12 @@ public class MybatisAgentWorkflowRunStore implements AgentWorkflowRunStore {
     }
 
     @Override
+    public List<AgentWorkflowRunModel> findRecent(String userId, String threadId, int limit) {
+        if (userId == null || threadId == null || limit < 1) return List.of();
+        return mapper.selectRecent(userId, threadId, Math.min(limit, 5)).stream().map(this::toModel).toList();
+    }
+
+    @Override
     public void update(AgentWorkflowRunModel run) {
         long previousVersion = Math.max(0, run.version() - 1);
         int updated = mapper.update(toEntity(run), new UpdateWrapper<AgentWorkflowRunEntity>()
