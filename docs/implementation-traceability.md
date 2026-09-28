@@ -286,6 +286,6 @@
 
 ## P7 隔离交付验收追踪（2026-09-28）
 
-P7 已完成一轮可复现的隔离启动和 HTTP/数据库门禁，但保持 active，不替代 P6 Live 或发布回滚门槛。最终 Jar 在一次性 MySQL schema `CGA_P7_DD3737D06C15407B`（Flyway v14）启动，独立订单夹具在 18080 启动；`python -m scripts.acceptance` 覆盖 Thread/Item 恢复、交互唯一性、Turn 幂等、物流、退款幂等、催发货临时失败重试和删除幂等并通过。干净快照 `mvn clean test` 为 Core 98、Infrastructure 109、App 22，profiles 为 HTTP 9、MySQL 13；前端 typecheck、Vitest 77、build 通过，浏览器默认桌面连接和服务不可用时的重连提示已复核。
+P7 已完成一轮可复现的隔离启动和 HTTP/数据库门禁，但保持 active，不替代 P6 Live 或发布回滚门槛。最终 Jar 在一次性 MySQL schema `CGA_P7_DD3737D06C15407B`（Flyway v14）启动，独立订单夹具在 18080 启动；`python -m scripts.acceptance` 覆盖 Thread/Item 恢复、交互唯一性、Turn 幂等、物流、退款幂等、催发货临时失败重试和删除幂等并通过。干净快照 `mvn clean test` 为 Core 98、Infrastructure 109、App 22，profiles 为 HTTP 9、MySQL 13；MySQL acceptance 内含 601 条 Items 固定水位分页、异常游标收口、跨会话恢复和并发 CAS，App/前端自动化测试覆盖 SSE 回放去重和重连；前端 typecheck、Vitest 77、build 通过，浏览器默认桌面连接和服务不可用时的重连提示已复核。
 
-未闭合：两套真实模型各 54 条 Live 评测、兼容版本→最终版本→兼容版本回滚、601 条 Items/异常游标、SSE 断线、窄屏/移动端专项和目标环境旧 Run/continuation 只读盘点。上述证据不表示真实生产订单平台或生产部署已验收。
+未闭合：两套真实模型各 54 条 Live 评测、兼容版本→最终版本→兼容版本回滚、真实浏览器 SSE 断线、窄屏/移动端专项和目标环境旧 Run/continuation 只读盘点。上述证据不表示真实生产订单平台或生产部署已验收。

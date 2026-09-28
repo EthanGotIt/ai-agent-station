@@ -45,7 +45,7 @@ updated: 2026-09-28
 
 - 用目标环境只读账号执行 `scripts/maintenance/workflow-inventory.sql`，保存 P5 排空报告并确认旧 Worker/服务/队列退出。
 - 在提供两套既定模型凭据后，按每套 54 条记录运行 P6 Live，保存脱敏摘要并完成模型选择。
-- 补做 P7 的兼容版本回滚、601 条 Items/游标、SSE 断线、窄屏/移动浏览器专项，并把证据写回执行卡。
+- 补做 P7 的兼容版本回滚、真实浏览器 SSE 断线、窄屏/移动浏览器专项，并把证据写回执行卡；601 条 Items/游标已有 MySQL acceptance 覆盖。
 
 ## Blocked
 
@@ -57,7 +57,7 @@ P2 已验证完成。订单服务未提供独立的按幂等键查询 API；本�
 
 ## Validation
 
-P0—P5 的代码与隔离验收通过项、P6 评测工具和离线验证，以及本次 P7 隔离证据见 [实施追踪](../docs/implementation-traceability.md) 与阶段执行卡。真实目标库 P5 盘点、真实模型、兼容版本回滚、601 条 Items/SSE 和响应式浏览器专项尚未执行；这些仍是 P5—P7 的剩余门槛。
+P0—P5 的代码与隔离验收通过项、P6 评测工具和离线验证，以及本次 P7 隔离证据见 [实施追踪](../docs/implementation-traceability.md) 与阶段执行卡。真实目标库 P5 盘点、真实模型、兼容版本回滚、真实浏览器 SSE 和响应式浏览器专项尚未执行；601 条 Items/游标与自动化 SSE 回放已有隔离测试证据。
 
 ## Preserve
 
