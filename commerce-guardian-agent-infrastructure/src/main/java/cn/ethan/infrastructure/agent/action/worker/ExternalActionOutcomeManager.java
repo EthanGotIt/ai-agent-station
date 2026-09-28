@@ -193,17 +193,13 @@ public final class ExternalActionOutcomeManager {
         List<AgentItemModel> projectedItems = new ArrayList<>();
         AgentItemModel statusItem = appendStatus(next, resultCode, resultMessage, now, verification);
         projectedItems.add(statusItem);
-        if (javaWorkflow) {
-            projectedItems.add(appendWorkflowResult(next, workflowResultStatus(next, verification),
-                    workflowResultMessage(next, resultCode, resultMessage, verification), now));
-        }
-        if (continuationGateway != null && !javaWorkflow) {
-            projectedItems.add(appendWorkflowStep(next, "VERIFY_OUTCOME",
-                    verification == null ? "WAITING" : verification.verified() ? "COMPLETED" : "ERROR",
-                    verification == null ? "UNAVAILABLE" : verification.verified() ? "VERIFIED" : "UNVERIFIED",
-                    verification == null ? resultCode : verification.verified() ? null : resultCode,
-                    0L, now));
-        }
+        projectedItems.add(appendWorkflowStep(next, "VERIFY_OUTCOME",
+                verification == null ? "WAITING" : verification.verified() ? "COMPLETED" : "ERROR",
+                verification == null ? "UNAVAILABLE" : verification.verified() ? "VERIFIED" : "UNVERIFIED",
+                verification == null ? resultCode : verification.verified() ? null : resultCode,
+                0L, now));
+        projectedItems.add(appendWorkflowResult(next, workflowResultStatus(next, verification),
+                workflowResultMessage(next, resultCode, resultMessage, verification), now));
         if (verification != null && verification.order() != null) {
             projectedItems.add(appendOrderDetail(next, verification.order(), now));
             if (verification.logistics() != null) {
@@ -215,16 +211,17 @@ public final class ExternalActionOutcomeManager {
         if (projectedTurn != null) {
             projectedItems.add(appendTurnState(projectedTurn, now));
         }
+        boolean continuationAdmitted = false;
         if (continuationGateway != null && !javaWorkflow) {
-            boolean verified = verification != null && verification.verified();
-            projectedItems.add(appendWorkflowStep(next, "HANDOFF_AGENT",
-                    verified ? "COMPLETED" : "WAITING",
-                    verified ? "VERIFIED" : next.status() == ExternalActionStatusEnum.SUCCEEDED
-                            ? "PENDING_VERIFICATION" : next.status().name(),
-                    verified ? null : resultCode, 0L, now));
+            var admission = continuationGateway.admit(next, statusItem);
+            projectedItems.addAll(admission.items());
+            continuationAdmitted = admission.newlyAdmitted();
         }
-        if (continuationGateway != null && !javaWorkflow) {
-            projectedItems.addAll(continuationGateway.admit(next, statusItem).items());
+        if (continuationAdmitted) {
+            boolean verified = verification != null && verification.verified();
+            projectedItems.add(appendWorkflowStep(next, "HANDOFF_AGENT", "COMPLETED",
+                    verified ? "VERIFIED" : "PENDING_VERIFICATION",
+                    verified ? null : resultCode, 0L, now));
         }
         return new Projection(next, projectedTurn, projectedItems);
     }
