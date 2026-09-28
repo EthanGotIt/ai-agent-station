@@ -368,7 +368,8 @@ function recordValue(value: unknown): Record<string, unknown> | null {
 }
 
 function isExternalActionStatus(value: unknown): value is ExternalActionStatus {
-  return typeof value === "string" && ["PENDING", "PROCESSING", "RETRY_WAIT", "MANUAL_RETRY_REQUIRED", "SUCCEEDED"].includes(value);
+  return typeof value === "string" && ["PENDING", "PROCESSING", "RETRY_WAIT", "VERIFY_WAIT",
+    "MANUAL_RETRY_REQUIRED", "MANUAL_VERIFICATION_REQUIRED", "SUCCEEDED"].includes(value);
 }
 
 function parseExternalAction(payload: AgentItemPayload): { runId: string | null; status: ExternalActionStatus; receipt: ExternalActionReceipt } | null {
@@ -389,13 +390,16 @@ function parseExternalAction(payload: AgentItemPayload): { runId: string | null;
       nextAttemptAt: stringValue(data?.nextAttemptAt) ?? undefined,
       verificationStatus: stringValue(data?.verificationStatus) ?? undefined,
       verificationMessage: stringValue(data?.verificationMessage) ?? undefined,
-      verifiedAt: stringValue(data?.verifiedAt) ?? undefined
+      verifiedAt: stringValue(data?.verifiedAt) ?? undefined,
+      outcomeStatus: stringValue(data?.outcomeStatus) as ExternalActionReceipt["outcomeStatus"],
+      verificationAttemptCount: numberValue(data?.verificationAttemptCount) ?? undefined,
+      maxVerificationAttempts: numberValue(data?.maxVerificationAttempts) ?? undefined
     }
   };
 }
 
 function turnStatusForExternalAction(status: ExternalActionStatus): AgentTurnStatus | null {
-  if (status === "RETRY_WAIT") return "WAITING_EXTERNAL_ACTION";
+  if (status === "RETRY_WAIT" || status === "VERIFY_WAIT" || status === "MANUAL_VERIFICATION_REQUIRED") return "WAITING_EXTERNAL_ACTION";
   if (status === "MANUAL_RETRY_REQUIRED") return "FAILED";
   if (status === "SUCCEEDED") return "COMPLETED";
   return null;
@@ -427,6 +431,8 @@ function workflowResultTurnStatus(value: unknown): AgentTurnStatus {
       return "WAITING_USER_INPUT";
     case "WAITING_EXTERNAL_ACTION":
     case "APPROVED":
+    case "WAITING_OUTCOME_VERIFICATION":
+    case "MANUAL_VERIFICATION_REQUIRED":
       return "WAITING_EXTERNAL_ACTION";
     case "CANCELLED":
     case "REJECTED":
@@ -717,11 +723,15 @@ function buildActivities(items: AgentItem[]): BusinessProgress[] {
           PENDING: ["订单操作已受理", "等待执行"],
           PROCESSING: ["订单操作正在提交", null],
           RETRY_WAIT: ["外部订单系统暂未完成", "将自动重试"],
+          VERIFY_WAIT: ["订单操作结果待核实", "系统将使用原幂等键进行核验"],
           MANUAL_RETRY_REQUIRED: ["订单操作未完成", "需要人工重试"],
+          MANUAL_VERIFICATION_REQUIRED: ["订单操作结果待核实", "自动核验已用尽，可使用原幂等键重试核验"],
           SUCCEEDED: ["订单操作已完成", null]
         } as Record<string, [string, string | null]>;
         const [label, detail] = entry[status] ?? ["正在处理订单操作", null];
-        return { id: `${item.itemId}-action`, label, detail, status: status === "SUCCEEDED" ? "DONE" : status === "MANUAL_RETRY_REQUIRED" ? "ERROR" : "ACTIVE", sequence: item.sequence };
+        return { id: `${item.itemId}-action`, label, detail, status: status === "SUCCEEDED" ? "DONE"
+          : status === "MANUAL_RETRY_REQUIRED" ? "ERROR"
+            : status === "MANUAL_VERIFICATION_REQUIRED" ? "WAITING" : "ACTIVE", sequence: item.sequence };
       }
       if (item.type === "WORKFLOW_STEP") {
         const step = parseWorkflowStep(item);
@@ -736,7 +746,11 @@ function buildActivities(items: AgentItem[]): BusinessProgress[] {
           AUTHORIZE: "等待确认订单操作",
           EXECUTE_ACTION: "正在执行订单操作",
           VERIFY_OUTCOME: "正在核验操作结果",
-          HANDOFF_AGENT: "正在整理处理结果"
+          HANDOFF_AGENT: "正在整理处理结果",
+          PREPARE_CONFIRMATION: "正在准备执行确认",
+          REVERIFY_FACTS: "正在重新核验订单事实",
+          BUILD_ACTION_COMMAND: "正在生成外部动作命令",
+          HANDOFF_WORKER: "已交给外部动作 Worker"
         };
         return { id: `${item.itemId}-workflow-step`, label: labels[step.node] ?? step.node,
           detail: step.branch ?? step.code ?? null, status, sequence: item.sequence };

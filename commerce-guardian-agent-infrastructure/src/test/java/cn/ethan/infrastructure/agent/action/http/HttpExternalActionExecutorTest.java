@@ -43,7 +43,7 @@ class HttpExternalActionExecutorTest {
 
         assertTrue(first.success());
         assertEquals("key-1", actions.keys.get(ExternalActionTypeEnum.REFUND));
-        assertEquals("IDEMPOTENT_REPLAY", replay.code());
+        assertEquals("OK", replay.code());
         assertEquals(1, results.values.size());
     }
 
@@ -58,6 +58,22 @@ class HttpExternalActionExecutorTest {
 
         assertEquals("ACTION_PAYLOAD_INVALID", result.code());
         assertTrue(actions.keys.isEmpty());
+    }
+
+    @Test
+    void propagatesUnknownRemoteOutcomeWithoutWritingSuccessReceipt() {
+        InMemoryResults results = new InMemoryResults();
+        OrderActionGateway actions = (userId, orderId, reason, key, now) ->
+                OrderActionGateway.OrderActionResult.unknown("REMOTE_TIMEOUT", "响应丢失");
+        ExternalActionExecutor executor = new HttpExternalActionExecutor(
+                results, actions, Clock.fixed(NOW, ZoneOffset.UTC), new ObjectMapper());
+
+        var result = executor.execute(command(ExternalActionTypeEnum.REFUND, "key-unknown",
+                "{\"orderId\":\"ORDER-001\",\"reason\":\"商品不符\"}"));
+
+        assertEquals(cn.ethan.core.agent.action.ExternalActionOutcomeEnum.UNKNOWN, result.outcome());
+        assertTrue(result.retryable());
+        assertTrue(results.values.isEmpty());
     }
 
     private static ExternalActionCommandModel command(

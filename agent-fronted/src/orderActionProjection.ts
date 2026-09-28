@@ -56,7 +56,8 @@ function numberValue(value: unknown): number | undefined {
 }
 
 function externalStatus(value: unknown): value is ExternalActionStatus {
-  return typeof value === "string" && ["PENDING", "PROCESSING", "RETRY_WAIT", "MANUAL_RETRY_REQUIRED", "SUCCEEDED"].includes(value);
+  return typeof value === "string" && ["PENDING", "PROCESSING", "RETRY_WAIT", "VERIFY_WAIT",
+    "MANUAL_RETRY_REQUIRED", "MANUAL_VERIFICATION_REQUIRED", "SUCCEEDED"].includes(value);
 }
 
 function externalReceipt(data: Record<string, unknown>): ExternalActionReceipt {
@@ -71,7 +72,10 @@ function externalReceipt(data: Record<string, unknown>): ExternalActionReceipt {
     nextAttemptAt: stringValue(data.nextAttemptAt),
     verificationStatus: stringValue(data.verificationStatus),
     verificationMessage: stringValue(data.verificationMessage),
-    verifiedAt: stringValue(data.verifiedAt)
+    verifiedAt: stringValue(data.verifiedAt),
+    outcomeStatus: stringValue(data.outcomeStatus) as ExternalActionReceipt["outcomeStatus"],
+    verificationAttemptCount: numberValue(data.verificationAttemptCount),
+    maxVerificationAttempts: numberValue(data.maxVerificationAttempts)
   };
 }
 
@@ -88,7 +92,8 @@ export function findOrderAction(turn: ThreadViewTurn, orderId?: string): OrderAc
     return { sourceTurnId, orderId: actionOrderId, actionType, turnId: item.turnId ?? turn.turnId };
   }
   // 历史 Workflow 可能只有 EXTERNAL_ACTION_STATUS，没有 ORDER_ACTION_REQUEST；保留其人工重试入口。
-  if (turn.externalActionStatus === "MANUAL_RETRY_REQUIRED" && turn.workflowRunId) {
+  if ((turn.externalActionStatus === "MANUAL_RETRY_REQUIRED"
+    || turn.externalActionStatus === "MANUAL_VERIFICATION_REQUIRED") && turn.workflowRunId) {
     const receiptOrderId = turn.externalActionReceipt?.orderId;
     if (!orderId || !receiptOrderId || receiptOrderId === orderId) {
       return {
@@ -122,6 +127,7 @@ function stateFromWorkflowResult(status: unknown): OrderActionViewState {
   }
   if (["WAITING_USER_INPUT", "FACTS_CHANGED"].includes(String(status))) return "waiting";
   if (["WAITING_EXTERNAL_ACTION", "APPROVED"].includes(String(status))) return "active";
+  if (["WAITING_OUTCOME_VERIFICATION", "MANUAL_VERIFICATION_REQUIRED"].includes(String(status))) return "waiting";
   return "done";
 }
 
@@ -157,9 +163,11 @@ export function projectOrderAction(turn: ThreadViewTurn, request: OrderActionReq
       runId = stringValue(data?.runId) ?? runId;
     } else if (item.type === "EXTERNAL_ACTION_STATUS" && data && externalStatus(data.status)) {
       externalActionStatus = data.status;
-      state = data.status === "SUCCEEDED" ? "done" : data.status === "MANUAL_RETRY_REQUIRED" ? "error" : "active";
+      state = data.status === "SUCCEEDED" ? "done"
+        : data.status === "MANUAL_RETRY_REQUIRED" ? "error"
+          : data.status === "MANUAL_VERIFICATION_REQUIRED" ? "waiting" : "active";
       workflowResultState = data.status === "SUCCEEDED" ? "done" : workflowResultState;
-      retryable = data.status === "MANUAL_RETRY_REQUIRED";
+      retryable = data.status === "MANUAL_RETRY_REQUIRED" || data.status === "MANUAL_VERIFICATION_REQUIRED";
       runId = stringValue(data.runId) ?? runId;
       receipt = { ...(receipt ?? {}), ...externalReceipt(data) };
       if (request.actionType === "DELETE_ORDER"
@@ -178,7 +186,8 @@ export function projectOrderAction(turn: ThreadViewTurn, request: OrderActionReq
   // WORKFLOW_RESULT=APPROVED 的完成态都不能覆盖已经提交的外部结果。
   if (externalActionStatus) {
     state = externalActionStatus === "SUCCEEDED" ? "done"
-      : externalActionStatus === "MANUAL_RETRY_REQUIRED" ? "error" : "active";
+      : externalActionStatus === "MANUAL_RETRY_REQUIRED" ? "error"
+        : externalActionStatus === "MANUAL_VERIFICATION_REQUIRED" ? "waiting" : "active";
   } else if (workflowResultState) {
     state = workflowResultState;
   }

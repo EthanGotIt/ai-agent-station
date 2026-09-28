@@ -1,6 +1,7 @@
 package cn.ethan.infrastructure.agent.action.persistence;
 
 import cn.ethan.core.agent.action.ExternalActionStatusEnum;
+import cn.ethan.core.agent.action.ExternalActionOutcomeEnum;
 import cn.ethan.core.agent.action.ExternalActionTypeEnum;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
@@ -36,6 +37,8 @@ public final class ExternalActionCommandEntity {
     private String payloadJson;
     @TableField("STATUS")
     private ExternalActionStatusEnum status;
+    @TableField("OUTCOME_STATUS")
+    private ExternalActionOutcomeEnum outcome;
     @TableField("VERSION_NO")
     private Long versionNo;
     @TableField("ATTEMPT_COUNT")
@@ -44,6 +47,10 @@ public final class ExternalActionCommandEntity {
     private Integer maxAttempts;
     @TableField("RETRY_CYCLE_ATTEMPT_COUNT")
     private Integer retryCycleAttemptCount;
+    @TableField("VERIFICATION_ATTEMPT_COUNT")
+    private Integer verificationAttemptCount;
+    @TableField("MAX_VERIFICATION_ATTEMPTS")
+    private Integer maxVerificationAttempts;
     @TableField("NEXT_ATTEMPT_AT")
     private Instant nextAttemptAt;
     @TableField("LEASE_OWNER")
@@ -82,6 +89,8 @@ public final class ExternalActionCommandEntity {
     public void setPayloadJson(String payloadJson) { this.payloadJson = payloadJson; }
     public ExternalActionStatusEnum getStatus() { return status; }
     public void setStatus(ExternalActionStatusEnum status) { this.status = status; }
+    public ExternalActionOutcomeEnum getOutcome() { return outcome; }
+    public void setOutcome(ExternalActionOutcomeEnum outcome) { this.outcome = outcome; }
     public Long getVersionNo() { return versionNo; }
     public void setVersionNo(Long versionNo) { this.versionNo = versionNo; }
     public Integer getAttemptCount() { return attemptCount; }
@@ -90,6 +99,10 @@ public final class ExternalActionCommandEntity {
     public void setMaxAttempts(Integer maxAttempts) { this.maxAttempts = maxAttempts; }
     public Integer getRetryCycleAttemptCount() { return retryCycleAttemptCount; }
     public void setRetryCycleAttemptCount(Integer retryCycleAttemptCount) { this.retryCycleAttemptCount = retryCycleAttemptCount; }
+    public Integer getVerificationAttemptCount() { return verificationAttemptCount; }
+    public void setVerificationAttemptCount(Integer verificationAttemptCount) { this.verificationAttemptCount = verificationAttemptCount; }
+    public Integer getMaxVerificationAttempts() { return maxVerificationAttempts; }
+    public void setMaxVerificationAttempts(Integer maxVerificationAttempts) { this.maxVerificationAttempts = maxVerificationAttempts; }
     public Instant getNextAttemptAt() { return nextAttemptAt; }
     public void setNextAttemptAt(Instant nextAttemptAt) { this.nextAttemptAt = nextAttemptAt; }
     public String getLeaseOwner() { return leaseOwner; }

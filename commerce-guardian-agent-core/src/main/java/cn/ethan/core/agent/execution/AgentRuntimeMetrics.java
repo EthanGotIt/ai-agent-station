@@ -40,6 +40,26 @@ public interface AgentRuntimeMetrics {
     default void observeLeaseTakeover() {
     }
 
+    /** 记录 Workflow 编排版本和稳定生命周期事件，不携带 Thread、Run 或订单标签。 */
+    default void observeWorkflow(String orchestrationVersion, String event) {
+    }
+
+    /** 记录事实重新核验结果，维度保持为有限枚举。 */
+    default void observeWorkflowFacts(String orchestrationVersion, String result) {
+    }
+
+    /** 记录命令新建或幂等去重结果。 */
+    default void observeWorkflowCommand(String orchestrationVersion, boolean deduplicated) {
+    }
+
+    /** 记录 Worker 结算结果。 */
+    default void observeWorkflowWorker(String orchestrationVersion, String result) {
+    }
+
+    /** 记录 Workflow 恢复和技术快照重建结果，不携带 Thread、Run 或订单标签。 */
+    default void observeWorkflowRecovery(String orchestrationVersion, String result) {
+    }
+
     static AgentRuntimeMetrics noop() {
         return new AgentRuntimeMetrics() {
             @Override public void observeQueueWait(Duration duration) { }

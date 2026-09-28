@@ -46,8 +46,10 @@ public final class HttpExternalActionExecutor implements ExternalActionExecutor 
 
     @Override
     public ExternalActionResult execute(ExternalActionCommandModel command) {
-        if (results.findByIdempotencyKey(command.idempotencyKey()).isPresent()) {
-            return new ExternalActionResult(true, false, "IDEMPOTENT_REPLAY", "已复用外部动作结果");
+        var stored = results.findByIdempotencyKey(command.idempotencyKey());
+        if (stored.isPresent()) {
+            return new ExternalActionResult(true, false,
+                    storedResultCode(stored.get().responseJson()), "已复用已保存的外部动作结果");
         }
         try {
             JsonNode root = objectMapper.readTree(command.payloadJson());
@@ -66,6 +68,9 @@ public final class HttpExternalActionExecutor implements ExternalActionExecutor 
                 case HIDE_ORDER, RESTORE_ORDER -> removedVisibilityAction();
             };
             if (!mutation.success()) {
+                if (mutation.outcomeUnknown()) {
+                    return ExternalActionResult.unknown(mutation.code(), mutation.message());
+                }
                 return new ExternalActionResult(false, mutation.retryable(), mutation.code(), mutation.message());
             }
             results.createIfAbsent(new ExternalActionResultModel(
@@ -74,13 +79,23 @@ public final class HttpExternalActionExecutor implements ExternalActionExecutor 
                     "{\"status\":\"" + AgentItemPayloadModel.escapeJson(mutation.code()) + "\"}", Instant.now(clock)));
             return new ExternalActionResult(true, false, mutation.code(), mutation.message());
         } catch (RuntimeException failure) {
-            return new ExternalActionResult(false, true, "REMOTE_ACTION_EXCEPTION", "订单服务暂时不可用");
+            return ExternalActionResult.unknown("REMOTE_ACTION_EXCEPTION", "订单服务响应或本地回执不确定，执行结果待核实");
         }
     }
 
     private OrderActionGateway.OrderActionResult removedVisibilityAction() {
         return OrderActionGateway.OrderActionResult.failed(false,
                 "ORDER_HISTORY_ACTION_REMOVED", "订单隐藏/恢复功能已移除，请直接删除订单记录");
+    }
+
+    private String storedResultCode(String responseJson) {
+        try {
+            String code = objectMapper.readTree(responseJson == null ? "{}" : responseJson)
+                    .path("status").asString("").strip();
+            return code.isBlank() ? "IDEMPOTENT_REPLAY" : code;
+        } catch (RuntimeException malformed) {
+            return "IDEMPOTENT_REPLAY";
+        }
     }
 
 }

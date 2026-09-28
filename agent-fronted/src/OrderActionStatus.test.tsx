@@ -133,6 +133,25 @@ describe("OrderActionStatus", () => {
     expect(onRetry).toHaveBeenCalledWith("run-1");
   });
 
+  it("未知结果进入待核实态，人工重放复用原 Run", () => {
+    const view = actionView(item("EXTERNAL_ACTION_STATUS", 2, {
+      runId: "run-unknown",
+      status: "MANUAL_VERIFICATION_REQUIRED",
+      outcomeStatus: "UNKNOWN",
+      orderId: "ORDER-1",
+      actionType: "REFUND",
+      verificationAttemptCount: 3,
+      maxVerificationAttempts: 3
+    }));
+
+    expect(view.state).toBe("waiting");
+    expect(view.retryable).toBe(true);
+    const { onRetry } = renderStatus(view);
+    expect(screen.getByText("订单服务结果待核实，自动核验已用尽；可使用原幂等键重试核验")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "重试结果核验" }));
+    expect(onRetry).toHaveBeenCalledWith("run-unknown");
+  });
+
   it("外部动作成功后，续接失败不覆盖业务成功", () => {
     const view = actionView(
       item("EXTERNAL_ACTION_STATUS", 2, {

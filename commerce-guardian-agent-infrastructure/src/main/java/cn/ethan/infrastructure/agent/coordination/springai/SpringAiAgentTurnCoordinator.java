@@ -231,7 +231,8 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                 command.status().name(), command.attemptCount(), command.retryCycleAttemptCount(),
                 command.maxAttempts(), command.type().name(), orderId,
                 command.nextAttemptAt() == null ? null : command.nextAttemptAt().toString(),
-                command.lastErrorCode(), command.lastErrorMessage(), null, null, null);
+                command.lastErrorCode(), command.lastErrorMessage(), null, null, null,
+                command.outcome().name());
     }
 
     private AgentItemDraft workflowResultDraft(AgentTurnModel turn, AgentWorkflowEngine.ResumeResult resumed) {

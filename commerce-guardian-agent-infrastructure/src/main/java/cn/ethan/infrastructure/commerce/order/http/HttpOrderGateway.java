@@ -19,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
 
 import java.net.http.HttpClient;
@@ -267,7 +268,7 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
                     .retrieve()
                     .body(HttpOrderActionResponse.class);
             if (response == null) {
-                return OrderActionResult.failed(true, "ORDER_ACTION_EMPTY_RESPONSE", "订单服务未返回删除结果");
+                return OrderActionResult.unknown("ORDER_ACTION_EMPTY_RESPONSE", "订单服务未返回删除结果，执行结果待核实");
             }
             return new OrderActionResult(Boolean.TRUE.equals(response.success()),
                     Boolean.TRUE.equals(response.retryable()), response.code(), response.message());
@@ -276,9 +277,14 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
             return OrderActionResult.failed(false, "ORDER_NOT_FOUND", "订单不存在");
         } catch (HttpClientErrorException.Forbidden forbidden) {
             return OrderActionResult.failed(false, "ORDER_NOT_OWNED", "订单不属于当前用户");
+        } catch (HttpClientErrorException rejected) {
+            return OrderActionResult.failed(false, "ORDER_ACTION_REJECTED", "订单服务明确拒绝了删除操作");
+        } catch (HttpServerErrorException ambiguous) {
+            LOGGER.warn("HTTP 删除订单响应不确定，exception={}", ambiguous.getClass().getSimpleName());
+            return OrderActionResult.unknown("ORDER_ACTION_RESULT_UNKNOWN", "订单服务响应异常，执行结果待核实");
         } catch (RuntimeException temporaryFailure) {
             LOGGER.warn("HTTP 删除订单调用暂时失败，exception={}", temporaryFailure.getClass().getSimpleName());
-            return OrderActionResult.failed(true, "ORDER_ACTION_TEMPORARY_FAILURE", "订单服务暂时不可用");
+            return OrderActionResult.unknown("ORDER_ACTION_RESULT_UNKNOWN", "订单服务连接中断，执行结果待核实");
         }
     }
 
@@ -298,7 +304,7 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
                     .retrieve()
                     .body(HttpOrderActionResponse.class);
             if (response == null) {
-                return OrderActionResult.failed(true, "ORDER_ACTION_EMPTY_RESPONSE", "订单服务未返回操作结果");
+                return OrderActionResult.unknown("ORDER_ACTION_EMPTY_RESPONSE", "订单服务未返回操作结果，执行结果待核实");
             }
             return new OrderActionResult(Boolean.TRUE.equals(response.success()),
                     Boolean.TRUE.equals(response.retryable()), response.code(), response.message());
@@ -306,10 +312,19 @@ public final class HttpOrderGateway implements OrderGateway, OrderActionGateway 
             return OrderActionResult.failed(false, "ORDER_NOT_FOUND", "订单不存在");
         } catch (HttpClientErrorException.Forbidden forbidden) {
             return OrderActionResult.failed(false, "ORDER_NOT_OWNED", "订单不属于当前用户");
+        } catch (HttpClientErrorException rejected) {
+            if (rejected.getStatusCode().value() == 408) {
+                return OrderActionResult.unknown("ORDER_ACTION_RESULT_UNKNOWN", "订单服务超时，执行结果待核实");
+            }
+            return OrderActionResult.failed(false, "ORDER_ACTION_REJECTED", "订单服务明确拒绝了操作");
+        } catch (HttpServerErrorException ambiguous) {
+            LOGGER.warn("HTTP 订单动作响应不确定，actionPath={}, exception={}",
+                    actionPath, ambiguous.getClass().getSimpleName());
+            return OrderActionResult.unknown("ORDER_ACTION_RESULT_UNKNOWN", "订单服务响应异常，执行结果待核实");
         } catch (RuntimeException temporaryFailure) {
             LOGGER.warn("HTTP 订单操作暂时失败，actionPath={}, exception={}",
                     actionPath, temporaryFailure.getClass().getSimpleName());
-            return OrderActionResult.failed(true, "ORDER_ACTION_TEMPORARY_FAILURE", "订单服务暂时不可用");
+            return OrderActionResult.unknown("ORDER_ACTION_RESULT_UNKNOWN", "订单服务连接中断，执行结果待核实");
         }
     }
 

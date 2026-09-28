@@ -95,8 +95,10 @@ public final class LocalExternalActionExecutor implements ExternalActionExecutor
     }
 
     private ExternalActionResult executeInLocalStore(ExternalActionCommandModel command) {
-        if (results.findByIdempotencyKey(command.idempotencyKey()).isPresent()) {
-            return new ExternalActionResult(true, false, "IDEMPOTENT_REPLAY", "已复用外部动作结果");
+        var stored = results.findByIdempotencyKey(command.idempotencyKey());
+        if (stored.isPresent()) {
+            return new ExternalActionResult(true, false,
+                    storedResultCode(stored.get().responseJson()), "已复用已保存的外部动作结果");
         }
         if (orderActions == null) {
             return new ExternalActionResult(false, false, "ACTION_NOT_SUPPORTED", "当前本地执行器不支持该动作");
@@ -118,6 +120,9 @@ public final class LocalExternalActionExecutor implements ExternalActionExecutor
             case HIDE_ORDER, RESTORE_ORDER -> removedVisibilityAction();
         };
         if (!mutation.success()) {
+            if (mutation.outcomeUnknown()) {
+                return ExternalActionResult.unknown(mutation.code(), mutation.message());
+            }
             return new ExternalActionResult(false, mutation.retryable(), mutation.code(), mutation.message());
         }
         LOGGER.info("演示订单动作事实已提交，actionType={}, idempotencyKey={}",
@@ -132,6 +137,16 @@ public final class LocalExternalActionExecutor implements ExternalActionExecutor
     private OrderActionGateway.OrderActionResult removedVisibilityAction() {
         return OrderActionGateway.OrderActionResult.failed(false,
                 "ORDER_HISTORY_ACTION_REMOVED", "订单隐藏/恢复功能已移除，请直接删除订单记录");
+    }
+
+    private String storedResultCode(String responseJson) {
+        try {
+            String code = objectMapper.readTree(responseJson == null ? "{}" : responseJson)
+                    .path("status").asString("").strip();
+            return code.isBlank() ? "IDEMPOTENT_REPLAY" : code;
+        } catch (RuntimeException malformed) {
+            return "IDEMPOTENT_REPLAY";
+        }
     }
 
     private ActionPayload parsePayload(String payloadJson) {

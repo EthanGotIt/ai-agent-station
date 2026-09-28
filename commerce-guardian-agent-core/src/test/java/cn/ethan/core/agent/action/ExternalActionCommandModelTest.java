@@ -59,6 +59,52 @@ class ExternalActionCommandModelTest {
     }
 
     @Test
+    void unknownOutcomeUsesIndependentBoundedVerificationBudget() {
+        ExternalActionCommandModel claimed = command(0, 0, 0, ExternalActionStatusEnum.PENDING)
+                .claimed("worker-1", NOW.plusSeconds(30), NOW);
+        ExternalActionCommandModel unknown = claimed.outcomeUnknownAt(
+                NOW.plusSeconds(5), "TIMEOUT", "响应丢失", NOW);
+
+        assertEquals(ExternalActionOutcomeEnum.UNKNOWN, unknown.outcome());
+        assertEquals(ExternalActionStatusEnum.VERIFY_WAIT, unknown.status());
+        assertEquals(0, unknown.verificationAttemptCount());
+
+        ExternalActionCommandModel current = unknown;
+        for (int attempt = 1; attempt <= current.maxVerificationAttempts(); attempt++) {
+            Instant at = NOW.plusSeconds(attempt * 10L);
+            ExternalActionCommandModel verifyClaim = current.claimed("worker-1", at.plusSeconds(30), at);
+            assertEquals(1, verifyClaim.retryCycleAttemptCount(), "核验重放不能消耗普通失败预算");
+            current = verifyClaim.outcomeUnknownAt(at.plusSeconds(5), "TIMEOUT", "响应仍未知", at);
+            assertEquals(attempt, current.verificationAttemptCount());
+        }
+
+        assertEquals(ExternalActionStatusEnum.MANUAL_VERIFICATION_REQUIRED, current.status());
+        assertEquals(ExternalActionOutcomeEnum.UNKNOWN, current.outcome());
+        assertNull(current.nextAttemptAt());
+    }
+
+    @Test
+    void retryingUnknownOutcomeKeepsCommandIdentityAndReopensVerification() {
+        ExternalActionCommandModel processing = command(0, 0, 0, ExternalActionStatusEnum.PENDING)
+                .claimed("worker-1", NOW.plusSeconds(30), NOW);
+        ExternalActionCommandModel current = processing.outcomeUnknownAt(
+                NOW.plusSeconds(5), "TIMEOUT", "响应丢失", NOW);
+        for (int attempt = 0; attempt < current.maxVerificationAttempts(); attempt++) {
+            Instant at = NOW.plusSeconds((attempt + 1L) * 10L);
+            current = current.claimed("worker-1", at.plusSeconds(30), at)
+                    .outcomeUnknownAt(at.plusSeconds(5), "TIMEOUT", "响应仍未知", at);
+        }
+
+        ExternalActionCommandModel retried = current.manualRetry(NOW.plusSeconds(100));
+
+        assertEquals(current.commandId(), retried.commandId());
+        assertEquals(current.idempotencyKey(), retried.idempotencyKey());
+        assertEquals(ExternalActionOutcomeEnum.UNKNOWN, retried.outcome());
+        assertEquals(ExternalActionStatusEnum.VERIFY_WAIT, retried.status());
+        assertEquals(0, retried.verificationAttemptCount());
+    }
+
+    @Test
     void rejectsIllegalStateFieldMatrix() {
         assertThrows(IllegalArgumentException.class, () -> new ExternalActionCommandModel(
                 "command-1", "run-1", "thread-1", "turn-1", "user-1", ExternalActionTypeEnum.REFUND,

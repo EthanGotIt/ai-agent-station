@@ -12,6 +12,11 @@ type Props = {
 
 function statusCopy(view: OrderActionProjection) {
   if (view.rejected) return "订单操作已取消，未执行外部动作";
+  if (view.receipt?.outcomeStatus === "UNKNOWN") {
+    return view.externalActionStatus === "MANUAL_VERIFICATION_REQUIRED"
+      ? "订单服务结果待核实，自动核验已用尽；可使用原幂等键重试核验"
+      : "订单服务结果待核实，系统将使用原幂等键安全核验";
+  }
   if (view.externalActionStatus === "MANUAL_RETRY_REQUIRED") return "订单操作未完成，自动重试已用尽；可以人工重试";
   if (view.state === "done" && view.receipt?.verificationStatus === "PENDING") return "订单操作已提交，等待结果核验";
   if (view.receipt?.verificationStatus === "VERIFIED") return view.receipt.verificationMessage ?? "最新订单状态已核验";
@@ -44,11 +49,11 @@ function StatusIcon({ state }: { state: OrderActionProjection["state"] }) {
 /** 订单卡片内的单一动作回执，避免把同一结果复制到全局弹窗和对话气泡。 */
 export function OrderActionStatus({ view, disabled, retrying, onRetry, onRefresh }: Props) {
   const verificationPending = view.receipt?.verificationStatus === "PENDING";
-  const retryable = view.state === "error" && view.retryable && view.runId;
+  const retryable = view.retryable && view.runId;
   return <div className={`order-action-status order-action-status-${view.state}`} role="status" aria-live="polite">
     <span className="order-action-status-icon"><StatusIcon state={view.state} /></span>
     <div className="order-action-status-copy"><strong>{ACTION_LABELS[view.request.actionType]}</strong><span>{statusCopy(view)}</span></div>
     {verificationPending ? <button className="secondary compact-action" type="button" disabled={disabled} onClick={() => onRefresh(view.request.orderId)}>重新查询</button> : null}
-    {retryable ? <button className="secondary compact-action" type="button" disabled={disabled || retrying} onClick={() => onRetry(view.runId as string)}><RotateCcw aria-hidden="true" />{retrying ? "重试中…" : "人工重试"}</button> : null}
+    {retryable ? <button className="secondary compact-action" type="button" disabled={disabled || retrying} onClick={() => onRetry(view.runId as string)}><RotateCcw aria-hidden="true" />{retrying ? "重试中…" : view.externalActionStatus === "MANUAL_VERIFICATION_REQUIRED" ? "重试结果核验" : "人工重试"}</button> : null}
   </div>;
 }
