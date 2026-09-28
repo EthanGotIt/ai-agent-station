@@ -28,7 +28,7 @@ updated: 2026-09-28
 - P5：新增 `scripts/maintenance/workflow-inventory.sql` 只读盘点旧 Run、开放交互、未结算命令、待消费 continuation 和历史图快照；新增 `RetiredAgentWorkflowEngine`，旧持久化编排以 `WORKFLOW_COMPATIBILITY_REQUIRED` 受控拒绝；新 Run 仅路由 Java Workflow，Worker 结果投影不创建 continuation。
 - P5：移除 Maven LangGraph4j 依赖、图引擎/节点、技术快照 Entity/Mapper 和生产 continuation gateway；保留 V8/V12 迁移、历史快照表、Turn/Item 兼容字段和编排标识以支持读取、排空与回滚。架构、运行手册、升级计划和实施追踪已同步。
 - P5 验证：提交 `f8a2f9d` 已推送；干净快照的规范检查、Python 20 项、Maven Core 98/98、Infrastructure 109/109、App 22/22、HTTP 集成 9/9、MySQL acceptance 13/13 和 `context-acceptance,workflow-acceptance verify` 均通过。干净快照未安装前端依赖，前端门禁沿用 P4 证据；本阶段未改前端。当前环境没有目标 MySQL 只读凭据，尚未宣称线上旧 Run/continuation 已归零。
-- P6 工具：Live driver 保留上下文机制，增加 6 类长对话同 Thread 场景、普通后续 Turn、确定性 Workflow 结果核验和脱敏上下文指标；模型准入门槛为基线 36 条、长对话 18 条。
+- P6 工具：提交 `b14a87e` 已推送；Live driver 保留上下文机制，增加 6 类长对话同 Thread 场景、普通后续 Turn、确定性 Workflow 结果核验和脱敏上下文指标；模型准入门槛为基线 36 条、长对话 18 条。
 - P6 离线验证：Python unittest 31 项、规范检查和 `git diff --check` 通过；确定性替身仍为 36/36 安全、36/36 路由。真实模型未运行，不把离线结果记作 Live 通过。
 
 ## Decisions
