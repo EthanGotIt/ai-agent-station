@@ -30,6 +30,8 @@ updated: 2026-09-28
 - P5 验证：提交 `f8a2f9d` 已推送；干净快照的规范检查、Python 20 项、Maven Core 98/98、Infrastructure 109/109、App 22/22、HTTP 集成 9/9、MySQL acceptance 13/13 和 `context-acceptance,workflow-acceptance verify` 均通过。干净快照未安装前端依赖，前端门禁沿用 P4 证据；本阶段未改前端。当前环境没有目标 MySQL 只读凭据，尚未宣称线上旧 Run/continuation 已归零。
 - P6 工具：提交 `b14a87e`、`f3a5316` 已推送；Live driver 保留上下文机制，增加 6 类长对话同 Thread 场景、普通后续 Turn、确定性 Workflow 结果核验和脱敏上下文指标；事实变化通过夹具公开幂等动作注入；模型准入门槛为基线 36 条、长对话 18 条。
 - P6 离线验证：Python unittest 31 项、规范检查和 `git diff --check` 通过；确定性替身仍为 36/36 安全、36/36 路由。真实模型未运行，不把离线结果记作 Live 通过。
+- P7 隔离运行：最终 Jar 在一次性 MySQL schema `CGA_P7_DD3737D06C15407B`（Flyway v14）和独立订单夹具上启动；曾发现并修复 `@Repository` 的 final 实现阻塞 Spring 代理。应用健康检查、订单夹具健康检查和浏览器默认桌面连接均通过。
+- P7 验证：HTTP acceptance（Thread/Item 恢复、交互唯一性、Turn 幂等、物流、退款、催发货 3 次临时失败后重试、删除幂等）通过；干净快照 Maven `clean test` 为 Core 98、Infrastructure 109、App 22，profiles 为 HTTP 9、MySQL 13；前端 typecheck、Vitest 77、build 通过。证据详见 [P7 执行卡](../docs/plans/p7-release-acceptance.md)。
 
 ## Decisions
 
@@ -42,7 +44,8 @@ updated: 2026-09-28
 ## TODO
 
 - 用目标环境只读账号执行 `scripts/maintenance/workflow-inventory.sql`，保存 P5 排空报告并确认旧 Worker/服务/队列退出。
-- 在提供两套既定模型凭据、隔离 Agent 和订单夹具后，按每套 54 条记录运行 P6 Live，保存脱敏摘要并完成模型选择；随后进入 P7 隔离端到端、浏览器及部署回滚演练。
+- 在提供两套既定模型凭据后，按每套 54 条记录运行 P6 Live，保存脱敏摘要并完成模型选择。
+- 补做 P7 的兼容版本回滚、601 条 Items/游标、SSE 断线、窄屏/移动浏览器专项，并把证据写回执行卡。
 
 ## Blocked
 
@@ -50,11 +53,11 @@ P2 已验证完成。订单服务未提供独立的按幂等键查询 API；本�
 
 ## Next action
 
-提供两套既定模型的可用凭据并启动隔离 Agent/订单夹具，然后执行 `python -m scripts.runtime_eval.live_driver` 的两套 54 条 Live 评测；不具备凭据前保持 P6 阻塞。
+提供两套既定模型的可用凭据，先执行 `python -m scripts.runtime_eval.live_driver` 的两套 54 条 Live 评测；完成后再补做 P7 回滚、分页/SSE 和响应式浏览器专项。
 
 ## Validation
 
-P0—P5 的代码与隔离验收通过项，以及 P6 评测工具和离线验证见 [实施追踪](../docs/implementation-traceability.md) 与阶段执行卡。真实目标库 P5 盘点、订单平台、浏览器、真实模型和发布回滚验收尚未执行；这些分别由 P5 运行环境、P6 和 P7 覆盖。
+P0—P5 的代码与隔离验收通过项、P6 评测工具和离线验证，以及本次 P7 隔离证据见 [实施追踪](../docs/implementation-traceability.md) 与阶段执行卡。真实目标库 P5 盘点、真实模型、兼容版本回滚、601 条 Items/SSE 和响应式浏览器专项尚未执行；这些仍是 P5—P7 的剩余门槛。
 
 ## Preserve
 

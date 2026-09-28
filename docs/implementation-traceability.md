@@ -283,3 +283,9 @@
 
 已确认专用校准边界为本机 `127.0.0.1:3306/COMMERCE_GUARDIAN_AGENT_CALIBRATION_20260821`，当前只在该库导入基线；原 `COMMERCE_GUARDIAN_AGENT` 未重建。数据库日志和命令输出均未打印密码；本轮 Thread/QuestionCard 故障触发器只存在于专用库，验证后已移除。Context 长历史探针未删除业务事实，使用独立校准 Thread 并记录 246 个 Item、8 个快照和重启后上下文事件；另对一条手工遗留校准 Thread 的错误 `NEXT_SEQUENCE` 做了仅限该专用库的计数修正，重启后确认 Worker 复用单一幂等结果且未修改生产代码。真实 DeepSeek 已在同一专用库完成 Tool Calling、71 个 SSE delta、流中取消、短时限超时和敏感信息检查；早期“订单售后前端真实浏览器验收尚未开始”属于历史记录，当前浏览器证据见本文顶部及阶段 5 行。复核被 Git 忽略的 App `.env` 后删除了旧 `AI_AGENT_MODEL_*`、Router/ReAct、旧队列和旧 Worker 变量，并使其与 `.env.example` 的变量集合和非敏感默认值一致；Spring Boot 不自动加载该文件，必须显式注入进程，且真实 key 只保留在 `.env`。不能以本地替身替代真实模型证据，也不能把阶段性 P0/P1 运行时证据误报为本计划最终完成。
 本阶段新增数据库证据：当前配置库和专用校准库均在确认备份/克隆边界后由 Flyway 从版本 2 增量执行版本 4，`STEPS_JSON`、`STATE_JSON` 为非空，Question 外键恢复，唯一键为 `(RUN_ID, STEP_NO)`，V4 `IDX_EXTERNAL_ACTION_THREAD_STATUS` 已存在；两个库均保留 9 条订单、6 条物流事件，应用实际启动并响应 Thread/Question API 后暂时运行在 8091/8092 供浏览器验收。V3 退款以及 V4 催发货/隐藏/恢复验证均使用专用校准库和真实 DeepSeek Tool Calling，未将密钥或 Thinking 写入数据库；隐藏/恢复部分为历史证据，当前新增的删除协议以代码和夹具测试为准。本轮新增的独立 HTTP 订单服务使用独立 SQLite 并完成查询、物流、Agent 退款、Java 适配器写操作和服务端幂等验证，不把该本机夹具表述为第三方生产平台。
+
+## P7 隔离交付验收追踪（2026-09-28）
+
+P7 已完成一轮可复现的隔离启动和 HTTP/数据库门禁，但保持 active，不替代 P6 Live 或发布回滚门槛。最终 Jar 在一次性 MySQL schema `CGA_P7_DD3737D06C15407B`（Flyway v14）启动，独立订单夹具在 18080 启动；`python -m scripts.acceptance` 覆盖 Thread/Item 恢复、交互唯一性、Turn 幂等、物流、退款幂等、催发货临时失败重试和删除幂等并通过。干净快照 `mvn clean test` 为 Core 98、Infrastructure 109、App 22，profiles 为 HTTP 9、MySQL 13；前端 typecheck、Vitest 77、build 通过，浏览器默认桌面连接和服务不可用时的重连提示已复核。
+
+未闭合：两套真实模型各 54 条 Live 评测、兼容版本→最终版本→兼容版本回滚、601 条 Items/异常游标、SSE 断线、窄屏/移动端专项和目标环境旧 Run/continuation 只读盘点。上述证据不表示真实生产订单平台或生产部署已验收。

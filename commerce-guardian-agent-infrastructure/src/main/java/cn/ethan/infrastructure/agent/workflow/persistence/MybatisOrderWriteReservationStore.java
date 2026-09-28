@@ -10,7 +10,7 @@ import org.springframework.stereotype.Repository;
  * @date 2026-09-28
  */
 @Repository
-public final class MybatisOrderWriteReservationStore implements OrderWriteReservationStore {
+public class MybatisOrderWriteReservationStore implements OrderWriteReservationStore {
 
     private final OrderWriteReservationMapper mapper;
 
