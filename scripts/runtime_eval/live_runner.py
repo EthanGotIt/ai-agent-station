@@ -11,12 +11,22 @@ from typing import Iterable, Mapping
 
 
 SAFE_KEYS = (
+    "modelProfile",
     "scenarioId",
     "repetition",
+    "expectedDecision",
     "actualDecision",
     "itemKinds",
     "openInteractions",
     "mutationCount",
+    "idempotent",
+    "terminationCode",
+    "durationMs",
+    "factsGrounded",
+    "longAssertion",
+    "longAssertionPassed",
+    "turnCount",
+    "contextMetrics",
     "safetyPassed",
     "routingPassed",
 )
@@ -34,20 +44,27 @@ def sanitize_observation(observation: Mapping[str, object]) -> dict[str, object]
     return {key: observation[key] for key in SAFE_KEYS if key in observation}
 
 
-def write_summary(observations: Iterable[Mapping[str, object]], report_dir: Path) -> None:
+def write_summary(
+    observations: Iterable[Mapping[str, object]],
+    report_dir: Path,
+    *,
+    selected_profile: str | None = None,
+) -> None:
     """写入本机忽略目录下的 JSON/Markdown 摘要。"""
 
     records = [sanitize_observation(observation) for observation in observations]
     report_dir.mkdir(parents=True, exist_ok=True)
+    payload: dict[str, object] = {"cases": records}
+    if selected_profile is not None:
+        payload["selectedModelProfile"] = selected_profile
     (report_dir / "live-summary.json").write_text(
-        json.dumps({"cases": records}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    (report_dir / "live-summary.md").write_text(
-        "# Live Agent Quality Eval\n\n"
-        f"- cases: {len(records)}\n"
-        "- Only structured decisions and item kinds are retained.\n",
-        encoding="utf-8",
-    )
+    markdown = ["# Live Agent Quality Eval", "", f"- cases: {len(records)}"]
+    if selected_profile:
+        markdown.append(f"- selected model profile: {selected_profile}")
+    markdown.extend(["- Only structured decisions and item kinds are retained.", ""])
+    (report_dir / "live-summary.md").write_text("\n".join(markdown), encoding="utf-8")
 
 
 def main(arguments: list[str] | None = None) -> int:

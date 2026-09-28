@@ -1,6 +1,6 @@
 import unittest
 
-from scripts.runtime_eval.scenarios import SCENARIOS, validate_scenarios
+from scripts.runtime_eval.scenarios import LONG_SCENARIOS, SCENARIOS, validate_long_scenarios, validate_scenarios
 
 
 class RuntimeEvalScenarioTest(unittest.TestCase):
@@ -38,3 +38,21 @@ class RuntimeEvalScenarioTest(unittest.TestCase):
                 },
                 set(record),
             )
+
+    def test_long_scenarios_cover_context_risks(self) -> None:
+        validate_long_scenarios()
+        self.assertEqual(6, len(LONG_SCENARIOS))
+        self.assertEqual(
+            {
+                "EARLY_REQUEST_REFERENCE",
+                "ORDER_SWITCH",
+                "AUTHORIZATION_FACTS_CHANGED",
+                "EXECUTION_STATE_CHANGE",
+                "LARGE_TOOL_RESULT_COMPACTION",
+                "SUMMARY_INVALIDATED_RECOVERY",
+            },
+            {scenario.assertion for scenario in LONG_SCENARIOS},
+        )
+        for scenario in LONG_SCENARIOS:
+            self.assertGreaterEqual(len(scenario.prompts), 2)
+            self.assertEqual(len(scenario.prompts), scenario.to_record()["promptCount"])
