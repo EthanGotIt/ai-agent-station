@@ -1,16 +1,22 @@
 # Commerce Guardian Agent 架构
 
+## 目标架构与当前实现
+
+长期目标为 Spring AI Agent 负责理解、只读查询和提交事项，确定性 Java Workflow 负责业务核验、补参、授权、命令创建和结果收尾，Worker 独立执行外部动作。Workflow 完成后不自动创建 Agent continuation；后续用户消息作为普通 Turn 进入，并依据持久化 Items 和业务事实了解事项状态。本期 Workflow 成功受理后结束当前 Agent 工具循环；这是一项协调层策略，复合请求中的后续只读查询列为后续增强。
+
+截至 2026-09-24，退款/删除和历史催发货 Run 仍依赖旧执行路径；LangGraph4j 和旧 Run 的 Agent continuation 仍为兼容恢复保留。新催发货 Run 已有 Java Workflow 版本。不能把部分迁移误读为 LangGraph 已退出；前向阶段、排空规则及验收要求见 [长期升级计划](upgrade-plan.md)。
+
 ## 边界
 
 Core 只表达 `Thread`、`Turn`、`Item`、QuestionCard、ContextSnapshot 和 ExternalActionCommand 的规则与端口；infrastructure 适配 MyBatis-Plus、Spring AI、订单夹具和外部动作；app 只处理配置、HTTP 协议和认证上下文。依赖方向固定为 `app → core`、`app → infrastructure`、`infrastructure → core`。
 
-## V7 Workflow 框架决策（2026-08）
+## 当前实现：LangGraph4j 兼容路径（2026-08 决策）
 
 生产运行时采用 Spring AI + LangGraph4j 的窄边界混合架构：Spring AI 只负责模型调用、对话协调和 Tool Calling；LangGraph4j 1.8.20 负责固定订单 Workflow 的节点、条件边和中断，节点推进的业务事实仍由 Core 规则和本地持久化端口提交。Core 不依赖任何一个框架，业务 `WorkflowRun`、QuestionCard、Workflow Checkpoint 和 `ExternalActionCommand` 仍是唯一事实源。
 
 不引入 LangChain4j、Embabel 或 Koog。LangChain4j 与 Spring AI 在模型、Tool、Memory 和 RAG 层重叠；Embabel 当前 Java 21 要求且动态 Goal Planning 不符合 JDK 17 与确定性写操作边界；Koog 会引入 Kotlin、协程、序列化及第二套 Agent/Tool/Persistence 运行时。重新评估条件仅限于：JDK 升级到 21、确定性 Workflow 边界被产品明确放弃，或 Spring AI/LangGraph4j 无法满足已验收的恢复与持久化契约；在此之前不得并行引入第二套 Agent 运行时。
 
-LangGraph 的 `runId` 是技术 graph thread ID。项目内 `MybatisLangGraphCheckpointSaver` 只保存节点、下一节点、序列化状态、业务 WorkflowRun 版本和事实指纹到 `AGENT_GRAPH_SNAPSHOT`；不保存或决定业务授权。2B-1 的明确订单催发货试点使用按 Run 隔离的进程内图状态，恢复先读取业务事实并在缺少技术状态时重建；2B-2 才接入生产图快照校验和跨进程恢复。LangGraph4j 内置 AgentExecutor 和内置 MySQL Saver 不进入生产依赖路径，避免第二套业务事实表和 Jackson 2 序列化链。
+LangGraph 的 `runId` 是技术 graph thread ID。项目内 `MybatisLangGraphCheckpointSaver` 只保存节点、下一节点、序列化状态、业务 WorkflowRun 版本和事实指纹到 `AGENT_GRAPH_SNAPSHOT`；不保存或决定业务授权。明确订单催发货试点已接入技术快照校验和跨进程恢复，缺失或失配时从业务事实重建；试点范围及默认关闭的开关见下文。LangGraph4j 内置 AgentExecutor 和内置 MySQL Saver 不进入生产依赖路径，避免第二套业务事实表和 Jackson 2 序列化链。
 
 ## Agent-first 分包
 
@@ -60,7 +66,7 @@ Thread
 └── ContextSnapshot（截至某个 sequence 的版本化摘要）
 ```
 
-Item 是唯一事实来源。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersion=1` 和 `kind` 判别 envelope；`TURN_STATE` 记录 QUEUED、ACTIVE、WAITING、终态等生命周期事实，模型最终消息、工具调用/结果、Workflow 状态、订单动作请求和错误均即时持久化。新写入的结构化 payload 由 Infrastructure 的 `JacksonAgentItemPayloadCodec` 统一编码，序号、幂等追加和提交后事件由 `AgentItemJournal` 收口；历史列和旧 envelope 继续可读。Items API 在保留 `payload` 字符串兼容字段的同时提供 envelope 内的结构化 `data`，前端可按 `schemaVersion/kind/data` 消费；模型内部可以流式消费，但 SSE 对外只发送 `ready`、`heartbeat` 和 `item.*`，不再暴露 `assistant.delta` 或瞬时 `turn.*`；客户端断线时先按 `afterSequence` 读取 Items，再订阅事件，不重放丢失的文本增量。
+Item 是对话与执行轨迹的可恢复事实；业务授权、版本和命令状态由对应的 WorkflowRun、QuestionCard、Checkpoint 与 ExternalActionCommand 持久模型维护。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersion=1` 和 `kind` 判别 envelope；`TURN_STATE` 记录 QUEUED、ACTIVE、WAITING、终态等生命周期事实，模型最终消息、工具调用/结果、Workflow 状态、订单动作请求和错误均即时持久化。新写入的结构化 payload 由 Infrastructure 的 `JacksonAgentItemPayloadCodec` 统一编码，序号、幂等追加和提交后事件由 `AgentItemJournal` 收口；历史列和旧 envelope 继续可读。Items API 在保留 `payload` 字符串兼容字段的同时提供 envelope 内的结构化 `data`，前端可按 `schemaVersion/kind/data` 消费；模型内部可以流式消费，但 SSE 对外只发送 `ready`、`heartbeat` 和 `item.*`，不再暴露 `assistant.delta` 或瞬时 `turn.*`；客户端断线时先按 `afterSequence` 读取 Items，再订阅事件，不重放丢失的文本增量。
 
 2A-1 生产路径先捕获已提交最大 Sequence，再按每页 300 条读取 `(afterSequence, watermark]`，300 只是分页大小，不限制历史总量。重复、乱序、越界、缺口或未覆盖水位的页面以 `CONTEXT_HISTORY_INVALID` 失败收口；上下文超出输入预算时不把部分历史发送给模型，并以 `CONTEXT_BUDGET_EXCEEDED` 受控失败。2A-2 在此基础上启用 Harness 式模型视图：完整 Prompt 达到总预算 80% 时先在副本裁剪超大 Tool Result，仍有压力才摘要最旧的完整 Turn/Tool 批次，保留最近 16% 和当前请求。原始 Items、Sequence 与 SSE 不删除或改写，摘要只写入可校验的 V2 派生快照；V1 快照忽略并从原始 Items 重建，CAS 冲突采用胜出快照而不重复调用摘要模型。摘要通过无 Tool 的 `ChatModel` 调用，共用 Turn 截止时间和 8,192 token 输出预算；供应商明确上下文溢出时，只有视图已严格缩减才允许一次有限重试。请求前压力处理没有有效缩减但完整 Prompt 仍在硬预算内时继续发送；供应商已拒绝且无法严格缩减，或硬预算不足时，以 `CONTEXT_BUDGET_EXCEEDED` 停止。每次组装记录读取水位、覆盖范围、条数、完整性、当前/峰值估算、固定限长与压力裁剪计数和压缩状态；不记录 Prompt、Thinking 或敏感原文。`WORKFLOW_STEP`、`WORKFLOW_CHECKPOINT`、`WORKFLOW_DECISION` 与 `AGENT_DECISION` 是模型可见的受控事实；`AGENT_CONTINUATION` 只作为运行元数据和前端折叠依据，不直接注入模型文本。
 
@@ -85,7 +91,25 @@ RESOLVE_ORDER → VERIFY_FACTS → SWITCH_REQUIREMENTS → AUTHORIZE
              → EXECUTE_ACTION → VERIFY_OUTCOME → HANDOFF_AGENT（返回 Workflow 结果）
 ```
 
-每次转换都会更新 `STEPS_JSON` 并追加 `WORKFLOW_STEP` Item。外部动作成功后的订单/物流核验发生在本地事务外；核验回执与 continuation Turn 的创建在本地事务中原子提交，提交后才进入 Runtime 队列。授权提交时若最新订单事实或执行资格已变化，也会在同一事务中收口为受控失败事实并触发续跑，不创建外部命令。续跑保留 `rootTurnId`、`parentTurnId`、触发 Run/Command/Sequence 和 `cycleNo`，使用触发事实生成确定性 `clientRequestId`，重启恢复和 Worker 重放不会产生重复 Turn。人工 QuestionCard/Checkpoint 子 Turn 按 Workflow 归属折回来源事项；后台 `RETRY_WAIT` 只等待 Worker，不唤醒模型。无法找到 Workflow owner 或事项锚点时，续跑安全停止并保留原始业务结果。
+明确订单号的催发货试点在 `AI_AGENT_EXPEDITE_GRAPH_MODE=V2` 时使用独立的双平面流程。图只负责纯策略节点和技术中断；WorkflowRun、Checkpoint、Command、Item 是业务事实，Worker 在图的技术 END 之后负责真实外部动作、结果核验和 Agent 续跑：
+
+```text
+业务事实平面：
+Thread → Turn → WorkflowRun → Checkpoint → ExternalActionCommand → Worker
+  ↑                                                        ↓
+  └────────────── Items / SSE / Agent 续跑 ←───────────────┘
+
+V2 技术图平面：
+START → RESOLVE_ORDER → VERIFY_FACTS → PREPARE_CONFIRMATION → interrupt
+                                      ↓ AUTHORIZE
+                         REJECT ─────┴─────→ END
+                         APPROVE → REVERIFY_FACTS
+                           ├─ CHANGED_ALLOWED → PREPARE_CONFIRMATION → interrupt
+                           ├─ NOT_ALLOWED → END
+                           └─ UNCHANGED → BUILD_ACTION_COMMAND → HANDOFF_WORKER → END
+```
+
+每次转换都会更新 `STEPS_JSON` 并追加 `WORKFLOW_STEP` Item。外部动作成功后的订单/物流核验发生在本地事务外；核验回执与 continuation Turn 的创建在本地事务中原子提交，提交后才进入 Runtime 队列。授权提交时若订单事实变化，旧 Checkpoint 失效；资格仍允许时重新等待确认，资格不再允许时收口为失败，均不创建外部命令。续跑保留 `rootTurnId`、`parentTurnId`、触发 Run/Command/Sequence 和 `cycleNo`，使用触发事实生成确定性 `clientRequestId`，重启恢复和 Worker 重放不会产生重复 Turn。人工 QuestionCard/Checkpoint 子 Turn 按 Workflow 归属折回来源事项；后台 `RETRY_WAIT` 只等待 Worker，不唤醒模型。无法找到 Workflow owner 或事项锚点时，续跑安全停止并保留原始业务结果。
 
 QuestionCard 回答使用 `POST /questions/{questionId}/answers`，请求体携带 `clientRequestId + expectedVersion + answers`，按 QuestionCard 的 `resumeTarget=AGENT|WORKFLOW` 恢复并作为同一 Thread 的新 Turn 进入 FIFO。Workflow Checkpoint 决策使用 `POST /workflow-runs/{runId}/checkpoints/{checkpointId}/decisions`，只接受批准或拒绝；批准时重新校验事实指纹，事实变化则标记 `SUPERSEDED` 并回到 `VERIFY_FACTS`。启动、交互创建和版本关闭受本地事务约束；同一 Thread 同时最多一个开放交互。退款仅允许 PAID/SHIPPED/DELIVERED，催发货仅允许 PAID；原始模型思考内容不进入 API、SSE、数据库或日志。
 
@@ -118,7 +142,7 @@ POST   /workflow-runs/{runId}/checkpoints/{checkpointId}/decisions
 POST   /workflow-runs/{runId}/retry
 ```
 
-SSE 事件包含完整 envelope：`eventId、threadId、turnId、itemId（可选）、type、sequence、timestamp、payload`；公开类型收敛为 `ready`、`heartbeat` 和 `item.*`，`data` 不再只发送 payload。客户端按真实 `eventId/itemId/sequence` 去重。身份只从认证上下文读取，不信任请求体中的用户字段。
+SSE 事件包含完整 envelope：`eventId、threadId、turnId、itemId（可选）、type、sequence、timestamp、payload`；公开类型收敛为 `ready`、`heartbeat` 和 `item.*`。SSE 当前仍以兼容的 `payload` 字符串承载 Item，结构化 `data` 由 Items API 提供；客户端按真实 `eventId/itemId/sequence` 去重。身份只从认证上下文读取，不信任请求体中的用户字段。
 
 执行回放接口从同一组 Item 事实投影当前 Turn 的队列、上下文、Tool、Workflow、审批和外部动作时间线；回放过程不调用模型、不启动 Workflow，也不重放外部副作用。运行指标只保留低基数维度：队列等待、Turn/Tool 耗时、上下文预算、Workflow 等待、Worker 重试、Lease 接管和失败分类。`scripts.runtime_eval` 使用 Fake 协调器和 Fake 执行器做确定性门禁，Live Model 评测单独产出质量报告。
 
@@ -126,9 +150,13 @@ SSE 事件包含完整 envelope：`eventId、threadId、turnId、itemId（可选
 
 `docs/dev-ops/mysql/commerce-guardian-agent.sql` 是新库的破坏性基线；已有库必须先备份并由 `db/migration/V1__align_workflow_question_recovery.sql` 至 `V7__persist_agent_continuations.sql`、`V8__persist_langgraph_snapshots.sql`、`V9__split_question_cards_and_workflow_checkpoints.sql`、`V10__persist_context_compaction_metadata.sql`、`V11__persist_workflow_orchestration_version.sql`、`V12__persist_langgraph_orchestration_version.sql` 逐版本增量升级。V8 只增加可重建的 `AGENT_GRAPH_SNAPSHOT` 技术表，V9 将提问与执行确认拆为独立事实，V10 为上下文 V2 快照增加格式、来源范围、估算和摘要版本元数据，V11 为每个 `AGENT_WORKFLOW_RUN` 写入不可变的编排版本，V12 为图快照写入同样的不可变编排版本，并将历史记录归入 `LEGACY_V1`；历史业务事实和已有 Run 状态不被重写。旧 `AGENT_WORKFLOW_QUESTION`、Turn 中的旧回答列和旧 `WORKFLOW_ANSWER` 标记在保留期内只读，仅供迁移/历史投影使用，运行时代码不再映射或写入。基线保留这些历史列/表以支持迁移演练，同时创建当前 `AGENT_QUESTION_CARD`、`AGENT_WORKFLOW_CHECKPOINT`、`AGENT_GRAPH_SNAPSHOT`、`EXTERNAL_ACTION_COMMAND` 和 `EXTERNAL_ACTION_RESULT`。同一用户的同一来源 Turn 和 Workflow 类型只能有一个 WorkflowRun；迁移不得重建或覆盖已有业务事实。
 
-2B-1 试点由 `AI_AGENT_EXPEDITE_GRAPH_ENABLED` 控制，默认关闭。开关打开后，只有明确订单号的催发货新 Run 标记为 `EXPEDITE_GRAPH_V1`；补选订单、其他订单操作和已有 Run 使用 `LEGACY_V1` 兼容路径。聊天 Tool 和订单卡片都进入同一个 `AgentWorkflowEngine` 路由。图节点依次记录订单读取、资格核验、确认等待和交给 Worker 的受控阶段；确认事务保存 Run、Checkpoint、开放交互指针和 Items，批准事务锁定并复核 Run/Checkpoint 后才创建唯一命令。恢复先校验 Run 编排版本，再读取 QuestionCard、Workflow Checkpoint 和订单事实；未知版本直接失败，不回退另一条路径。重复来源 Turn 返回原有交互，参数变化收口为冲突。试点创建命令后保持 `WAITING_EXTERNAL_ACTION`，Worker 继续负责外部执行与结果结算；图的技术 END 不投影为业务成功。
+> 以下 2B-1/V2 记录描述历史试点实现，继续服务已有编排版本的兼容恢复。P3 新 Run 的选择与恢复规则见下文。
 
-2B-2 的生产快照恢复代码已接入并完成一次性副本现场验收：`MybatisLangGraphCheckpointSaver` 按 Run 保存技术节点、状态、业务版本、事实指纹和编排版本，缺失/损坏/失配时由业务 Run、Checkpoint 和订单事实重建；快照不授予授权，也不替代业务事实。事实指纹使用跨 JVM 稳定的有序物流字段；未知编排版本以 `UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION` 失败，不回退另一条路径。试点默认仍关闭，生产开关、第三方鉴权和删除动作按部署环境单独验收。
+2B-1/V2 历史试点由 `AI_AGENT_EXPEDITE_GRAPH_MODE=OFF|V1|V2` 控制；缺失新配置时兼容 `AI_AGENT_EXPEDITE_GRAPH_ENABLED=true` 到 `V1`。当时只有明确订单号的催发货新 Run 才能标记 `EXPEDITE_GRAPH_V1` 或 `EXPEDITE_GRAPH_V2`；补选订单、其他订单操作和已有 Run 使用 `LEGACY_V1` 兼容路径。聊天 Tool 和订单卡片都进入同一个 `AgentWorkflowEngine` 路由。V1 按历史通用节点恢复；V2 的 typed 节点完成订单解析、资格核验、确认准备、批准后事实重核验、命令草稿和 Worker 交接。确认事务保存 Run、Checkpoint、开放交互指针和 Items，批准事务锁定并复核 Run/Checkpoint 后才创建唯一命令。恢复先校验 Run 编排版本，再读取 QuestionCard、Workflow Checkpoint 和订单事实；未知版本直接失败，不回退另一条路径。重复来源 Turn 返回原有交互，参数变化收口为冲突。V2 图在 `HANDOFF_WORKER` 技术 END 结束，Worker 继续负责外部执行、结果核验和历史 Agent 续跑；技术 END 不投影为业务成功。
+
+P3 催发货新 Run 由 `AI_AGENT_EXPEDITE_MODE=JAVA` 路由到 `EXPEDITE_JAVA_V1`，默认关闭；新变量缺失时兼容 `AI_AGENT_EXPEDITE_GRAPH_MODE` 和旧布尔开关。路由只影响新 Run，恢复始终按持久化 `WorkflowRun.orchestrationVersion` 选择 Java 或历史 LangGraph 实现。Java 引擎以 `WorkflowRun.stateJson/stepsJson`、QuestionCard、Checkpoint 和 ExternalActionCommand 恢复，不创建或读取图快照；步骤依次为 `RESOLVE_ORDER`、`VERIFY_FACTS`、`PREPARE_CONFIRMATION`、`AUTHORIZE`、`REVERIFY_FACTS`、`BUILD_ACTION_COMMAND`、`HANDOFF_WORKER`、`VERIFY_OUTCOME`。订单缺失或有歧义时通过 QuestionCard 补参，授权继续由 Checkpoint 表达。批准前在事务外重读订单事实，事务内锁定并校验 Run/Checkpoint 版本后创建唯一命令。授权指纹只绑定催发货动作、用户/订单归属、PAID 资格状态和请求确认参数；物流与展示字段变化不使授权失效。Java Run 的 Worker 结果持久化不创建 Agent continuation；V1/V2/Legacy 历史 Run 仍走兼容实现，直到 P5 排空。
+
+2B-2 的生产快照恢复代码已接入并完成一次性副本现场验收：`MybatisLangGraphCheckpointSaver` 按 Run 保存技术节点、状态、业务版本、事实指纹和编排版本，缺失/损坏/失配时由业务 Run、Checkpoint 和订单事实重建；快照不授予授权，也不替代业务事实。V1 和 V2 使用独立事实指纹前缀，禁止交叉恢复；未知编排版本以 `UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION` 失败，不回退另一条路径。试点默认仍关闭，生产开关、第三方鉴权和删除动作按部署环境单独验收。
 
 V6 现场迁移先备份配置库并在一次性克隆库执行；V7 首次运行前同样必须备份并在一次性克隆库验证。确认 `INPUT_KIND` 非空、`ORDER_ACTION_JSON` 和 `CONTINUATION_JSON` 可空，历史 Workflow 状态不被重写。外部 HTTP 订单服务、Agent 和前端验收结束后关闭测试进程，MySQL 保持运行。
 
@@ -142,4 +170,4 @@ Week 4 的真实模型质量报告、数据库副本迁移和浏览器矩阵属�
 
 ## 阶段七验收状态（更新至 2026-09-13）
 
-本轮规范检查、脚本测试、运行时确定性门禁、后端全量单测和前端 typecheck/Vitest/生产构建均通过；2A-2 的 Core/Infrastructure 回归覆盖裁剪、摘要、V2 快照和溢出恢复边界，2B-1/2B-2 增加试点图阶段、事实指纹、进程重启业务重建、锁读、命令幂等和技术快照故障恢复测试，事项级恢复与前端动作状态投影已补齐成功优先级。模块 `.env` 已加载到 Maven 测试进程，`context-acceptance` 与 `workflow-acceptance` profile 在随机临时库通过 V9→V12 Flyway 迁移、Run/图快照版本读取、归属隔离、事务回滚和 CAS 验收；HTTP acceptance runner、合成订单 DeepSeek 完整黄金路径、快照故障注入和 `1536×730` 浏览器 SSE/错误焦点专项均已通过。2026-09-12 LangGraph 定向回归 27/27 通过；2026-09-13 Codec/Journal 已接入 18 类 Core Item 值模型及 Runtime、Spring AI Tool、LangGraph、Worker Outcome、Continuation、订单事实、外部动作状态、执行事件、错误、QuestionCard/Workflow Decision 生产写入，Items API 新增兼容 `data` 字段，完整 reactor 与追加回归通过。删除动作、生产开关和第三方鉴权仍是部署环境门禁。
+验证结果按执行日期与范围记录在[实施追踪](implementation-traceability.md)和[现场复核](review-runbook.md)，当前待办见[任务交接](../.codex/task-handoff.md)。本架构文档描述设计与实现边界，不作为最新测试结果或生产验收通过的证明。

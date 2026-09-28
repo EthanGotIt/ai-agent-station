@@ -45,7 +45,8 @@ build/
 
 ### Local agent and upgrade state ###
 .agents/
-.codex/
+/.codex/*
+!/.codex/task-handoff.md
 .github/modernize/
 
 ### Mac OS ###
