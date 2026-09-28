@@ -284,9 +284,32 @@ public final class AgentTurnItemPayloads {
             String verificationMessage,
             String verifiedAt
     ) {
+        return externalActionStatusValue(commandId, runId, status, attemptCount, retryCycleAttemptCount,
+                maxAttempts, actionType, orderId, nextAttemptAt, code, message, verificationStatus,
+                verificationMessage, verifiedAt, null);
+    }
+
+    /** 返回同时包含调度状态和业务结果确定性的外部动作快照。 */
+    public static AgentExternalActionStatusPayloadModel externalActionStatusValue(
+            String commandId,
+            String runId,
+            String status,
+            int attemptCount,
+            int retryCycleAttemptCount,
+            int maxAttempts,
+            String actionType,
+            String orderId,
+            String nextAttemptAt,
+            String code,
+            String message,
+            String verificationStatus,
+            String verificationMessage,
+            String verifiedAt,
+            String outcomeStatus
+    ) {
         return new AgentExternalActionStatusPayloadModel(commandId, runId, status, attemptCount,
                 retryCycleAttemptCount, maxAttempts, actionType, orderId, nextAttemptAt, code, message,
-                verificationStatus, verificationMessage, verifiedAt);
+                verificationStatus, verificationMessage, verifiedAt, outcomeStatus);
     }
 
     /** 将订单领域快照转换为不含身份信息的 Item 值。 */

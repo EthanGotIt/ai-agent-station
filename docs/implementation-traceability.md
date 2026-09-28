@@ -1,28 +1,64 @@
 # Commerce Guardian Agent 实现追踪矩阵
 
 > 状态：`active`
-> 更新日期：2026-09-13
-> 目标来源：Codex 任务 `01a01f3f-2a0e-7e52-b70e-4137e4ff3496` 的原始计划、当前工作树、架构文档、SQL、测试和实际运行结果。
+> 更新日期：2026-09-24
+> 目标来源：当前唯一前向计划 [长期调整计划](upgrade-plan.md)、当前工作树、架构文档、SQL、测试和实际运行结果。
 
-本矩阵只把代码、测试和运行结果作为证据。原计划或 `docs/task-handoff.md` 中的“已完成”描述不能单独作为完成证据。
+本矩阵只把代码、测试和运行结果作为证据。原计划或 [任务交接快照](../.codex/task-handoff.md) 中的“已完成”描述不能单独作为完成证据。
 
-> 计划边界说明：本文件记录的是多个工作线的实施证据。原始总 plan 已从 Codex 本地计划恢复；`2A-1/2A-2`、`2B-1/2B-2`、事项级“第三阶段”和结果展示“第四阶段”仍分别保留，不能把相同数字的不同工作线合并计算。
+> 计划边界说明：本文件记录多条工作线的实施证据。下方历史阶段编号各自保留，不与新的 P0—P7 计划编号合并计算。
 
-## 已恢复的原始升级计划
+## 当前长期升级计划
 
-原始计划是“完整收口、质量复核与 DeepSeek Live 评测”，包含七个阶段：运行时硬错误、类型化 Item 协议、Turn/HITL/Context、DeepSeek Coordinator、Workflow/Worker、SSE/API/前端，以及配置/代码/文档清理。来源为 Codex 任务 `01a01f3f-2a0e-7e52-b70e-4137e4ff3496` 的本地 `PLAN.md`；该文件不是 Git 历史的一部分。
+既有 Items、上下文、LangGraph V1/V2、Worker 和 Live driver 结果继续作为历史证据。前向实施以 `docs/upgrade-plan.md` 的 P0—P7 及各阶段执行卡为准。P0 于 2026-09-24 完成文档校准与自动化基线；以下旧表格是此前状态快照，不构成继续扩展 LangGraph 的目标。
+
+### P0 基线（2026-09-24）
+
+| 范围 | 结果 | 证据 |
+| --- | --- | --- |
+| Python 规范与脚本 | 通过 | convention_check；26 项 unittest |
+| Java 单测 | 通过 | clean test；Core 97、Infrastructure 139、App 25，共 261 项 |
+| MySQL acceptance | 通过 | MySQL 8.4 随机库；Items 6 项、Workflow 3 项，共 9 项；随机库清理成功 |
+| 前端 | 通过 | typecheck；Vitest 76 项；production build |
+| Diff 检查 | 通过 | git diff --check |
+| Live/浏览器/发布 | 未执行 | 属于后续 P6/P7，真实服务和浏览器验收不由本次自动化基线替代 |
+
+### P1 结算与续跑解耦（2026-09-24）
+
+- Worker 现在无论是否装配 continuation gateway，都会持久化 Workflow 结果及 VERIFY_OUTCOME 事实；只有 continuation 实际新建时才记录 HANDOFF_AGENT。
+- WorkflowResult 状态从命令结果和核验事实确定：已核验为 COMPLETED，已受理待核验为 APPROVED，重试等待和人工处理保持各自状态。EXTERNAL_ACTION_STATUS 仍是执行回执的权威来源。
+- Legacy/V1/V2 的 continuation 策略继续从 Run 持久化编排版本读取；后续 Java 编排版本采用确定性收尾，运行时配置不重解释旧 Run。
+- 验证：ExternalActionWorkerTest 7 项；Infrastructure 全量 140 项及 Core 97 项通过。未运行 App/MySQL acceptance；本阶段改动集中在 Infrastructure Worker 投影。
+
+### P2 未知外部结果核验（2026-09-24）
+
+- `ExternalActionCommandModel` 将动作结果、明确失败重试预算和未知结果核验预算分开；核验耗尽保持 `UNKNOWN` 并进入 `MANUAL_VERIFICATION_REQUIRED`，人工恢复保留原命令及幂等身份。
+- Worker 将超时、连接中断、5xx 和本地动作回执写入不确定归为待核验；HTTP 408 同样待核验。外部动作状态、Workflow 结果、Turn 状态、Items、上下文及前端显示已加入新状态。
+- 当前订单服务没有按幂等键独立查询动作回执的 API；夹具证明了同一 `Idempotency-Key` 重放可返回缓存结果，`COMMIT_THEN_ERROR` 注入确认远端只发生一次业务变更。该证据仅覆盖本地夹具服务端契约。
+- 删除成功仅认明确删除回执，不以一次 `NOT_FOUND` 查询作为成功证据。退款、催发货和删除均不会因未知结果创建新的命令身份。
+- 数据库 V13 增加 `OUTCOME_STATUS` 和独立核验预算；修正基线列归属及 V9 测试夹具，使旧结构增量迁移可验证。`AgentItemStoreMySqlIT` 与 `AgentWorkflowMySqlIT` 在隔离 MySQL 8.4 分别 6、4 项通过，版本升至 V13。
+- 验证：Core 99/99、Infrastructure 145/145、HTTP 集成 9/9、App 单测 25/25；最终改动后单独执行两套 MySQL acceptance 10/10。Python 27 项、前端 typecheck、Vitest 77 项、production build、规范检查及 diff 检查通过。完整 reactor 首次发现的迁移夹具及自定义 MyBatis 字段映射问题均已修复并通过针对性 MySQL 验收。
+- 浏览器、真实模型和第三方订单服务幂等契约不属于本阶段已验证范围，分别由 P6/P7 计划覆盖。
+
+### P3 催发货 Java Workflow（2026-09-24）
+
+- 新催发货 Run 可按 `AI_AGENT_EXPEDITE_MODE=JAVA` 创建 `EXPEDITE_JAVA_V1`，并以 WorkflowRun 持久化步骤和业务状态恢复；新 Run 开关不改写历史 Run 的版本语义。V1/V2/Legacy 仍由兼容引擎读取。
+- Java 核心策略核验 PAID 资格与用户归属；授权指纹仅包含动作、用户/订单身份、资格状态和请求确认参数。确认字段变化需重新授权，资格或归属失效则结束且不创建命令。QuestionCard 补参与 Checkpoint 授权仍独立。
+- 批准事务锁定并校验 Run/Checkpoint 版本后创建唯一 ExternalActionCommand；Worker 结果投影按 Java Run 确定性结束，不依赖 Agent continuation。配置只影响新 Run。
+- 验证：Java Workflow 5 项与版本路由 3 项定向测试通过；Core 100/100、Infrastructure 153/153、App 25/25 单测通过，HTTP 集成 9/9 通过。隔离 MySQL 8.4 Workflow acceptance 6/6 通过，覆盖编排版本往返、V9→V13 迁移、CAS、命令幂等和未知结果预算。
+- 完整门禁还包括 Python 27 项、规范检查、前端 typecheck/Vitest 77/build，均通过。未启用真实订单服务、未做浏览器黄金路径或部署回滚演练；这些分别归入 P7/P6，不视为 P3 代码验收的替代。
 
 | 原始阶段 | 当前结论 | 代码与验收对照 | 仍需推进 |
 | --- | --- | --- | --- |
 | 1. 运行时硬错误 | 已完成并验证 | ExternalActionCommand 的版本、Lease CAS、重试周期、事务收敛和幂等回放已有 Core/Infrastructure/MySQL 证据 | 无功能缺口 |
-| 2. 类型化 Item 协议 | 主要生产写入已全部接入 Codec/Journal，协议进入跨层回放收口 | `JacksonAgentItemPayloadCodec` 统一生成/校验 envelope；Core `AgentItemJournal` 与 Infrastructure `TransactionalAgentItemJournal` 集中处理序号、幂等追加和提交后事件；`AgentItemPayloadValue` 已覆盖 18 类公开 payload（含订单事实、外部动作、续跑、执行事件和错误）并接入对应生产写入；Items API 新增兼容的结构化 `data` 字段，前端显式声明各类事实并保留历史 fallback；完整 reactor 243 项、定向协议/生产路径及跨层回归通过（Codec/Journal/LangGraph 28 项，生产式 Tool 52 项，API/Journal/Codec 11 项） | `AgentItemModel` 仍以兼容字符串保存历史 JSON；需补更完整的跨层 Items 回放、幂等追加和异常游标矩阵，并在矩阵通过后评估是否收紧未知 `kind` fallback |
+| 2. 类型化 Item 协议 | 阶段 1 本地与 MySQL 跨层验收通过 | `JacksonAgentItemPayloadCodec` 统一生成/校验 envelope；Core `AgentItemJournal` 与 Infrastructure `TransactionalAgentItemJournal` 集中处理序号、幂等追加和提交后事件；`AgentItemPayloadValue` 覆盖 18 类公开 payload；`AgentItemStoreMySqlIT` 使用真实 MySQL 8.4、MyBatis Store、Codec、Journal 和 Controller 验证 601 条 Item 按 200 分页恢复、18 类 typed `data`、跨调用 `appendIfAbsent` 同一 Sequence 和单次事件发布；Controller 与前端均对重复、乱序、陈旧/空页安全收口；完整 reactor 261 项、Python 26 项和前端 76 项通过 | `AgentItemModel` 继续以兼容字符串保存历史 JSON；未知 kind、旧 envelope 和纯文本 fallback 按计划保留，需在目标环境补刷新后 SSE 的现场证据 |
 | 3. Turn、HITL 与 Context 恢复 | 行为已完成，结构仍需收口 | Question/Checkpoint CAS、回答重启恢复、固定水位、摘要/快照 CAS、溢出恢复和事项级 Continuation 均有证据 | `AgentTurnRuntimeService` 仍是聚合实现；类型化 Item 收口后需补一次跨层恢复矩阵 |
-| 4. DeepSeek Coordinator | 契约未完全对齐 | Spring AI Tool Calling、取消、超时、流式 SSE、错误分类和 Thinking 隔离已有现场证据 | 原计划要求 `deepseek-v4-flash`、关闭 Thinking；当前实现固定为 `deepseek-v4-pro` 并启用 Thinking，需要单独决定并验收迁移 |
-| 5. Workflow 与 Worker | 试点完成，计划范围部分完成 | 催发货 `EXPEDITE_GRAPH_V1` 七节点图、Checkpoint、命令幂等、Worker 结果和恢复已通过；退款/删除仍保留旧路径 | 原始计划要求退款与催发货均有显式 Workflow；当前只对催发货启用新图，生产开关与第三方鉴权仍是部署门禁 |
+| 4. DeepSeek Coordinator | 基线保持 Pro，Live 对比待执行 | Spring AI Tool Calling、取消、超时、流式 SSE、错误分类和 Thinking 隔离已有现场证据；`DEEPSEEK_MODEL`、`DEEPSEEK_THINKING_TYPE` 和 `DEEPSEEK_REASONING_EFFORT` 已可由环境覆盖 | 需用 Live driver 完成两套配置各 12×3 场景，并按长期计划定案模型 |
+| 5. Workflow 与 Worker | V1 技术试点完成，V2 本地价值与恢复门禁已通过主要代码测试 | `EXPEDITE_GRAPH_V1` 和 `LEGACY_V1` 保持历史恢复；新增 `EXPEDITE_GRAPH_V2`、Core `ExpediteWorkflowPolicy`、typed 图节点和 `OFF|V1|V2` 路由；V2 无中断重建图可在快照缺失时重建批准路径并只产出确定性草稿；Worker 结算、命令去重、事实变化、未知版本和低基数指标均有回归；退款/删除仍保留旧路径 | 仍需在目标环境补多进程并发批准、真实外部回执失败重放、V2 显式启用/回滚和第三方鉴权现场证据 |
 | 6. SSE、API 与前端工作区 | 大部分完成 | SSE 缓冲/补拉/有序发送、执行回放、线程切换保护、QuestionCard 和结果优先级已有单测及浏览器证据 | 直接删除动作、剩余视口和真正浏览器 E2E 仍需按发布矩阵复核；当前工作区前端设计/文案改动需单独验收 |
-| 7. 配置、代码与文档清理 | 部分完成 | DeepSeek 配置、运行手册、架构文档和禁用旧入口检查已同步；本轮新增 Codec/Journal 设计与交接证据 | 需继续处理第 2 阶段的跨层回放/幂等验证，再重新核对模型契约和完整 Live 评测入口 |
+| 7. 配置、代码与文档清理 | 进行中 | 已新增长期计划入口、V2 模式、thinking/reasoning 环境覆盖、Live driver 和一次性夹具合成订单入口；夹具支持按合成订单注入不可重试/临时故障；`EXTERNAL_ACTION_COMMAND` 已从公开 Item 评测类型中移除，改由 `EXTERNAL_ACTION_STATUS.commandId` 关联；旧配置继续兼容 | 当前 Agent/订单夹具未运行且进程没有 DeepSeek 凭据；需完成两套 Live 结果、模型定案和发布回滚证据 |
 
-因此，当前的唯一代码推进动作是：**继续完成第 2 阶段的跨层 Items 回放、重复/乱序游标收口和 typed payload 幂等追加矩阵；保持现有 HTTP、SSE、数据库列、未知 kind fallback 和历史 Item 可读，完成后再对第 4 阶段的 DeepSeek 模型契约作明确迁移与真实验收。**
+以上各行为此前实施路线的历史快照。当前唯一前向路线是 [总体调整计划](upgrade-plan.md) 中的 P0—P7；Live 评测归入 P6，交付、浏览器和回滚证据归入 P7。
 
 ## 第一阶段运行闭环加固（2026-09-04）
 
@@ -51,14 +87,24 @@
 | 预算与溢出重试 | 已接入并通过编译/单测 | 摘要通过无 Tool `ChatModel`，共享 `AgentExecutionContext` 截止时间和 8,192 输出额度；`AgentModelContextOverflowException` 只在明确上下文错误时进入配置次数的严格缩减重试 | DeepSeek 真实错误响应、断流、缺失 usage、取消和摘要持久化失败仍需真实模型验收 |
 | 观测与事实安全 | 已接入 | Context Item 记录水位、覆盖范围、估算、裁剪数量和压缩状态；Micrometer 增加低基数压缩前后估算；不保存 Prompt、Thinking、摘要正文或敏感原文 | 完整浏览器停止原因和压缩后约束保留需后续现场验收 |
 
-## 2B-1 LangGraph 催发货试点（已完成代码与验收，默认关闭）
+## 历史 2B-1 LangGraph V1 催发货试点（技术试点完成，默认关闭）
 
 | 验收面 | 当前结论 | 直接证据 | 未闭合事项 |
 | --- | --- | --- | --- |
 | 图路由与编排版本 | 已完成，默认关闭 | `LangGraphAgentWorkflowEngine` 仅为明确订单号的催发货新 Run 选择 `EXPEDITE_GRAPH_V1`；历史、补选订单和其他动作保持 `LEGACY_V1`；V11/V12 迁移、Run/图快照版本读取和未知版本拒绝由 `MybatisAgentWorkflowRunStoreVersionTest` 与两个 Workflow MySQL IT 覆盖；未知版本现在以 `UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION` 受控失败 | 生产开关和第三方鉴权仍需按部署环境单独启用 |
-| 节点、确认与命令边界 | 已通过定向测试和合成黄金路径 | `LangGraphWorkflowGraphFactory`/Engine 覆盖订单读取、资格核验、AUTHORIZE、Worker 交接和结果返回；批准事务锁读 Run/Checkpoint 并只创建唯一 `ExternalActionCommand`；确认前无外部写入；合成订单真实模型路径已完成查询→催发货→批准→Worker→核验→续接总结 | 生产第三方鉴权仍需部署环境验收 |
+| 节点、确认与命令边界 | 技术路径已通过，业务节点职责不足 | V1 的通用 Action 只维护节点名和业务阶段；批准事务锁读 Run/Checkpoint 并只创建唯一 `ExternalActionCommand`；确认前无外部写入 | 由 V2 Core 策略和 typed 节点承担真实资格、重新核验、命令草稿和 Worker 交接职责 |
 | 技术快照恢复 | 已通过一次性副本现场验收 | `MybatisLangGraphCheckpointSaver` 保存节点、状态、Workflow 版本、事实指纹和编排版本；删除、损坏 `STATE_JSON`、版本失配和跨进程重启均从 Run/Checkpoint/订单事实重建，不以快照授予授权；`safeLogistics` 使用有序结构，事实指纹跨 JVM 稳定 | 生产副本和真实第三方订单平台仍按部署环境验收 |
 | Worker 结果闭环 | 已通过本地、HTTP 和真实模型黄金路径 | Worker 以 PENDING/RETRY_WAIT/PROCESSING Lease 领取命令，结果写入 `EXTERNAL_ACTION_STATUS`/Workflow 事实；三次失败后人工恢复与零失败成功路径均验证同一幂等键只产生一次业务变更；成功结果已接回模型续接总结 | 无本轮代码阻塞 |
+
+## 当前 2B-3 LangGraph V2 实施状态（默认关闭）
+
+| 验收面 | 当前结论 | 直接证据 | 未闭合事项 |
+| --- | --- | --- | --- |
+| 编排版本与开关 | 已实现，未启用 | `AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V2`、`AI_AGENT_EXPEDITE_GRAPH_MODE`；缺失新配置时兼容旧布尔开关，默认 `OFF` | 目标环境显式启用前需完成完整门禁 |
+| Core 决策契约 | 已实现并有单元测试 | `ExpediteWorkflowPolicy` 集中资格判断、`expedite-facts-v2:` 指纹、确认草稿和确定性幂等命令草稿；`ExpediteWorkflowPolicyTest` 通过 | 需补事实查询失败和并发批准的跨层证据 |
+| 图节点与分支 | 已实现并有拓扑/分支/重建测试 | `RESOLVE_ORDER → VERIFY_FACTS → PREPARE_CONFIRMATION → interrupt`，批准后 `REVERIFY_FACTS` 按变化结果进入确认、结束或命令构建，最终 `HANDOFF_WORKER`；快照丢失时无中断恢复图可继续到 `HANDOFF_WORKER` | 目标环境仍需补持久快照损坏、版本失配和 Worker 结算现场证据 |
+| Engine 落库边界 | 已接入并通过本地门禁 | V2 Engine 使用图输出的确定性命令草稿并在本地事务内 `createIfAbsent`；批准前不创建 Command；V2 技术 END 不伪造 Worker 结果；重复命令通过命令 ID 观测去重 | 仍需目标环境补多进程并发批准和真实外部回执失败重放 |
+| 低基数指标与 Live 工具 | 指标门禁已通过，真实对比未执行 | `AgentRuntimeMetrics`/Micrometer 增加编排版本、恢复/重建结果、事实结果、命令去重和 Worker 结算观测；`MicrometerAgentRuntimeMetricsTest` 断言标签只包含低基数值；`scripts/runtime_eval/live_driver.py` 通过 HTTP 自动推进交互、重试和幂等重放并只写安全字段；订单夹具支持 `LIVE-EVAL-*` 合成订单及按订单故障注入 | 当前 Agent/订单夹具未运行且没有 DeepSeek 凭据；需产生两套各 36 次结果并按规则选择模型 |
 
 ## 2B-2 生产快照现场与真实模型闭环（隔离现场已完成，生产默认仍关闭）
 
@@ -120,7 +166,7 @@
 | --- | --- | --- | --- |
 | 1. LangGraph4j 基础门禁 | 已完成 | `d74bc79`；`langgraph4j-core:1.8.20`、`AGENT_GRAPH_SNAPSHOT` V8、Jackson 3 序列化、MyBatis Saver 和七节点图测试；Core/Infrastructure 编译、LangGraph 定向测试和 `dependency:analyze` 通过 | 试点默认关闭，是否启用由部署环境决定 |
 | 2. QuestionCard 与 Workflow Checkpoint 拆分 | 已完成 | `AgentQuestionCardModel/Store`、`AgentWorkflowCheckpointModel/Store`；V9 表和历史迁移；Thread `OPEN_INTERACTION_TYPE/ID`；`AgentQuestionAnswerAdmission`、`AgentWorkflowDecisionAdmission`；新 API/DTO；Core 状态机、MyBatis CAS、Turn 持久化、`request_user_input` 定向测试共 12 项 | 旧模型和兼容 API 在阶段六统一清理 |
-| 3. 迁移固定订单 Workflow | 2B-1/2B-2 已完成，默认关闭 | `LangGraphAgentWorkflowEngine`、`LangGraphWorkflowGraphFactory.createOrderWorkflow` 和独立 `AgentWorkflowCheckpoint`；V11/V12 为 Run/图快照持久化 `LEGACY_V1`/`EXPEDITE_GRAPH_V1`，明确订单号催发货新 Run 才能在开关打开时进入试点；图节点记录订单读取、资格核验、确认等待和 Worker 交接阶段，批准事务锁读 Run/Checkpoint 后创建唯一 ExternalActionCommand；进程重启用业务事实重建试点图。当前 LangGraph 定向回归 27 项，MySQL Workflow IT 覆盖路由、恢复、回滚、CAS 与幂等，隔离现场覆盖快照故障和合成真实模型黄金路径 | 生产开关、第三方鉴权和删除动作仍是部署环境门禁 |
+| 3. 迁移固定订单 Workflow | V1/Legacy 保持兼容，V2 已实现待门禁，默认关闭 | `LangGraphAgentWorkflowEngine`、`LangGraphWorkflowGraphFactory.createExpediteV2Workflow` 和独立 `AgentWorkflowCheckpoint`；V11/V12 为 Run/图快照持久化 `LEGACY_V1`/`EXPEDITE_GRAPH_V1`/`EXPEDITE_GRAPH_V2`，明确订单号催发货新 Run 才能在显式模式进入 V1/V2；V2 Core 策略节点负责事实判断和命令草稿，批准事务只落库唯一命令，Worker 负责结果核验和续跑 | V2 并发、快照故障、指标、第三方鉴权和删除动作仍是发布门禁 |
 | 4. 加固 V7 Continuation | 已完成 | `AgentContinuationGateway`、`TransactionalAgentContinuationGateway`；`AgentContinuationInput.idempotencyKey()` 覆盖根/父 Turn、Run、Command、状态、结果 Sequence 和 cycle；事务内首事实持久化、提交后入队、重复/并发 admission、STOP_LIMIT 和配置边界测试通过；`ExternalActionOutcomeManager` 已移除本地续跑创建并改用统一 Gateway；`e289bcb` 使队列暂满后的续跑重试重新读取持久化 Turn 状态，`ba0e248` 使提交后入队入口也先重读 Turn，避免取消竞态执行过期快照 | 代码、隔离现场和合成黄金路径已验收；生产第三方鉴权仍是部署门禁 |
 | 5. 前端交互与状态投影 | 已完成 | `agent-fronted` 已统一目录/package；`QUESTION_CARD`、`QUESTION_ANSWER`、`WORKFLOW_CHECKPOINT`、`WORKFLOW_DECISION` 投影与三条新 API；QuestionCard/Checkpoint 独立卡片、历史 `WORKFLOW_QUESTION` 只读展示、七节点 Graph 状态、Continuation 提示、外部成功后的非阻断告警和 Sequence 追加快路径；订单卡片已改为 `DELETE_ORDER` 直接删除记录，Thread 列表不再展示回收站；`e94eb4b` 修正 Agent QuestionCard 合法的 `runId: null`，并覆盖真实 payload；typecheck、Vitest 和 production build 通过 | 当前工作区新增前端设计/文案改动需单独验收 |
 | 6. 遗留代码和测试环境清理 | 已完成 | `e7c18c8` 删除旧 Question/Answer 模型、admission、事务 Workflow 引擎、旧 API DTO、Mapper/Store 和旧授权配置；`96b2e27` 删除无生产引用的重复 Workflow Answer 类型，历史 `WORKFLOW_ANSWER` 仍仅按消息标记读取；`01ad541` 修复规范门禁发现的 persistence 包、Clock 注入和测试命名问题。`FakeClientHttpRequestFactoryTest` 覆盖 HTTP 单测，真实 loopback 契约移至 `HttpOrderGatewayIT`/`HttpExternalActionExecutorIT`，Surefire 与 Failsafe 分离；`rg` 未发现旧生产入口或旧前端目录引用；`833765c` 清理依赖分析警告 | 生产开关、第三方鉴权和删除动作仍是部署门禁 |
@@ -192,7 +238,7 @@
 | 外部动作人工重试状态收口 | 已验证完成 | `04a4c1c` 已验证 `MANUAL_RETRY_REQUIRED → WAITING_EXTERNAL_ACTION/COMPLETED`，真实 API 返回原 command/idempotencyKey；专用 MySQL 已验证耗尽后 API 重试、成功收敛、失败 Turn 不被重写、重复重试返回 409，结果表和幂等键各 1 行；`9dba42b` 修复结果类型映射 | P0 | 无；最终矩阵已通过 |
 | 类型化 Item 与统一序列日志 | 主要生产链路已验证，进入跨层回放收口 | Core `AgentItemTypeEnum`、`AgentItemModel` 和 `AgentItemPayloadModel` 强制 `schemaVersion=1 + kind + data` envelope；`AgentItemPayloadValue` sealed value 模型已覆盖 18 类公开 payload；`AgentItemJournal` 统一序号、幂等追加和提交后事件；Runtime、Spring AI Tool、LangGraph、Worker Outcome、Continuation、QuestionCard/Workflow Decision、订单事实和错误路径已接入 Codec/Journal，Items API 增加兼容 `data` 字段，前端显式处理结构化错误并保留历史兼容；真实浏览器已展示受控业务事实，未展示 Tool JSON、事件名或 Thinking | P0 | 补 Items API 跨页回放、重复/乱序收口和 typed payload 幂等追加矩阵；未知 kind fallback 暂保留以兼容历史数据 |
 | Context、摘要和敏感信息隔离 | 2A-1 已切换完整原始历史 | `AgentContextAssembler` 通过固定水位和 300 条分页读取原始 Item；旧摘要只保留兼容，不参与模型输入，超预算或历史不完整时受控停止。`SpringAiOrderToolSupport` 与上下文视图按最终 JSON 长度截断并保留关联字段；Core/Infrastructure 边界测试覆盖转义结果和内部 Item 隔离 | P1 | 2A-2 再验证摘要压缩、连续水位和重启恢复；真实 DeepSeek 运行时敏感信息检查待现场执行 |
-| Spring AI / DeepSeek 请求契约 | 基础链路已验证，原始计划契约未对齐 | `spring-ai-starter-model-deepseek` 保留 `stream().content()`、取消和超时分类；当前固定 `deepseek-v4-pro`，开启 thinking 与 `reasoning-effort=max`，`.env`/`.env.example` 已同步；已有 V4 Pro Tool Calling、浏览器订单 Workflow、SSE delta、取消、超时和敏感字段证据，未将 Thinking 或 delta 写入 Item、日志和前端 | P1 | 第 2 阶段完成后，单独决定是否迁移至原始计划的 `deepseek-v4-flash`、关闭 Thinking，并补 Live 证据 |
+| Spring AI / DeepSeek 请求契约 | 基础链路已验证，长期计划阶段 4 待定案 | `spring-ai-starter-model-deepseek` 保留 `stream().content()`、取消和超时分类；当前固定 `deepseek-v4-pro`，开启 thinking 与 `reasoning-effort=max`，`.env`/`.env.example` 已同步；已有 V4 Pro Tool Calling、浏览器订单 Workflow、SSE delta、取消、超时和敏感字段证据，未将 Thinking 或 delta 写入 Item、日志和前端 | P1 | 按长期计划阶段 4 完成 Pro/Flash 两套配置的 Live 对比，再决定是否切换并补齐证据 |
 | Tool Calling 与 Workflow 边界 | 已验证完成 | Coordinator 将只读工具与 Workflow 工具分离，写操作进入确定性 Workflow；`131924a` 为每次 Tool Call/Result 写入稳定的 `invocationId`，按调用 ID 记录耗时和失败结果，并在 Tool wrapper 边界拒绝空订单号/退款原因；`0ed8688` 删除订单 Record 的隐式 `toString()` 输出，采用字段白名单和返回前 2000 字符边界；最终 Maven 132 项通过，真实 DeepSeek `lookup_order` Tool Call/Result 的 invocationId 匹配、结果长度 26，真实 SSE/取消/超时也已验证 | P1 | 无; 最终矩阵已通过 |
 | SSE 断线恢复、去重、有序合并 | 已验证完成 | `AgentThreadEventStream` 已实现单连接 buffer → backlog → ordered flush → live、`eventId + sequence` 去重和晚绑定清理，并有并发单元测试；`cef1052` 让前端在 offline 时取消 reader、online 时从当前游标重连，并以无数据超时兜底；真实浏览器在 `afterSequence=13` 连接上切换 offline/online 后，实际恢复断线期间的 14–19 号 Item，网络记录出现两次 `events?afterSequence=13`，页面无重复且控制台无错误 | P0 | 无；最终矩阵已通过 |
 | 前端线程切换与 QuestionCard | 已验证完成 | `useThreadWorkspace` 保留 generation、历史 AbortController、旧事件 Thread 过滤和切换期间禁用；QuestionCard 提交 `APPROVE/REJECT`，组件覆盖多 Question、刷新恢复、订单动作、无回收站列表、重命名和移动端抽屉；`91f2afb` 按结构化外部动作状态恢复 Turn 展示并接入人工重试；`9c0ce82` 修正动态“其他”输入断言的异步状态等待，当前 Vitest 通过 | P0 | 真实浏览器需补直接删除动作和无回收站确认 |
@@ -202,7 +248,7 @@
 
 ## 当前里程碑边界
 
-阶段一至六已由 `d74bc79`、`fa834b5`、`dbf4aa5`、`ebada3f`、`db73491`、`e7c18c8` 和 `01ad541` 完成并分别可回滚。本轮已完成 2A-1/2A-2、2B-1/2B-2、事项级恢复和前端结果投影的代码、本地/集成及隔离现场门禁；本轮已把 Codec/Journal 接入全部主要生产 Item 写入路径，并将 18 类 Core payload builder 接入受控值模型，Items API 增加兼容 `data` 字段，完整 reactor 与定向回归均通过。handoff 保持 `active`，因为第 2 阶段还需完成跨层 Items 回放、重复/乱序游标收口和幂等追加矩阵；未知 kind fallback 仍作为历史兼容边界保留。生产开关、第三方鉴权、删除动作和未执行视口专项仍是部署环境边界，不能把“默认关闭”误读为“代码未完成”。历史现场证据仍保留在下方，但必须与当前结论区分。
+阶段一至六已由 `d74bc79`、`fa834b5`、`dbf4aa5`、`ebada3f`、`db73491`、`e7c18c8` 和 `01ad541` 完成并分别可回滚。本轮已完成 2A-1/2A-2、2B-1/2B-2、事项级恢复和前端结果投影的代码、本地/集成及隔离现场门禁；本轮已把 Codec/Journal 接入全部主要生产 Item 写入路径，并将 18 类 Core payload builder 接入受控值模型，Items API 增加兼容 `data` 字段。阶段 0/1 的规则、跨层 Items 回放、异常游标收口和幂等追加已在随机 MySQL 8.4 acceptance 与完整本地门禁通过；V2 节点、分支、快照重建、命令去重和指标断言也已通过本地回归。handoff 仍保持 `active`，因为真实 DeepSeek 对比、目标环境并发/回执、第三方鉴权、删除动作和剩余视口专项尚未完成；未知 kind fallback 仍作为历史兼容边界保留。不能把“默认关闭”误读为“代码未完成”，也不能把本地门禁误读为生产发布通过。历史现场证据仍保留在下方，但必须与当前结论区分。
 
 ## 历史外部验证边界（不替代本轮阶段七重跑）
 

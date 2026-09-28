@@ -3,6 +3,7 @@ package cn.ethan.infrastructure.agent.action.worker;
 import cn.ethan.core.agent.action.ExternalActionCommandModel;
 import cn.ethan.core.agent.action.ExternalActionCommandStore;
 import cn.ethan.core.agent.action.ExternalActionExecutor;
+import cn.ethan.core.agent.action.ExternalActionOutcomeEnum;
 import cn.ethan.core.agent.action.ExternalActionTypeEnum;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.execution.AgentRuntimeMetrics;
@@ -180,17 +181,23 @@ public final class ExternalActionWorker implements DisposableBean {
         }
 
         Instant now = clock.instant();
-        ExternalActionCommandModel updated = result.success()
-                ? claimed.succeeded(now)
-                : result.retryable()
-                ? claimed.retryAt(now.plus(retryDelay(claimed.attemptCount())), result.code(), result.message(), now)
-                : claimed.failedPermanently(result.code(), result.message(), now);
-        if (!result.success() && result.retryable()) {
+        ExternalActionCommandModel updated = switch (result.outcome()) {
+            case SUCCEEDED -> claimed.succeeded(now);
+            case FAILED -> result.retryable()
+                    ? claimed.retryAt(now.plus(retryDelay(claimed.attemptCount())), result.code(), result.message(), now)
+                    : claimed.failedPermanently(result.code(), result.message(), now);
+            case UNKNOWN -> claimed.outcomeUnknownAt(
+                    now.plus(retryDelay(Math.max(1, claimed.verificationAttemptCount() + 1))),
+                    result.code(), result.message(), now);
+            case PENDING -> throw new IllegalStateException("外部动作执行器不能返回待处理结果");
+        };
+        if (result.outcome() == ExternalActionOutcomeEnum.FAILED && result.retryable()
+                || result.outcome() == ExternalActionOutcomeEnum.UNKNOWN) {
             metrics.observeWorkerRetry();
         }
         try {
-            ExternalActionOutcomeManager.Verification verification = result.success()
-                    ? verifyAfterSuccess(claimed)
+            ExternalActionOutcomeManager.Verification verification = result.outcome() == ExternalActionOutcomeEnum.SUCCEEDED
+                    ? verifyAfterSuccess(claimed, result.code())
                     : null;
             ExternalActionOutcomeManager.Projection projection = outcomes.transition(
                     claimed, updated, result.code(), result.message(), clock, verification);
@@ -210,8 +217,8 @@ public final class ExternalActionWorker implements DisposableBean {
     private void retryAfterExecutionFailure(ExternalActionCommandModel claimed, RuntimeException failure) {
         Instant now = clock.instant();
         metrics.observeWorkerRetry();
-        ExternalActionCommandModel updated = claimed.retryAt(
-                now.plus(retryDelay(claimed.attemptCount())), "WORKER_EXCEPTION",
+        ExternalActionCommandModel updated = claimed.outcomeUnknownAt(
+                now.plus(retryDelay(Math.max(1, claimed.verificationAttemptCount() + 1))), "WORKER_EXCEPTION",
                 failure.getClass().getSimpleName(), now);
         try {
             ExternalActionOutcomeManager.Projection projection = outcomes.transition(
@@ -231,20 +238,25 @@ public final class ExternalActionWorker implements DisposableBean {
     }
 
     /** 外部动作成功后在本地事务外核验最新订单事实；失败只形成可见回执，不重放动作。 */
-    private ExternalActionOutcomeManager.Verification verifyAfterSuccess(ExternalActionCommandModel command) {
+    private ExternalActionOutcomeManager.Verification verifyAfterSuccess(
+            ExternalActionCommandModel command,
+            String actionReceiptCode
+    ) {
         Instant verifiedAt = clock.instant();
         String orderId = orderId(command.payloadJson());
+        if (command.type() == ExternalActionTypeEnum.DELETE_ORDER) {
+            boolean confirmed = "ORDER_DELETED".equals(actionReceiptCode)
+                    || "ALREADY_DELETED".equals(actionReceiptCode);
+            return ExternalActionOutcomeManager.Verification.fromFacts(
+                    null, List.of(), confirmed,
+                    confirmed ? "订单服务已确认删除回执" : "订单删除回执暂未确认", verifiedAt);
+        }
         if (orders == null || orderId == null) {
             return ExternalActionOutcomeManager.Verification.unavailable(
                     "操作已受理、最新状态暂未核验", verifiedAt);
         }
         try {
             OrderLookupResultModel lookup = orders.findOrder(orderId, command.userId());
-            if (command.type() == ExternalActionTypeEnum.DELETE_ORDER
-                    && lookup != null && lookup.status() == OrderLookupStatusEnum.NOT_FOUND) {
-                return ExternalActionOutcomeManager.Verification.fromFacts(
-                        null, List.of(), true, "订单记录已删除", verifiedAt);
-            }
             if (lookup == null || lookup.status() != OrderLookupStatusEnum.FOUND || lookup.order() == null) {
                 return ExternalActionOutcomeManager.Verification.unavailable(
                         "操作已受理、最新状态暂未核验", verifiedAt);
@@ -312,12 +324,12 @@ public final class ExternalActionWorker implements DisposableBean {
             return future.get(actionTimeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException timeout) {
             future.cancel(true);
-            return new ExternalActionExecutor.ExternalActionResult(
-                    false, true, "EXTERNAL_ACTION_TIMEOUT", "外部动作执行超时");
+            return ExternalActionExecutor.ExternalActionResult.unknown(
+                    "EXTERNAL_ACTION_TIMEOUT", "外部动作执行超时，执行结果待核实");
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
-            return new ExternalActionExecutor.ExternalActionResult(
-                    false, true, "WORKER_INTERRUPTED", "Worker 线程被中断");
+            return ExternalActionExecutor.ExternalActionResult.unknown(
+                    "WORKER_INTERRUPTED", "Worker 线程被中断，执行结果待核实");
         } catch (Exception failure) {
             throw new IllegalStateException("外部动作执行器失败", failure);
         }

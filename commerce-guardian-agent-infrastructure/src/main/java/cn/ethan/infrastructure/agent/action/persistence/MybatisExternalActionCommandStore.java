@@ -79,6 +79,8 @@ public class MybatisExternalActionCommandStore implements ExternalActionCommandS
                             .eq("VERSION_NO", value(entity.getVersionNo()))
                             .eq("ATTEMPT_COUNT", value(entity.getAttemptCount()))
                             .eq("RETRY_CYCLE_ATTEMPT_COUNT", value(entity.getRetryCycleAttemptCount()))
+                            .eq("OUTCOME_STATUS", entity.getOutcome().name())
+                            .eq("VERIFICATION_ATTEMPT_COUNT", value(entity.getVerificationAttemptCount()))
                             .and(value -> value.isNull("LEASE_UNTIL").or().le("LEASE_UNTIL", now));
                     setState(wrapper, claimed);
                     int updated = mapper.update(null, wrapper);
@@ -97,7 +99,9 @@ public class MybatisExternalActionCommandStore implements ExternalActionCommandS
                 .eq("VERSION_NO", expected.version())
                 .eq("STATUS", expected.status().name())
                 .eq("ATTEMPT_COUNT", expected.attemptCount())
-                .eq("RETRY_CYCLE_ATTEMPT_COUNT", expected.retryCycleAttemptCount());
+                .eq("RETRY_CYCLE_ATTEMPT_COUNT", expected.retryCycleAttemptCount())
+                .eq("OUTCOME_STATUS", expected.outcome().name())
+                .eq("VERIFICATION_ATTEMPT_COUNT", expected.verificationAttemptCount());
         if (expected.status() == ExternalActionStatusEnum.PROCESSING) {
             wrapper.eq("LEASE_OWNER", expected.leaseOwner())
                     .eq("LEASE_UNTIL", expected.leaseUntil());
@@ -121,27 +125,38 @@ public class MybatisExternalActionCommandStore implements ExternalActionCommandS
                 || !expected.payloadJson().equals(next.payloadJson())
                 || !expected.createdAt().equals(next.createdAt())
                 || expected.attemptCount() != next.attemptCount()
-                || expected.maxAttempts() != next.maxAttempts()) {
+                || expected.maxAttempts() != next.maxAttempts()
+                || expected.maxVerificationAttempts() != next.maxVerificationAttempts()) {
             return false;
         }
         if (expected.status() == ExternalActionStatusEnum.PROCESSING) {
             return next.retryCycleAttemptCount() == expected.retryCycleAttemptCount()
                     && (next.status() == ExternalActionStatusEnum.SUCCEEDED
                     || next.status() == ExternalActionStatusEnum.RETRY_WAIT
-                    || next.status() == ExternalActionStatusEnum.MANUAL_RETRY_REQUIRED);
+                    || next.status() == ExternalActionStatusEnum.MANUAL_RETRY_REQUIRED
+                    || next.status() == ExternalActionStatusEnum.VERIFY_WAIT
+                    || next.status() == ExternalActionStatusEnum.MANUAL_VERIFICATION_REQUIRED);
         }
-        return expected.status() == ExternalActionStatusEnum.MANUAL_RETRY_REQUIRED
+        return (expected.status() == ExternalActionStatusEnum.MANUAL_RETRY_REQUIRED
                 && next.status() == ExternalActionStatusEnum.PENDING
-                && next.retryCycleAttemptCount() == 0;
+                && next.outcome() == cn.ethan.core.agent.action.ExternalActionOutcomeEnum.PENDING
+                && next.retryCycleAttemptCount() == 0)
+                || (expected.status() == ExternalActionStatusEnum.MANUAL_VERIFICATION_REQUIRED
+                && next.status() == ExternalActionStatusEnum.VERIFY_WAIT
+                && next.outcome() == cn.ethan.core.agent.action.ExternalActionOutcomeEnum.UNKNOWN
+                && next.retryCycleAttemptCount() == expected.retryCycleAttemptCount());
     }
 
     private void setState(UpdateWrapper<ExternalActionCommandEntity> wrapper,
                           ExternalActionCommandModel command) {
         wrapper.set("STATUS", command.status().name())
+                .set("OUTCOME_STATUS", command.outcome().name())
                 .set("VERSION_NO", command.version())
                 .set("ATTEMPT_COUNT", command.attemptCount())
                 .set("MAX_ATTEMPTS", command.maxAttempts())
                 .set("RETRY_CYCLE_ATTEMPT_COUNT", command.retryCycleAttemptCount())
+                .set("VERIFICATION_ATTEMPT_COUNT", command.verificationAttemptCount())
+                .set("MAX_VERIFICATION_ATTEMPTS", command.maxVerificationAttempts())
                 .set("NEXT_ATTEMPT_AT", command.nextAttemptAt())
                 .set("LEASE_OWNER", command.leaseOwner())
                 .set("LEASE_UNTIL", command.leaseUntil())
@@ -162,10 +177,13 @@ public class MybatisExternalActionCommandStore implements ExternalActionCommandS
         entity.setIdempotencyKey(model.idempotencyKey());
         entity.setPayloadJson(model.payloadJson());
         entity.setStatus(model.status());
+        entity.setOutcome(model.outcome());
         entity.setVersionNo(model.version());
         entity.setAttemptCount(model.attemptCount());
         entity.setMaxAttempts(model.maxAttempts());
         entity.setRetryCycleAttemptCount(model.retryCycleAttemptCount());
+        entity.setVerificationAttemptCount(model.verificationAttemptCount());
+        entity.setMaxVerificationAttempts(model.maxVerificationAttempts());
         entity.setNextAttemptAt(model.nextAttemptAt());
         entity.setLeaseOwner(model.leaseOwner());
         entity.setLeaseUntil(model.leaseUntil());
@@ -183,7 +201,8 @@ public class MybatisExternalActionCommandStore implements ExternalActionCommandS
                 entity.getPayloadJson(), entity.getStatus(), value(entity.getAttemptCount()), value(entity.getMaxAttempts()),
                 entity.getNextAttemptAt(), entity.getLeaseOwner(), entity.getLeaseUntil(), entity.getLastErrorCode(),
                 entity.getLastErrorMessage(), entity.getCreatedAt(), entity.getUpdatedAt(), entity.getCompletedAt(),
-                value(entity.getVersionNo()), value(entity.getRetryCycleAttemptCount()));
+                value(entity.getVersionNo()), value(entity.getRetryCycleAttemptCount()), entity.getOutcome(),
+                value(entity.getVerificationAttemptCount()), value(entity.getMaxVerificationAttempts()));
     }
 
     private int value(Integer value) { return value == null ? 0 : value; }

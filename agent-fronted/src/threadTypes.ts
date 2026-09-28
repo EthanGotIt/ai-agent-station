@@ -26,7 +26,9 @@ export type ExternalActionStatus =
   | "PENDING"
   | "PROCESSING"
   | "RETRY_WAIT"
+  | "VERIFY_WAIT"
   | "MANUAL_RETRY_REQUIRED"
+  | "MANUAL_VERIFICATION_REQUIRED"
   | "SUCCEEDED";
 
 export type ExternalActionReceipt = {
@@ -41,6 +43,9 @@ export type ExternalActionReceipt = {
   verificationStatus?: string;
   verificationMessage?: string;
   verifiedAt?: string;
+  outcomeStatus?: "PENDING" | "SUCCEEDED" | "FAILED" | "UNKNOWN";
+  verificationAttemptCount?: number;
+  maxVerificationAttempts?: number;
 };
 
 export type AgentItemType =

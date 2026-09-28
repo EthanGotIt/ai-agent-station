@@ -124,6 +124,20 @@ class HttpOrderGatewayTest {
     }
 
     @Test
+    void classifiesServerErrorAfterMutationRequestAsUnknownOutcome() {
+        FakeClientHttpRequestFactoryTest transport = new FakeClientHttpRequestFactoryTest(request ->
+                FakeClientHttpRequestFactoryTest.Response.json(503,
+                        "{\"success\":false,\"retryable\":true,\"code\":\"TEMPORARY\"}"));
+
+        var result = gateway(transport).expedite("user-1", "ORDER-001", "action-unknown", NOW);
+
+        assertTrue(result.outcomeUnknown());
+        assertTrue(result.retryable());
+        assertEquals("ORDER_ACTION_RESULT_UNKNOWN", result.code());
+        assertEquals("action-unknown", transport.requests().get(0).headers().getFirst("Idempotency-Key"));
+    }
+
+    @Test
     void mapsTransportFailureToTemporaryFailure() {
         FakeClientHttpRequestFactoryTest transport = new FakeClientHttpRequestFactoryTest(request -> {
             throw new IOException("simulated transport failure");

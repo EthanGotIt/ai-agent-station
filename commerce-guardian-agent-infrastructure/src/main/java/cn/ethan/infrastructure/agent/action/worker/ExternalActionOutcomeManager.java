@@ -2,6 +2,7 @@ package cn.ethan.infrastructure.agent.action.worker;
 
 import cn.ethan.core.agent.action.ExternalActionCommandModel;
 import cn.ethan.core.agent.action.ExternalActionCommandStore;
+import cn.ethan.core.agent.action.ExternalActionOutcomeEnum;
 import cn.ethan.core.agent.action.ExternalActionStatusEnum;
 import cn.ethan.core.agent.event.AgentThreadEventGateway;
 import cn.ethan.core.agent.thread.AgentItemModel;
@@ -15,9 +16,11 @@ import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowOrchestrationVersionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import cn.ethan.core.agent.coordination.AgentContinuationGateway;
 import cn.ethan.core.agent.execution.AgentTurnItemPayloads;
+import cn.ethan.core.agent.execution.AgentRuntimeMetrics;
 import cn.ethan.core.commerce.order.LogisticsEventModel;
 import cn.ethan.core.commerce.order.OrderSnapshotModel;
 import cn.ethan.infrastructure.agent.workflow.transaction.OrderWorkflowStepProjection;
@@ -53,6 +56,7 @@ public final class ExternalActionOutcomeManager {
     private final AgentItemPayloadCodec itemPayloadCodec;
     private final TransactionTemplate transactionTemplate;
     private final AgentContinuationGateway continuationGateway;
+    private final AgentRuntimeMetrics metrics;
 
     /** Worker 是否应由本地 Journal 负责本次投影的提交后事件。 */
     public boolean eventsHandledByJournal() {
@@ -69,13 +73,14 @@ public final class ExternalActionOutcomeManager {
             AgentItemJournal itemJournal,
             AgentItemPayloadCodec itemPayloadCodec,
             PlatformTransactionManager transactionManager,
-            AgentContinuationGateway continuationGateway
+            AgentContinuationGateway continuationGateway,
+            AgentRuntimeMetrics metrics
     ) {
         this(commands, items, turns, workflowRuns, objectMapper,
                 itemJournal,
                 itemPayloadCodec,
                 transactionManager == null ? null : new TransactionTemplate(transactionManager),
-                continuationGateway);
+                continuationGateway, metrics);
     }
 
     /**
@@ -89,7 +94,7 @@ public final class ExternalActionOutcomeManager {
             ObjectMapper objectMapper
     ) {
         this(commands, items, turns, workflowRuns, objectMapper, null, null, (TransactionTemplate) null,
-                null);
+                null, null);
     }
 
     /** 保留既有事务测试和非 Spring 调用边界；续跑由生产装配显式开启。 */
@@ -105,7 +110,7 @@ public final class ExternalActionOutcomeManager {
                 null,
                 null,
                 transactionManager == null ? null : new TransactionTemplate(transactionManager),
-                null);
+                null, null);
     }
 
     private ExternalActionOutcomeManager(
@@ -117,7 +122,8 @@ public final class ExternalActionOutcomeManager {
             AgentItemJournal itemJournal,
             AgentItemPayloadCodec itemPayloadCodec,
             TransactionTemplate transactionTemplate,
-            AgentContinuationGateway continuationGateway
+            AgentContinuationGateway continuationGateway,
+            AgentRuntimeMetrics metrics
     ) {
         this.commands = commands;
         this.items = items;
@@ -128,6 +134,7 @@ public final class ExternalActionOutcomeManager {
         this.itemPayloadCodec = itemPayloadCodec;
         this.transactionTemplate = transactionTemplate;
         this.continuationGateway = continuationGateway;
+        this.metrics = metrics == null ? AgentRuntimeMetrics.noop() : metrics;
     }
 
     /**
@@ -178,26 +185,29 @@ public final class ExternalActionOutcomeManager {
         AgentWorkflowRunModel run = workflowRuns.find(next.userId(), next.runId())
                 .orElseThrow(() -> new IllegalStateException("外部动作对应的 WorkflowRun 不存在：" + next.runId()));
         AgentWorkflowStatusEnum targetWorkflowStatus = workflowStatus(next.status());
+        metrics.observeWorkflowWorker(run.orchestrationVersion().name(), next.status().name());
         if (run.status() != targetWorkflowStatus) {
             if (isImmutableTerminal(run.status())) {
                 throw new IllegalStateException("WorkflowRun 已处于冲突终态：" + run.runId());
             }
-            workflowRuns.update(run.status(targetWorkflowStatus, progressSteps(next.status(), verification),
+            workflowRuns.update(run.status(targetWorkflowStatus,
+                    progressSteps(next.status(), verification, run.orchestrationVersion()),
                     run.stateJson(), now));
         } else {
-            workflowRuns.update(run.progress(progressSteps(next.status(), verification), run.stateJson(), now));
+            workflowRuns.update(run.progress(
+                    progressSteps(next.status(), verification, run.orchestrationVersion()), run.stateJson(), now));
         }
 
         List<AgentItemModel> projectedItems = new ArrayList<>();
         AgentItemModel statusItem = appendStatus(next, resultCode, resultMessage, now, verification);
         projectedItems.add(statusItem);
-        if (continuationGateway != null) {
-            projectedItems.add(appendWorkflowStep(next, "VERIFY_OUTCOME",
-                    verification == null ? "WAITING" : verification.verified() ? "COMPLETED" : "ERROR",
-                    verification == null ? "UNAVAILABLE" : verification.verified() ? "VERIFIED" : "UNVERIFIED",
-                    verification == null ? resultCode : verification.verified() ? null : resultCode,
-                    0L, now));
-        }
+        projectedItems.add(appendWorkflowStep(next, "VERIFY_OUTCOME",
+                verification == null ? "WAITING" : verification.verified() ? "COMPLETED" : "ERROR",
+                verification == null ? "UNAVAILABLE" : verification.verified() ? "VERIFIED" : "UNVERIFIED",
+                verification == null ? resultCode : verification.verified() ? null : resultCode,
+                0L, now));
+        projectedItems.add(appendWorkflowResult(next, resultStatus(next, verification),
+                resultMessage(next, resultCode, resultMessage, verification), now));
         if (verification != null && verification.order() != null) {
             projectedItems.add(appendOrderDetail(next, verification.order(), now));
             if (verification.logistics() != null) {
@@ -209,18 +219,47 @@ public final class ExternalActionOutcomeManager {
         if (projectedTurn != null) {
             projectedItems.add(appendTurnState(projectedTurn, now));
         }
-        if (continuationGateway != null) {
+        boolean continuationAdmitted = false;
+        if (continuationGateway != null
+                && run.orchestrationVersion() != AgentWorkflowOrchestrationVersionEnum.EXPEDITE_JAVA_V1) {
+            var admission = continuationGateway.admit(next, statusItem);
+            projectedItems.addAll(admission.items());
+            continuationAdmitted = admission.newlyAdmitted();
+        }
+        if (continuationAdmitted) {
             boolean verified = verification != null && verification.verified();
-            projectedItems.add(appendWorkflowStep(next, "HANDOFF_AGENT",
-                    verified ? "COMPLETED" : "WAITING",
-                    verified ? "VERIFIED" : next.status() == ExternalActionStatusEnum.SUCCEEDED
-                            ? "PENDING_VERIFICATION" : next.status().name(),
+            projectedItems.add(appendWorkflowStep(next, "HANDOFF_AGENT", "COMPLETED",
+                    verified ? "VERIFIED" : "PENDING_VERIFICATION",
                     verified ? null : resultCode, 0L, now));
         }
-        if (continuationGateway != null) {
-            projectedItems.addAll(continuationGateway.admit(next, statusItem).items());
-        }
         return new Projection(next, projectedTurn, projectedItems);
+    }
+
+    private String resultStatus(ExternalActionCommandModel command, Verification verification) {
+        return switch (command.status()) {
+            case SUCCEEDED -> verification != null && verification.verified() ? "COMPLETED" : "APPROVED";
+            case RETRY_WAIT -> "WAITING_EXTERNAL_ACTION";
+            case MANUAL_RETRY_REQUIRED -> "MANUAL_RETRY_REQUIRED";
+            case VERIFY_WAIT -> "WAITING_OUTCOME_VERIFICATION";
+            case MANUAL_VERIFICATION_REQUIRED -> "MANUAL_VERIFICATION_REQUIRED";
+            default -> command.status().name();
+        };
+    }
+
+    private String resultMessage(
+            ExternalActionCommandModel command,
+            String resultCode,
+            String resultMessage,
+            Verification verification
+    ) {
+        if (command.status() == ExternalActionStatusEnum.SUCCEEDED && verification != null) {
+            return verification.message();
+        }
+        if (command.outcome() == ExternalActionOutcomeEnum.UNKNOWN) {
+            return resultMessage == null || resultMessage.isBlank()
+                    ? "外部动作结果待核实，系统将使用原幂等键进行核验" : resultMessage;
+        }
+        return resultMessage == null || resultMessage.isBlank() ? resultCode : resultMessage;
     }
 
     private AgentTurnModel projectTurn(ExternalActionCommandModel command, Instant now) {
@@ -260,6 +299,9 @@ public final class ExternalActionOutcomeManager {
         data.put("attemptCount", command.attemptCount());
         data.put("retryCycleAttemptCount", command.retryCycleAttemptCount());
         data.put("maxAttempts", command.maxAttempts());
+        data.put("outcomeStatus", command.outcome().name());
+        data.put("verificationAttemptCount", command.verificationAttemptCount());
+        data.put("maxVerificationAttempts", command.maxVerificationAttempts());
         data.put("actionType", command.type().name());
         String orderId = orderId(command.payloadJson());
         if (orderId != null) {
@@ -290,7 +332,8 @@ public final class ExternalActionOutcomeManager {
                 command.nextAttemptAt() == null ? null : command.nextAttemptAt().toString(), resultCode,
                 resultMessage, verification == null ? null : verification.verified() ? "VERIFIED" : "PENDING",
                 verification == null ? null : verification.message(),
-                verification == null || verification.verifiedAt() == null ? null : verification.verifiedAt().toString());
+                verification == null || verification.verifiedAt() == null ? null : verification.verifiedAt().toString(),
+                command.outcome().name());
         String payload = itemPayloadCodec == null ? legacyPayload
                 : itemPayloadCodec.encode(AgentItemTypeEnum.EXTERNAL_ACTION_STATUS, structuredPayload);
         return append(new AgentItemModel(UUID.randomUUID().toString(), command.threadId(), command.turnId(), 0,
@@ -390,6 +433,26 @@ public final class ExternalActionOutcomeManager {
                 payload, now));
     }
 
+    private AgentItemModel appendWorkflowResult(
+            ExternalActionCommandModel command,
+            String status,
+            String message,
+            Instant now
+    ) {
+        ObjectNode data = objectMapper.createObjectNode();
+        data.put("runId", command.runId());
+        data.put("status", status);
+        if (message != null && !message.isBlank()) {
+            data.put("message", message);
+        }
+        String legacyPayload = writeJson(data);
+        var structuredPayload = AgentTurnItemPayloads.workflowResultValue(command.runId(), status, message);
+        String payload = itemPayloadCodec == null ? legacyPayload
+                : itemPayloadCodec.encode(AgentItemTypeEnum.WORKFLOW_RESULT, structuredPayload);
+        return append(new AgentItemModel(UUID.randomUUID().toString(), command.threadId(), command.turnId(), 0,
+                AgentItemTypeEnum.WORKFLOW_RESULT, payload, now));
+    }
+
     private AgentItemModel append(AgentItemModel item) {
         AgentItemModel encoded = itemPayloadCodec == null ? item : new AgentItemModel(
                 item.itemId(), item.threadId(), item.turnId(), item.sequence(), item.type(),
@@ -410,26 +473,49 @@ public final class ExternalActionOutcomeManager {
         }
     }
 
-    private String progressSteps(ExternalActionStatusEnum status, Verification verification) {
+    private String progressSteps(
+            ExternalActionStatusEnum status,
+            Verification verification,
+            AgentWorkflowOrchestrationVersionEnum orchestrationVersion
+    ) {
+        boolean javaRun = orchestrationVersion == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_JAVA_V1;
+        String executionNode = orchestrationVersion == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V2 || javaRun
+                ? "HANDOFF_WORKER" : "EXECUTE_ACTION";
         if (status == ExternalActionStatusEnum.RETRY_WAIT) {
-            return OrderWorkflowStepProjection.snapshot(objectMapper, "EXECUTE_ACTION", "WAITING");
+            return OrderWorkflowStepProjection.snapshot(objectMapper, executionNode, "WAITING", orchestrationVersion);
+        }
+        if (status == ExternalActionStatusEnum.VERIFY_WAIT
+                || status == ExternalActionStatusEnum.MANUAL_VERIFICATION_REQUIRED) {
+            return OrderWorkflowStepProjection.snapshot(objectMapper, "VERIFY_OUTCOME", "WAITING", orchestrationVersion);
         }
         if (status == ExternalActionStatusEnum.MANUAL_RETRY_REQUIRED) {
-            return OrderWorkflowStepProjection.snapshot(objectMapper, "EXECUTE_ACTION", "ERROR");
+            return OrderWorkflowStepProjection.snapshot(objectMapper, executionNode, "ERROR", orchestrationVersion);
         }
         if (status == ExternalActionStatusEnum.SUCCEEDED) {
+            if (javaRun) {
+                return OrderWorkflowStepProjection.snapshot(objectMapper, "VERIFY_OUTCOME",
+                        verification != null && verification.verified() ? "COMPLETED" : "ERROR",
+                        orchestrationVersion);
+            }
+            if (orchestrationVersion == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V2) {
+                return OrderWorkflowStepProjection.snapshot(objectMapper, executionNode,
+                        verification != null && verification.verified() ? "COMPLETED" : "ERROR",
+                        orchestrationVersion);
+            }
             return verification != null && verification.verified()
-                    ? OrderWorkflowStepProjection.snapshot(objectMapper, "HANDOFF_AGENT", "COMPLETED")
-                    : OrderWorkflowStepProjection.snapshot(objectMapper, "VERIFY_OUTCOME", "ERROR");
+                    ? OrderWorkflowStepProjection.snapshot(objectMapper, "HANDOFF_AGENT", "COMPLETED",
+                    orchestrationVersion)
+                    : OrderWorkflowStepProjection.snapshot(objectMapper, "VERIFY_OUTCOME", "ERROR",
+                    orchestrationVersion);
         }
-        return OrderWorkflowStepProjection.snapshot(objectMapper, "EXECUTE_ACTION", "ACTIVE");
+        return OrderWorkflowStepProjection.snapshot(objectMapper, executionNode, "ACTIVE", orchestrationVersion);
     }
 
     private static AgentWorkflowStatusEnum workflowStatus(ExternalActionStatusEnum status) {
         return switch (status) {
             case SUCCEEDED -> AgentWorkflowStatusEnum.COMPLETED;
             case MANUAL_RETRY_REQUIRED -> AgentWorkflowStatusEnum.MANUAL_RETRY_REQUIRED;
-            case RETRY_WAIT -> AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION;
+            case RETRY_WAIT, VERIFY_WAIT, MANUAL_VERIFICATION_REQUIRED -> AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION;
             default -> throw new IllegalArgumentException("不能投影非终态外部动作：" + status);
         };
     }
@@ -438,7 +524,7 @@ public final class ExternalActionOutcomeManager {
         return switch (status) {
             case SUCCEEDED -> AgentTurnStatusEnum.COMPLETED;
             case MANUAL_RETRY_REQUIRED -> AgentTurnStatusEnum.FAILED;
-            case RETRY_WAIT -> AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION;
+            case RETRY_WAIT, VERIFY_WAIT, MANUAL_VERIFICATION_REQUIRED -> AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION;
             default -> throw new IllegalArgumentException("不能投影非终态外部动作：" + status);
         };
     }

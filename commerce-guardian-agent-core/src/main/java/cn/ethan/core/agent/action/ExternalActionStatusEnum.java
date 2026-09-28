@@ -10,6 +10,8 @@ public enum ExternalActionStatusEnum {
     PENDING,
     PROCESSING,
     RETRY_WAIT,
+    VERIFY_WAIT,
     MANUAL_RETRY_REQUIRED,
+    MANUAL_VERIFICATION_REQUIRED,
     SUCCEEDED
 }

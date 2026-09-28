@@ -1,5 +1,6 @@
 package cn.ethan.infrastructure.agent.workflow.transaction;
 
+import cn.ethan.core.agent.workflow.AgentWorkflowOrchestrationVersionEnum;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.LinkedHashMap;
@@ -21,16 +22,36 @@ public final class OrderWorkflowStepProjection {
     private static final List<String> NODES = List.of(
             "RESOLVE_ORDER", "VERIFY_FACTS", "SWITCH_REQUIREMENTS", "AUTHORIZE",
             "EXECUTE_ACTION", "VERIFY_OUTCOME", "HANDOFF_AGENT");
+    private static final List<String> EXPEDITE_V2_NODES = List.of(
+            "RESOLVE_ORDER", "VERIFY_FACTS", "PREPARE_CONFIRMATION", "AUTHORIZE",
+            "REVERIFY_FACTS", "BUILD_ACTION_COMMAND", "HANDOFF_WORKER");
+    private static final List<String> EXPEDITE_JAVA_V1_NODES = List.of(
+            "RESOLVE_ORDER", "VERIFY_FACTS", "PREPARE_CONFIRMATION", "AUTHORIZE",
+            "REVERIFY_FACTS", "BUILD_ACTION_COMMAND", "HANDOFF_WORKER", "VERIFY_OUTCOME");
 
     private OrderWorkflowStepProjection() {
     }
 
     public static String snapshot(ObjectMapper objectMapper, String activeNode, String activeStatus) {
-        String node = normalizeNode(activeNode);
+        return snapshot(objectMapper, activeNode, activeStatus,
+                AgentWorkflowOrchestrationVersionEnum.LEGACY_V1);
+    }
+
+    /**
+     * 生成指定编排版本的固定节点快照；V2 保持图节点名称，避免 Worker 结算时退回旧流程投影。
+     */
+    public static String snapshot(
+            ObjectMapper objectMapper,
+            String activeNode,
+            String activeStatus,
+            AgentWorkflowOrchestrationVersionEnum orchestrationVersion
+    ) {
+        List<String> nodes = nodes(orchestrationVersion);
+        String node = normalizeNode(activeNode, nodes);
         String status = activeStatus == null || activeStatus.isBlank() ? "PENDING" : activeStatus;
-        int activeIndex = NODES.indexOf(node);
-        List<Map<String, String>> steps = NODES.stream().map(candidate -> {
-            int index = NODES.indexOf(candidate);
+        int activeIndex = nodes.indexOf(node);
+        List<Map<String, String>> steps = nodes.stream().map(candidate -> {
+            int index = nodes.indexOf(candidate);
             String value = index < activeIndex ? "COMPLETED"
                     : index == activeIndex ? status : "PENDING";
             Map<String, String> item = new LinkedHashMap<>();
@@ -49,9 +70,19 @@ public final class OrderWorkflowStepProjection {
         return NODES;
     }
 
-    private static String normalizeNode(String value) {
+    private static List<String> nodes(AgentWorkflowOrchestrationVersionEnum orchestrationVersion) {
+        if (orchestrationVersion == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V2) {
+            return EXPEDITE_V2_NODES;
+        }
+        if (orchestrationVersion == AgentWorkflowOrchestrationVersionEnum.EXPEDITE_JAVA_V1) {
+            return EXPEDITE_JAVA_V1_NODES;
+        }
+        return NODES;
+    }
+
+    private static String normalizeNode(String value, List<String> nodes) {
         String normalized = value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
-        return NODES.contains(normalized) ? normalized : NODES.get(0);
+        return nodes.contains(normalized) ? normalized : nodes.get(0);
     }
 
     public static String nodeForLegacyStep(String activeStep) {

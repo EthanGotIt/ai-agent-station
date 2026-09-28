@@ -65,7 +65,9 @@ ai-agent:
       queue-capacity: ${AI_AGENT_EXECUTOR_QUEUE_CAPACITY:256}
       await-termination: ${AI_AGENT_EXECUTOR_AWAIT_TERMINATION:PT10S}
   workflow:
-    # 2B-1 试点默认关闭；打开后仅明确订单号的催发货新 Run 使用 EXPEDITE_GRAPH_V1。
+    # 催发货编排新 Run 的路由；JAVA 使用持久化 Java Workflow，默认仍为关闭。
+    expedite-mode: ${AI_AGENT_EXPEDITE_MODE:${AI_AGENT_EXPEDITE_GRAPH_MODE:}}
+    expedite-graph-mode: ${AI_AGENT_EXPEDITE_GRAPH_MODE:${AI_AGENT_EXPEDITE_MODE:}}
     expedite-graph-enabled: ${AI_AGENT_EXPEDITE_GRAPH_ENABLED:false}
     graph-recursion-limit: ${AI_AGENT_WORKFLOW_GRAPH_RECURSION_LIMIT:32}
   thread:

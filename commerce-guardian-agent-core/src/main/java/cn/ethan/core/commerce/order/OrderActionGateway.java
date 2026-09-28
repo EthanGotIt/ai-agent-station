@@ -39,10 +39,15 @@ public interface OrderActionGateway {
         return OrderActionResult.failed(false, "ACTION_NOT_SUPPORTED", "当前订单服务不支持删除订单记录");
     }
 
-    record OrderActionResult(boolean success, boolean retryable, String code, String message) {
+    record OrderActionResult(boolean success, boolean retryable, boolean outcomeUnknown, String code, String message) {
         public OrderActionResult {
             code = code == null ? "" : code;
             message = message == null ? "" : message;
+        }
+
+        /** 兼容明确成功/失败响应；传输不确定性使用 unknown 工厂显式表达。 */
+        public OrderActionResult(boolean success, boolean retryable, String code, String message) {
+            this(success, retryable, false, code, message);
         }
 
         public static OrderActionResult succeeded(String code, String message) {
@@ -50,7 +55,11 @@ public interface OrderActionGateway {
         }
 
         public static OrderActionResult failed(boolean retryable, String code, String message) {
-            return new OrderActionResult(false, retryable, code, message);
+            return new OrderActionResult(false, retryable, false, code, message);
+        }
+
+        public static OrderActionResult unknown(String code, String message) {
+            return new OrderActionResult(false, true, true, code, message);
         }
     }
 }

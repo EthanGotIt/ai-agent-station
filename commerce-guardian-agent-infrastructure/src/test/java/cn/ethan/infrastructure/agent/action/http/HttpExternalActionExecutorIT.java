@@ -93,13 +93,65 @@ class HttpExternalActionExecutorIT {
             assertTrue(first.retryable());
             assertTrue(second.success());
             assertTrue(replay.success());
-            assertEquals("IDEMPOTENT_REPLAY", replay.code());
+            assertEquals("ORDER_REFUNDED", replay.code());
             assertEquals(2, requestCount.get());
             assertEquals(1, businessMutationCount.get());
             assertEquals(1, results.values.size());
         } finally {
             server.stop(0);
         }
+    }
+
+    @Test
+    void replaysSameKeyWhenRemoteCommittedButReturnedServerError() throws IOException {
+        AtomicInteger requestCount = new AtomicInteger();
+        AtomicInteger businessMutationCount = new AtomicInteger();
+        Set<String> appliedKeys = ConcurrentHashMap.newKeySet();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/orders/ORDER-001/expedite", exchange -> {
+            try (exchange) {
+                requestCount.incrementAndGet();
+                String key = exchange.getRequestHeaders().getFirst("Idempotency-Key");
+                boolean firstMutation = appliedKeys.add(key);
+                if (firstMutation) businessMutationCount.incrementAndGet();
+                if (firstMutation) {
+                    respond(exchange, 503,
+                            "{\"success\":false,\"retryable\":true,\"code\":\"RESPONSE_LOST\"}");
+                } else {
+                    respond(exchange, 200,
+                            "{\"success\":true,\"retryable\":false,\"code\":\"EXPEDITED\",\"message\":\"ok\"}");
+                }
+            }
+        });
+        server.start();
+        try {
+            InMemoryResults results = new InMemoryResults();
+            HttpOrderGateway actions = new HttpOrderGateway(RestClient.builder(),
+                    "http://127.0.0.1:" + server.getAddress().getPort(), java.time.Duration.ofSeconds(1));
+            HttpExternalActionExecutor executor = new HttpExternalActionExecutor(
+                    results, actions, Clock.fixed(NOW, ZoneOffset.UTC), new ObjectMapper());
+            ExternalActionCommandModel command = command(
+                    ExternalActionTypeEnum.EXPEDITE, "lost-response-key", "{\"orderId\":\"ORDER-001\"}");
+
+            var first = executor.execute(command);
+            var replay = executor.execute(command);
+
+            assertEquals(cn.ethan.core.agent.action.ExternalActionOutcomeEnum.UNKNOWN, first.outcome());
+            assertTrue(replay.success());
+            assertEquals("EXPEDITED", replay.code());
+            assertEquals(2, requestCount.get());
+            assertEquals(1, businessMutationCount.get());
+            assertEquals(1, results.values.size());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    private static void respond(HttpExchange exchange, int status, String body) throws IOException {
+        byte[] bytes = body.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.sendResponseHeaders(status, bytes.length);
+        exchange.getResponseBody().write(bytes);
     }
 
     private static void respondRefund(

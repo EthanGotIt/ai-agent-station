@@ -24,7 +24,8 @@ public final class ExternalActionService {
     public ExternalActionCommandModel retry(String userId, String runId) {
         ExternalActionCommandModel command = commands.findByRunId(userId, runId)
                 .orElseThrow(() -> new AgentThreadNotFoundException(runId));
-        if (command.status() != ExternalActionStatusEnum.MANUAL_RETRY_REQUIRED) {
+        if (command.status() != ExternalActionStatusEnum.MANUAL_RETRY_REQUIRED
+                && command.status() != ExternalActionStatusEnum.MANUAL_VERIFICATION_REQUIRED) {
             throw new AgentThreadConflictException("ACTION_NOT_RETRYABLE", "外部动作当前不需要人工重试");
         }
         ExternalActionCommandModel retried = command.manualRetry(clock.instant());

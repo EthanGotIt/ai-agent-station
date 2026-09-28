@@ -20,8 +20,18 @@ public record AgentExternalActionStatusPayloadModel(
         String message,
         String verificationStatus,
         String verificationMessage,
-        String verifiedAt
+        String verifiedAt,
+        String outcomeStatus
 ) implements AgentItemPayloadValue {
+
+    public AgentExternalActionStatusPayloadModel(
+            String commandId, String runId, String status, int attemptCount, int retryCycleAttemptCount,
+            int maxAttempts, String actionType, String orderId, String nextAttemptAt, String code,
+            String message, String verificationStatus, String verificationMessage, String verifiedAt
+    ) {
+        this(commandId, runId, status, attemptCount, retryCycleAttemptCount, maxAttempts, actionType,
+                orderId, nextAttemptAt, code, message, verificationStatus, verificationMessage, verifiedAt, null);
+    }
 
     public AgentExternalActionStatusPayloadModel {
         commandId = required(commandId, "commandId");
@@ -35,6 +45,7 @@ public record AgentExternalActionStatusPayloadModel(
         verificationStatus = optional(verificationStatus);
         verificationMessage = optional(verificationMessage);
         verifiedAt = optional(verifiedAt);
+        outcomeStatus = optional(outcomeStatus);
         if (attemptCount < 0 || retryCycleAttemptCount < 0 || maxAttempts < 0) {
             throw new IllegalArgumentException("外部动作尝试次数不能为负数");
         }

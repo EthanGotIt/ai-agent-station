@@ -1,10 +1,12 @@
 # Commerce Guardian Agent 运行手册
 
+> 当前运行手册描述仓库现状：催发货 Java Workflow 新路由默认关闭，Legacy/V1/V2 LangGraph Run 保留版本化兼容恢复。退款和删除迁移及彻底移除图执行代码属于后续目标；升级顺序见 [长期升级计划](upgrade-plan.md)。
+
 ## 配置
 
 本地与 CI 工具链保持一致：Python 3.14、Node.js 24、JDK 17；订单服务夹具由 Python 3.14 进程运行。项目只维护 CI 与本地验收，不提供 CD 部署资产。
 
-敏感配置只通过环境变量注入：`MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` 和 `DEEPSEEK_API_KEY`。DeepSeek 请求固定使用 `deepseek-v4-pro` thinking 模式；`DEEPSEEK_BASE_URL`、模型单次输出上限（默认 1,024）、Turn 累计生成额度（`AI_AGENT_MAX_OUTPUT_TOKENS_PER_TURN`，默认 8,192）、重复工具失败阈值（`AI_AGENT_REPEATED_TOOL_FAILURE_THRESHOLD`，默认 3）、模型 HTTP 超时、Thread 上下文预算（默认 65,536，输出预留 1,500）、队列容量、各层超时、SSE 心跳（`AI_AGENT_SSE_HEARTBEAT_INTERVAL`）和 Worker 轮询参数均在 `application.yml` 中以环境变量覆盖。2A-1 生产路径先固定已提交最大 Sequence，再按每页 300 条读取完整原始 Items；2A-2 在完整 Prompt 达到 80% 压力时先裁剪超过 8,000 字符的 Tool Result（保留头 4,096、尾 1,024），仍有压力才摘要旧的完整 Turn/Tool 批次，默认保留最近 16%。压缩使用 V2 派生快照，CAS 冲突读取胜者；原始 Items、SSE 序号和旧 V1 摘要均不改写。`AI_AGENT_THREAD_COMPACTION_ENABLED`、`AI_AGENT_THREAD_COMPACTION_TRIGGER_RATIO`、`AI_AGENT_THREAD_COMPACTION_RETAIN_RATIO`、`AI_AGENT_THREAD_SUMMARY_MAX_OUTPUT_TOKENS`、`AI_AGENT_THREAD_TOOL_PRUNE_*` 和 `AI_AGENT_THREAD_MAX_OVERFLOW_RETRIES` 可调整上述策略；旧 `AI_AGENT_THREAD_SNAPSHOT_TRIGGER_ESTIMATED_TOKENS` 仍兼容接收但不参与新算法。摘要调用与 Turn 共用截止时间及 8,192 token 输出额度；供应商明确上下文溢出时最多按配置重试一次，必须先有严格缩减并改变视图，否则以 `CONTEXT_BUDGET_EXCEEDED` 停止；请求前压力处理在完整 Prompt 未超过硬预算时允许继续发送。受控闭环默认开启（`AI_AGENT_CONTINUATION_ENABLED=true`），最多自动续跑 3 轮（`AI_AGENT_MAX_CYCLES=3`）；Windows/JDK 17 本地验收默认使用 Reactor Netty 与 Tomcat NIO2，协议可用 `AI_AGENT_TOMCAT_PROTOCOL` 覆盖。当前 Codex Windows 沙箱仍可能在实际 DeepSeek 请求时阻断 Netty selector loopback；出现“Agent 执行失败”时先在普通 Windows 终端复核网络/JDK，再判断模型或业务问题。需要隔离验证时可将这些变量显式注入启动进程。Spring Boot 不会自动读取被 Git 忽略的 `.env` 文件；使用该文件时必须先把它加载到当前启动进程，旧的 `AI_AGENT_MODEL_*` 变量不会被当前应用读取。
+敏感配置只通过环境变量注入：`MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD` 和 `DEEPSEEK_API_KEY`。默认模型为 `deepseek-v4-pro`、thinking 开启、reasoning effort 为 `max`；Live 对比可以用 `DEEPSEEK_MODEL=deepseek-v4-flash`、`DEEPSEEK_THINKING_TYPE=disabled` 和显式 `DEEPSEEK_REASONING_EFFORT` 覆盖。`DEEPSEEK_BASE_URL`、模型单次输出上限（默认 1,024）、Turn 累计生成额度（`AI_AGENT_MAX_OUTPUT_TOKENS_PER_TURN`，默认 8,192）、重复工具失败阈值（`AI_AGENT_REPEATED_TOOL_FAILURE_THRESHOLD`，默认 3）、模型 HTTP 超时、Thread 上下文预算（默认 65,536，输出预留 1,500）、队列容量、各层超时、SSE 心跳（`AI_AGENT_SSE_HEARTBEAT_INTERVAL`）和 Worker 轮询参数均在 `application.yml` 中以环境变量覆盖。2A-1 生产路径先固定已提交最大 Sequence，再按每页 300 条读取完整原始 Items；2A-2 在完整 Prompt 达到 80% 压力时先裁剪超过 8,000 字符的 Tool Result（保留头 4,096、尾 1,024），仍有压力才摘要旧的完整 Turn/Tool 批次，默认保留最近 16%。压缩使用 V2 派生快照，CAS 冲突读取胜者；原始 Items、SSE 序号和旧 V1 摘要均不改写。`AI_AGENT_THREAD_COMPACTION_ENABLED`、`AI_AGENT_THREAD_COMPACTION_TRIGGER_RATIO`、`AI_AGENT_THREAD_COMPACTION_RETAIN_RATIO`、`AI_AGENT_THREAD_SUMMARY_MAX_OUTPUT_TOKENS`、`AI_AGENT_THREAD_TOOL_PRUNE_*` 和 `AI_AGENT_THREAD_MAX_OVERFLOW_RETRIES` 可调整上述策略；旧 `AI_AGENT_THREAD_SNAPSHOT_TRIGGER_ESTIMATED_TOKENS` 仍兼容接收但不参与新算法。摘要调用与 Turn 共用截止时间及 8,192 token 输出额度；供应商明确上下文溢出时最多按配置重试一次，必须先有严格缩减并改变视图，否则以 `CONTEXT_BUDGET_EXCEEDED` 停止；请求前压力处理在完整 Prompt 未超过硬预算时允许继续发送。受控闭环默认开启（`AI_AGENT_CONTINUATION_ENABLED=true`），最多自动续跑 3 轮（`AI_AGENT_MAX_CYCLES=3`）；Windows/JDK 17 本地验收默认使用 Reactor Netty 与 Tomcat NIO2，协议可用 `AI_AGENT_TOMCAT_PROTOCOL` 覆盖。当前 Codex Windows 沙箱仍可能在实际 DeepSeek 请求时阻断 Netty selector loopback；出现“Agent 执行失败”时先在普通 Windows 终端复核网络/JDK，再判断模型或业务问题。需要隔离验证时可将这些变量显式注入启动进程。Spring Boot 不会自动读取被 Git 忽略的 `.env` 文件；使用该文件时必须先把它加载到当前启动进程，旧的 `AI_AGENT_MODEL_*` 变量不会被当前应用读取。
 
 订单适配器默认使用本地 `local` 实现；验收外部订单服务时设置 `AI_AGENT_ORDER_GATEWAY=http`、`AI_AGENT_ORDER_BASE_URL` 和可选的 `AI_AGENT_ORDER_HTTP_TIMEOUT`。HTTP 订单服务必须按 `/orders/search`、`/orders/{id}`、`/orders/{id}/refund`、`/orders/{id}/expedite` 和 `DELETE /orders/{id}` 契约提供 JSON 响应；应用会发送 `X-User-Id`，所有写操作还会发送 `Idempotency-Key`。订单隐藏/恢复接口已移除，历史 `HIDDEN_AT` 仅为旧数据读取兼容，不得再写入。仓库没有约定额外的外部鉴权环境变量，启用真实服务前需取得其服务端鉴权和响应契约；不要把凭据写入文档或提交。
 
@@ -65,20 +67,20 @@ CI 的 Maven Job 使用 MySQL 8.4 服务运行同一 profile。未启用 profile
 
 ### 2A-2 压缩与恢复复核
 
-2A-2 使用 `V10__persist_context_compaction_metadata.sql` 为已有库增加 V2 快照元数据；先在一次性克隆库执行迁移并核对 `FORMAT_VERSION`、来源 Sequence 和摘要版本列，再在应用重启后验证原始 Item 数量与 Sequence 不变。V1 快照会被忽略并从原始历史重建，快照提交按所属 Thread 锁和最新快照标识 CAS；并发压缩只有一个摘要胜者，失败方不重复调用摘要模型。2B-1 继续执行 `V11__persist_workflow_orchestration_version.sql` 与 `V12__persist_langgraph_orchestration_version.sql`，为历史 Run 写入 `LEGACY_V1`，明确订单号催发货的新 Run 才能在开关打开时写入 `EXPEDITE_GRAPH_V1`。新增 `AgentWorkflowMySqlIT` 与 `AgentItemStoreMySqlIT` 使用模块 `.env` 注入连接信息，在随机临时库从 V9 基线迁移到 V12，并通过 Spring 事务代理、`SqlSessionTemplate` 与生产 MyBatis Store 验证确认事务回滚、锁读、CAS 竞争、来源版本读取、图快照版本和命令幂等；Flyway 检查通过 API 和 `INFORMATION_SCHEMA` 查询，避免依赖 Windows 表名大小写。2B-1 的催发货图状态、2B-2 的生产技术快照恢复都已实现，生产副本故障注入和跨进程恢复属于单独现场门禁。 此前 V9→V11 的运行结果仅作为历史证据保留。
+2A-2 使用 `V10__persist_context_compaction_metadata.sql` 为已有库增加 V2 快照元数据；先在一次性克隆库执行迁移并核对 `FORMAT_VERSION`、来源 Sequence 和摘要版本列，再在应用重启后验证原始 Item 数量与 Sequence 不变。V1 快照会被忽略并从原始历史重建，快照提交按所属 Thread 锁和最新快照标识 CAS；并发压缩只有一个摘要胜者，失败方不重复调用摘要模型。V11/V12 为历史 Run 和图快照固化编排版本，V13 持久化外部动作的未知结果及独立核验预算。现配置 `AI_AGENT_EXPEDITE_MODE=OFF|JAVA|V1|V2` 控制新催发货 Run，空值默认关闭，缺失时兼容旧 `AI_AGENT_EXPEDITE_GRAPH_MODE` 和 `AI_AGENT_EXPEDITE_GRAPH_ENABLED`。`JAVA` 新 Run 写入 `EXPEDITE_JAVA_V1`，业务状态保存在 WorkflowRun/QuestionCard/Checkpoint，不依赖图快照；旧 `EXPEDITE_GRAPH_V1/V2` 与 `LEGACY_V1` Run 始终按原版本恢复。MySQL acceptance 使用随机临时库和生产 MyBatis Store 验证事务、锁读、CAS、来源版本读取、编排版本往返和命令幂等；P3 验收已通过。
 
 ### 2B-1 / 2B-2 Workflow 复核
 
-2B-1 试点默认关闭。仅在一次性验收环境中显式打开明确订单号的催发货图：
+催发货 Java 路由默认关闭。仅在一次性隔离验收环境中通过确认的 Worker 与订单夹具启用新 Run：
 
 ```powershell
-$env:AI_AGENT_EXPEDITE_GRAPH_ENABLED = 'true'
+$env:AI_AGENT_EXPEDITE_MODE = 'JAVA'
 mvn spring-boot:run -pl commerce-guardian-agent-app
 ```
 
-验证新 Run 的 Items 依次出现订单读取、资格核验、AUTHORIZE 确认和 Worker 交接；批准前不得出现外部命令，批准后保持 WAITING_EXTERNAL_ACTION，Worker 结算后才出现 EXTERNAL_ACTION_STATUS。重启发生在确认前、命令等待中或重试等待中时，复核同一 Run/Command 被恢复，不创建第二个命令或第二次业务写入。非明确订单号、其他动作和已有 Run 必须继续使用 LEGACY_V1。
+Java 验证新 Run 的 Items 包含 `RESOLVE_ORDER`、`VERIFY_FACTS`、`PREPARE_CONFIRMATION`、`AUTHORIZE`、`REVERIFY_FACTS`、`BUILD_ACTION_COMMAND`、`HANDOFF_WORKER` 和 `VERIFY_OUTCOME`；补选订单通过 QuestionCard，批准前不得出现外部命令，批准后保持 `WAITING_EXTERNAL_ACTION`，Worker 结算后更新持久结果。订单资格失效或归属变化时旧 Checkpoint 失效且不创建命令；无关物流或展示字段变化不要求重新授权。测试覆盖拒绝、重复批准、并发 Checkpoint CAS、编排版本 MySQL 往返及按持久化版本恢复路由。P3 的 workflow-acceptance、HTTP 集成和全量单测均通过；本地 Java 路由仍默认关闭，真实外部订单服务和浏览器验收留待后续阶段。若需复核旧 V1/V2 路径，设置 `AI_AGENT_EXPEDITE_MODE=V1|V2`，或在新路由变量缺失时使用旧 `AI_AGENT_EXPEDITE_GRAPH_MODE`；旧布尔开关仍只在模式均缺失时生效。
 
-2B-2 的 MybatisLangGraphCheckpointSaver 将技术节点和版本元数据写入 AGENT_GRAPH_SNAPSHOT；删除、损坏或篡改技术快照时，应用已在隔离验收副本中根据 WorkflowRun、QuestionCard、Checkpoint 和订单事实完成重建，并拒绝未知编排版本。生产库复核仍必须使用已备份的一次性副本；当前开关默认关闭，完成生产开关、第三方鉴权和删除动作验收后才能在目标环境启用试点。
+2B-2 的 MybatisLangGraphCheckpointSaver 将技术节点和版本元数据写入 AGENT_GRAPH_SNAPSHOT；删除、损坏或篡改技术快照时，应用已在隔离验收副本中根据 WorkflowRun、QuestionCard、Checkpoint 和订单事实完成重建，并拒绝未知编排版本。生产库复核仍必须使用已备份的一次性副本；当前模式默认 `OFF`，完成生产开关、第三方鉴权和删除动作验收后才能在目标环境显式启用 `V2`。
 
 使用真实 `ChatClient`/`ChatModel`、唯一 `ToolCallingAdvisor` 和假流式模型复核以下顺序：完整 Prompt 达到 80% 后先裁剪 Tool Result，裁剪已解除压力时不调用摘要；仍有压力时只摘要完整 Turn/Tool 批次，保留最近 16% 和当前请求。摘要失败、空响应、断流、取消、额度不足、CAS 冲突或持久化失败均保留最后有效视图。模拟供应商 `context_length_exceeded` 只允许在严格缩减后重试一次，普通 400、网络错误和摘要模型错误不得进入溢出重试。日志和 `EXECUTION_EVENT` 只允许出现范围、计数、估算和版本，不得输出 Prompt、Thinking、摘要正文或敏感事实。
 
@@ -105,6 +107,5 @@ mvn clean '-DskipTests=false' test
 cd agent-fronted
 npm run typecheck
 npm test -- --run
-npm run test:component
 npm run build
 ```

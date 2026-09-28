@@ -2,25 +2,19 @@
 
 这份文件只保留代码库无法可靠推断的长期约定。实现前先阅读邻近代码、测试和配置；新代码应延续已有风格，并以可读、简洁、可验证为目标。安全、架构边界、对外契约和 Git 提交边界属于硬约束，其余细节按任务实际判断。与全局默认约定冲突时，以本文件中更具体的项目规则为准。
 
-## 任务恢复
+## 文档职责与任务恢复
 
-`AGENTS.md` 是项目长期协作规范，保留完整的边界、命名、安全、提交和验证规则；优化时只做可审阅的定点调整，不按 `docs/task-handoff.md` 的机制覆盖或压缩它。
+- 根目录 `AGENTS.md` 保存长期协作规则；`README.md` 是启动与文档入口；`PRODUCT.md`、`DESIGN.md` 保留产品与设计约定。
+- `docs/` 保存架构、对外契约、运行手册和实施证据；`.codex/task-handoff.md` 保存跨会话恢复快照。只跟踪明确共享的协作文件，环境配置、凭据和本地工具产物继续忽略。
+- 改规则时合并重复表述、纠正过期内容，但保留架构、安全、命名、提交和验证边界；不得把本文件当作任务快照整体压缩。文件移动时同步入口、相对链接和忽略规则。
 
-用户提出“继续当前任务”或类似请求时，如果 `docs/task-handoff.md` 为 `active`：
+用户要求继续任务时，先判断是否与 `.codex/task-handoff.md` 中的 Goal 相符；仅在任务相符且 `status: active` 时恢复：
 
-1. 阅读 handoff，随后查看 `git status --short` 与 `git diff --stat`。
-2. 优先检查 handoff 指定的文件及相关 Diff；代码和 Git 状态优先于交接记录。
-3. 从“下一步唯一动作”继续。每完成一个可验证阶段，以当前状态覆盖 handoff，不累积过程日志。
+1. 读快照，再查看 `git status --short`、`git diff --stat` 和指定文件的相关差异。
+2. 以代码、测试和当前运行状态核对快照，从唯一 `Next action` 继续；新任务不自动继承旧任务的执行步骤。
+3. 完成可验证阶段、下一步或阻塞发生变化、提交/验收改变状态、准备交接时覆盖更新快照；普通命令执行不记流水账。
 
-新任务或 `completed` handoff 不触发此流程。
-
-### handoff 摘要更新机制
-
-- `docs/task-handoff.md` 是有界的最新状态快照，不是提交记录、聊天记录或测试日志；只保留恢复任务所需的最小事实。
-- 在以下时机覆盖更新：完成一个可独立验证的阶段；下一步唯一动作发生变化；出现、解除或改变阻塞；准备跨轮次/上下文压缩/暂停工作；提交或外部验收改变了可恢复状态。普通的单次命令执行不触发更新。
-- 压缩时保留 `Goal`、仍有效的 `Completed`、当前 `Decisions`、唯一 `TODO`、具体 `Blocked`、最近的 `Validation` 和 `Preserve`；删除已被新结果替代的细节、重复说明和过程日志。详细证据放入实施追踪、验收文档、测试产物或 Git 历史。
-- 更新必须整体覆盖文件并刷新 `status`、`updated`；不得通过追加历史段落来“压缩”。`active` 必须给出可执行的 `Next action`，只有完整验收且没有必需工作时才改为 `completed`。
-- 恢复时把摘要当作导航而非事实源：先按本节第 1、2 步核对代码和 Git 状态，再从唯一下一步继续；若摘要与代码冲突，以代码、测试、运行状态和 Git 记录为准，并在同一阶段结束时重新覆盖摘要。
+快照保留 `status`、`updated`、`Goal`、`Completed`、`Decisions`、`TODO`、`Blocked`、`Next action`、`Validation`、`Preserve`。TODO 保留未完成范围，Next action 只写一个可执行入口。只保留最新有效结论及证据链接，详细历史放入实施追踪；不得用新的无关任务覆盖仍未完成的目标。只有完整验收且无必需工作时才标为 `completed`。旧快照中的授权或运行进程描述必须结合当前会话与环境核对。
 
 ## 架构边界（硬约束）
 
@@ -28,7 +22,7 @@
 - Maven 依赖保持 `app → core`、`app → infrastructure`、`infrastructure → core`。`core` 只表达业务规则和端口，不依赖 Spring、数据库或模型供应商；`infrastructure` 适配外部系统；`app` 处理启动和 HTTP 装配。
 - Commerce Guardian Agent 的上下文根为 `Thread`，执行层次为 `Thread → Turn → Item`。登录上下文不持有 Agent 历史；不实现 Thread Fork、分支合并、跨上下文自动记忆或多 Agent 协作。
 - 协调 Agent 统一使用 Spring AI Tool Calling。只读查询可以调用 Tool；退款、催发货、删除和其他外部写操作必须启动确定性 Workflow，不允许模型直接产生外部副作用。
-- Workflow 的 QuestionCard、Checkpoint、WorkflowRun 和 ExternalActionCommand 必须持久化；远程调用不得包在本地数据库事务内。
+- Workflow 的 QuestionCard、Checkpoint、WorkflowRun 和 ExternalActionCommand 必须持久化；QuestionCard 补充信息与 Checkpoint 执行授权保持独立。
 - 模块内先按 Agent 能力、再按具体技术边界组织。Core 使用 `agent.thread`、`agent.execution`、`agent.context`、`agent.coordination`、`agent.workflow`、`agent.action`、`agent.event` 和 `commerce.order`；Infrastructure 使用对应能力下的 `persistence`、`springai`、`worker`、`fixture`、`http` 等适配器包；App 使用 `bootstrap`、`agent.api` 和 `agent.stream`。不再创建顶层 `model`、`service`、`port`、`entity`、`mapper`、`gateway`、`controller`、`dto` 或 `handler` 技术大包。
 - 能力是第一分包维度，技术实现只位于能力包的叶子位置。小型能力的模型、端口和服务可以同包；只有存在清晰生命周期或技术边界时才建立 `persistence`、`springai`、`http`、`worker`、`stream` 子包。Core 能力之间必须通过显式端口交互，禁止反向依赖 Infrastructure 或 App。
 - 不创建空包、泛化 `impl` 包或独立 Workflow JAR。新增职责无法放入现有矩阵时，先说明原因并同步调整本文件。
@@ -75,21 +69,15 @@
 
 ## Agent 运行约束（硬约束）
 
-- 聊天 Turn 和 Workflow QuestionCard 回答均进入以 `threadId` 为键的有界 FIFO；同一 Thread 严格串行，不同 Thread 可以并行。队列容量、等待、Turn、Tool、外部动作和 SSE 心跳超时均可配置。
+- 聊天消息、QuestionCard 回答和 Workflow Checkpoint 决策均作为 Turn 进入以 `threadId` 为键的有界 FIFO；同一 Thread 严格串行，不同 Thread 可以并行。队列容量、等待、Turn、Tool、外部动作和 SSE 心跳超时均可配置。
 - 排队 Turn 可直接取消；ACTIVE Turn 通过运行上下文协作取消。取消不回滚已提交外部副作用，只停止后续步骤并展示实际状态。
-- 同一 Thread 最多一个未回答 QuestionCard。普通消息在等待回答时返回 `THREAD_AWAITING_ANSWER`；回答作为新的 Turn 入队，并携带 `runId`、`questionId`、`checkpointId`、`expectedVersion` 和结构化 answers。
+- 同一 Thread 最多一个开放交互。普通消息在等待回答时返回 `THREAD_AWAITING_ANSWER`；QuestionCard 回答与 Checkpoint 决策分别通过各自 API 作为新 Turn 入队，校验归属、`expectedVersion` 和幂等键。QuestionCard 使用结构化 answers，不混用两个协议的字段；具体请求格式以 DTO 与契约文档为准。
 - Item 是可恢复事实，按 Thread 内单调 Sequence 持久化。SSE 只负责实时体验；断线先从 Items 恢复，再重新订阅，不要求重放丢失的文本增量。
 - 不持久化或展示原始 Thinking。Tool Call、Tool Result、Workflow、外部动作、错误和最终消息必须以受控 Item/事件记录。
 - 外部写操作统一使用 ExternalActionCommand，必须具备幂等键、Lease、有限退避重试和人工重试；Worker 重跑不得产生第二次业务写入。
 - 前端状态必须从持久化 Item 投影：`WORKFLOW_RESULT` 和 `EXTERNAL_ACTION_STATUS` 表达业务结果，不能让回答/决策子 Turn 的 `TURN_STATE=COMPLETED` 覆盖失败、事实变化或等待状态；多个折叠动作按各自 Turn/Run 关联，不使用 Thread 级全局成功标记。
 - Item 历史分页和 SSE 回放只有在游标严格前进时才继续；服务端或客户端遇到重复、乱序、无效页必须收口，不能因 `hasMore` 失真而无限请求。
 - 用户身份只从认证上下文取得，不能信任请求体中的 `userId`；演示 Header 也必须在统一边界解析，Controller 不直接拼装身份。
-
-## Code Review Rules
-
-- 外部写操作必须由持久化 Workflow、Checkpoint 和 ExternalActionCommand 授权与执行；模型文本或只读 Tool 结果不得直接产生退款、催发货、删除等副作用。
-- `WORKFLOW_RESULT` 与 `EXTERNAL_ACTION_STATUS` 是业务结果的权威投影；任何 `TURN_STATE=COMPLETED` 都不能把失败、事实变化或等待状态覆盖成成功。
-- Item 分页与 SSE 回放的游标必须严格前进；重复、乱序、无效或不前进的页必须安全收口，不能因 `hasMore` 失真而无限重试。
 
 ## Git 提交守则（硬约束）
 
@@ -98,11 +86,10 @@
 - 一个提交只表达一个主要意图，不混合架构重构、前端改造、历史清理和无关格式化。行为变化必须与对应测试同提交；契约变化必须同步更新文档。
 - 提交前运行该阶段的最小验证；提交后仓库应保持可构建，或至少通过提交说明中明确的模块测试。
 - 使用仓库既有 Conventional Commit 风格：`feat:`、`fix:`、`refactor:`、`test:`、`docs:`、`chore:`。
-- 阶段性修复优先追加到对应阶段；允许合并同一阶段的 `fixup`，但禁止把所有阶段重新合并为一个提交。
+- 阶段性修复归入对应阶段；使用 `fixup` 时仍遵守一个提交一个主要意图，不为整理提交擅自重写已发布历史。
 - 禁止使用 `git add -A` 把用户已有工作区改动带入提交。必须按明确路径暂存，并在提交前检查 staged diff 和 `git diff --cached --check`。
-- `.idea`、deployment、Docker、Hook 等用户已有无关改动不得进入本计划任何提交。纯验证不创建空提交。
+- `.idea`、deployment、Docker、Hook 等无关改动保留在工作区；只有当前任务明确包含它们时才纳入提交。纯验证不创建空提交。
 - 仓库不依赖 `.hooks` 或 `.githooks` 执行审查；本地只运行显式门禁，代码审查和合并门禁以推送后的 GitHub PR/CI 为准，不在项目脚本中自动 push。
-- 推荐阶段边界：架构守则 → 持久化 → Runtime/Context → Spring AI Tool → Workflow/Worker → API/SSE → 前端 → 旧代码清理 → SQL/脚本/文档 → 测试验收。
 
 ## 分支治理（硬约束）
 

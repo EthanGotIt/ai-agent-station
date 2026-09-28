@@ -79,6 +79,36 @@ public final class MicrometerAgentRuntimeMetrics implements AgentRuntimeMetrics 
         registry.counter("agent.worker.lease.takeover").increment();
     }
 
+    @Override
+    public void observeWorkflow(String orchestrationVersion, String event) {
+        registry.counter("agent.workflow.lifecycle", "orchestration", safe(orchestrationVersion),
+                "event", safe(event)).increment();
+    }
+
+    @Override
+    public void observeWorkflowFacts(String orchestrationVersion, String result) {
+        registry.counter("agent.workflow.facts", "orchestration", safe(orchestrationVersion),
+                "result", safe(result)).increment();
+    }
+
+    @Override
+    public void observeWorkflowCommand(String orchestrationVersion, boolean deduplicated) {
+        registry.counter("agent.workflow.command", "orchestration", safe(orchestrationVersion),
+                "deduplicated", Boolean.toString(deduplicated)).increment();
+    }
+
+    @Override
+    public void observeWorkflowWorker(String orchestrationVersion, String result) {
+        registry.counter("agent.workflow.worker", "orchestration", safe(orchestrationVersion),
+                "result", safe(result)).increment();
+    }
+
+    @Override
+    public void observeWorkflowRecovery(String orchestrationVersion, String result) {
+        registry.counter("agent.workflow.recovery", "orchestration", safe(orchestrationVersion),
+                "result", safe(result)).increment();
+    }
+
     private String safe(String value) {
         return value == null || value.isBlank() ? "unknown" : value;
     }

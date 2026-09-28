@@ -26,7 +26,7 @@ cd agent-fronted
 npm run dev
 ```
 
-演示请求从创建 Thread 开始：查询 `ORDER-PAID-001`，或请求退款/催发货，确认 QuestionCard 后观察 Worker 和执行轨迹。生产身份由认证上下文提供；本地演示使用 `X-User-Id`。
+演示请求从创建 Thread 开始：查询 `ORDER-PAID-001`，或请求退款/催发货。缺少参数时回答 QuestionCard，执行前批准 Workflow Checkpoint，再观察 Worker 和执行轨迹。用户身份统一由认证边界解析；本地演示使用 `X-User-Id`，第三方生产鉴权仍需部署验收。
 
 ## 验证
 
@@ -37,7 +37,6 @@ mvn clean '-DskipTests=false' test
 cd agent-fronted
 npm run typecheck
 npm test -- --run
-npm run test:component
 npm run build
 ```
 
@@ -52,4 +51,13 @@ python -m scripts.acceptance `
 
 确认夹具数据库确实为本次运行创建且可丢弃后，才额外传入 `--allow-destructive-fixture-actions`，执行一次性订单的删除、重放和 404 清理验证。验收 runner 会检查 Item 游标严格前进、刷新恢复、开放交互唯一性、Turn `clientRequestId` 幂等、执行轨迹回放、物流事件唯一性，以及订单动作的受控结果和业务变更计数。
 
-详细模型、数据流、配置和排错分别见 [docs/architecture.md](docs/architecture.md)、[docs/runbook.md](docs/runbook.md) 与 [docs/review-runbook.md](docs/review-runbook.md)。
+## 文档导航
+
+- [产品定位](PRODUCT.md)与[设计约定](DESIGN.md)：产品范围、用户体验和视觉规范。
+- [架构](docs/architecture.md)与[决策契约](docs/agent-decision-contract.md)：模块边界、事实模型和决策规则。
+- [运行手册](docs/runbook.md)与[现场复核](docs/review-runbook.md)：配置、排错和环境验收。
+- [长期升级计划](docs/upgrade-plan.md)、[质量评测](docs/agent-quality-eval.md)与[实施追踪](docs/implementation-traceability.md)：后续阶段、评测方法、计划进度和验收证据。
+- [阶段执行卡](docs/plans/)：P0 基线至 P7 隔离交付验收的逐阶段步骤。
+- [协作规则](AGENTS.md)与[任务交接](.codex/task-handoff.md)：长期约定和当前未完成任务的恢复入口。
+
+完整前端测试已包含组件测试；只需定向复核 App 时可运行 `npm --prefix agent-fronted run test:component`。

@@ -8,5 +8,7 @@ package cn.ethan.core.agent.workflow;
  */
 public enum AgentWorkflowOrchestrationVersionEnum {
     LEGACY_V1,
-    EXPEDITE_GRAPH_V1
+    EXPEDITE_GRAPH_V1,
+    EXPEDITE_GRAPH_V2,
+    EXPEDITE_JAVA_V1
 }
