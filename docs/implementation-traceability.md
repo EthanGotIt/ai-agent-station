@@ -312,3 +312,9 @@ P8 计划校准与 WorkflowTask 命名分别提交为 `6e81420`、`1d81442`。�
 验证：规范检查通过；在保留既有未跟踪 LangGraph4j 实验源码的前提下，临时隔离这两处已知不兼容源码目录后，Maven Core 102、Infrastructure 134、App 25 单测通过；隔离 MySQL 从基线模拟 V9 执行到 V15，Items/Workflow acceptance 共 14 项通过，恢复快照完成往返并拒绝过期 CAS。目录已原样恢复。
 
 边界：恢复存储尚未接入 Tool Calling 批次、QuestionCard/Checkpoint 同 Turn admission 或 Worker 恢复信号；没有新 Turn 被赋予语义版本 1，因此本证据不是同 Turn 暂停恢复的行为验收。恢复信号和运行时闭环仍是下一阶段。
+
+## P8 持久化恢复信号（2026-09-29）
+
+新增 V16 `AGENT_TURN_RESUME_SIGNAL`，以 `(USER_ID, REQUEST_ID)` 去重 QuestionCard 答案、Checkpoint 决策、Steer 和 Command 结果信号，并以状态版本 CAS 将待处理信号标记为已应用。补参和决策载荷通过现有结构化输入 Codec 编解码；Steer 与动作结果使用受限 JSON 载荷。信号引用原 Turn 和对应 Item，不另建会话或业务执行身份。
+
+验证：Core 102、Infrastructure 134、App 25 单测通过；隔离 MySQL Items/Workflow acceptance 15 项通过，覆盖模拟 V9 至 V16 的迁移、表结构、类型化答案信号持久化、请求去重读取及重复/过期 CAS 行为。恢复信号仍未接入 QuestionCard/Checkpoint admission、调度器或 Tool Calling 路由，也未启用语义版本 1；因此这只证明可持久化的恢复信号底座，不证明原 Turn 已能暂停和恢复。

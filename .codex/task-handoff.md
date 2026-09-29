@@ -37,6 +37,7 @@ updated: 2026-09-29
 - P8 阶段 1：计划校准已以 `6e81420` 单独提交并推送；总体路线、执行卡、产品/架构入口已同步，历史 P5—P7 环境验收缺口仍未关闭。
 - P8 阶段 2：WorkflowTask 内部模型、Store、Entity、Mapper、owner-recovery 类型及 Turn 关联更名已完成；`AGENT_WORKFLOW_RUN.RUN_ID`、`AGENT_TURN.WORKFLOW_RUN_ID` 和 HTTP `runId`/`workflowRunId` 保持显式兼容映射，无数据库迁移。Core 102、Infrastructure 131、App 25 单测及隔离 MySQL Items/Workflow acceptance 13 项均通过；为验证暂时移出的未跟踪 LangGraph4j 源目录已原样恢复。
 - P8 Turn 恢复存储底座：Turn 新增执行语义版本（历史默认 0），V15 增量创建 `AGENT_TURN_EXECUTION_STATE`，记录累计主动时长、工具批次游标和受控调用快照；新 Turn 仍未启用语义版本 1。Core 102、Infrastructure 134、App 25 单测通过；隔离 MySQL 从 V9→V15 的 Items/Workflow acceptance 14 项通过，含恢复快照往返和 CAS。详细边界见 P8 执行卡和实施追踪。
+- P8 恢复信号底座：V16 增量创建 `AGENT_TURN_RESUME_SIGNAL`，按用户请求幂等键保存 QuestionCard、Checkpoint、Steer 与 Command 结果信号；类型化答案载荷复用现有 Codec，信号应用使用版本 CAS。Core 102、Infrastructure 134、App 25 单测通过；隔离 MySQL 从 V9→V16 的 Items/Workflow acceptance 15 项通过。信号尚未从 admission 创建，也未接通 Turn 恢复路由；新 Turn 仍未启用语义版本 1。
 
 ## Decisions
 
@@ -56,7 +57,7 @@ updated: 2026-09-29
 - 用目标环境只读账号执行 `scripts/maintenance/workflow-inventory.sql`，保存 P5 排空报告并确认旧 Worker/服务/队列退出。
 - 在提供两套既定模型凭据后，按每套 54 条记录运行 P6 Live，保存脱敏摘要并完成模型选择。
 - 补做 P7 的兼容版本回滚、真实浏览器 SSE 断线、窄屏/移动浏览器专项，并把证据写回执行卡；601 条 Items/游标已有 MySQL acceptance 覆盖。
-- 设计并实现新 Turn 恢复语义版本、工具调用/批次执行位置、恢复输入与持久化幂等信号；同时保留既有 Turn 恢复行为版本。
+- 接通原 Turn 的恢复输入 admission 和路由：QuestionCard/Checkpoint 原子写入 Item 与持久化信号，验证交互/Turn/Thread 序号 CAS、请求重放、并发及重启恢复；之后实现 Steer、Command 结果和工具批次/主动预算续接。语义版本 1 在完整路由可恢复前保持关闭。
 - P5 目标数据库只读盘点、P6 两套模型各 54 条 Live 评测、P7 兼容版本回滚及真实浏览器 SSE/响应式检查仍是未完成验收；实施 P8 时保留这些独立缺口并按可用隔离环境补证。
 
 ## Blocked
@@ -65,11 +66,11 @@ P2 已验证完成。订单服务未提供独立的按幂等键查询 API；本�
 
 ## Next action
 
-继续 P8 Turn 恢复：新增持久化、可去重的恢复信号，并让 QuestionCard/Checkpoint admission 将已版本化的 owner Turn 从等待态恢复为同一 `turnId` 的排队态；在接通路由前保留语义版本 0 准入。先定义 signal 与交互 CAS、Thread Item Sequence、重复请求回放的同一事务不变量，再覆盖并发输入和重启恢复。
+继续 P8 Turn 恢复：在事务性 QuestionCard/Checkpoint admission 中，根据目标 owner Turn 的持久化语义版本分流。先为语义版本 0 保留既有子 Turn 路径；为版本 1 在同一事务中 CAS 交互与 owner Turn、写入答案/决策 Item、创建幂等恢复信号并分配 Thread Sequence，再让结果携带原 `turnId` 入调度队列。补齐重复请求回放、并发输入和重启取回 pending signal 的测试；在恢复路由能消费信号前，不开放版本 1 的新 Turn 准入。
 
 ## Validation
 
-P0—P7 的历史代码与隔离验收见 [实施追踪](../docs/implementation-traceability.md) 与阶段执行卡。P8 当前仅有计划校准、WorkflowTask 命名和恢复存储底座证据；恢复信号、原 Turn 补参/决策、Tool 批次/预算续接、Worker 结果恢复、Queue/Steer 和复合请求未实现或验证。真实目标库 P5 盘点、真实模型、兼容版本回滚、真实浏览器 SSE 和响应式浏览器专项尚未执行；旧验收不能替代新语义证据。
+P0—P7 的历史代码与隔离验收见 [实施追踪](../docs/implementation-traceability.md) 与阶段执行卡。P8 当前已有计划校准、WorkflowTask 命名、Turn 执行快照和 V16 恢复信号持久化证据；恢复信号仍未由 admission 创建、消费或重放。原 Turn 补参/决策、Tool 批次/预算续接、Worker 结果恢复、Queue/Steer 和复合请求未实现或验证。真实目标库 P5 盘点、真实模型、兼容版本回滚、真实浏览器 SSE 和响应式浏览器专项尚未执行；旧验收不能替代新语义证据。
 
 ## Preserve
 

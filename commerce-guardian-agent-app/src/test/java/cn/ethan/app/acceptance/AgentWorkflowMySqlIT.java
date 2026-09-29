@@ -6,6 +6,11 @@ import cn.ethan.core.agent.action.ExternalActionStatusEnum;
 import cn.ethan.core.agent.action.ExternalActionTypeEnum;
 import cn.ethan.core.agent.execution.AgentTurnExecutionStateModel;
 import cn.ethan.core.agent.execution.AgentTurnExecutionStateStore;
+import cn.ethan.core.agent.execution.AgentTurnResumeSignalModel;
+import cn.ethan.core.agent.execution.AgentTurnResumeSignalStore;
+import cn.ethan.core.agent.thread.AgentQuestionAnswerInput;
+import cn.ethan.core.agent.workflow.AgentQuestionCardAnswerActionEnum;
+import cn.ethan.core.agent.workflow.AgentQuestionCardResumeTargetEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStore;
@@ -20,9 +25,13 @@ import cn.ethan.infrastructure.agent.action.persistence.ExternalActionCommandMap
 import cn.ethan.infrastructure.agent.action.persistence.MybatisExternalActionCommandStore;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentThreadMapper;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentTurnExecutionStateMapper;
+import cn.ethan.infrastructure.agent.thread.persistence.AgentTurnResumeSignalMapper;
+import cn.ethan.infrastructure.agent.thread.persistence.JacksonAgentQuestionAnswerCodec;
+import cn.ethan.infrastructure.agent.thread.persistence.JacksonAgentWorkflowDecisionCodec;
 import cn.ethan.infrastructure.agent.thread.persistence.JacksonAgentTurnExecutionStateCodec;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentWorkflowTaskMapper;
 import cn.ethan.infrastructure.agent.thread.persistence.MybatisAgentTurnExecutionStateStore;
+import cn.ethan.infrastructure.agent.thread.persistence.MybatisAgentTurnResumeSignalStore;
 import cn.ethan.infrastructure.agent.thread.persistence.MybatisAgentWorkflowTaskStore;
 import cn.ethan.infrastructure.agent.workflow.persistence.AgentWorkflowCheckpointMapper;
 import cn.ethan.infrastructure.agent.workflow.persistence.MybatisAgentWorkflowCheckpointStore;
@@ -118,6 +127,7 @@ class AgentWorkflowMySqlIT {
         insertThread("thread-reserve-a");
         insertThread("thread-reserve-b");
         insertThread("thread-recovery-state");
+        insertThread("thread-recovery-signal");
     }
 
     @AfterAll
@@ -171,7 +181,31 @@ class AgentWorkflowMySqlIT {
     }
 
     @Test
-    void flywayV10ToV15AndManagedStoresPreserveVersionAndOwnership() throws Exception {
+    void turnResumeSignalsAreDurableDeduplicatedAndAppliedWithCas() throws Exception {
+        insertTurn("turn-recovery-signal", "thread-recovery-signal", "recovery-signal-owner");
+        try (AnnotationConfigApplicationContext context = persistenceContext()) {
+            AgentTurnResumeSignalStore signals = context.getBean(AgentTurnResumeSignalStore.class);
+            AgentTurnResumeSignalModel signal = new AgentTurnResumeSignalModel(
+                    "signal-1", "turn-recovery-signal", USER_ID, "resume-request-1",
+                    AgentTurnResumeSignalModel.SignalKindEnum.QUESTION_ANSWER, "question-1", 3,
+                    new AgentQuestionAnswerInput("question-1", null, AgentQuestionCardResumeTargetEnum.AGENT,
+                            5, Map.of("reason", "错发商品"), AgentQuestionCardAnswerActionEnum.SUBMIT),
+                    null, null, "item-signal-1",
+                    AgentTurnResumeSignalModel.SignalStatusEnum.PENDING, 0, NOW, null);
+            signals.create(signal);
+
+            assertEquals(signal, signals.findByRequest(USER_ID, signal.requestId()).orElseThrow());
+            assertEquals(signal, signals.findPending(USER_ID, signal.turnId()).orElseThrow());
+            AgentTurnResumeSignalModel applied = signal.applied(NOW.plusSeconds(1));
+            assertTrue(signals.markApplied(signal, applied));
+            assertFalse(signals.markApplied(signal, applied));
+            assertTrue(signals.findPending(USER_ID, signal.turnId()).isEmpty());
+            assertEquals(applied, signals.findByRequest(USER_ID, signal.requestId()).orElseThrow());
+        }
+    }
+
+    @Test
+    void flywayV10ToV16AndManagedStoresPreserveVersionAndOwnership() throws Exception {
         try (AnnotationConfigApplicationContext context = persistenceContext()) {
             AgentWorkflowTaskStore runs = context.getBean(AgentWorkflowTaskStore.class);
             AgentWorkflowTaskModel run = run("run-version", "thread-cas", "turn-version",
@@ -198,12 +232,15 @@ class AgentWorkflowMySqlIT {
             assertEquals(1L, scalar(statement,
                     "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() "
                             + "AND TABLE_NAME = 'AGENT_TURN_EXECUTION_STATE'"));
+            assertEquals(1L, scalar(statement,
+                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() "
+                            + "AND TABLE_NAME = 'AGENT_TURN_RESUME_SIGNAL'"));
         }
         Flyway migrated = Flyway.configure()
                 .dataSource(dataSource)
                 .locations("classpath:db/migration")
                 .load();
-        assertEquals("15", migrated.info().current().getVersion().getVersion());
+        assertEquals("16", migrated.info().current().getVersion().getVersion());
     }
 
     @Test
@@ -427,15 +464,30 @@ class AgentWorkflowMySqlIT {
         @Bean AgentTurnExecutionStateMapper turnExecutionStateMapper(SqlSessionTemplate template) {
             return template.getMapper(AgentTurnExecutionStateMapper.class);
         }
+        @Bean AgentTurnResumeSignalMapper turnResumeSignalMapper(SqlSessionTemplate template) {
+            return template.getMapper(AgentTurnResumeSignalMapper.class);
+        }
         @Bean tools.jackson.databind.ObjectMapper recoveryObjectMapper() {
             return new tools.jackson.databind.ObjectMapper();
         }
         @Bean JacksonAgentTurnExecutionStateCodec turnExecutionStateCodec(tools.jackson.databind.ObjectMapper mapper) {
             return new JacksonAgentTurnExecutionStateCodec(mapper);
         }
+        @Bean JacksonAgentQuestionAnswerCodec questionAnswerCodec(tools.jackson.databind.ObjectMapper mapper) {
+            return new JacksonAgentQuestionAnswerCodec(mapper);
+        }
+        @Bean JacksonAgentWorkflowDecisionCodec workflowDecisionCodec(tools.jackson.databind.ObjectMapper mapper) {
+            return new JacksonAgentWorkflowDecisionCodec(mapper);
+        }
         @Bean AgentTurnExecutionStateStore turnExecutionStateStore(
                 AgentTurnExecutionStateMapper mapper, JacksonAgentTurnExecutionStateCodec codec) {
             return new MybatisAgentTurnExecutionStateStore(mapper, codec);
+        }
+        @Bean AgentTurnResumeSignalStore turnResumeSignalStore(
+                AgentTurnResumeSignalMapper mapper,
+                JacksonAgentQuestionAnswerCodec questionCodec,
+                JacksonAgentWorkflowDecisionCodec decisionCodec) {
+            return new MybatisAgentTurnResumeSignalStore(mapper, questionCodec, decisionCodec);
         }
         @Bean AgentWorkflowTaskMapper agentWorkflowTaskMapper(SqlSessionTemplate template) { return template.getMapper(AgentWorkflowTaskMapper.class); }
         @Bean AgentWorkflowCheckpointMapper agentWorkflowCheckpointMapper(SqlSessionTemplate template) { return template.getMapper(AgentWorkflowCheckpointMapper.class); }
@@ -529,6 +581,7 @@ class AgentWorkflowMySqlIT {
     private static void prepareV9Schema(DataSource source) throws SQLException {
         try (Connection connection = source.getConnection(); Statement statement = connection.createStatement()) {
             statement.execute("DROP TABLE AGENT_ORDER_WRITE_RESERVATION");
+            statement.execute("DROP TABLE AGENT_TURN_RESUME_SIGNAL");
             statement.execute("DROP TABLE AGENT_TURN_EXECUTION_STATE");
             statement.execute("ALTER TABLE AGENT_TURN DROP COLUMN EXECUTION_SEMANTICS_VERSION");
             statement.execute("ALTER TABLE AGENT_CONTEXT_SNAPSHOT DROP INDEX IDX_AGENT_CONTEXT_SNAPSHOT_BASE");
@@ -570,6 +623,7 @@ class AgentWorkflowMySqlIT {
         configuration.setMapUnderscoreToCamelCase(true);
         configuration.addMapper(AgentThreadMapper.class);
         configuration.addMapper(AgentTurnExecutionStateMapper.class);
+        configuration.addMapper(AgentTurnResumeSignalMapper.class);
         configuration.addMapper(AgentWorkflowTaskMapper.class);
         configuration.addMapper(AgentWorkflowCheckpointMapper.class);
         configuration.addMapper(OrderWriteReservationMapper.class);
