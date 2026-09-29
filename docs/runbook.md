@@ -45,7 +45,7 @@ Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8090/api/agent/threads/$thr
 
 Items 响应保留 `payload` 字符串以兼容旧客户端，并新增结构化 `data` 字段；新客户端按 `schemaVersion`、`type/kind` 和 `data` 处理已知事实，遇到旧历史或无法解析的 payload 时回退到 `payload` 文本。
 
-退款、催发货和删除请求在固定 Workflow 的 `AUTHORIZE` 节点生成独立 `WORKFLOW_CHECKPOINT`；批准后命令进入 Worker，缺少订单号或退款原因时才生成 `QUESTION_CARD`。结果状态通过持久化 Items、WorkflowRun 和 ExternalActionCommand 展示，不等待模型续跑；可通过 Items 和 SSE 观察 `TOOL_*`、`WORKFLOW_*`、`WORKFLOW_STEP`、订单事实、`AGENT_DECISION`、`EXTERNAL_ACTION_STATUS`、`EXECUTION_EVENT`、`ERROR` 和 Turn 终态。SSE 只负责实时体验和断线恢复。
+退款、催发货和删除请求在固定 Workflow 的 `AUTHORIZE` 节点生成独立 `WORKFLOW_CHECKPOINT`；批准后命令进入 Worker，缺少订单号或退款原因时才生成 `QUESTION_CARD`。结果状态通过持久化 Items、WorkflowTask 和 ExternalActionCommand 展示，不等待模型续跑；可通过 Items 和 SSE 观察 `TOOL_*`、`WORKFLOW_*`、`WORKFLOW_STEP`、订单事实、`AGENT_DECISION`、`EXTERNAL_ACTION_STATUS`、`EXECUTION_EVENT`、`ERROR` 和 Turn 终态。SSE 只负责实时体验和断线恢复。
 
 前端订单卡片的动作回执按业务事实区分：确认卡打开时为“需要确认”，命令为 PENDING/PROCESSING/RETRY_WAIT 时分别显示等待执行、提交中或等待自动重试，SUCCEEDED 显示成功；若成功回执的核验状态为 PENDING，则显示“已受理、最新状态暂未核验”并只发起 REFRESH_ORDER 查询；重试耗尽显示“需要人工重试”。后续 Agent 续接失败或预算/历史停止只作为非阻断提示，不覆盖已成功的外部动作。
 
@@ -67,7 +67,7 @@ CI 的 Maven Job 使用 MySQL 8.4 服务运行同一 profile。未启用 profile
 
 ### 2A-2 压缩与恢复复核
 
-2A-2 使用 `V10__persist_context_compaction_metadata.sql` 为已有库增加 V2 快照元数据；先在一次性克隆库执行迁移并核对 `FORMAT_VERSION`、来源 Sequence 和摘要版本列，再在应用重启后验证原始 Item 数量与 Sequence 不变。V1 快照会被忽略并从原始历史重建，快照提交按所属 Thread 锁和最新快照标识 CAS；并发压缩只有一个摘要胜者，失败方不重复调用摘要模型。V11/V12 为历史 Run 和图快照固化编排版本，V13 持久化外部动作的未知结果及独立核验预算。现配置 `AI_AGENT_EXPEDITE_MODE=OFF|JAVA`、`AI_AGENT_REFUND_MODE=OFF|JAVA` 和 `AI_AGENT_DELETE_MODE=OFF|JAVA` 控制新 Run，默认使用 Java；旧图模式参数不再打开生产执行。`JAVA` 新 Run 写入对应 Java 编排版本，业务状态保存在 WorkflowRun/QuestionCard/Checkpoint，不依赖图快照；历史 `EXPEDITE_GRAPH_V1/V2` 与 `LEGACY_V1` 只按兼容边界读取或排空。MySQL acceptance 使用随机临时库和生产 MyBatis Store 验证事务、锁读、CAS、来源版本读取、编排版本往返和命令幂等；P3/P4 验收已通过。
+2A-2 使用 `V10__persist_context_compaction_metadata.sql` 为已有库增加 V2 快照元数据；先在一次性克隆库执行迁移并核对 `FORMAT_VERSION`、来源 Sequence 和摘要版本列，再在应用重启后验证原始 Item 数量与 Sequence 不变。V1 快照会被忽略并从原始历史重建，快照提交按所属 Thread 锁和最新快照标识 CAS；并发压缩只有一个摘要胜者，失败方不重复调用摘要模型。V11/V12 为历史 Run 和图快照固化编排版本，V13 持久化外部动作的未知结果及独立核验预算。现配置 `AI_AGENT_EXPEDITE_MODE=OFF|JAVA`、`AI_AGENT_REFUND_MODE=OFF|JAVA` 和 `AI_AGENT_DELETE_MODE=OFF|JAVA` 控制新 Run，默认使用 Java；旧图模式参数不再打开生产执行。`JAVA` 新 Run 写入对应 Java 编排版本，业务状态保存在 WorkflowTask/QuestionCard/Checkpoint，不依赖图快照；历史 `EXPEDITE_GRAPH_V1/V2` 与 `LEGACY_V1` 只按兼容边界读取或排空。MySQL acceptance 使用随机临时库和生产 MyBatis Store 验证事务、锁读、CAS、来源版本读取、编排版本往返和命令幂等；P3/P4 验收已通过。
 
 ### 2B-1 / 2B-2 Workflow 复核
 

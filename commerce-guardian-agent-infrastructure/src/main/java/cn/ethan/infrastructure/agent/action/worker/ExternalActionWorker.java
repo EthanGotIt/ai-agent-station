@@ -10,7 +10,7 @@ import cn.ethan.core.agent.execution.AgentRuntimeMetrics;
 import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.thread.AgentTurnStore;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskStore;
 import cn.ethan.core.commerce.order.LogisticsGateway;
 import cn.ethan.core.commerce.order.OrderGateway;
 import cn.ethan.core.commerce.order.OrderLookupResultModel;
@@ -105,7 +105,7 @@ public final class ExternalActionWorker implements DisposableBean {
             AgentTurnStore turns,
             AgentThreadEventGateway events,
             Clock clock,
-            AgentWorkflowRunStore workflowRuns,
+            AgentWorkflowTaskStore workflowRuns,
             Duration leaseDuration,
             Duration retryBaseDelay,
             Duration actionTimeout,
@@ -124,7 +124,7 @@ public final class ExternalActionWorker implements DisposableBean {
             AgentTurnStore turns,
             AgentThreadEventGateway events,
             Clock clock,
-            AgentWorkflowRunStore workflowRuns,
+            AgentWorkflowTaskStore workflowRuns,
             Duration leaseDuration,
             Duration retryBaseDelay,
             Duration actionTimeout,

@@ -8,7 +8,7 @@ Commerce Guardian Agent 的每个普通消息 Turn 都必须以可验证的受�
 
 - `complete_agent_cycle` 只接受 `FINISH`，返回消息由 Tool 参数提供并作为最终用户消息。
 - `ASK_USER` 只能由 `request_user_input` 创建并持久化 Agent `QuestionCard` 后产生；问题卡不是执行授权。
-- `START_WORKFLOW` 只能由 `start_order_service_workflow` 产生，并且必须伴随 `WorkflowRun` 以及 QuestionCard 或 Workflow Checkpoint。
+- `START_WORKFLOW` 只能由 `start_order_service_workflow` 产生，并且必须伴随 `WorkflowTask` 以及 QuestionCard 或 Workflow Checkpoint。
 - 退款、催发货、删除等外部写操作仍由确定性 Workflow 和 `ExternalActionCommand` 承担，模型不直接写外部系统。
 
 ## 缺失决策处理

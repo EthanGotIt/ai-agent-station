@@ -1,7 +1,7 @@
 package cn.ethan.core.agent.workflow;
 
 /**
- * 类型职责：表达 WorkflowRun 的持久化状态机，禁止以任意字符串绕过边界。
+ * 类型职责：表达 WorkflowTask 的持久化状态机，禁止以任意字符串绕过边界。
  *
  * @author ethan
  * @date 2026-08-20

@@ -4,8 +4,8 @@ import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowEngine;
 import cn.ethan.core.agent.workflow.AgentWorkflowOrchestrationVersionEnum;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,7 +31,7 @@ public final class VersionedAgentWorkflowEngine implements AgentWorkflowEngine {
     private final AgentWorkflowEngine retired;
     private final AgentWorkflowEngine javaExpedite;
     private final AgentWorkflowEngine javaRefundDelete;
-    private final AgentWorkflowRunStore runs;
+    private final AgentWorkflowTaskStore runs;
     private final String mode;
     private final String refundMode;
     private final String deleteMode;
@@ -41,7 +41,7 @@ public final class VersionedAgentWorkflowEngine implements AgentWorkflowEngine {
             @Qualifier("retiredAgentWorkflowEngine") AgentWorkflowEngine retired,
             @Qualifier("javaExpediteWorkflowEngine") AgentWorkflowEngine javaExpedite,
             @Qualifier("javaRefundDeleteWorkflowEngine") AgentWorkflowEngine javaRefundDelete,
-            AgentWorkflowRunStore runs,
+            AgentWorkflowTaskStore runs,
             @Value("${ai-agent.workflow.expedite-mode:JAVA}") String configuredMode,
             @Value("${ai-agent.workflow.expedite-graph-enabled:false}") boolean legacyEnabled,
             @Value("${ai-agent.workflow.refund-mode:JAVA}") String refundMode,
@@ -58,7 +58,7 @@ public final class VersionedAgentWorkflowEngine implements AgentWorkflowEngine {
 
     /** 保留旧路由测试构造边界；生产装配使用三类 Java 引擎。 */
     public VersionedAgentWorkflowEngine(AgentWorkflowEngine retired, AgentWorkflowEngine javaExpedite,
-                                        AgentWorkflowRunStore runs, String configuredMode, boolean legacyEnabled) {
+                                        AgentWorkflowTaskStore runs, String configuredMode, boolean legacyEnabled) {
         this(retired, javaExpedite, retired, runs, configuredMode, legacyEnabled, "OFF", "OFF");
     }
 
@@ -70,7 +70,7 @@ public final class VersionedAgentWorkflowEngine implements AgentWorkflowEngine {
         Map<String, String> javaArguments = new LinkedHashMap<>(arguments == null ? Map.of() : arguments);
         javaArguments.entrySet().removeIf(entry -> entry.getKey() == null || entry.getValue() == null);
         if (!normalizedIntent.isBlank()) javaArguments.put("intent", normalizedIntent);
-        Optional<AgentWorkflowRunModel> prior = runs.findBySource(
+        Optional<AgentWorkflowTaskModel> prior = runs.findBySource(
                 thread.userId(), turn.turnId(), AgentWorkflowTypeEnum.ORDER_SERVICE);
         if (prior.isPresent()) {
             AgentWorkflowEngine selected = engine(prior.get().orchestrationVersion());
@@ -94,7 +94,7 @@ public final class VersionedAgentWorkflowEngine implements AgentWorkflowEngine {
         if (runId == null || runId.isBlank()) {
             return retired.resume(thread, turn, answers);
         }
-        Optional<AgentWorkflowRunModel> run = runs.find(thread.userId(), runId);
+        Optional<AgentWorkflowTaskModel> run = runs.find(thread.userId(), runId);
         return run.map(value -> engine(value.orchestrationVersion()).resume(thread, turn, answers))
                 .orElseGet(() -> retired.resume(thread, turn, answers));
     }

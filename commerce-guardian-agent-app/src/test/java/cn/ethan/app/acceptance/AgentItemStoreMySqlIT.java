@@ -18,7 +18,7 @@ import cn.ethan.core.agent.context.AgentContextCompactionSettings;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentThreadStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowOrchestrationVersionEnum;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentItemMapper;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentContextSnapshotMapper;
@@ -26,8 +26,8 @@ import cn.ethan.infrastructure.agent.thread.persistence.AgentThreadMapper;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentThreadEntity;
 import cn.ethan.infrastructure.agent.thread.persistence.MybatisAgentContextSnapshotStore;
 import cn.ethan.infrastructure.agent.thread.persistence.MybatisAgentItemStore;
-import cn.ethan.infrastructure.agent.thread.persistence.AgentWorkflowRunMapper;
-import cn.ethan.infrastructure.agent.thread.persistence.MybatisAgentWorkflowRunStore;
+import cn.ethan.infrastructure.agent.thread.persistence.AgentWorkflowTaskMapper;
+import cn.ethan.infrastructure.agent.thread.persistence.MybatisAgentWorkflowTaskStore;
 import cn.ethan.infrastructure.agent.thread.persistence.JacksonAgentItemPayloadCodec;
 import cn.ethan.infrastructure.agent.thread.persistence.MybatisAgentThreadStore;
 import cn.ethan.infrastructure.agent.thread.persistence.TransactionalAgentItemJournal;
@@ -267,14 +267,14 @@ class AgentItemStoreMySqlIT {
     @Test
     void persistsAndReadsWorkflowOrchestrationVersionByOwnedSource() {
         String runId = "workflow-version-it";
-        AgentWorkflowRunModel run = new AgentWorkflowRunModel(
+        AgentWorkflowTaskModel run = new AgentWorkflowTaskModel(
                 runId, THREAD_ID, "turn-version-it", USER_ID, AgentWorkflowTypeEnum.ORDER_SERVICE,
                 cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum.WAITING_USER_INPUT, 0L,
                 "[]", "{\"intent\":\"EXPEDITE\",\"orderId\":\"ORDER-PAID-001\"}",
                 NOW, NOW, AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V1);
         try (SqlSession session = factory(dataSource).openSession(true)) {
-            MybatisAgentWorkflowRunStore store = new MybatisAgentWorkflowRunStore(
-                    session.getMapper(AgentWorkflowRunMapper.class));
+            MybatisAgentWorkflowTaskStore store = new MybatisAgentWorkflowTaskStore(
+                    session.getMapper(AgentWorkflowTaskMapper.class));
             store.create(run);
             assertEquals(AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V1,
                     store.findBySource(USER_ID, "turn-version-it", AgentWorkflowTypeEnum.ORDER_SERVICE)
@@ -565,7 +565,7 @@ class AgentItemStoreMySqlIT {
         configuration.addMapper(AgentItemMapper.class);
         configuration.addMapper(AgentThreadMapper.class);
         configuration.addMapper(AgentContextSnapshotMapper.class);
-        configuration.addMapper(AgentWorkflowRunMapper.class);
+        configuration.addMapper(AgentWorkflowTaskMapper.class);
         return new MybatisSqlSessionFactoryBuilder().build(configuration);
     }
 
@@ -576,7 +576,7 @@ class AgentItemStoreMySqlIT {
         configuration.addMapper(AgentItemMapper.class);
         configuration.addMapper(AgentThreadMapper.class);
         configuration.addMapper(AgentContextSnapshotMapper.class);
-        configuration.addMapper(AgentWorkflowRunMapper.class);
+        configuration.addMapper(AgentWorkflowTaskMapper.class);
         return new MybatisSqlSessionFactoryBuilder().build(configuration);
     }
 

@@ -20,6 +20,6 @@ public record AgentTurnAcceptedResponseDto(
 ) {
     public static AgentTurnAcceptedResponseDto from(AgentTurnModel turn) {
         return new AgentTurnAcceptedResponseDto(turn.turnId(), turn.threadId(), turn.status().name(),
-                turn.queuePosition(), turn.workflowRunId(), turn.createdAt());
+                turn.queuePosition(), turn.workflowTaskId(), turn.createdAt());
     }
 }

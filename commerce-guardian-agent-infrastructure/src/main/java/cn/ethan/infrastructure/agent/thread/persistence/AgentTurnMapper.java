@@ -32,15 +32,15 @@ public interface AgentTurnMapper extends BaseMapper<AgentTurnEntity> {
             FROM AGENT_TURN T
             JOIN AGENT_WORKFLOW_RUN R ON R.TURN_ID = T.TURN_ID
             WHERE R.USER_ID = #{userId}
-              AND R.RUN_ID = #{workflowRunId}
+              AND R.RUN_ID = #{workflowTaskId}
               AND T.USER_ID = #{userId}
             LIMIT 1
             """)
-    AgentTurnEntity selectWorkflowOwnerByRunId(String userId, String workflowRunId);
+    AgentTurnEntity selectWorkflowOwnerByTaskId(String userId, String workflowTaskId);
 
     @Select("""
-            SELECT T.TURN_ID, T.USER_ID, T.WORKFLOW_RUN_ID,
-                   R.STATUS AS WORKFLOW_RUN_STATUS,
+            SELECT T.TURN_ID, T.USER_ID, T.WORKFLOW_RUN_ID AS WORKFLOW_TASK_ID,
+                   R.STATUS AS WORKFLOW_TASK_STATUS,
                    CASE WHEN EXISTS (
                        SELECT 1
                        FROM AGENT_QUESTION_CARD Q
@@ -62,5 +62,5 @@ public interface AgentTurnMapper extends BaseMapper<AgentTurnEntity> {
               ))
             ORDER BY T.CREATED_AT
             """)
-    List<AgentWorkflowOwnerRecoveryRow> selectWorkflowOwnerRecoveryCandidates();
+    List<AgentWorkflowTaskOwnerRecoveryRow> selectWorkflowOwnerRecoveryCandidates();
 }

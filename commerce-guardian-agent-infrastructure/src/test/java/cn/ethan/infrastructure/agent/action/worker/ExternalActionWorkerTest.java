@@ -11,8 +11,8 @@ import cn.ethan.core.agent.thread.AgentItemModel;
 import cn.ethan.core.agent.thread.AgentItemStore;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStore;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
 import cn.ethan.core.commerce.order.LogisticsEventModel;
@@ -55,7 +55,7 @@ class ExternalActionWorkerTest {
         RejectingCommandStore commands = new RejectingCommandStore(claimed());
         CountingItemStore items = new CountingItemStore();
         CountingTurnStore turns = new CountingTurnStore();
-        CountingWorkflowRunStore workflowRuns = new CountingWorkflowRunStore();
+        CountingWorkflowTaskStore workflowTasks = new CountingWorkflowTaskStore();
         AtomicInteger eventCount = new AtomicInteger();
         AtomicInteger executorCount = new AtomicInteger();
         AgentThreadEventGateway events = event -> eventCount.incrementAndGet();
@@ -64,7 +64,7 @@ class ExternalActionWorkerTest {
             return new ExternalActionExecutor.ExternalActionResult(true, false, "OK", "done");
         };
         ExternalActionWorker worker = new ExternalActionWorker(
-                commands, executor, items, turns, events, Clock.fixed(NOW, ZoneOffset.UTC), workflowRuns,
+                commands, executor, items, turns, events, Clock.fixed(NOW, ZoneOffset.UTC), workflowTasks,
                 Duration.ofSeconds(30), Duration.ofSeconds(5), Duration.ofSeconds(5), AgentRuntimeMetrics.noop());
 
         try {
@@ -76,8 +76,8 @@ class ExternalActionWorkerTest {
         assertEquals(1, executorCount.get());
         assertEquals(1, commands.updateCount.get());
         assertEquals(commands.claimed, commands.expected);
-        assertEquals(0, workflowRuns.findCount.get());
-        assertEquals(0, workflowRuns.updateCount.get());
+        assertEquals(0, workflowTasks.findCount.get());
+        assertEquals(0, workflowTasks.updateCount.get());
         assertEquals(0, turns.findCount.get());
         assertEquals(0, turns.updateCount.get());
         assertEquals(0, items.appendCount.get());
@@ -94,15 +94,15 @@ class ExternalActionWorkerTest {
                 cn.ethan.core.agent.thread.AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION, 0,
                 "run-1", null, NOW.minusSeconds(10), NOW.minusSeconds(5), null);
         CountingTurnStore turns = new CountingTurnStore(waitingTurn);
-        AgentWorkflowRunModel waitingRun = new AgentWorkflowRunModel(
+        AgentWorkflowTaskModel waitingRun = new AgentWorkflowTaskModel(
                 "run-1", "thread-1", "turn-1", "user-1", AgentWorkflowTypeEnum.REFUND,
                 AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, 0, NOW.minusSeconds(10), NOW.minusSeconds(5));
-        CountingWorkflowRunStore workflowRuns = new CountingWorkflowRunStore(waitingRun);
+        CountingWorkflowTaskStore workflowTasks = new CountingWorkflowTaskStore(waitingRun);
         AtomicInteger eventCount = new AtomicInteger();
         ExternalActionWorker worker = new ExternalActionWorker(
                 commands, command -> new ExternalActionExecutor.ExternalActionResult(
                         true, false, "ORDER_REFUNDED", "订单已退款"), items, turns,
-                event -> eventCount.incrementAndGet(), Clock.fixed(NOW, ZoneOffset.UTC), workflowRuns,
+                event -> eventCount.incrementAndGet(), Clock.fixed(NOW, ZoneOffset.UTC), workflowTasks,
                 Duration.ofSeconds(30), Duration.ofSeconds(5), Duration.ofSeconds(5), AgentRuntimeMetrics.noop());
 
         try {
@@ -112,7 +112,7 @@ class ExternalActionWorkerTest {
         }
 
         assertEquals(ExternalActionStatusEnum.SUCCEEDED, commands.next.status());
-        assertEquals(AgentWorkflowStatusEnum.COMPLETED, workflowRuns.updated.status());
+        assertEquals(AgentWorkflowStatusEnum.COMPLETED, workflowTasks.updated.status());
         assertEquals(cn.ethan.core.agent.thread.AgentTurnStatusEnum.COMPLETED, turns.updated.status());
         assertEquals(4, items.appended.size());
         assertEquals(4, eventCount.get());
@@ -138,10 +138,10 @@ class ExternalActionWorkerTest {
                 cn.ethan.core.agent.thread.AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION, 0,
                 "run-1", null, NOW.minusSeconds(10), NOW.minusSeconds(5), null);
         CountingTurnStore turns = new CountingTurnStore(waitingTurn);
-        AgentWorkflowRunModel waitingRun = new AgentWorkflowRunModel(
+        AgentWorkflowTaskModel waitingRun = new AgentWorkflowTaskModel(
                 "run-1", "thread-1", "turn-1", "user-1", AgentWorkflowTypeEnum.REFUND,
                 AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, 0, NOW.minusSeconds(10), NOW.minusSeconds(5));
-        CountingWorkflowRunStore workflowRuns = new CountingWorkflowRunStore(waitingRun);
+        CountingWorkflowTaskStore workflowTasks = new CountingWorkflowTaskStore(waitingRun);
         AtomicInteger eventCount = new AtomicInteger();
         OrderSnapshotModel order = new OrderSnapshotModel("order-1", "user-1", "REFUNDED", 0);
         LogisticsEventModel logisticsEvent = new LogisticsEventModel(
@@ -149,7 +149,7 @@ class ExternalActionWorkerTest {
         ExternalActionWorker worker = new ExternalActionWorker(
                 commands, command -> new ExternalActionExecutor.ExternalActionResult(
                         true, false, "ORDER_REFUNDED", "订单已退款"), items, turns,
-                event -> eventCount.incrementAndGet(), Clock.fixed(NOW, ZoneOffset.UTC), workflowRuns,
+                event -> eventCount.incrementAndGet(), Clock.fixed(NOW, ZoneOffset.UTC), workflowTasks,
                 Duration.ofSeconds(30), Duration.ofSeconds(5), Duration.ofSeconds(5), AgentRuntimeMetrics.noop(),
                 (orderId, userId) -> new cn.ethan.core.commerce.order.OrderLookupResultModel(
                         cn.ethan.core.commerce.order.OrderLookupStatusEnum.FOUND, order),
@@ -181,15 +181,15 @@ class ExternalActionWorkerTest {
                 cn.ethan.core.agent.thread.AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION, 0,
                 "run-1", null, NOW.minusSeconds(10), NOW.minusSeconds(5), null);
         CountingTurnStore turns = new CountingTurnStore(waitingTurn);
-        AgentWorkflowRunModel waitingRun = new AgentWorkflowRunModel(
+        AgentWorkflowTaskModel waitingRun = new AgentWorkflowTaskModel(
                 "run-1", "thread-1", "turn-1", "user-1", AgentWorkflowTypeEnum.REFUND,
                 AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, 0, NOW.minusSeconds(10), NOW.minusSeconds(5));
-        CountingWorkflowRunStore workflowRuns = new CountingWorkflowRunStore(waitingRun);
+        CountingWorkflowTaskStore workflowTasks = new CountingWorkflowTaskStore(waitingRun);
         OrderSnapshotModel order = new OrderSnapshotModel("order-1", "user-1", "PAID", 0);
         ExternalActionWorker worker = new ExternalActionWorker(
                 commands, command -> new ExternalActionExecutor.ExternalActionResult(
                         true, false, "ORDER_REFUNDED", "订单已退款"), items, turns,
-                event -> { }, Clock.fixed(NOW, ZoneOffset.UTC), workflowRuns,
+                event -> { }, Clock.fixed(NOW, ZoneOffset.UTC), workflowTasks,
                 Duration.ofSeconds(30), Duration.ofSeconds(5), Duration.ofSeconds(5), AgentRuntimeMetrics.noop(),
                 (orderId, userId) -> OrderLookupResultModel.found(order),
                 (orderId, userId) -> List.of());
@@ -207,7 +207,7 @@ class ExternalActionWorkerTest {
     }
 
     @Test
-    void manualRetryReopensWorkflowRunWithoutRewritingFailedTurn() {
+    void manualRetryReopensWorkflowTaskWithoutRewritingFailedTurn() {
         ExternalActionCommandModel claimed = claimed();
         AcceptingCommandStore commands = new AcceptingCommandStore(claimed);
         CountingItemStore items = new CountingItemStore();
@@ -215,14 +215,14 @@ class ExternalActionWorkerTest {
                 "turn-1", "thread-1", "user-1", "request-1", "refund",
                 cn.ethan.core.agent.thread.AgentTurnStatusEnum.FAILED, 0,
                 "run-1", "EXTERNAL_ACTION_FAILED", NOW.minusSeconds(10), NOW.minusSeconds(5), NOW));
-        CountingWorkflowRunStore workflowRuns = new CountingWorkflowRunStore(new AgentWorkflowRunModel(
+        CountingWorkflowTaskStore workflowTasks = new CountingWorkflowTaskStore(new AgentWorkflowTaskModel(
                 "run-1", "thread-1", "turn-1", "user-1", AgentWorkflowTypeEnum.REFUND,
                 AgentWorkflowStatusEnum.MANUAL_RETRY_REQUIRED, 1, NOW.minusSeconds(10), NOW.minusSeconds(1)));
         AtomicInteger eventCount = new AtomicInteger();
         ExternalActionWorker worker = new ExternalActionWorker(
                 commands, command -> new ExternalActionExecutor.ExternalActionResult(
                         true, false, "ORDER_REFUNDED", "人工重试成功"), items,
-                turns, event -> eventCount.incrementAndGet(), Clock.fixed(NOW, ZoneOffset.UTC), workflowRuns,
+                turns, event -> eventCount.incrementAndGet(), Clock.fixed(NOW, ZoneOffset.UTC), workflowTasks,
                 Duration.ofSeconds(30), Duration.ofSeconds(5), Duration.ofSeconds(5), AgentRuntimeMetrics.noop());
 
         try {
@@ -232,7 +232,7 @@ class ExternalActionWorkerTest {
         }
 
         assertEquals(ExternalActionStatusEnum.SUCCEEDED, commands.next.status());
-        assertEquals(AgentWorkflowStatusEnum.COMPLETED, workflowRuns.updated.status());
+        assertEquals(AgentWorkflowStatusEnum.COMPLETED, workflowTasks.updated.status());
         assertEquals(0, turns.updateCount.get());
         assertEquals(3, items.appended.size());
         assertEquals(3, eventCount.get());
@@ -250,13 +250,13 @@ class ExternalActionWorkerTest {
                 "turn-1", "thread-1", "user-1", "request-1", "refund",
                 cn.ethan.core.agent.thread.AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION, 0,
                 "run-1", null, NOW.minusSeconds(10), NOW.minusSeconds(5), null));
-        CountingWorkflowRunStore workflowRuns = new CountingWorkflowRunStore(new AgentWorkflowRunModel(
+        CountingWorkflowTaskStore workflowTasks = new CountingWorkflowTaskStore(new AgentWorkflowTaskModel(
                 "run-1", "thread-1", "turn-1", "user-1", AgentWorkflowTypeEnum.REFUND,
                 AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, 0, NOW.minusSeconds(10), NOW.minusSeconds(5)));
         ExternalActionWorker worker = new ExternalActionWorker(
                 commands, command -> new ExternalActionExecutor.ExternalActionResult(
                         false, false, "REFUND_REJECTED", "订单不再满足退款条件"), items,
-                turns, event -> { }, Clock.fixed(NOW, ZoneOffset.UTC), workflowRuns,
+                turns, event -> { }, Clock.fixed(NOW, ZoneOffset.UTC), workflowTasks,
                 Duration.ofSeconds(30), Duration.ofSeconds(5), Duration.ofSeconds(5), AgentRuntimeMetrics.noop());
 
         try {
@@ -266,7 +266,7 @@ class ExternalActionWorkerTest {
         }
 
         assertEquals(ExternalActionStatusEnum.MANUAL_RETRY_REQUIRED, commands.next.status());
-        assertEquals(AgentWorkflowStatusEnum.MANUAL_RETRY_REQUIRED, workflowRuns.updated.status());
+        assertEquals(AgentWorkflowStatusEnum.MANUAL_RETRY_REQUIRED, workflowTasks.updated.status());
         assertTrue(items.appended.stream().anyMatch(item ->
                 item.type() == cn.ethan.core.agent.thread.AgentItemTypeEnum.WORKFLOW_RESULT
                         && item.payloadJson().contains("MANUAL_RETRY_REQUIRED")));
@@ -281,13 +281,13 @@ class ExternalActionWorkerTest {
                 "turn-1", "thread-1", "user-1", "request-1", "refund",
                 cn.ethan.core.agent.thread.AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION, 0,
                 "run-1", null, NOW.minusSeconds(10), NOW.minusSeconds(5), null));
-        CountingWorkflowRunStore workflowRuns = new CountingWorkflowRunStore(new AgentWorkflowRunModel(
+        CountingWorkflowTaskStore workflowTasks = new CountingWorkflowTaskStore(new AgentWorkflowTaskModel(
                 "run-1", "thread-1", "turn-1", "user-1", AgentWorkflowTypeEnum.REFUND,
                 AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, 0, NOW.minusSeconds(10), NOW.minusSeconds(5)));
         ExternalActionWorker worker = new ExternalActionWorker(
                 commands, command -> ExternalActionExecutor.ExternalActionResult.unknown(
                         "REMOTE_TIMEOUT", "外部动作响应丢失"), items,
-                turns, event -> { }, Clock.fixed(NOW, ZoneOffset.UTC), workflowRuns,
+                turns, event -> { }, Clock.fixed(NOW, ZoneOffset.UTC), workflowTasks,
                 Duration.ofSeconds(30), Duration.ofSeconds(5), Duration.ofSeconds(5), AgentRuntimeMetrics.noop());
 
         try {
@@ -300,7 +300,7 @@ class ExternalActionWorkerTest {
         assertEquals(cn.ethan.core.agent.action.ExternalActionOutcomeEnum.UNKNOWN, commands.next.outcome());
         assertEquals(claimed.commandId(), commands.next.commandId());
         assertEquals(claimed.idempotencyKey(), commands.next.idempotencyKey());
-        assertEquals(AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, workflowRuns.updated.status());
+        assertEquals(AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, workflowTasks.updated.status());
         assertTrue(items.appended.stream().anyMatch(item ->
                 item.type() == cn.ethan.core.agent.thread.AgentItemTypeEnum.EXTERNAL_ACTION_STATUS
                         && item.payloadJson().contains("\"outcomeStatus\":\"UNKNOWN\"")));
@@ -319,14 +319,14 @@ class ExternalActionWorkerTest {
                 "turn-1", "thread-1", "user-1", "request-1", "delete",
                 cn.ethan.core.agent.thread.AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION, 0,
                 "run-1", null, NOW.minusSeconds(10), NOW.minusSeconds(5), null));
-        CountingWorkflowRunStore workflowRuns = new CountingWorkflowRunStore(new AgentWorkflowRunModel(
+        CountingWorkflowTaskStore workflowTasks = new CountingWorkflowTaskStore(new AgentWorkflowTaskModel(
                 "run-1", "thread-1", "turn-1", "user-1", AgentWorkflowTypeEnum.ORDER_SERVICE,
                 AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, 0, NOW.minusSeconds(10), NOW.minusSeconds(5)));
         AtomicInteger orderLookups = new AtomicInteger();
         ExternalActionWorker worker = new ExternalActionWorker(
                 commands, command -> new ExternalActionExecutor.ExternalActionResult(
                         true, false, "DELETE_ACCEPTED", "删除请求已接受但回执未确认"), items,
-                turns, event -> { }, Clock.fixed(NOW, ZoneOffset.UTC), workflowRuns,
+                turns, event -> { }, Clock.fixed(NOW, ZoneOffset.UTC), workflowTasks,
                 Duration.ofSeconds(30), Duration.ofSeconds(5), Duration.ofSeconds(5), AgentRuntimeMetrics.noop(),
                 (orderId, userId) -> {
                     orderLookups.incrementAndGet();
@@ -358,14 +358,14 @@ class ExternalActionWorkerTest {
                 "turn-1", "thread-1", "user-1", "request-1", "delete",
                 cn.ethan.core.agent.thread.AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION, 0,
                 "run-1", null, NOW.minusSeconds(10), NOW.minusSeconds(5), null));
-        CountingWorkflowRunStore workflowRuns = new CountingWorkflowRunStore(new AgentWorkflowRunModel(
+        CountingWorkflowTaskStore workflowTasks = new CountingWorkflowTaskStore(new AgentWorkflowTaskModel(
                 "run-1", "thread-1", "turn-1", "user-1", AgentWorkflowTypeEnum.ORDER_SERVICE,
                 AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, 0, NOW.minusSeconds(10), NOW.minusSeconds(5)));
         AtomicInteger orderLookups = new AtomicInteger();
         ExternalActionWorker worker = new ExternalActionWorker(
                 commands, command -> new ExternalActionExecutor.ExternalActionResult(
                         true, false, "ORDER_DELETED", "订单已删除"), items,
-                turns, event -> { }, Clock.fixed(NOW, ZoneOffset.UTC), workflowRuns,
+                turns, event -> { }, Clock.fixed(NOW, ZoneOffset.UTC), workflowTasks,
                 Duration.ofSeconds(30), Duration.ofSeconds(5), Duration.ofSeconds(5), AgentRuntimeMetrics.noop(),
                 (orderId, userId) -> {
                     orderLookups.incrementAndGet();
@@ -395,22 +395,22 @@ class ExternalActionWorkerTest {
                 "turn-1", "thread-1", "user-1", "request-1", "refund",
                 cn.ethan.core.agent.thread.AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION, 0,
                 "run-1", null, NOW.minusSeconds(10), NOW.minusSeconds(5), null));
-        CountingWorkflowRunStore workflowRuns = new CountingWorkflowRunStore(new AgentWorkflowRunModel(
+        CountingWorkflowTaskStore workflowTasks = new CountingWorkflowTaskStore(new AgentWorkflowTaskModel(
                 "run-1", "thread-1", "turn-1", "user-1", AgentWorkflowTypeEnum.REFUND,
                 AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, 0, NOW.minusSeconds(10), NOW.minusSeconds(5)));
         RecordingTransactionManager transactions = new RecordingTransactionManager(() -> {
             commands.next = null;
-            workflowRuns.updated = null;
+            workflowTasks.updated = null;
         });
         ExternalActionOutcomeManager manager = new ExternalActionOutcomeManager(
-                commands, new ThrowingItemStore(), turns, workflowRuns, new ObjectMapper(), transactions);
+                commands, new ThrowingItemStore(), turns, workflowTasks, new ObjectMapper(), transactions);
 
         assertThrows(IllegalStateException.class, () -> manager.transition(
                 claimed, claimed.succeeded(NOW), "OK", "done", Clock.fixed(NOW, ZoneOffset.UTC)));
 
         assertEquals(1, transactions.rollbackCount);
         assertNull(commands.next);
-        assertNull(workflowRuns.updated);
+        assertNull(workflowTasks.updated);
         assertEquals(0, turns.updateCount.get());
     }
 
@@ -589,33 +589,33 @@ class ExternalActionWorkerTest {
         }
     }
 
-    private static final class CountingWorkflowRunStore implements AgentWorkflowRunStore {
+    private static final class CountingWorkflowTaskStore implements AgentWorkflowTaskStore {
 
         private final AtomicInteger findCount = new AtomicInteger();
         private final AtomicInteger updateCount = new AtomicInteger();
-        private final AgentWorkflowRunModel current;
-        private AgentWorkflowRunModel updated;
+        private final AgentWorkflowTaskModel current;
+        private AgentWorkflowTaskModel updated;
 
-        private CountingWorkflowRunStore() {
+        private CountingWorkflowTaskStore() {
             this(null);
         }
 
-        private CountingWorkflowRunStore(AgentWorkflowRunModel current) {
+        private CountingWorkflowTaskStore(AgentWorkflowTaskModel current) {
             this.current = current;
         }
 
         @Override
-        public void create(AgentWorkflowRunModel run) {
+        public void create(AgentWorkflowTaskModel run) {
         }
 
         @Override
-        public Optional<AgentWorkflowRunModel> find(String userId, String runId) {
+        public Optional<AgentWorkflowTaskModel> find(String userId, String runId) {
             findCount.incrementAndGet();
             return Optional.ofNullable(current);
         }
 
         @Override
-        public void update(AgentWorkflowRunModel run) {
+        public void update(AgentWorkflowTaskModel run) {
             updateCount.incrementAndGet();
             updated = run;
         }

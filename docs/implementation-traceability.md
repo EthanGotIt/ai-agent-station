@@ -19,6 +19,14 @@
 - 本工作区基线重跑：规范检查、Python 31 项、前端 typecheck、Vitest 77 项、build、`git diff --check` 通过；`mvn clean test` 被预存未跟踪的 `infrastructure/.../workflow/langgraph` 源码阻断，这些源码引用 P5 已移除的 LangGraph4j API。未跟踪文件保留原样。P5/P7 干净提交的 Maven 通过记录仍作为历史证据。
 - 尚未重跑：MySQL acceptance profiles、隔离订单服务、Live 模型、目标库只读盘点、回滚演练和真实浏览器 SSE/响应式验收。
 
+### P8 阶段 1—2：计划基线与 WorkflowTask 命名（2026-09-29）
+
+- P0 校准已单独提交并推送（`6e81420`）：总体计划、产品/架构入口和 P8 执行卡统一为“原 Turn 暂停并恢复”的目标语义，同时明确当前运行时仍会结束工具循环；既有 P5—P7 未完成环境验收继续单独追踪。
+- P1 将 Core 模型、Store、owner-recovery 类型及 MyBatis Entity/Mapper/Store 内部更名为 WorkflowTask；Turn 内部关联使用 `workflowTaskId`。没有新增数据库表或迁移，数据库继续使用 `AGENT_WORKFLOW_RUN.RUN_ID` 与 `AGENT_TURN.WORKFLOW_RUN_ID`，HTTP `runId`/`workflowRunId` 继续作为兼容字段。
+- 自定义 MyBatis 查询显式将 `RUN_ID` 映射为 `TASK_ID`；回归测试验证旧表/列映射和查询别名。对外 QuestionCard、Checkpoint、Command、Item 与接受响应契约未重命名。
+- 验证：Core 102 项、Infrastructure 131 项、App 25 项单测通过；Maven reactor 使用 `mvn -pl commerce-guardian-agent-app -am clean -DskipTests=false test`。为避免预存未跟踪且引用已删除 LangGraph4j 的旧源码阻断编译，测试期间仅临时移出对应的未跟踪 LangGraph 源目录，结束后已原样恢复；常规包含这些目录的 `mvn clean test` 仍不能作为通过证据。
+- 隔离 MySQL acceptance：`AgentItemStoreMySqlIT` 6 项与 `AgentWorkflowMySqlIT` 7 项通过；Workflow 测试从 v9 增量迁移至 v14，并覆盖 `WorkflowTask.taskId`、旧表/列、自定义查询映射及编排版本持久化。该结果验证命名兼容，不替代后续新 Turn 暂停恢复与兼容版本回滚验收。
+
 ### P0 基线（2026-09-24）
 
 | 范围 | 结果 | 证据 |
@@ -121,7 +129,7 @@
 
 | 验收面 | 当前结论 | 直接证据 | 未闭合事项 |
 | --- | --- | --- | --- |
-| 图路由与编排版本 | 已完成，默认关闭 | `LangGraphAgentWorkflowEngine` 仅为明确订单号的催发货新 Run 选择 `EXPEDITE_GRAPH_V1`；历史、补选订单和其他动作保持 `LEGACY_V1`；V11/V12 迁移、Run/图快照版本读取和未知版本拒绝由 `MybatisAgentWorkflowRunStoreVersionTest` 与两个 Workflow MySQL IT 覆盖；未知版本现在以 `UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION` 受控失败 | 生产开关和第三方鉴权仍需按部署环境单独启用 |
+| 图路由与编排版本 | 已完成，默认关闭 | `LangGraphAgentWorkflowEngine` 仅为明确订单号的催发货新 Run 选择 `EXPEDITE_GRAPH_V1`；历史、补选订单和其他动作保持 `LEGACY_V1`；V11/V12 迁移、Run/图快照版本读取和未知版本拒绝由 `MybatisAgentWorkflowTaskStoreVersionTest` 与两个 Workflow MySQL IT 覆盖；未知版本现在以 `UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION` 受控失败 | 生产开关和第三方鉴权仍需按部署环境单独启用 |
 | 节点、确认与命令边界 | 技术路径已通过，业务节点职责不足 | V1 的通用 Action 只维护节点名和业务阶段；批准事务锁读 Run/Checkpoint 并只创建唯一 `ExternalActionCommand`；确认前无外部写入 | 由 V2 Core 策略和 typed 节点承担真实资格、重新核验、命令草稿和 Worker 交接职责 |
 | 技术快照恢复 | 已通过一次性副本现场验收 | `MybatisLangGraphCheckpointSaver` 保存节点、状态、Workflow 版本、事实指纹和编排版本；删除、损坏 `STATE_JSON`、版本失配和跨进程重启均从 Run/Checkpoint/订单事实重建，不以快照授予授权；`safeLogistics` 使用有序结构，事实指纹跨 JVM 稳定 | 生产副本和真实第三方订单平台仍按部署环境验收 |
 | Worker 结果闭环 | 已通过本地、HTTP 和真实模型黄金路径 | Worker 以 PENDING/RETRY_WAIT/PROCESSING Lease 领取命令，结果写入 `EXTERNAL_ACTION_STATUS`/Workflow 事实；三次失败后人工恢复与零失败成功路径均验证同一幂等键只产生一次业务变更；成功结果已接回模型续接总结 | 无本轮代码阻塞 |

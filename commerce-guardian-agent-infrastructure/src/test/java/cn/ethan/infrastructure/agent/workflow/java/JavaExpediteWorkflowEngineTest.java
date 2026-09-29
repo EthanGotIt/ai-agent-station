@@ -21,8 +21,8 @@ import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowDecisionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowOrchestrationVersionEnum;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
 import cn.ethan.core.commerce.order.OrderGateway;
@@ -73,7 +73,7 @@ class JavaExpediteWorkflowEngineTest {
         AgentQuestionCardModel enqueued = started.questionCard().reserveAnswerTurn("answer-1").answerTurnEnqueued();
         fixture.questions.current = enqueued;
         AgentQuestionAnswerInput answer = new AgentQuestionAnswerInput(enqueued.questionId(),
-                fixture.runs.current.runId(), AgentQuestionCardResumeTargetEnum.WORKFLOW,
+                fixture.runs.current.taskId(), AgentQuestionCardResumeTargetEnum.WORKFLOW,
                 enqueued.version(), Map.of("orderId", "ORDER-2"), AgentQuestionCardAnswerActionEnum.SUBMIT);
 
         var resumed = fixture.engine.resume(fixture.thread, fixture.turn("answer-1", answer), Map.of());
@@ -98,7 +98,7 @@ class JavaExpediteWorkflowEngineTest {
 
         assertEquals("APPROVED", result.resultStatus());
         assertEquals(ExternalActionTypeEnum.EXPEDITE, result.command().type());
-        assertEquals("order-service:" + fixture.runs.current.runId() + ":EXPEDITE:ORDER-1",
+        assertEquals("order-service:" + fixture.runs.current.taskId() + ":EXPEDITE:ORDER-1",
                 result.command().idempotencyKey());
         assertEquals(AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, fixture.runs.current.status());
         assertEquals(1, fixture.commands.created.size());
@@ -167,14 +167,14 @@ class JavaExpediteWorkflowEngineTest {
         assertTrue(fixture.commands.created.isEmpty());
     }
 
-    private AgentWorkflowDecisionInput decision(AgentWorkflowRunModel run,
+    private AgentWorkflowDecisionInput decision(AgentWorkflowTaskModel run,
                                                 AgentWorkflowCheckpointModel checkpoint,
                                                 AgentWorkflowDecisionEnum decision) {
-        return new AgentWorkflowDecisionInput(run.runId(), checkpoint.checkpointId(),
+        return new AgentWorkflowDecisionInput(run.taskId(), checkpoint.checkpointId(),
                 checkpoint.version() - 1, decision, checkpoint.factsFingerprint());
     }
 
-    private AgentWorkflowRunModel newRun(AgentWorkflowRunModel current) { return current; }
+    private AgentWorkflowTaskModel newRun(AgentWorkflowTaskModel current) { return current; }
 
     private AgentTurnModel ownerTurn(String id) {
         return new AgentTurnModel(id, "thread-1", "user-1", "request-" + id, "start",
@@ -235,22 +235,22 @@ class JavaExpediteWorkflowEngineTest {
         private AgentTurnModel turn(String id, AgentWorkflowDecisionInput input) { return decisionTurn(id, input); }
     }
 
-    private static final class Runs implements AgentWorkflowRunStore {
-        private AgentWorkflowRunModel current;
-        @Override public void create(AgentWorkflowRunModel run) { current = run; }
-        @Override public Optional<AgentWorkflowRunModel> find(String userId, String runId) {
-            return current != null && current.userId().equals(userId) && current.runId().equals(runId)
+    private static final class Runs implements AgentWorkflowTaskStore {
+        private AgentWorkflowTaskModel current;
+        @Override public void create(AgentWorkflowTaskModel run) { current = run; }
+        @Override public Optional<AgentWorkflowTaskModel> find(String userId, String runId) {
+            return current != null && current.userId().equals(userId) && current.taskId().equals(runId)
                     ? Optional.of(current) : Optional.empty();
         }
-        @Override public Optional<AgentWorkflowRunModel> findForUpdate(String userId, String runId) {
+        @Override public Optional<AgentWorkflowTaskModel> findForUpdate(String userId, String runId) {
             return find(userId, runId);
         }
-        @Override public Optional<AgentWorkflowRunModel> findBySource(String userId, String turnId,
+        @Override public Optional<AgentWorkflowTaskModel> findBySource(String userId, String turnId,
                                                                       AgentWorkflowTypeEnum type) {
             return current != null && current.userId().equals(userId) && current.turnId().equals(turnId)
                     && current.workflowType() == type ? Optional.of(current) : Optional.empty();
         }
-        @Override public void update(AgentWorkflowRunModel run) { current = run; }
+        @Override public void update(AgentWorkflowTaskModel run) { current = run; }
     }
 
     private static final class Questions implements AgentQuestionCardStore {

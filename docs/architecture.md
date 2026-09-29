@@ -4,7 +4,7 @@
 
 长期目标为 Spring AI Agent 负责理解、只读查询和提交事项，确定性 Java Workflow 负责业务核验、补参、授权、命令创建和结果收尾，Worker 独立执行外部动作。一个 Turn 可以在 QuestionCard、Checkpoint 或外部动作等待期间持久化暂停，并在结构化答复或 Command 结果到达后恢复原 Turn 的 Agent 循环；等待期间不占用模型请求或执行线程。Worker 结果先落库，再作为原工具调用的结果交还 Agent，不创建自动续跑 Turn。
 
-`WorkflowRun` 在后续 P8 中只改称 `WorkflowTask`，继续承担当前同一条售后流程的可恢复状态；这项命名不改变实体职责或持久化身份。QuestionCard 答案、Checkpoint 决策、普通 Steer 文本和 Worker 结果是不同类型的输入，分别校验与处理，但都能唤醒原 Turn。普通新消息可 Queue 为下一 Turn，Steer 显式补充当前未结束的 Turn。
+内部模型统一称为 `WorkflowTask`，沿用现有售后事项身份与关联关系；数据库仍映射 `AGENT_WORKFLOW_RUN.RUN_ID`，HTTP 路由及 `runId`/`workflowRunId` 字段继续作为显式兼容别名。QuestionCard 答案、Checkpoint 决策、普通 Steer 文本和 Worker 结果是不同类型的输入，分别校验与处理，但目标状态下都能唤醒原 Turn。普通新消息可 Queue 为下一 Turn，Steer 显式补充当前未结束的 Turn。
 
 截至 2026-09-28，退款、催发货和删除的新 Run 均使用 Java Workflow；Worker 结算不创建自动 Agent continuation。历史 `LEGACY_V1`/`EXPEDITE_GRAPH_V1`/`EXPEDITE_GRAPH_V2` 的标识、快照、Turn/Item 字段和迁移脚本仍保留以便读取与排空，生产运行路径不再装配 LangGraph4j。目标环境的旧 Run 归零需通过 [P5 只读盘点脚本](../scripts/maintenance/workflow-inventory.sql) 提供证据。
 
@@ -14,7 +14,7 @@ Core 只表达 `Thread`、`Turn`、`Item`、QuestionCard、ContextSnapshot 和 E
 
 ## 当前实现：Spring AI 协调与 Java Workflow
 
-生产运行时采用 Spring AI + 确定性 Java Workflow：Spring AI 负责模型调用、对话协调和 Tool Calling；Java Workflow 负责固定订单事项的事实读取、资格判断、补参、授权、命令创建和恢复。Core 不依赖框架，`WorkflowRun`、QuestionCard、Workflow Checkpoint 和 `ExternalActionCommand` 是业务事实源。结果结算在本地事务中独立完成，后续用户消息作为普通 Turn 读取最新事实。
+生产运行时采用 Spring AI + 确定性 Java Workflow：Spring AI 负责模型调用、对话协调和 Tool Calling；Java Workflow 负责固定订单事项的事实读取、资格判断、补参、授权、命令创建和恢复。Core 不依赖框架，`WorkflowTask`、QuestionCard、Workflow Checkpoint 和 `ExternalActionCommand` 是业务事实源。结果结算在本地事务中独立完成，后续用户消息作为普通 Turn 读取最新事实。
 
 不引入 LangChain4j、Embabel 或 Koog。LangChain4j 与 Spring AI 在模型、Tool、Memory 和 RAG 层重叠；Embabel 当前 Java 21 要求且动态 Goal Planning 不符合 JDK 17 与确定性写操作边界；Koog 会引入 Kotlin、协程、序列化及第二套 Agent/Tool/Persistence 运行时。未来若重新评估，必须先有明确的产品边界变化和恢复/持久化契约证据。
 
@@ -30,7 +30,7 @@ core
 ├── agent.execution       # FIFO、取消、超时、恢复和 Turn 执行
 ├── agent.context         # 上下文预算、快照和摘要
 ├── agent.coordination    # 协调 Agent 输入输出契约
-├── agent.workflow        # WorkflowRun、QuestionCard、业务 Checkpoint
+├── agent.workflow        # WorkflowTask、QuestionCard、业务 Checkpoint
 ├── agent.action          # 外部命令、幂等、Lease 和重试
 ├── agent.event           # 瞬时运行事件契约
 └── commerce.order        # 订单和物流验证夹具
@@ -52,7 +52,7 @@ app
 
 ## 会话与上下文
 
-`Thread → Turn → Item` 是一套会话及执行记录：Thread 是会话边界，Turn 是一次输入的处理，Item 是该 Thread 内按序追加的事实。`WorkflowRun` 是由某个 Turn 发起并关联回 Thread 的业务事项状态，不是另一套会话或另一份聊天历史。Item 记录可展示的 Workflow 轨迹，WorkflowRun 与 QuestionCard、Checkpoint、Command 保存该事项的可恢复状态和授权、执行约束；状态判断以这些持久化业务事实为准。
+`Thread → Turn → Item` 是一套会话及执行记录：Thread 是会话边界，Turn 是一次输入的处理，Item 是该 Thread 内按序追加的事实。`WorkflowTask` 是由某个 Turn 发起并关联回 Thread 的业务事项状态，不是另一套会话或另一份聊天历史。Item 记录可展示的 Workflow 轨迹，WorkflowTask 与 QuestionCard、Checkpoint、Command 保存该事项的可恢复状态和授权、执行约束；状态判断以这些持久化业务事实为准。
 
 登录身份不构成 Agent 实体。一个用户拥有多个 Thread，每个 Thread 保存标题、可选业务上下文和最新 Item 序号：
 
@@ -70,7 +70,7 @@ Thread
 └── ContextSnapshot（截至某个 sequence 的版本化摘要）
 ```
 
-Item 是对话与执行轨迹的可恢复事实；业务授权、版本和命令状态由对应的 WorkflowRun、QuestionCard、Checkpoint 与 ExternalActionCommand 持久模型维护。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersion=1` 和 `kind` 判别 envelope；`TURN_STATE` 记录 QUEUED、ACTIVE、WAITING、终态等生命周期事实，模型最终消息、工具调用/结果、Workflow 状态、订单动作请求和错误均即时持久化。新写入的结构化 payload 由 Infrastructure 的 `JacksonAgentItemPayloadCodec` 统一编码，序号、幂等追加和提交后事件由 `AgentItemJournal` 收口；历史列和旧 envelope 继续可读。Items API 在保留 `payload` 字符串兼容字段的同时提供 envelope 内的结构化 `data`，前端可按 `schemaVersion/kind/data` 消费；模型内部可以流式消费，但 SSE 对外只发送 `ready`、`heartbeat` 和 `item.*`，不再暴露 `assistant.delta` 或瞬时 `turn.*`；客户端断线时先按 `afterSequence` 读取 Items，再订阅事件，不重放丢失的文本增量。
+Item 是对话与执行轨迹的可恢复事实；业务授权、版本和命令状态由对应的 WorkflowTask、QuestionCard、Checkpoint 与 ExternalActionCommand 持久模型维护。每个 Item 的 `PAYLOAD_JSON` 使用 `schemaVersion=1` 和 `kind` 判别 envelope；`TURN_STATE` 记录 QUEUED、ACTIVE、WAITING、终态等生命周期事实，模型最终消息、工具调用/结果、Workflow 状态、订单动作请求和错误均即时持久化。新写入的结构化 payload 由 Infrastructure 的 `JacksonAgentItemPayloadCodec` 统一编码，序号、幂等追加和提交后事件由 `AgentItemJournal` 收口；历史列和旧 envelope 继续可读。Items API 在保留 `payload` 字符串兼容字段的同时提供 envelope 内的结构化 `data`，前端可按 `schemaVersion/kind/data` 消费；模型内部可以流式消费，但 SSE 对外只发送 `ready`、`heartbeat` 和 `item.*`，不再暴露 `assistant.delta` 或瞬时 `turn.*`；客户端断线时先按 `afterSequence` 读取 Items，再订阅事件，不重放丢失的文本增量。
 
 2A-1 生产路径先捕获已提交最大 Sequence，再按每页 300 条读取 `(afterSequence, watermark]`，300 只是分页大小，不限制历史总量。重复、乱序、越界、缺口或未覆盖水位的页面以 `CONTEXT_HISTORY_INVALID` 失败收口；上下文超出输入预算时不把部分历史发送给模型，并以 `CONTEXT_BUDGET_EXCEEDED` 受控失败。2A-2 在此基础上启用 Harness 式模型视图：完整 Prompt 达到总预算 80% 时先在副本裁剪超大 Tool Result，仍有压力才摘要最旧的完整 Turn/Tool 批次，保留最近 16% 和当前请求。原始 Items、Sequence 与 SSE 不删除或改写，摘要只写入可校验的 V2 派生快照；V1 快照忽略并从原始 Items 重建，CAS 冲突采用胜出快照而不重复调用摘要模型。摘要通过无 Tool 的 `ChatModel` 调用，共用 Turn 截止时间和 8,192 token 输出预算；供应商明确上下文溢出时，只有视图已严格缩减才允许一次有限重试。请求前压力处理没有有效缩减但完整 Prompt 仍在硬预算内时继续发送；供应商已拒绝且无法严格缩减，或硬预算不足时，以 `CONTEXT_BUDGET_EXCEEDED` 停止。每次组装记录读取水位、覆盖范围、条数、完整性、当前/峰值估算、固定限长与压力裁剪计数和压缩状态；不记录 Prompt、Thinking 或敏感原文。`WORKFLOW_STEP`、`WORKFLOW_CHECKPOINT`、`WORKFLOW_DECISION` 与 `AGENT_DECISION` 是模型可见的受控事实；`AGENT_CONTINUATION` 只作为运行元数据和前端折叠依据，不直接注入模型文本。
 
@@ -103,7 +103,7 @@ RESOLVE_ORDER → VERIFY_FACTS → SWITCH_REQUIREMENTS → AUTHORIZE
 
 ```text
 业务事实平面：
-Thread → Turn → WorkflowRun → Checkpoint → ExternalActionCommand → Worker
+Thread → Turn → WorkflowTask → Checkpoint → ExternalActionCommand → Worker
   ↑                                                        ↓
   └────────────── Items / SSE / 最新业务事实 ←─────────────┘
 
@@ -154,13 +154,13 @@ SSE 事件包含完整 envelope：`eventId、threadId、turnId、itemId（可选
 
 ## 数据库
 
-`docs/dev-ops/mysql/commerce-guardian-agent.sql` 是新库的破坏性基线；已有库必须先备份并由 `db/migration/V1__align_workflow_question_recovery.sql` 至 `V7__persist_agent_continuations.sql`、`V8__persist_langgraph_snapshots.sql`、`V9__split_question_cards_and_workflow_checkpoints.sql`、`V10__persist_context_compaction_metadata.sql`、`V11__persist_workflow_orchestration_version.sql`、`V12__persist_langgraph_orchestration_version.sql` 逐版本增量升级。V8 只增加可重建的 `AGENT_GRAPH_SNAPSHOT` 技术表，V9 将提问与执行确认拆为独立事实，V10 为上下文 V2 快照增加格式、来源范围、估算和摘要版本元数据，V11 为每个 `AGENT_WORKFLOW_RUN` 写入不可变的编排版本，V12 为图快照写入同样的不可变编排版本，并将历史记录归入 `LEGACY_V1`；历史业务事实和已有 Run 状态不被重写。旧 `AGENT_WORKFLOW_QUESTION`、Turn 中的旧回答列和旧 `WORKFLOW_ANSWER` 标记在保留期内只读，仅供迁移/历史投影使用，运行时代码不再映射或写入。基线保留这些历史列/表以支持迁移演练，同时创建当前 `AGENT_QUESTION_CARD`、`AGENT_WORKFLOW_CHECKPOINT`、`AGENT_GRAPH_SNAPSHOT`、`EXTERNAL_ACTION_COMMAND` 和 `EXTERNAL_ACTION_RESULT`。同一用户的同一来源 Turn 和 Workflow 类型只能有一个 WorkflowRun；迁移不得重建或覆盖已有业务事实。
+`docs/dev-ops/mysql/commerce-guardian-agent.sql` 是新库的破坏性基线；已有库必须先备份并由 `db/migration/V1__align_workflow_question_recovery.sql` 至 `V7__persist_agent_continuations.sql`、`V8__persist_langgraph_snapshots.sql`、`V9__split_question_cards_and_workflow_checkpoints.sql`、`V10__persist_context_compaction_metadata.sql`、`V11__persist_workflow_orchestration_version.sql`、`V12__persist_langgraph_orchestration_version.sql` 逐版本增量升级。V8 只增加可重建的 `AGENT_GRAPH_SNAPSHOT` 技术表，V9 将提问与执行确认拆为独立事实，V10 为上下文 V2 快照增加格式、来源范围、估算和摘要版本元数据，V11 为每个 `AGENT_WORKFLOW_RUN` 写入不可变的编排版本，V12 为图快照写入同样的不可变编排版本，并将历史记录归入 `LEGACY_V1`；历史业务事实和已有 Run 状态不被重写。旧 `AGENT_WORKFLOW_QUESTION`、Turn 中的旧回答列和旧 `WORKFLOW_ANSWER` 标记在保留期内只读，仅供迁移/历史投影使用，运行时代码不再映射或写入。基线保留这些历史列/表以支持迁移演练，同时创建当前 `AGENT_QUESTION_CARD`、`AGENT_WORKFLOW_CHECKPOINT`、`AGENT_GRAPH_SNAPSHOT`、`EXTERNAL_ACTION_COMMAND` 和 `EXTERNAL_ACTION_RESULT`。同一用户的同一来源 Turn 和 Workflow 类型只能有一个 WorkflowTask；迁移不得重建或覆盖已有业务事实。
 
 > 以下 2B-1/V2 记录描述历史试点和数据兼容边界，不代表当前生产执行路径。P5 退出后新 Run 和结果结算均走 Java Workflow。
 
 2B-1/V2 历史试点曾由 `AI_AGENT_EXPEDITE_GRAPH_MODE=OFF|V1|V2` 控制，并使用图快照恢复。现有数据库中的这些版本、快照和 Item 仍可读取；新配置不再打开旧图执行。旧非终态 Run 必须在兼容版本完成或由用户明确取消，排空后由 `RetiredAgentWorkflowEngine` 受控拒绝。
 
-Java 新 Run 由 `AI_AGENT_EXPEDITE_MODE=JAVA`、`AI_AGENT_REFUND_MODE=JAVA` 和 `AI_AGENT_DELETE_MODE=JAVA` 路由到对应编排版本，默认开启；开关只影响新 Run，恢复按持久化版本选择 Java 或退休兼容边界。Java 引擎以 `WorkflowRun.stateJson/stepsJson`、QuestionCard、Checkpoint 和 ExternalActionCommand 恢复，不创建或读取图快照；步骤依次为 `RESOLVE_ORDER`、`VERIFY_FACTS`、`PREPARE_CONFIRMATION`、`AUTHORIZE`、`REVERIFY_FACTS`、`BUILD_ACTION_COMMAND`、`HANDOFF_WORKER`、`VERIFY_OUTCOME`。订单缺失或有歧义时通过 QuestionCard 补参，授权继续由 Checkpoint 表达。批准前在事务外重读订单事实，事务内锁定并校验 Run/Checkpoint 版本后创建唯一命令。三类 Java Run 的 Worker 结果持久化不创建 Agent continuation。
+Java 新 Run 由 `AI_AGENT_EXPEDITE_MODE=JAVA`、`AI_AGENT_REFUND_MODE=JAVA` 和 `AI_AGENT_DELETE_MODE=JAVA` 路由到对应编排版本，默认开启；开关只影响新 Run，恢复按持久化版本选择 Java 或退休兼容边界。Java 引擎以 `WorkflowTask.stateJson/stepsJson`、QuestionCard、Checkpoint 和 ExternalActionCommand 恢复，不创建或读取图快照；步骤依次为 `RESOLVE_ORDER`、`VERIFY_FACTS`、`PREPARE_CONFIRMATION`、`AUTHORIZE`、`REVERIFY_FACTS`、`BUILD_ACTION_COMMAND`、`HANDOFF_WORKER`、`VERIFY_OUTCOME`。订单缺失或有歧义时通过 QuestionCard 补参，授权继续由 Checkpoint 表达。批准前在事务外重读订单事实，事务内锁定并校验 Run/Checkpoint 版本后创建唯一命令。三类 Java Run 的 Worker 结果持久化不创建 Agent continuation。
 
 历史快照恢复证据保留在实施追踪中，但运行时不再写入或读取图快照。未知或遗漏的旧编排版本不得回退 Java 语义，而是以 `WORKFLOW_COMPATIBILITY_REQUIRED` 失败并指向兼容版本；历史表和迁移文件保留，支持数据读取、排空和回滚。
 

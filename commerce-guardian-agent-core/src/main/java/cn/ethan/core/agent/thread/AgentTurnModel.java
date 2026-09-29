@@ -20,7 +20,7 @@ public record AgentTurnModel(
         String input,
         AgentTurnStatusEnum status,
         int queuePosition,
-        String workflowRunId,
+        String workflowTaskId,
         String errorCode,
         Instant createdAt,
         Instant startedAt,
@@ -43,13 +43,13 @@ public record AgentTurnModel(
             String input,
             AgentTurnStatusEnum status,
             int queuePosition,
-            String workflowRunId,
+            String workflowTaskId,
             String errorCode,
             Instant createdAt,
             Instant startedAt,
             Instant finishedAt
     ) {
-        this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowRunId,
+        this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowTaskId,
                 errorCode, createdAt, startedAt, finishedAt, null, 0L, null, null, null, null);
     }
 
@@ -62,14 +62,14 @@ public record AgentTurnModel(
             String input,
             AgentTurnStatusEnum status,
             int queuePosition,
-            String workflowRunId,
+            String workflowTaskId,
             String errorCode,
             Instant createdAt,
             Instant startedAt,
             Instant finishedAt,
             AgentQuestionAnswerInput questionAnswerInput
     ) {
-        this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowRunId,
+        this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowTaskId,
                 errorCode, createdAt, startedAt, finishedAt, questionAnswerInput, 0L,
                 AgentTurnInputKindEnum.QUESTION_ANSWER, null, null, null);
     }
@@ -83,7 +83,7 @@ public record AgentTurnModel(
             String input,
             AgentTurnStatusEnum status,
             int queuePosition,
-            String workflowRunId,
+            String workflowTaskId,
             String errorCode,
             Instant createdAt,
             Instant startedAt,
@@ -91,7 +91,7 @@ public record AgentTurnModel(
             AgentQuestionAnswerInput questionAnswerInput,
             long version
     ) {
-        this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowRunId,
+        this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowTaskId,
                 errorCode, createdAt, startedAt, finishedAt, questionAnswerInput, version,
                 AgentTurnInputKindEnum.QUESTION_ANSWER, null, null, null);
     }
@@ -104,7 +104,7 @@ public record AgentTurnModel(
             String input,
             AgentTurnStatusEnum status,
             int queuePosition,
-            String workflowRunId,
+            String workflowTaskId,
             String errorCode,
             Instant createdAt,
             Instant startedAt,
@@ -114,7 +114,7 @@ public record AgentTurnModel(
             AgentTurnInputKindEnum inputKind,
             AgentOrderActionInput orderActionInput
     ) {
-        this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowRunId,
+        this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowTaskId,
                 errorCode, createdAt, startedAt, finishedAt, questionAnswerInput, version,
                 inputKind, orderActionInput, null, null);
     }
@@ -128,7 +128,7 @@ public record AgentTurnModel(
             String input,
             AgentTurnStatusEnum status,
             int queuePosition,
-            String workflowRunId,
+            String workflowTaskId,
             String errorCode,
             Instant createdAt,
             Instant startedAt,
@@ -139,7 +139,7 @@ public record AgentTurnModel(
             AgentOrderActionInput orderActionInput,
             AgentContinuationInput continuationInput
     ) {
-        this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowRunId, errorCode,
+        this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowTaskId, errorCode,
                 createdAt, startedAt, finishedAt, questionAnswerInput, version, inputKind, orderActionInput,
                 continuationInput, null);
     }
@@ -184,13 +184,13 @@ public record AgentTurnModel(
         if (version < 0) {
             throw new IllegalArgumentException("Turn version 不能为负数");
         }
-        if (workflowDecisionInput != null && !workflowDecisionInput.runId().equals(workflowRunId)) {
-            throw new IllegalArgumentException("决策 Turn 的 workflowRunId 与结构化输入不一致");
+        if (workflowDecisionInput != null && !workflowDecisionInput.runId().equals(workflowTaskId)) {
+            throw new IllegalArgumentException("决策 Turn 的 workflowTaskId 与结构化输入不一致");
         }
         if (questionAnswerInput != null
                 && questionAnswerInput.resumeTarget() == cn.ethan.core.agent.workflow.AgentQuestionCardResumeTargetEnum.WORKFLOW
-                && !java.util.Objects.equals(questionAnswerInput.runId(), workflowRunId)) {
-            throw new IllegalArgumentException("QuestionCard 回答 Turn 的 workflowRunId 与结构化输入不一致");
+                && !java.util.Objects.equals(questionAnswerInput.runId(), workflowTaskId)) {
+            throw new IllegalArgumentException("QuestionCard 回答 Turn 的 workflowTaskId 与结构化输入不一致");
         }
     }
 
@@ -204,28 +204,28 @@ public record AgentTurnModel(
 
     public AgentTurnModel queued(int position) {
         return new AgentTurnModel(turnId, threadId, userId, clientRequestId, input,
-                AgentTurnStatusEnum.QUEUED, position, workflowRunId, errorCode,
+                AgentTurnStatusEnum.QUEUED, position, workflowTaskId, errorCode,
                 createdAt, startedAt, finishedAt, questionAnswerInput, version + 1,
                 inputKind, orderActionInput, continuationInput, workflowDecisionInput);
     }
 
     public AgentTurnModel active(Instant at) {
         return new AgentTurnModel(turnId, threadId, userId, clientRequestId, input,
-                AgentTurnStatusEnum.ACTIVE, queuePosition, workflowRunId, errorCode,
+                AgentTurnStatusEnum.ACTIVE, queuePosition, workflowTaskId, errorCode,
                 createdAt, at, null, questionAnswerInput, version + 1,
                 inputKind, orderActionInput, continuationInput, workflowDecisionInput);
     }
 
     public AgentTurnModel terminal(AgentTurnStatusEnum terminal, String code, Instant at) {
         return new AgentTurnModel(turnId, threadId, userId, clientRequestId, input,
-                terminal, queuePosition, workflowRunId, code, createdAt, startedAt, at,
+                terminal, queuePosition, workflowTaskId, code, createdAt, startedAt, at,
                 questionAnswerInput, version + 1, inputKind, orderActionInput, continuationInput,
                 workflowDecisionInput);
     }
 
-    public AgentTurnModel workflow(String runId, AgentTurnStatusEnum nextStatus) {
+    public AgentTurnModel workflow(String taskId, AgentTurnStatusEnum nextStatus) {
         return new AgentTurnModel(turnId, threadId, userId, clientRequestId, input,
-                nextStatus, queuePosition, runId, errorCode, createdAt, startedAt, finishedAt,
+                nextStatus, queuePosition, taskId, errorCode, createdAt, startedAt, finishedAt,
                 questionAnswerInput, version + 1, inputKind, orderActionInput, continuationInput,
                 workflowDecisionInput);
     }

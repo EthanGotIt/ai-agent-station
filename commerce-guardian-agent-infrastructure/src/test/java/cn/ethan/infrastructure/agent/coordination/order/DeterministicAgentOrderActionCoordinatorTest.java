@@ -80,7 +80,7 @@ class DeterministicAgentOrderActionCoordinatorTest {
                 executionContext());
 
         assertEquals("ORDER_SERVICE:REFUND:order-1", workflowCall.get());
-        assertEquals("run-1", result.workflowRunId());
+        assertEquals("run-1", result.workflowTaskId());
         assertTrue(result.items().isEmpty());
     }
 

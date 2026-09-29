@@ -29,8 +29,8 @@ import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowDecisionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowEngine;
 import cn.ethan.core.agent.workflow.AgentWorkflowOrchestrationVersionEnum;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
 import cn.ethan.core.agent.workflow.ExpediteJavaWorkflowPolicy;
@@ -72,7 +72,7 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 /**
- * 类型职责：以持久化 WorkflowRun、QuestionCard、Checkpoint 和 Command 驱动催发货 Java 状态机。
+ * 类型职责：以持久化 WorkflowTask、QuestionCard、Checkpoint 和 Command 驱动催发货 Java 状态机。
  *
  * <p>状态恢复只读取业务 Run，不依赖图快照。订单读取发生在本地事务外，命令创建则在锁定并复核
  * Run 与 Checkpoint 后提交。</p>
@@ -95,7 +95,7 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
     private final Clock clock;
     private final ExternalActionCommandStore commands;
     private final ObjectMapper objectMapper;
-    private final AgentWorkflowRunStore runs;
+    private final AgentWorkflowTaskStore runs;
     private final OrderGateway orders;
     private final AgentItemStore items;
     private final AgentItemJournal journal;
@@ -113,7 +113,7 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
             Clock clock,
             ExternalActionCommandStore commands,
             ObjectMapper objectMapper,
-            AgentWorkflowRunStore runs,
+            AgentWorkflowTaskStore runs,
             OrderGateway orders,
             AgentItemStore items,
             AgentItemJournal journal,
@@ -144,7 +144,7 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
     /** 保留原有内存测试装配；生产构造器始终提供持久化预留 Store。 */
     public JavaExpediteWorkflowEngine(
             Clock clock, ExternalActionCommandStore commands, ObjectMapper objectMapper,
-            AgentWorkflowRunStore runs, OrderGateway orders, AgentItemStore items,
+            AgentWorkflowTaskStore runs, OrderGateway orders, AgentItemStore items,
             AgentItemJournal journal, AgentItemPayloadCodec payloadCodec, AgentTurnStore turns,
             AgentThreadEventGateway events, AgentQuestionCardStore questions,
             AgentWorkflowCheckpointStore checkpoints, PlatformTransactionManager transactionManager
@@ -157,10 +157,10 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
     public StartResult start(AgentThreadModel thread, AgentTurnModel turn, String operation,
                              Map<String, String> arguments) {
         Request request = Request.from(operation, arguments);
-        Optional<AgentWorkflowRunModel> existing = runs.findBySource(
+        Optional<AgentWorkflowTaskModel> existing = runs.findBySource(
                 thread.userId(), turn.turnId(), AgentWorkflowTypeEnum.ORDER_SERVICE);
         if (existing.isPresent()) {
-            AgentWorkflowRunModel run = existing.get();
+            AgentWorkflowTaskModel run = existing.get();
             requireJavaRun(run);
             requireSameRequest(request, run);
             return existingStart(run);
@@ -172,7 +172,7 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
         String fingerprint = resolved.order() == null ? "" : policy.factsFingerprint(resolved.order(), request.reason());
         Map<String, Object> state = state(request, resolved.order(), fingerprint);
         String activeNode = resolved.order() == null ? RESOLVE_ORDER : AUTHORIZE;
-        AgentWorkflowRunModel run = new AgentWorkflowRunModel(runId, thread.threadId(), turn.turnId(),
+        AgentWorkflowTaskModel run = new AgentWorkflowTaskModel(runId, thread.threadId(), turn.turnId(),
                 thread.userId(), AgentWorkflowTypeEnum.ORDER_SERVICE, AgentWorkflowStatusEnum.WAITING_USER_INPUT,
                 0, snapshot(activeNode, "WAITING"), json(state), now, now,
                 AgentWorkflowOrchestrationVersionEnum.EXPEDITE_JAVA_V1);
@@ -186,7 +186,7 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
             if (!isSourceUniquenessFailure(failure)) {
                 throw failure;
             }
-            AgentWorkflowRunModel winner = runs.findBySource(thread.userId(), turn.turnId(),
+            AgentWorkflowTaskModel winner = runs.findBySource(thread.userId(), turn.turnId(),
                     AgentWorkflowTypeEnum.ORDER_SERVICE).orElseThrow(() -> failure);
             requireJavaRun(winner);
             requireSameRequest(request, winner);
@@ -205,28 +205,28 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
         throw conflict("WORKFLOW_INPUT_MISSING", "Workflow 恢复 Turn 缺少结构化输入");
     }
 
-    private StartResult persistStart(AgentThreadModel thread, AgentTurnModel turn, AgentWorkflowRunModel run,
+    private StartResult persistStart(AgentThreadModel thread, AgentTurnModel turn, AgentWorkflowTaskModel run,
                                      Resolved resolved, AgentQuestionCardModel question,
                                      AgentWorkflowCheckpointModel checkpoint, Instant now) {
         requireNoOpenInteraction(thread.userId(), thread.threadId());
         runs.create(run);
-        reserve(thread.userId(), resolved.order(), run.runId());
-        append(thread, turn, AgentItemTypeEnum.WORKFLOW_STARTED, Map.of("runId", run.runId(),
+        reserve(thread.userId(), resolved.order(), run.taskId());
+        append(thread, turn, AgentItemTypeEnum.WORKFLOW_STARTED, Map.of("runId", run.taskId(),
                 "workflowType", "ORDER_SERVICE", "orchestrationVersion", run.orchestrationVersion().name()), now);
         appendOrderFacts(thread, turn, resolved.candidates(), resolved.order(), now);
         if (question != null) {
             questions.create(question);
             append(thread, turn, AgentItemTypeEnum.QUESTION_CARD,
                     AgentTurnItemPayloads.questionCard(question), AgentTurnItemPayloads.questionCardValue(question), now);
-            appendSteps(thread, turn, run.runId(), RESOLVE_ORDER, "WAITING", now);
+            appendSteps(thread, turn, run.taskId(), RESOLVE_ORDER, "WAITING", now);
         } else {
             checkpoints.create(checkpoint);
             append(thread, turn, AgentItemTypeEnum.WORKFLOW_CHECKPOINT,
                     AgentTurnItemPayloads.workflowCheckpoint(checkpoint),
                     AgentTurnItemPayloads.workflowCheckpointValue(checkpoint), now);
-            appendSteps(thread, turn, run.runId(), AUTHORIZE, "WAITING", now);
+            appendSteps(thread, turn, run.taskId(), AUTHORIZE, "WAITING", now);
         }
-        return new StartResult(run.runId(), question, checkpoint);
+        return new StartResult(run.taskId(), question, checkpoint);
     }
 
     private Resolved resolveInitial(Request request, String userId) {
@@ -253,8 +253,8 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
         AgentQuestionCardModel question = questions.find(thread.userId(), input.questionId())
                 .orElseThrow(() -> conflict("QUESTION_NOT_FOUND", "QuestionCard 不存在"));
         requireQuestionIdentity(thread, answerTurn, input, question);
-        AgentWorkflowRunModel run = runs.find(thread.userId(), input.runId())
-                .orElseThrow(() -> conflict("WORKFLOW_NOT_FOUND", "WorkflowRun 不存在"));
+        AgentWorkflowTaskModel run = runs.find(thread.userId(), input.runId())
+                .orElseThrow(() -> conflict("WORKFLOW_NOT_FOUND", "WorkflowTask 不存在"));
         requireJavaRun(run);
         if (run.status() != AgentWorkflowStatusEnum.WAITING_USER_INPUT) {
             throw conflict("WORKFLOW_VERSION_CONFLICT", "Workflow 当前不等待用户补充信息");
@@ -270,7 +270,7 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
         String fingerprint = policy.factsFingerprint(order, requestFrom(run).reason());
         Request request = requestFrom(run).withResolvedOrder(order.orderId());
         Map<String, Object> nextState = state(request, order, fingerprint);
-        AgentWorkflowRunModel progressed = run.progress(snapshot(AUTHORIZE, "WAITING"), json(nextState), now);
+        AgentWorkflowTaskModel progressed = run.progress(snapshot(AUTHORIZE, "WAITING"), json(nextState), now);
         AgentWorkflowCheckpointModel nextCheckpoint = checkpoint(progressed, answerTurn, order, fingerprint, now);
         return inTransaction(() -> {
             if (!questions.closeAnswerTurn(thread.userId(), question.questionId(), question.version(),
@@ -278,14 +278,14 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
                 throw conflict("QUESTION_VERSION_CONFLICT", "QuestionCard 回答版本已变化");
             }
             runs.update(progressed);
-            reserve(thread.userId(), order, run.runId());
-            appendResult(thread, answerTurn, run.runId(), "ANSWERED", null, now);
+            reserve(thread.userId(), order, run.taskId());
+            appendResult(thread, answerTurn, run.taskId(), "ANSWERED", null, now);
             appendOrderFacts(thread, answerTurn, List.of(order), order, now);
             checkpoints.create(nextCheckpoint);
             append(thread, answerTurn, AgentItemTypeEnum.WORKFLOW_CHECKPOINT,
                     AgentTurnItemPayloads.workflowCheckpoint(nextCheckpoint),
                     AgentTurnItemPayloads.workflowCheckpointValue(nextCheckpoint), now);
-            appendStep(thread, answerTurn, run.runId(), AUTHORIZE, "WAITING", "ORDER_SELECTED", now);
+            appendStep(thread, answerTurn, run.taskId(), AUTHORIZE, "WAITING", "ORDER_SELECTED", now);
             projectOwner(thread, run, AgentTurnStatusEnum.WAITING_USER_INPUT,
                     "订单信息已核验，请确认是否执行。", now);
             return new ResumeResult("订单信息已核验，请确认是否执行。", "WAITING_USER_INPUT", null,
@@ -294,8 +294,8 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
     }
 
     private ResumeResult cancelQuestion(AgentThreadModel thread, AgentTurnModel answerTurn,
-                                        AgentQuestionCardModel question, AgentWorkflowRunModel run, Instant now) {
-        AgentWorkflowRunModel rejected = run.status(AgentWorkflowStatusEnum.REJECTED,
+                                        AgentQuestionCardModel question, AgentWorkflowTaskModel run, Instant now) {
+        AgentWorkflowTaskModel rejected = run.status(AgentWorkflowStatusEnum.REJECTED,
                 snapshot(HANDOFF_WORKER, "COMPLETED"), run.stateJson(), now);
         return inTransaction(() -> {
             if (!questions.closeAnswerTurn(thread.userId(), question.questionId(), question.version(),
@@ -303,8 +303,8 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
                 throw conflict("QUESTION_VERSION_CONFLICT", "QuestionCard 取消版本已变化");
             }
             runs.update(rejected);
-            release(thread.userId(), requestFrom(run).selectedOrderId(), run.runId());
-            appendResult(thread, answerTurn, run.runId(), "CANCELLED", "本次催发货已取消，未执行外部动作。", now);
+            release(thread.userId(), requestFrom(run).selectedOrderId(), run.taskId());
+            appendResult(thread, answerTurn, run.taskId(), "CANCELLED", "本次催发货已取消，未执行外部动作。", now);
             projectOwner(thread, run, AgentTurnStatusEnum.COMPLETED,
                     "本次催发货已取消，未执行外部动作。", now);
             return new ResumeResult("本次催发货已取消，未执行外部动作。", "REJECTED", null);
@@ -313,16 +313,16 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
 
     private ResumeResult resumeDecision(AgentThreadModel thread, AgentTurnModel decisionTurn,
                                         AgentWorkflowDecisionInput input) {
-        AgentWorkflowRunModel run = runs.find(thread.userId(), input.runId())
-                .orElseThrow(() -> conflict("WORKFLOW_NOT_FOUND", "WorkflowRun 不存在"));
+        AgentWorkflowTaskModel run = runs.find(thread.userId(), input.runId())
+                .orElseThrow(() -> conflict("WORKFLOW_NOT_FOUND", "WorkflowTask 不存在"));
         requireJavaRun(run);
         AgentWorkflowCheckpointModel checkpoint = checkpoints.find(thread.userId(), input.checkpointId())
                 .orElseThrow(() -> conflict("CHECKPOINT_NOT_FOUND", "Workflow Checkpoint 不存在"));
-        if (!checkpoint.threadId().equals(thread.threadId()) || !checkpoint.runId().equals(run.runId())
+        if (!checkpoint.threadId().equals(thread.threadId()) || !checkpoint.runId().equals(run.taskId())
                 || checkpoint.version() != input.expectedVersion() + 1) {
             throw conflict("CHECKPOINT_VERSION_CONFLICT", "Workflow Checkpoint 决策版本已变化");
         }
-        Optional<ExternalActionCommandModel> existing = commands.findByRunId(thread.userId(), run.runId());
+        Optional<ExternalActionCommandModel> existing = commands.findByRunId(thread.userId(), run.taskId());
         if (input.decision() == AgentWorkflowDecisionEnum.APPROVE && existing.isPresent()) {
             return new ResumeResult("已确认，催发货动作已进入可靠执行队列。", "APPROVED",
                     existing.get(), null, checkpoint);
@@ -355,7 +355,7 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
         return approve(thread, decisionTurn, run, checkpoint, latest, fingerprint, now);
     }
 
-    private ResumeResult rejectDecision(AgentThreadModel thread, AgentTurnModel turn, AgentWorkflowRunModel run,
+    private ResumeResult rejectDecision(AgentThreadModel thread, AgentTurnModel turn, AgentWorkflowTaskModel run,
                                          AgentWorkflowCheckpointModel checkpoint, Instant now) {
         if (checkpoint.status() != AgentWorkflowCheckpointStatusEnum.REJECTED) {
             throw conflict("CHECKPOINT_VERSION_CONFLICT", "Workflow Checkpoint 未记录拒绝决策");
@@ -363,36 +363,36 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
         if (run.status() == AgentWorkflowStatusEnum.REJECTED) {
             return new ResumeResult("已拒绝催发货，未执行外部动作。", "REJECTED", null, null, checkpoint);
         }
-        AgentWorkflowRunModel rejected = run.status(AgentWorkflowStatusEnum.REJECTED,
+        AgentWorkflowTaskModel rejected = run.status(AgentWorkflowStatusEnum.REJECTED,
                 snapshot(HANDOFF_WORKER, "COMPLETED"), run.stateJson(), now);
         return inTransaction(() -> {
             runs.update(rejected);
-            release(thread.userId(), requestFrom(run).selectedOrderId(), run.runId());
-            appendResult(thread, turn, run.runId(), "REJECTED", "已拒绝催发货，未执行外部动作。", now);
-            appendStep(thread, turn, run.runId(), AUTHORIZE, "REJECTED", "REJECT", now);
+            release(thread.userId(), requestFrom(run).selectedOrderId(), run.taskId());
+            appendResult(thread, turn, run.taskId(), "REJECTED", "已拒绝催发货，未执行外部动作。", now);
+            appendStep(thread, turn, run.taskId(), AUTHORIZE, "REJECTED", "REJECT", now);
             projectOwner(thread, run, AgentTurnStatusEnum.COMPLETED,
                     "已拒绝催发货，未执行外部动作。", now);
             return new ResumeResult("已拒绝催发货，未执行外部动作。", "REJECTED", null, null, checkpoint);
         });
     }
 
-    private ResumeResult reconfirm(AgentThreadModel thread, AgentTurnModel turn, AgentWorkflowRunModel run,
+    private ResumeResult reconfirm(AgentThreadModel thread, AgentTurnModel turn, AgentWorkflowTaskModel run,
                                    AgentWorkflowCheckpointModel old, OrderSnapshotModel latest,
                                    String fingerprint, Instant now) {
         Request request = requestFrom(run).withResolvedOrder(latest.orderId());
-        AgentWorkflowRunModel progressed = run.progress(snapshot(REVERIFY_FACTS, "WAITING"),
+        AgentWorkflowTaskModel progressed = run.progress(snapshot(REVERIFY_FACTS, "WAITING"),
                 json(state(request, latest, fingerprint)), now);
         AgentWorkflowCheckpointModel next = checkpoint(progressed, turn, latest, fingerprint, now);
         return inTransaction(() -> {
-            AgentWorkflowRunModel lockedRun = lockRun(thread, run);
+            AgentWorkflowTaskModel lockedRun = lockRun(thread, run);
             AgentWorkflowCheckpointModel lockedCheckpoint = lockCheckpoint(thread, old);
             requireUnchanged(lockedRun, run, lockedCheckpoint, old);
             supersede(lockedCheckpoint, thread.userId());
             runs.update(progressed);
             checkpoints.create(next);
-            appendResult(thread, turn, run.runId(), "FACTS_CHANGED", "订单事实已更新，请重新确认执行内容。", now);
+            appendResult(thread, turn, run.taskId(), "FACTS_CHANGED", "订单事实已更新，请重新确认执行内容。", now);
             appendOrderFacts(thread, turn, List.of(latest), latest, now);
-            appendStep(thread, turn, run.runId(), REVERIFY_FACTS, "COMPLETED", "FACTS_CHANGED", now);
+            appendStep(thread, turn, run.taskId(), REVERIFY_FACTS, "COMPLETED", "FACTS_CHANGED", now);
             append(thread, turn, AgentItemTypeEnum.WORKFLOW_CHECKPOINT,
                     AgentTurnItemPayloads.workflowCheckpoint(next),
                     AgentTurnItemPayloads.workflowCheckpointValue(next), now);
@@ -403,29 +403,29 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
     }
 
     private ResumeResult failReverification(AgentThreadModel thread, AgentTurnModel turn,
-                                            AgentWorkflowRunModel run, AgentWorkflowCheckpointModel checkpoint,
+                                            AgentWorkflowTaskModel run, AgentWorkflowCheckpointModel checkpoint,
                                             Instant now, String message) {
-        AgentWorkflowRunModel failed = run.status(AgentWorkflowStatusEnum.FAILED,
+        AgentWorkflowTaskModel failed = run.status(AgentWorkflowStatusEnum.FAILED,
                 snapshot(REVERIFY_FACTS, "ERROR"), run.stateJson(), now);
         return inTransaction(() -> {
-            AgentWorkflowRunModel lockedRun = lockRun(thread, run);
+            AgentWorkflowTaskModel lockedRun = lockRun(thread, run);
             AgentWorkflowCheckpointModel lockedCheckpoint = lockCheckpoint(thread, checkpoint);
             requireUnchanged(lockedRun, run, lockedCheckpoint, checkpoint);
             supersede(lockedCheckpoint, thread.userId());
             runs.update(failed);
-            release(thread.userId(), requestFrom(run).selectedOrderId(), run.runId());
-            appendResult(thread, turn, run.runId(), "FACTS_CHANGED_ACTION_NOT_ALLOWED", message, now);
-            appendStep(thread, turn, run.runId(), REVERIFY_FACTS, "ERROR", "NOT_ALLOWED", now);
+            release(thread.userId(), requestFrom(run).selectedOrderId(), run.taskId());
+            appendResult(thread, turn, run.taskId(), "FACTS_CHANGED_ACTION_NOT_ALLOWED", message, now);
+            appendStep(thread, turn, run.taskId(), REVERIFY_FACTS, "ERROR", "NOT_ALLOWED", now);
             projectOwner(thread, run, AgentTurnStatusEnum.FAILED, message, now);
             return new ResumeResult(message, "FAILED", null);
         });
     }
 
-    private ResumeResult approve(AgentThreadModel thread, AgentTurnModel turn, AgentWorkflowRunModel run,
+    private ResumeResult approve(AgentThreadModel thread, AgentTurnModel turn, AgentWorkflowTaskModel run,
                                  AgentWorkflowCheckpointModel checkpoint, OrderSnapshotModel order,
                                  String fingerprint, Instant now) {
         return inTransaction(() -> {
-            AgentWorkflowRunModel lockedRun = lockRun(thread, run);
+            AgentWorkflowTaskModel lockedRun = lockRun(thread, run);
             AgentWorkflowCheckpointModel lockedCheckpoint = lockCheckpoint(thread, checkpoint);
             if (lockedRun.orchestrationVersion() != AgentWorkflowOrchestrationVersionEnum.EXPEDITE_JAVA_V1
                     || lockedRun.version() != run.version()
@@ -434,30 +434,30 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
                     || !lockedCheckpoint.factsFingerprint().equals(fingerprint)) {
                 throw conflict("CHECKPOINT_VERSION_CONFLICT", "批准期间 Workflow 事实或版本已变化");
             }
-            Optional<ExternalActionCommandModel> prior = commands.findByRunId(thread.userId(), run.runId());
+            Optional<ExternalActionCommandModel> prior = commands.findByRunId(thread.userId(), run.taskId());
             if (prior.isPresent()) {
                 return new ResumeResult("已确认，催发货动作已进入可靠执行队列。", "APPROVED",
                         prior.get(), null, lockedCheckpoint);
             }
-            reserve(thread.userId(), order, run.runId());
-            String idempotencyKey = "order-service:" + lockedRun.runId() + ":EXPEDITE:" + order.orderId();
+            reserve(thread.userId(), order, run.taskId());
+            String idempotencyKey = "order-service:" + lockedRun.taskId() + ":EXPEDITE:" + order.orderId();
             Map<String, String> payload = new LinkedHashMap<>();
             payload.put("orderId", order.orderId());
             String reason = requestFrom(run).reason();
             if (!reason.isBlank()) payload.put("reason", reason);
             ExternalActionCommandModel draft = new ExternalActionCommandModel(
-                    "action-" + UUID.randomUUID(), lockedRun.runId(), thread.threadId(), lockedRun.turnId(),
+                    "action-" + UUID.randomUUID(), lockedRun.taskId(), thread.threadId(), lockedRun.turnId(),
                     thread.userId(), ExternalActionTypeEnum.EXPEDITE, idempotencyKey, json(payload),
                     ExternalActionStatusEnum.PENDING, 0, 3, now, null, null, null, null, now, now, null);
             ExternalActionCommandModel command = commands.createIfAbsent(draft);
             Request request = requestFrom(run).withResolvedOrder(order.orderId());
-            AgentWorkflowRunModel waiting = lockedRun.status(AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION,
+            AgentWorkflowTaskModel waiting = lockedRun.status(AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION,
                     snapshot(HANDOFF_WORKER, "ACTIVE"), json(state(request, order, fingerprint)), now);
             runs.update(waiting);
-            appendStep(thread, turn, run.runId(), AUTHORIZE, "COMPLETED", "APPROVE", now);
-            appendStep(thread, turn, run.runId(), REVERIFY_FACTS, "COMPLETED", "UNCHANGED", now);
-            appendStep(thread, turn, run.runId(), BUILD_ACTION_COMMAND, "COMPLETED", "EXPEDITE", now);
-            appendStep(thread, turn, run.runId(), HANDOFF_WORKER, "ACTIVE", "COMMAND_QUEUED", now);
+            appendStep(thread, turn, run.taskId(), AUTHORIZE, "COMPLETED", "APPROVE", now);
+            appendStep(thread, turn, run.taskId(), REVERIFY_FACTS, "COMPLETED", "UNCHANGED", now);
+            appendStep(thread, turn, run.taskId(), BUILD_ACTION_COMMAND, "COMPLETED", "EXPEDITE", now);
+            appendStep(thread, turn, run.taskId(), HANDOFF_WORKER, "ACTIVE", "COMMAND_QUEUED", now);
             append(thread, turn, AgentItemTypeEnum.EXTERNAL_ACTION_STATUS,
                     Map.of("commandId", command.commandId(), "runId", command.runId(),
                             "status", command.status().name(), "actionType", command.type().name(),
@@ -473,9 +473,9 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
         });
     }
 
-    private AgentWorkflowRunModel lockRun(AgentThreadModel thread, AgentWorkflowRunModel expected) {
-        return runs.findForUpdate(thread.userId(), expected.runId())
-                .orElseThrow(() -> conflict("WORKFLOW_VERSION_CONFLICT", "WorkflowRun 已不存在"));
+    private AgentWorkflowTaskModel lockRun(AgentThreadModel thread, AgentWorkflowTaskModel expected) {
+        return runs.findForUpdate(thread.userId(), expected.taskId())
+                .orElseThrow(() -> conflict("WORKFLOW_VERSION_CONFLICT", "WorkflowTask 已不存在"));
     }
 
     private AgentWorkflowCheckpointModel lockCheckpoint(AgentThreadModel thread,
@@ -484,13 +484,13 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
                 .orElseThrow(() -> conflict("CHECKPOINT_VERSION_CONFLICT", "Workflow Checkpoint 已不存在"));
     }
 
-    private void requireUnchanged(AgentWorkflowRunModel lockedRun, AgentWorkflowRunModel expectedRun,
+    private void requireUnchanged(AgentWorkflowTaskModel lockedRun, AgentWorkflowTaskModel expectedRun,
                                   AgentWorkflowCheckpointModel lockedCheckpoint,
                                   AgentWorkflowCheckpointModel expectedCheckpoint) {
         if (lockedRun.version() != expectedRun.version()
                 || lockedRun.orchestrationVersion() != AgentWorkflowOrchestrationVersionEnum.EXPEDITE_JAVA_V1
                 || lockedCheckpoint.version() != expectedCheckpoint.version()
-                || !lockedCheckpoint.runId().equals(lockedRun.runId())) {
+                || !lockedCheckpoint.runId().equals(lockedRun.taskId())) {
             throw conflict("CHECKPOINT_VERSION_CONFLICT", "事实核验期间 Workflow 版本已变化");
         }
     }
@@ -503,15 +503,15 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
         }
     }
 
-    private AgentWorkflowCheckpointModel checkpoint(AgentWorkflowRunModel run, AgentTurnModel turn,
+    private AgentWorkflowCheckpointModel checkpoint(AgentWorkflowTaskModel run, AgentTurnModel turn,
                                                    OrderSnapshotModel order, String fingerprint, Instant now) {
-        return new AgentWorkflowCheckpointModel("checkpoint-" + UUID.randomUUID(), run.runId(),
+        return new AgentWorkflowCheckpointModel("checkpoint-" + UUID.randomUUID(), run.taskId(),
                 run.threadId(), turn.turnId(), run.userId(), AUTHORIZE, ACTION, order.orderId(),
                 "将对已支付订单 " + order.orderId() + " 创建一次催发货动作。", fingerprint,
                 0, AgentWorkflowCheckpointStatusEnum.OPEN, null, now, null);
     }
 
-    private AgentQuestionCardModel orderQuestion(AgentWorkflowRunModel run, AgentTurnModel turn,
+    private AgentQuestionCardModel orderQuestion(AgentWorkflowTaskModel run, AgentTurnModel turn,
                                                  List<OrderSnapshotModel> candidates, Instant now) {
         List<String> options = candidates.stream().limit(3).map(OrderSnapshotModel::orderId).toList();
         AgentQuestionFieldModel orderField = new AgentQuestionFieldModel("orderId", true, 128, options, true);
@@ -521,7 +521,7 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
         summary.put("summary", List.of(Map.of("label", "操作", "value", "催发货")));
         summary.put("fields", List.of(Map.of("name", "orderId", "required", true,
                 "maxLength", 128, "options", options, "allowCustom", true)));
-        return AgentQuestionCardModel.workflow("question-" + UUID.randomUUID(), run.runId(),
+        return AgentQuestionCardModel.workflow("question-" + UUID.randomUUID(), run.taskId(),
                 run.threadId(), turn.turnId(), run.userId(), 1, "请确认具体订单",
                 options.isEmpty() ? "暂未找到可催发货的已支付订单，请补充订单号。"
                         : "请选择要催发货的订单；如果列表中没有，请填写订单号。",
@@ -597,20 +597,20 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
         });
     }
 
-    private void projectOwner(AgentThreadModel thread, AgentWorkflowRunModel run,
+    private void projectOwner(AgentThreadModel thread, AgentWorkflowTaskModel run,
                               AgentTurnStatusEnum status, String message, Instant now) {
         if (turns == null) return;
         AgentTurnModel owner = turns.findTurn(thread.userId(), run.turnId()).orElse(null);
         if (owner == null || isTerminal(owner.status())) return;
         AgentTurnModel next = status == AgentTurnStatusEnum.WAITING_USER_INPUT
                 || status == AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION
-                ? owner.workflow(run.runId(), status)
+                ? owner.workflow(run.taskId(), status)
                 : owner.terminal(status, status == AgentTurnStatusEnum.FAILED ? "WORKFLOW_FAILED" : null, now);
         if (!turns.updateTurn(owner, next)) {
             throw conflict("TURN_VERSION_CONFLICT", "Workflow owner Turn 版本竞争");
         }
         if (message != null && !message.isBlank()) {
-            appendResult(thread, next, run.runId(), status.name(), message, now);
+            appendResult(thread, next, run.taskId(), status.name(), message, now);
         }
         append(thread, next, AgentItemTypeEnum.TURN_STATE,
                 AgentTurnItemPayloads.turnState(status, null), AgentTurnItemPayloads.turnStateValue(status, null), now);
@@ -672,13 +672,13 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
         }
     }
 
-    private StartResult existingStart(AgentWorkflowRunModel run) {
-        AgentQuestionCardModel question = questions.findOpenByRun(run.userId(), run.runId()).orElse(null);
-        AgentWorkflowCheckpointModel checkpoint = checkpoints.findOpenByRun(run.userId(), run.runId()).orElse(null);
-        return new StartResult(run.runId(), question, checkpoint);
+    private StartResult existingStart(AgentWorkflowTaskModel run) {
+        AgentQuestionCardModel question = questions.findOpenByRun(run.userId(), run.taskId()).orElse(null);
+        AgentWorkflowCheckpointModel checkpoint = checkpoints.findOpenByRun(run.userId(), run.taskId()).orElse(null);
+        return new StartResult(run.taskId(), question, checkpoint);
     }
 
-    private Request requestFrom(AgentWorkflowRunModel run) {
+    private Request requestFrom(AgentWorkflowTaskModel run) {
         try {
             JsonNode root = objectMapper.readTree(run.stateJson());
             return new Request(root.path("intent").asString(INTENT), root.path("requestOrderId").asString(""),
@@ -689,7 +689,7 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
         }
     }
 
-    private void requireSameRequest(Request request, AgentWorkflowRunModel run) {
+    private void requireSameRequest(Request request, AgentWorkflowTaskModel run) {
         Request stored = requestFrom(run);
         if (!request.intent().equals(stored.intent()) || !request.requestOrderId().equals(stored.requestOrderId())
                 || !request.reason().equals(stored.reason()) || !request.criteria().equals(stored.criteria())) {
@@ -697,9 +697,9 @@ public final class JavaExpediteWorkflowEngine implements AgentWorkflowEngine {
         }
     }
 
-    private void requireJavaRun(AgentWorkflowRunModel run) {
+    private void requireJavaRun(AgentWorkflowTaskModel run) {
         if (run.orchestrationVersion() != AgentWorkflowOrchestrationVersionEnum.EXPEDITE_JAVA_V1) {
-            throw conflict("UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION", "该 WorkflowRun 不属于 Java 催发货版本");
+            throw conflict("UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION", "该 WorkflowTask 不属于 Java 催发货版本");
         }
     }
 

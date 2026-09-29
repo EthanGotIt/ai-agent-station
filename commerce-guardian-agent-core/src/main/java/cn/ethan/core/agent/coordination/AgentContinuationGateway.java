@@ -9,7 +9,7 @@ import java.util.List;
 /**
  * 类型职责：统一由外部动作结果触发 Agent Continuation 的 admission、幂等和轮次边界。
  *
- * <p>调用方只提交已持久化的外部动作状态和结果 Item；根 Turn、父 Turn、WorkflowRun、
+ * <p>调用方只提交已持久化的外部动作状态和结果 Item；根 Turn、父 Turn、WorkflowTask、
  * 命令、状态、Sequence 和 cycle 的组合键由实现统一计算，避免 Workflow 与 Worker 各自生成续跑事实。</p>
  *
  * @author ethan

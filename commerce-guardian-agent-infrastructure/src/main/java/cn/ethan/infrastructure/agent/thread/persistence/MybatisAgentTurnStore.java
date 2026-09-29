@@ -10,7 +10,7 @@ import cn.ethan.core.agent.thread.AgentTurnInputKindEnum;
 import cn.ethan.core.agent.coordination.AgentContinuationInput;
 import cn.ethan.core.agent.coordination.AgentOrderActionInput;
 import cn.ethan.core.agent.thread.AgentWorkflowDecisionInput;
-import cn.ethan.core.agent.workflow.AgentWorkflowOwnerRecoveryCandidate;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskOwnerRecoveryCandidate;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
@@ -140,7 +140,7 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
                 .eq("VERSION_NO", expected.version())
                 .set("STATUS", next.status().name())
                 .set("QUEUE_POSITION", next.queuePosition())
-                .set("WORKFLOW_RUN_ID", next.workflowRunId())
+                .set("WORKFLOW_RUN_ID", next.workflowTaskId())
                 .set("QUESTION_CARD_ID", questionAnswer == null ? null : questionAnswer.questionId())
                 .set("WORKFLOW_CHECKPOINT_ID", decision == null ? null : decision.checkpointId())
                 .set("QUESTION_ANSWER_JSON", questionAnswerCodec.encode(questionAnswer))
@@ -167,23 +167,23 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
     }
 
     @Override
-    public List<AgentWorkflowOwnerRecoveryCandidate> listWorkflowOwnerRecoveryCandidates() {
+    public List<AgentWorkflowTaskOwnerRecoveryCandidate> listWorkflowOwnerRecoveryCandidates() {
         return mapper.selectWorkflowOwnerRecoveryCandidates().stream()
-                .map(row -> new AgentWorkflowOwnerRecoveryCandidate(
+                .map(row -> new AgentWorkflowTaskOwnerRecoveryCandidate(
                         findTurn(row.getUserId(), row.getTurnId())
                                 .orElseThrow(() -> new IllegalStateException(
                                         "Workflow owner Turn 在恢复查询后消失：" + row.getTurnId())),
-                        AgentWorkflowStatusEnum.valueOf(row.getWorkflowRunStatus()),
+                        AgentWorkflowStatusEnum.valueOf(row.getWorkflowTaskStatus()),
                         Integer.valueOf(1).equals(row.getOpenInteraction())))
                 .toList();
     }
 
     @Override
-    public Optional<AgentTurnModel> findWorkflowOwnerTurnByRunId(String userId, String workflowRunId) {
-        if (userId == null || userId.isBlank() || workflowRunId == null || workflowRunId.isBlank()) {
+    public Optional<AgentTurnModel> findWorkflowOwnerTurnByTaskId(String userId, String workflowTaskId) {
+        if (userId == null || userId.isBlank() || workflowTaskId == null || workflowTaskId.isBlank()) {
             return Optional.empty();
         }
-        return Optional.ofNullable(mapper.selectWorkflowOwnerByRunId(userId, workflowRunId))
+        return Optional.ofNullable(mapper.selectWorkflowOwnerByTaskId(userId, workflowTaskId))
                 .map(this::toModel);
     }
 
@@ -199,7 +199,7 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
         entity.setContinuationJson(continuationCodec.encode(model.continuationInput()));
         entity.setStatus(model.status().name());
         entity.setQueuePosition(model.queuePosition());
-        entity.setWorkflowRunId(model.workflowRunId());
+        entity.setWorkflowRunId(model.workflowTaskId());
         AgentQuestionAnswerInput questionAnswer = model.questionAnswerInput();
         if (questionAnswer != null) {
             entity.setQuestionCardId(questionAnswer.questionId());

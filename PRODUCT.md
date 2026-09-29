@@ -28,7 +28,7 @@ Commerce Guardian Agent 将订单售后请求转换为可恢复的 Thread → Tu
 - 外部写操作必须经过确定性 Workflow 的 `AUTHORIZE` Checkpoint，不能由模型直接产生副作用；缺少订单号或退款原因时才使用 QuestionCard 提问。
 - 每个 Thread 最多一个开放交互；QuestionCard 只收集受控字段，Workflow Checkpoint 只确认动作、对象、影响和事实版本，拒绝/取消不创建外部命令。
 - Workflow 节点、Agent 决策和 Turn 恢复信号均以受控事实持久化；模型回复失败不得改写已成功的订单事实。
-- 同一 Thread 主动处理串行；QuestionCard、WorkflowTask、Checkpoint、ExternalActionCommand 和 Turn 恢复位置必须持久化。WorkflowTask 是当前 WorkflowRun 模型的纯命名目标，不新增事项身份。
+- 同一 Thread 主动处理串行；QuestionCard、WorkflowTask、Checkpoint、ExternalActionCommand 和 Turn 恢复位置必须持久化。WorkflowTask 沿用现有售后事项身份，不新增事项记录。
 - 不展示原始 Thinking；业务结果优先使用结构化 Item，运行细节按需查看。
 - 本阶段不新增退货、换货或多订单批处理等业务种类。
 

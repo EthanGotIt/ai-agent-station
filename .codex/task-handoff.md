@@ -34,6 +34,8 @@ updated: 2026-09-29
 - P7 验证：HTTP acceptance（Thread/Item 恢复、交互唯一性、Turn 幂等、物流、退款、催发货 3 次临时失败后重试、删除幂等）通过；干净快照 Maven `clean test` 为 Core 98、Infrastructure 109、App 22，profiles 为 HTTP 9、MySQL 13；前端 typecheck、Vitest 77、build 通过。证据详见 [P7 执行卡](../docs/plans/p7-release-acceptance.md)。
 - 新计划文档：同 Turn 恢复、WorkflowTask 命名和 Queue/Steer 的目标边界已记录；产品、README、架构和总体路线已标明当前行为与目标行为的差异。
 - 当前工作区基线重跑：`convention_check`、Python 31 项、前端 typecheck、Vitest 77 项、build 与 `git diff --check` 通过。`mvn clean test` 被工作区中预存的未跟踪 `infrastructure/.../workflow/langgraph` 源码阻断：这些源码仍引用已在 P5 移除的 LangGraph4j 类型；文件保持原样，不计为本计划新增代码。此前 P5/P7 干净快照 Maven 通过证据仍有效，但不替代当前工作区基线。
+- P8 阶段 1：计划校准已以 `6e81420` 单独提交并推送；总体路线、执行卡、产品/架构入口已同步，历史 P5—P7 环境验收缺口仍未关闭。
+- P8 阶段 2：WorkflowTask 内部模型、Store、Entity、Mapper、owner-recovery 类型及 Turn 关联更名已完成；`AGENT_WORKFLOW_RUN.RUN_ID`、`AGENT_TURN.WORKFLOW_RUN_ID` 和 HTTP `runId`/`workflowRunId` 保持显式兼容映射，无数据库迁移。Core 102、Infrastructure 131、App 25 单测及隔离 MySQL Items/Workflow acceptance 13 项均通过；为验证暂时移出的未跟踪 LangGraph4j 源目录已原样恢复。
 
 ## Decisions
 
@@ -53,7 +55,7 @@ updated: 2026-09-29
 - 用目标环境只读账号执行 `scripts/maintenance/workflow-inventory.sql`，保存 P5 排空报告并确认旧 Worker/服务/队列退出。
 - 在提供两套既定模型凭据后，按每套 54 条记录运行 P6 Live，保存脱敏摘要并完成模型选择。
 - 补做 P7 的兼容版本回滚、真实浏览器 SSE 断线、窄屏/移动浏览器专项，并把证据写回执行卡；601 条 Items/游标已有 MySQL acceptance 覆盖。
-- 完成本轮 P0 基线审计并单独提交计划校准；随后进行 `WorkflowTask` 纯命名调整，再实施新 Turn 持久化暂停恢复。
+- 设计并实现新 Turn 恢复语义版本、工具调用/批次执行位置、恢复输入与持久化幂等信号；同时保留既有 Turn 恢复行为版本。
 - P5 目标数据库只读盘点、P6 两套模型各 54 条 Live 评测、P7 兼容版本回滚及真实浏览器 SSE/响应式检查仍是未完成验收；实施 P8 时保留这些独立缺口并按可用隔离环境补证。
 
 ## Blocked
@@ -62,11 +64,11 @@ P2 已验证完成。订单服务未提供独立的按幂等键查询 API；本�
 
 ## Next action
 
-完成 P0 文档校准、验证文档链接并建立独立提交；然后进行 `WorkflowRun → WorkflowTask` 的纯内部命名迁移。Maven 基线阻塞需在代码阶段前处理或隔离复验。
+进入 P8 阶段 3：基于现有 Turn/Item/Tool 协议设计增量持久化模型与恢复状态机，先覆盖 QuestionCard 与 Checkpoint 暂停/恢复，再扩展到 Command 结果；不要改变历史 Turn 的恢复语义。实现前盘点队列、Turn Store、Tool 调用批次和事务边界，并据此确定数据库迁移与并发不变量。
 
 ## Validation
 
-P0—P7 的历史代码与隔离验收见 [实施追踪](../docs/implementation-traceability.md) 与阶段执行卡。当前工作区自动化基线结果见 Completed；MySQL acceptance profile 本轮尚未重跑。真实目标库 P5 盘点、真实模型、兼容版本回滚、真实浏览器 SSE 和响应式浏览器专项尚未执行。P8 新增的持久化暂停恢复、Queue／Steer、同 Turn 动作结果恢复和复合请求尚未实现或验证；旧验收不能替代新语义证据。
+P0—P7 的历史代码与隔离验收见 [实施追踪](../docs/implementation-traceability.md) 与阶段执行卡。WorkflowTask 命名阶段的自动化与 MySQL acceptance 结果见 Completed。真实目标库 P5 盘点、真实模型、兼容版本回滚、真实浏览器 SSE 和响应式浏览器专项尚未执行。P8 新增的持久化暂停恢复、Queue／Steer、同 Turn 动作结果恢复和复合请求尚未实现或验证；旧验收不能替代新语义证据。
 
 ## Preserve
 

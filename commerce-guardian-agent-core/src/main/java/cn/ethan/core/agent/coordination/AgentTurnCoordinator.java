@@ -70,7 +70,7 @@ public interface AgentTurnCoordinator {
     record AgentCoordinatorResult(
             String assistantMessage,
             List<AgentItemDraft> items,
-            String workflowRunId,
+            String workflowTaskId,
             boolean waitingUserInput,
             AgentDecisionTypeEnum decision,
             String decisionCode,
@@ -82,21 +82,21 @@ public interface AgentTurnCoordinator {
         public AgentCoordinatorResult(
                 String assistantMessage,
                 List<AgentItemDraft> items,
-                String workflowRunId,
+                String workflowTaskId,
                 boolean waitingUserInput
         ) {
-            this(assistantMessage, items, workflowRunId, waitingUserInput, null, null, null, null);
+            this(assistantMessage, items, workflowTaskId, waitingUserInput, null, null, null, null);
         }
 
         public AgentCoordinatorResult(
                 String assistantMessage,
                 List<AgentItemDraft> items,
-                String workflowRunId,
+                String workflowTaskId,
                 boolean waitingUserInput,
                 AgentDecisionTypeEnum decision,
                 String decisionCode
         ) {
-            this(assistantMessage, items, workflowRunId, waitingUserInput,
+            this(assistantMessage, items, workflowTaskId, waitingUserInput,
                     decision, decisionCode, null, null);
         }
 
@@ -104,13 +104,13 @@ public interface AgentTurnCoordinator {
         public AgentCoordinatorResult(
                 String assistantMessage,
                 List<AgentItemDraft> items,
-                String workflowRunId,
+                String workflowTaskId,
                 boolean waitingUserInput,
                 AgentDecisionTypeEnum decision,
                 String decisionCode,
                 AgentQuestionCardModel questionCard
         ) {
-            this(assistantMessage, items, workflowRunId, waitingUserInput,
+            this(assistantMessage, items, workflowTaskId, waitingUserInput,
                     decision, decisionCode, questionCard, null, false);
         }
 
@@ -118,14 +118,14 @@ public interface AgentTurnCoordinator {
         public AgentCoordinatorResult(
                 String assistantMessage,
                 List<AgentItemDraft> items,
-                String workflowRunId,
+                String workflowTaskId,
                 boolean waitingUserInput,
                 AgentDecisionTypeEnum decision,
                 String decisionCode,
                 AgentQuestionCardModel questionCard,
                 AgentWorkflowCheckpointModel workflowCheckpoint
         ) {
-            this(assistantMessage, items, workflowRunId, waitingUserInput,
+            this(assistantMessage, items, workflowTaskId, waitingUserInput,
                     decision, decisionCode, questionCard, workflowCheckpoint, false);
         }
 

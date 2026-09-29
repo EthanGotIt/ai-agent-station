@@ -86,7 +86,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
     private final int maxAgentCycles;
     private final AgentQuestionCardStore questionCards;
     private final int toolResultMaxCharacters;
-    private final cn.ethan.core.agent.workflow.AgentWorkflowRunStore workflowRuns;
+    private final cn.ethan.core.agent.workflow.AgentWorkflowTaskStore workflowRuns;
     private final cn.ethan.core.agent.action.ExternalActionCommandStore actionCommands;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -175,7 +175,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             AgentQuestionCardStore questionCards,
             @Value("${ai-agent.runtime.max-agent-cycles:3}") int maxAgentCycles,
             @Value("${ai-agent.thread.tool-result-max-characters:8000}") int toolResultMaxCharacters,
-            cn.ethan.core.agent.workflow.AgentWorkflowRunStore workflowRuns,
+            cn.ethan.core.agent.workflow.AgentWorkflowTaskStore workflowRuns,
             cn.ethan.core.agent.action.ExternalActionCommandStore actionCommands
     ) {
         this.chatClient = chatClient;
@@ -264,7 +264,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
     }
 
     private AgentItemDraft workflowResultDraft(AgentTurnModel turn, AgentWorkflowEngine.ResumeResult resumed) {
-        String runId = resumed.command() == null ? turn.workflowRunId() : resumed.command().runId();
+        String runId = resumed.command() == null ? turn.workflowTaskId() : resumed.command().runId();
         if (runId == null || runId.isBlank()) {
             return new AgentItemDraft("WORKFLOW_RESULT", resumed.resultStatus());
         }
@@ -294,7 +294,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             return new AgentCoordinatorResult(
                     resumed.message(),
                     items,
-                    turn.workflowRunId(),
+                    turn.workflowTaskId(),
                     resumed.questionCard() != null || resumed.checkpoint() != null,
                     AgentDecisionTypeEnum.FINISH, resumed.resultStatus(),
                     resumed.questionCard(), resumed.checkpoint()
@@ -316,7 +316,7 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
                         externalActionStatusValue(resumed.command())));
             }
             items.add(workflowResultDraft(turn, resumed));
-            return new AgentCoordinatorResult(resumed.message(), items, turn.workflowRunId(),
+            return new AgentCoordinatorResult(resumed.message(), items, turn.workflowTaskId(),
                     resumed.questionCard() != null || resumed.checkpoint() != null,
                     AgentDecisionTypeEnum.FINISH, "WORKFLOW_DECISION_RECORDED",
                     resumed.questionCard(), resumed.checkpoint());
@@ -496,13 +496,13 @@ public final class SpringAiAgentTurnCoordinator implements AgentTurnCoordinator 
             try {
                 state = objectMapper.readTree(run.stateJson());
             } catch (RuntimeException invalidState) {
-                LOGGER.warn("Workflow 状态无法用于 Agent 事实投影，runId={}", run.runId());
+                LOGGER.warn("WorkflowTask 状态无法用于 Agent 事实投影，taskId={}", run.taskId());
                 continue;
             }
             String orderId = state.path("orderId").asString("").replaceAll("[\\r\\n]", "").strip();
             if (orderId.isBlank()) continue;
             String intent = state.path("intent").asString("").replaceAll("[\\r\\n]", "").strip();
-            var command = actionCommands.findByRunId(thread.userId(), run.runId()).orElse(null);
+            var command = actionCommands.findByRunId(thread.userId(), run.taskId()).orElse(null);
             facts.append("订单 ").append(orderId).append("，事项 ").append(intent)
                     .append("，Workflow ").append(run.status().name());
             if (command != null) {

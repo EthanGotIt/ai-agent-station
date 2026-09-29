@@ -8,8 +8,8 @@ import cn.ethan.core.agent.execution.AgentRuntimeMetrics;
 import cn.ethan.core.agent.thread.AgentThreadModel;
 import cn.ethan.core.agent.thread.AgentThreadStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowOrchestrationVersionEnum;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
 import org.junit.jupiter.api.Test;
@@ -33,7 +33,7 @@ class LatestWorkflowFactsTest {
     @Test
     void injectsCurrentCommandStateWithoutTreatingAcceptanceAsSuccess() {
         Instant now = Instant.parse("2026-09-28T00:00:00Z");
-        AgentWorkflowRunModel run = new AgentWorkflowRunModel("run-1", "thread-1", "turn-1", "user-1",
+        AgentWorkflowTaskModel run = new AgentWorkflowTaskModel("run-1", "thread-1", "turn-1", "user-1",
                 AgentWorkflowTypeEnum.ORDER_SERVICE, AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION,
                 1, "[]", "{\"intent\":\"REFUND\",\"orderId\":\"ORDER-1\"}", now, now,
                 AgentWorkflowOrchestrationVersionEnum.REFUND_JAVA_V1);
@@ -41,15 +41,15 @@ class LatestWorkflowFactsTest {
                 "turn-1", "user-1", ExternalActionTypeEnum.REFUND, "key-1",
                 "{\"orderId\":\"ORDER-1\"}", ExternalActionStatusEnum.PENDING, 0, 3,
                 now, null, null, null, null, now, now, null);
-        AgentWorkflowRunStore runs = new AgentWorkflowRunStore() {
-            @Override public void create(AgentWorkflowRunModel value) { }
-            @Override public Optional<AgentWorkflowRunModel> find(String userId, String runId) {
+        AgentWorkflowTaskStore runs = new AgentWorkflowTaskStore() {
+            @Override public void create(AgentWorkflowTaskModel value) { }
+            @Override public Optional<AgentWorkflowTaskModel> find(String userId, String runId) {
                 return Optional.of(run);
             }
-            @Override public List<AgentWorkflowRunModel> findRecent(String userId, String threadId, int limit) {
+            @Override public List<AgentWorkflowTaskModel> findRecent(String userId, String threadId, int limit) {
                 return List.of(run);
             }
-            @Override public void update(AgentWorkflowRunModel value) { }
+            @Override public void update(AgentWorkflowTaskModel value) { }
         };
         ExternalActionCommandStore commands = new ExternalActionCommandStore() {
             @Override public ExternalActionCommandModel createIfAbsent(ExternalActionCommandModel value) {

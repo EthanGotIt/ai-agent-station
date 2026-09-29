@@ -8,16 +8,16 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.Instant;
 
 /**
- * 类型职责：映射确定性 WorkflowRun 的状态和乐观版本。
+ * 类型职责：映射确定性 WorkflowTask 的状态和乐观版本。
  *
  * @author ethan
  * @date 2026-08-19
  */
 @TableName("AGENT_WORKFLOW_RUN")
-public final class AgentWorkflowRunEntity {
+public final class AgentWorkflowTaskEntity {
 
     @TableId(value = "RUN_ID", type = IdType.INPUT)
-    private String runId;
+    private String taskId;
     @TableField("THREAD_ID")
     private String threadId;
     @TableField("TURN_ID")
@@ -41,8 +41,8 @@ public final class AgentWorkflowRunEntity {
     @TableField("UPDATED_AT")
     private Instant updatedAt;
 
-    public String getRunId() { return runId; }
-    public void setRunId(String runId) { this.runId = runId; }
+    public String getTaskId() { return taskId; }
+    public void setTaskId(String taskId) { this.taskId = taskId; }
     public String getThreadId() { return threadId; }
     public void setThreadId(String threadId) { this.threadId = threadId; }
     public String getTurnId() { return turnId; }

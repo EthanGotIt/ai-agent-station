@@ -9,7 +9,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * 类型职责：为订单 Workflow 生成唯一的固定节点快照，供 WorkflowRun 和执行回执共用。
+ * 类型职责：为订单 Workflow 生成唯一的固定节点快照，供 WorkflowTask 和执行回执共用。
  *
  * <p>这是受控订单流程的状态投影，不是通用 DAG 或编排 DSL。节点顺序与外部动作边界在代码中保持稳定，
  * 具体的分支原因由 WORKFLOW_STEP Item 记录。</p>

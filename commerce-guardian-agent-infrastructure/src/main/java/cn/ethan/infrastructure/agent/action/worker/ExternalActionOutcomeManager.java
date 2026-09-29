@@ -14,8 +14,8 @@ import cn.ethan.core.agent.thread.AgentThreadConflictException;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnStore;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowOrchestrationVersionEnum;
 import cn.ethan.core.agent.workflow.OrderWriteReservationStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
@@ -50,7 +50,7 @@ public final class ExternalActionOutcomeManager {
     private final ExternalActionCommandStore commands;
     private final AgentItemStore items;
     private final AgentTurnStore turns;
-    private final AgentWorkflowRunStore workflowRuns;
+    private final AgentWorkflowTaskStore workflowRuns;
     private final ObjectMapper objectMapper;
     private final AgentItemJournal itemJournal;
     private final AgentItemPayloadCodec itemPayloadCodec;
@@ -68,7 +68,7 @@ public final class ExternalActionOutcomeManager {
             ExternalActionCommandStore commands,
             AgentItemStore items,
             AgentTurnStore turns,
-            AgentWorkflowRunStore workflowRuns,
+            AgentWorkflowTaskStore workflowRuns,
             ObjectMapper objectMapper,
             AgentItemJournal itemJournal,
             AgentItemPayloadCodec itemPayloadCodec,
@@ -90,7 +90,7 @@ public final class ExternalActionOutcomeManager {
             ExternalActionCommandStore commands,
             AgentItemStore items,
             AgentTurnStore turns,
-            AgentWorkflowRunStore workflowRuns,
+            AgentWorkflowTaskStore workflowRuns,
             ObjectMapper objectMapper
     ) {
         this(commands, items, turns, workflowRuns, objectMapper, null, null, (TransactionTemplate) null,
@@ -102,7 +102,7 @@ public final class ExternalActionOutcomeManager {
             ExternalActionCommandStore commands,
             AgentItemStore items,
             AgentTurnStore turns,
-            AgentWorkflowRunStore workflowRuns,
+            AgentWorkflowTaskStore workflowRuns,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager
     ) {
@@ -117,7 +117,7 @@ public final class ExternalActionOutcomeManager {
             ExternalActionCommandStore commands,
             AgentItemStore items,
             AgentTurnStore turns,
-            AgentWorkflowRunStore workflowRuns,
+            AgentWorkflowTaskStore workflowRuns,
             ObjectMapper objectMapper,
             AgentItemJournal itemJournal,
             AgentItemPayloadCodec itemPayloadCodec,
@@ -182,13 +182,13 @@ public final class ExternalActionOutcomeManager {
             return null;
         }
 
-        AgentWorkflowRunModel run = workflowRuns.find(next.userId(), next.runId())
-                .orElseThrow(() -> new IllegalStateException("外部动作对应的 WorkflowRun 不存在：" + next.runId()));
+        AgentWorkflowTaskModel run = workflowRuns.find(next.userId(), next.runId())
+                .orElseThrow(() -> new IllegalStateException("外部动作对应的 WorkflowTask 不存在：" + next.runId()));
         AgentWorkflowStatusEnum targetWorkflowStatus = workflowStatus(next.status());
         metrics.observeWorkflowWorker(run.orchestrationVersion().name(), next.status().name());
         if (run.status() != targetWorkflowStatus) {
             if (isImmutableTerminal(run.status())) {
-                throw new IllegalStateException("WorkflowRun 已处于冲突终态：" + run.runId());
+                throw new IllegalStateException("WorkflowTask 已处于冲突终态：" + run.taskId());
             }
             workflowRuns.update(run.status(targetWorkflowStatus,
                     progressSteps(next.status(), verification, run.orchestrationVersion()),

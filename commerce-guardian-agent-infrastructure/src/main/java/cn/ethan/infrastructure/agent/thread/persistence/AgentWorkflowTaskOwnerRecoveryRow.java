@@ -1,17 +1,17 @@
 package cn.ethan.infrastructure.agent.thread.persistence;
 
 /**
- * 类型职责：承接启动恢复查询中 owner Turn 与 WorkflowRun 的最小联结事实。
+ * 类型职责：承接启动恢复查询中 owner Turn 与 WorkflowTask 的最小联结事实。
  *
  * @author ethan
  * @date 2026-08-22
  */
-public final class AgentWorkflowOwnerRecoveryRow {
+public final class AgentWorkflowTaskOwnerRecoveryRow {
 
     private String turnId;
     private String userId;
-    private String workflowRunId;
-    private String workflowRunStatus;
+    private String workflowTaskId;
+    private String workflowTaskStatus;
     private Integer openInteraction;
 
     public String getTurnId() {
@@ -30,20 +30,20 @@ public final class AgentWorkflowOwnerRecoveryRow {
         this.userId = userId;
     }
 
-    public String getWorkflowRunId() {
-        return workflowRunId;
+    public String getWorkflowTaskId() {
+        return workflowTaskId;
     }
 
-    public void setWorkflowRunId(String workflowRunId) {
-        this.workflowRunId = workflowRunId;
+    public void setWorkflowTaskId(String workflowTaskId) {
+        this.workflowTaskId = workflowTaskId;
     }
 
-    public String getWorkflowRunStatus() {
-        return workflowRunStatus;
+    public String getWorkflowTaskStatus() {
+        return workflowTaskStatus;
     }
 
-    public void setWorkflowRunStatus(String workflowRunStatus) {
-        this.workflowRunStatus = workflowRunStatus;
+    public void setWorkflowTaskStatus(String workflowTaskStatus) {
+        this.workflowTaskStatus = workflowTaskStatus;
     }
 
     public Integer getOpenInteraction() {

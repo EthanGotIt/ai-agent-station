@@ -31,7 +31,7 @@ import cn.ethan.core.agent.workflow.AgentQuestionCardStore;
 import cn.ethan.core.agent.workflow.AgentQuestionCardStatusEnum;
 import cn.ethan.core.agent.workflow.AgentQuestionCardAnswerActionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStore;
-import cn.ethan.core.agent.workflow.AgentWorkflowOwnerRecoveryCandidate;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskOwnerRecoveryCandidate;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 
 import java.time.Clock;
@@ -268,7 +268,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
     }
 
     public void recoverPersistedTurns() {
-        for (AgentWorkflowOwnerRecoveryCandidate candidate : turns.listWorkflowOwnerRecoveryCandidates()) {
+        for (AgentWorkflowTaskOwnerRecoveryCandidate candidate : turns.listWorkflowOwnerRecoveryCandidates()) {
             reconcileWorkflowOwner(candidate);
         }
         for (AgentTurnModel persisted : turns.listRecoverableTurns()) {
@@ -409,7 +409,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         }
     }
 
-    private void reconcileWorkflowOwner(AgentWorkflowOwnerRecoveryCandidate candidate) {
+    private void reconcileWorkflowOwner(AgentWorkflowTaskOwnerRecoveryCandidate candidate) {
         AgentTurnModel owner = candidate.turn();
         if (candidate.hasOpenInteraction()
                 && candidate.workflowStatus() == AgentWorkflowStatusEnum.WAITING_USER_INPUT) {
@@ -417,7 +417,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         }
         switch (candidate.workflowStatus()) {
             case WAITING_EXTERNAL_ACTION -> {
-                AgentTurnModel waiting = owner.workflow(owner.workflowRunId(),
+                AgentTurnModel waiting = owner.workflow(owner.workflowTaskId(),
                         AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION);
                 if (updateTurn(owner, waiting)) {
                     appendTurnState(waiting, "WORKFLOW_RECOVERED");
@@ -753,7 +753,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
             }
             if (execution.continuation() && !continuationEnabled) {
                 appendDecision(active, AgentDecisionTypeEnum.FALLBACK,
-                        active.continuationInput().cycleNo(), active.workflowRunId(),
+                        active.continuationInput().cycleNo(), active.workflowTaskId(),
                         "CONTINUATION_DISABLED");
                 appendItem(active, AgentItemTypeEnum.ASSISTANT_MESSAGE,
                         "自动续跑当前已关闭；已保留订单结果，你可以继续手动查询最新状态。");
@@ -763,7 +763,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
             if (execution.continuation()
                     && active.continuationInput().cycleNo() > maxAgentCycles) {
                 appendDecision(active, AgentDecisionTypeEnum.STOP_LIMIT,
-                        active.continuationInput().cycleNo(), active.workflowRunId(),
+                        active.continuationInput().cycleNo(), active.workflowTaskId(),
                         "MAX_AGENT_CYCLES");
                 appendItem(active, AgentItemTypeEnum.ASSISTANT_MESSAGE,
                         "已达到本次订单处理的最大自动决策轮次，请继续使用查询或人工操作。");
@@ -829,7 +829,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                 if (executionContext.stopped()) {
                     String reason = executionContext.stopReason().name();
                     appendDecision(active, AgentDecisionTypeEnum.STOP_LIMIT, 0,
-                            active.workflowRunId(), reason);
+                            active.workflowTaskId(), reason);
                     appendError(active, reason);
                     finish(active, AgentTurnStatusEnum.FAILED, reason);
                     return;
@@ -843,7 +843,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                         AgentDecisionTypeEnum decision = stopReason
                                 == AgentExecutionStopReasonEnum.TOOL_REPEATED_FAILURE
                                 ? AgentDecisionTypeEnum.FALLBACK : AgentDecisionTypeEnum.STOP_LIMIT;
-                        appendDecision(active, decision, 0, active.workflowRunId(), code);
+                        appendDecision(active, decision, 0, active.workflowTaskId(), code);
                         appendError(active, code);
                         finish(active, AgentTurnStatusEnum.FAILED, code);
                         return;
@@ -866,7 +866,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                     if (!correctionFits) {
                         String code = executionContext.stopReason().name();
                         appendDecision(active, AgentDecisionTypeEnum.STOP_LIMIT, 0,
-                                active.workflowRunId(), code);
+                                active.workflowTaskId(), code);
                         appendError(active, code);
                         finish(active, AgentTurnStatusEnum.FAILED, code);
                         return;
@@ -918,7 +918,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                     finish(active, AgentTurnStatusEnum.COMPLETED, null);
                     return;
                 }
-                AgentTurnModel waiting = active.workflow(result.workflowRunId(), AgentTurnStatusEnum.WAITING_USER_INPUT);
+                AgentTurnModel waiting = active.workflow(result.workflowTaskId(), AgentTurnStatusEnum.WAITING_USER_INPUT);
                 if (!updateTurn(active, waiting)) {
                     return;
                 }
@@ -929,7 +929,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                 boolean awaitingExternalAction = result.items().stream()
                         .anyMatch(item -> "EXTERNAL_ACTION_STATUS".equals(item.type()));
                 if (awaitingExternalAction) {
-                    AgentTurnModel waiting = active.workflow(result.workflowRunId(),
+                    AgentTurnModel waiting = active.workflow(result.workflowTaskId(),
                             AgentTurnStatusEnum.WAITING_EXTERNAL_ACTION);
                     if (!updateTurn(active, waiting)) {
                         return;
@@ -961,7 +961,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                 String reason = limit.reason().name();
                 if (!cancelled) {
                     appendDecision(active, AgentDecisionTypeEnum.STOP_LIMIT, 0,
-                            active.workflowRunId(), reason);
+                            active.workflowTaskId(), reason);
                     appendError(active, reason);
                     metrics.observeFailure(reason);
                 }
@@ -993,7 +993,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                         int cycleNo = active.continuationInput() == null
                                 ? 0 : active.continuationInput().cycleNo();
                         appendDecision(active, AgentDecisionTypeEnum.FALLBACK,
-                                cycleNo, active.workflowRunId(), "CONTINUATION_FAILED");
+                                cycleNo, active.workflowTaskId(), "CONTINUATION_FAILED");
                         appendItem(active, AgentItemTypeEnum.ASSISTANT_MESSAGE,
                                 "已保留已执行的订单结果，但自动续跑未完成；你仍可以继续查询最新状态。");
                     } catch (RuntimeException fallbackFailure) {
@@ -1169,7 +1169,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
             return;
         }
         int cycleNo = turn.continuationInput() == null ? 0 : turn.continuationInput().cycleNo();
-        String runId = result.workflowRunId() == null ? turn.workflowRunId() : result.workflowRunId();
+        String runId = result.workflowTaskId() == null ? turn.workflowTaskId() : result.workflowTaskId();
         appendItem(turn, AgentItemTypeEnum.AGENT_DECISION,
                 AgentTurnItemPayloads.decision(result.decision(), cycleNo, runId, result.decisionCode(),
                         result.correctionAttempt()),
@@ -1198,7 +1198,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
         }
         return switch (result.decision()) {
             case ASK_USER -> result.questionCard() != null && result.waitingUserInput();
-            case START_WORKFLOW -> result.workflowRunId() != null && result.waitingUserInput()
+            case START_WORKFLOW -> result.workflowTaskId() != null && result.waitingUserInput()
                     && (result.questionCard() != null || result.workflowCheckpoint() != null);
             default -> true;
         };
@@ -1210,7 +1210,7 @@ public final class AgentTurnRuntimeService implements AgentTurnQueue {
                 || (result.decision() == null
                 && result.questionCard() == null
                 && result.workflowCheckpoint() == null
-                && result.workflowRunId() == null
+                && result.workflowTaskId() == null
                 && !result.waitingUserInput()
                 && result.items().stream().noneMatch(item -> item != null
                 && ("QUESTION_CARD".equals(item.type())

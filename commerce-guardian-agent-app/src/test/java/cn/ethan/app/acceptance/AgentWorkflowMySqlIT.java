@@ -9,16 +9,16 @@ import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowDecisionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowOrchestrationVersionEnum;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
 import cn.ethan.core.agent.workflow.OrderWriteReservationStore;
 import cn.ethan.infrastructure.agent.action.persistence.ExternalActionCommandMapper;
 import cn.ethan.infrastructure.agent.action.persistence.MybatisExternalActionCommandStore;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentThreadMapper;
-import cn.ethan.infrastructure.agent.thread.persistence.AgentWorkflowRunMapper;
-import cn.ethan.infrastructure.agent.thread.persistence.MybatisAgentWorkflowRunStore;
+import cn.ethan.infrastructure.agent.thread.persistence.AgentWorkflowTaskMapper;
+import cn.ethan.infrastructure.agent.thread.persistence.MybatisAgentWorkflowTaskStore;
 import cn.ethan.infrastructure.agent.workflow.persistence.AgentWorkflowCheckpointMapper;
 import cn.ethan.infrastructure.agent.workflow.persistence.MybatisAgentWorkflowCheckpointStore;
 import cn.ethan.infrastructure.agent.workflow.persistence.MybatisOrderWriteReservationStore;
@@ -130,8 +130,8 @@ class AgentWorkflowMySqlIT {
     @Test
     void javaWorkflowOrchestrationVersionRoundTripsWithoutSnapshotVersionGuessing() {
         try (AnnotationConfigApplicationContext context = persistenceContext()) {
-            AgentWorkflowRunStore runs = context.getBean(AgentWorkflowRunStore.class);
-            AgentWorkflowRunModel run = run("run-java-version", "thread-cas", "turn-java-version",
+            AgentWorkflowTaskStore runs = context.getBean(AgentWorkflowTaskStore.class);
+            AgentWorkflowTaskModel run = run("run-java-version", "thread-cas", "turn-java-version",
                     AgentWorkflowOrchestrationVersionEnum.EXPEDITE_JAVA_V1);
 
             runs.create(run);
@@ -145,14 +145,14 @@ class AgentWorkflowMySqlIT {
     @Test
     void flywayV10ToV14AndManagedStoresPreserveVersionAndOwnership() throws Exception {
         try (AnnotationConfigApplicationContext context = persistenceContext()) {
-            AgentWorkflowRunStore runs = context.getBean(AgentWorkflowRunStore.class);
-            AgentWorkflowRunModel run = run("run-version", "thread-cas", "turn-version",
+            AgentWorkflowTaskStore runs = context.getBean(AgentWorkflowTaskStore.class);
+            AgentWorkflowTaskModel run = run("run-version", "thread-cas", "turn-version",
                     AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V1);
             runs.create(run);
             assertEquals(AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V1,
                     runs.findBySource(USER_ID, "turn-version", AgentWorkflowTypeEnum.ORDER_SERVICE)
                             .orElseThrow().orchestrationVersion());
-            assertTrue(runs.find("other-user", run.runId()).isEmpty());
+            assertTrue(runs.find("other-user", run.taskId()).isEmpty());
         }
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
             assertEquals(1L, scalar(statement,
@@ -175,11 +175,11 @@ class AgentWorkflowMySqlIT {
     @Test
     void confirmationTransactionRollsBackRunCheckpointAndThreadPointer() {
         try (AnnotationConfigApplicationContext context = persistenceContext()) {
-            AgentWorkflowRunStore runs = context.getBean(AgentWorkflowRunStore.class);
+            AgentWorkflowTaskStore runs = context.getBean(AgentWorkflowTaskStore.class);
             AgentWorkflowCheckpointStore checkpoints = context.getBean(AgentWorkflowCheckpointStore.class);
             TransactionTemplate transaction = new TransactionTemplate(
                     context.getBean(PlatformTransactionManager.class));
-            AgentWorkflowRunModel run = run("run-rollback", "thread-rollback", "turn-rollback",
+            AgentWorkflowTaskModel run = run("run-rollback", "thread-rollback", "turn-rollback",
                     AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V1);
             AgentWorkflowCheckpointModel checkpoint = checkpoint(run);
 
@@ -189,7 +189,7 @@ class AgentWorkflowMySqlIT {
                 throw new RollbackMarker();
             }));
 
-            assertTrue(runs.find(USER_ID, run.runId()).isEmpty());
+            assertTrue(runs.find(USER_ID, run.taskId()).isEmpty());
             assertTrue(checkpoints.find(USER_ID, checkpoint.checkpointId()).isEmpty());
             try (Connection connection = dataSource.getConnection(); PreparedStatement statement = connection.prepareStatement(
                     "SELECT OPEN_INTERACTION_ID FROM AGENT_THREAD WHERE THREAD_ID = ?")) {
@@ -207,12 +207,12 @@ class AgentWorkflowMySqlIT {
     @Test
     void approvalCommandIsIdempotentAndStaleRunVersionHasOneWinner() throws Exception {
         try (AnnotationConfigApplicationContext context = persistenceContext()) {
-            AgentWorkflowRunStore runs = context.getBean(AgentWorkflowRunStore.class);
+            AgentWorkflowTaskStore runs = context.getBean(AgentWorkflowTaskStore.class);
             AgentWorkflowCheckpointStore checkpoints = context.getBean(AgentWorkflowCheckpointStore.class);
             ExternalActionCommandStore commands = context.getBean(ExternalActionCommandStore.class);
             TransactionTemplate transaction = new TransactionTemplate(
                     context.getBean(PlatformTransactionManager.class));
-            AgentWorkflowRunModel run = run("run-command", "thread-command", "turn-command",
+            AgentWorkflowTaskModel run = run("run-command", "thread-command", "turn-command",
                     AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V1);
             AgentWorkflowCheckpointModel checkpoint = checkpoint(run);
             transaction.executeWithoutResult(status -> {
@@ -222,9 +222,9 @@ class AgentWorkflowMySqlIT {
             assertTrue(checkpoints.decide(USER_ID, checkpoint.checkpointId(), 0,
                     AgentWorkflowDecisionEnum.APPROVE, checkpoint.factsFingerprint()));
 
-            AgentWorkflowRunModel stale = runs.find(USER_ID, run.runId()).orElseThrow();
-            AgentWorkflowRunModel first = stale.progress("[{\"node\":\"EXECUTE_ACTION\"}]", "{}", NOW);
-            AgentWorkflowRunModel second = stale.progress("[{\"node\":\"EXECUTE_ACTION\"}]", "{}", NOW.plusSeconds(1));
+            AgentWorkflowTaskModel stale = runs.find(USER_ID, run.taskId()).orElseThrow();
+            AgentWorkflowTaskModel first = stale.progress("[{\"node\":\"EXECUTE_ACTION\"}]", "{}", NOW);
+            AgentWorkflowTaskModel second = stale.progress("[{\"node\":\"EXECUTE_ACTION\"}]", "{}", NOW.plusSeconds(1));
             CountDownLatch ready = new CountDownLatch(2);
             ExecutorService executor = Executors.newFixedThreadPool(2);
             Future<Boolean> winnerOne = executor.submit(() -> tryUpdate(runs, transaction, first, ready));
@@ -245,9 +245,9 @@ class AgentWorkflowMySqlIT {
     @Test
     void concurrentJavaCheckpointApprovalsHaveOneWinner() throws Exception {
         try (AnnotationConfigApplicationContext context = persistenceContext()) {
-            AgentWorkflowRunStore runs = context.getBean(AgentWorkflowRunStore.class);
+            AgentWorkflowTaskStore runs = context.getBean(AgentWorkflowTaskStore.class);
             AgentWorkflowCheckpointStore checkpoints = context.getBean(AgentWorkflowCheckpointStore.class);
-            AgentWorkflowRunModel run = run("run-java-approval", "thread-java-approval", "turn-java-approval",
+            AgentWorkflowTaskModel run = run("run-java-approval", "thread-java-approval", "turn-java-approval",
                     AgentWorkflowOrchestrationVersionEnum.EXPEDITE_JAVA_V1);
             AgentWorkflowCheckpointModel checkpoint = checkpoint(run);
             TransactionTemplate transaction = new TransactionTemplate(
@@ -273,13 +273,13 @@ class AgentWorkflowMySqlIT {
     @Test
     void oneOrderReservationSurvivesRestartAndPreventsCrossThreadWrite() throws Exception {
         try (AnnotationConfigApplicationContext context = persistenceContext()) {
-            AgentWorkflowRunStore runs = context.getBean(AgentWorkflowRunStore.class);
+            AgentWorkflowTaskStore runs = context.getBean(AgentWorkflowTaskStore.class);
             OrderWriteReservationStore reservations = context.getBean(OrderWriteReservationStore.class);
             TransactionTemplate transaction = new TransactionTemplate(
                     context.getBean(PlatformTransactionManager.class));
-            AgentWorkflowRunModel first = run("run-reserve-a", "thread-reserve-a", "turn-reserve-a",
+            AgentWorkflowTaskModel first = run("run-reserve-a", "thread-reserve-a", "turn-reserve-a",
                     AgentWorkflowOrchestrationVersionEnum.REFUND_JAVA_V1);
-            AgentWorkflowRunModel second = run("run-reserve-b", "thread-reserve-b", "turn-reserve-b",
+            AgentWorkflowTaskModel second = run("run-reserve-b", "thread-reserve-b", "turn-reserve-b",
                     AgentWorkflowOrchestrationVersionEnum.DELETE_JAVA_V1);
             transaction.executeWithoutResult(status -> {
                 runs.create(first);
@@ -289,17 +289,17 @@ class AgentWorkflowMySqlIT {
             CountDownLatch ready = new CountDownLatch(2);
             ExecutorService executor = Executors.newFixedThreadPool(2);
             Future<Boolean> one = executor.submit(() -> tryReserve(reservations, transaction,
-                    first.runId(), ready));
+                    first.taskId(), ready));
             Future<Boolean> two = executor.submit(() -> tryReserve(reservations, transaction,
-                    second.runId(), ready));
+                    second.taskId(), ready));
             assertTrue(ready.await(5, TimeUnit.SECONDS));
             assertTrue(one.get(10, TimeUnit.SECONDS) ^ two.get(10, TimeUnit.SECONDS));
             executor.shutdownNow();
             assertEquals(1L, count("SELECT COUNT(*) FROM AGENT_ORDER_WRITE_RESERVATION "
                     + "WHERE USER_ID = 'workflow-it-user' AND ORDER_ID = 'ORDER-RESERVED'"));
 
-            String holder = reservations.reserve(USER_ID, "ORDER-RESERVED", first.runId())
-                    ? first.runId() : second.runId();
+            String holder = reservations.reserve(USER_ID, "ORDER-RESERVED", first.taskId())
+                    ? first.taskId() : second.taskId();
             assertTrue(reservations.reserve(USER_ID, "ORDER-RESERVED", holder));
             reservations.release(USER_ID, "ORDER-RESERVED", holder);
             assertTrue(reservations.reserve(USER_ID, "ORDER-RESERVED", "run-reserve-a"));
@@ -310,7 +310,7 @@ class AgentWorkflowMySqlIT {
     void persistsUnknownOutcomeAndIndependentVerificationBudgetAcrossSessions() {
         try (AnnotationConfigApplicationContext context = persistenceContext()) {
             ExternalActionCommandStore commands = context.getBean(ExternalActionCommandStore.class);
-            AgentWorkflowRunModel run = run("run-outcome", "thread-outcome", "turn-outcome",
+            AgentWorkflowTaskModel run = run("run-outcome", "thread-outcome", "turn-outcome",
                     AgentWorkflowOrchestrationVersionEnum.EXPEDITE_GRAPH_V1);
             ExternalActionCommandModel created = commands.createIfAbsent(command(run, "command-outcome"));
 
@@ -322,7 +322,7 @@ class AgentWorkflowMySqlIT {
                     NOW.plusSeconds(5), "REMOTE_TIMEOUT", "响应丢失", NOW);
             assertTrue(commands.update(claimed, unknown));
 
-            ExternalActionCommandModel reloaded = commands.findByRunId(USER_ID, run.runId()).orElseThrow();
+            ExternalActionCommandModel reloaded = commands.findByRunId(USER_ID, run.taskId()).orElseThrow();
             assertEquals(ExternalActionStatusEnum.VERIFY_WAIT, reloaded.status());
             assertEquals(cn.ethan.core.agent.action.ExternalActionOutcomeEnum.UNKNOWN, reloaded.outcome());
             assertEquals(created.maxVerificationAttempts(), reloaded.maxVerificationAttempts());
@@ -338,8 +338,8 @@ class AgentWorkflowMySqlIT {
         }
     }
 
-    private static boolean tryUpdate(AgentWorkflowRunStore runs, TransactionTemplate transaction,
-                                     AgentWorkflowRunModel candidate, CountDownLatch ready) {
+    private static boolean tryUpdate(AgentWorkflowTaskStore runs, TransactionTemplate transaction,
+                                     AgentWorkflowTaskModel candidate, CountDownLatch ready) {
         ready.countDown();
         try {
             ready.await(5, TimeUnit.SECONDS);
@@ -390,12 +390,12 @@ class AgentWorkflowMySqlIT {
         @Bean SqlSessionFactory sqlSessionFactory(DataSource source) { return springFactory(source); }
         @Bean SqlSessionTemplate sqlSessionTemplate(SqlSessionFactory factory) { return new SqlSessionTemplate(factory); }
         @Bean AgentThreadMapper agentThreadMapper(SqlSessionTemplate template) { return template.getMapper(AgentThreadMapper.class); }
-        @Bean AgentWorkflowRunMapper agentWorkflowRunMapper(SqlSessionTemplate template) { return template.getMapper(AgentWorkflowRunMapper.class); }
+        @Bean AgentWorkflowTaskMapper agentWorkflowTaskMapper(SqlSessionTemplate template) { return template.getMapper(AgentWorkflowTaskMapper.class); }
         @Bean AgentWorkflowCheckpointMapper agentWorkflowCheckpointMapper(SqlSessionTemplate template) { return template.getMapper(AgentWorkflowCheckpointMapper.class); }
         @Bean OrderWriteReservationMapper orderWriteReservationMapper(SqlSessionTemplate template) { return template.getMapper(OrderWriteReservationMapper.class); }
         @Bean ExternalActionCommandMapper externalActionCommandMapper(SqlSessionTemplate template) { return template.getMapper(ExternalActionCommandMapper.class); }
         @Bean PlatformTransactionManager transactionManager(DataSource source) { return new DataSourceTransactionManager(source); }
-        @Bean AgentWorkflowRunStore workflowRuns(AgentWorkflowRunMapper mapper) { return new MybatisAgentWorkflowRunStore(mapper); }
+        @Bean AgentWorkflowTaskStore workflowTasks(AgentWorkflowTaskMapper mapper) { return new MybatisAgentWorkflowTaskStore(mapper); }
         @Bean AgentWorkflowCheckpointStore checkpoints(AgentWorkflowCheckpointMapper mapper, AgentThreadMapper threads) {
             return new MybatisAgentWorkflowCheckpointStore(mapper, threads);
         }
@@ -407,26 +407,26 @@ class AgentWorkflowMySqlIT {
         }
     }
 
-    private static AgentWorkflowRunModel run(String runId, String threadId, String turnId,
+    private static AgentWorkflowTaskModel run(String runId, String threadId, String turnId,
                                              AgentWorkflowOrchestrationVersionEnum version) {
-        return new AgentWorkflowRunModel(runId, threadId, turnId, USER_ID, AgentWorkflowTypeEnum.ORDER_SERVICE,
+        return new AgentWorkflowTaskModel(runId, threadId, turnId, USER_ID, AgentWorkflowTypeEnum.ORDER_SERVICE,
                 AgentWorkflowStatusEnum.WAITING_USER_INPUT, 0L, "[]",
                 "{\"intent\":\"EXPEDITE\",\"orderId\":\"ORDER-1\"}", NOW, NOW, version);
     }
 
-    private static AgentWorkflowCheckpointModel checkpoint(AgentWorkflowRunModel run) {
-        return new AgentWorkflowCheckpointModel("checkpoint-" + run.runId(), run.runId(), run.threadId(),
+    private static AgentWorkflowCheckpointModel checkpoint(AgentWorkflowTaskModel run) {
+        return new AgentWorkflowCheckpointModel("checkpoint-" + run.taskId(), run.taskId(), run.threadId(),
                 run.turnId(), USER_ID, "SWITCH_REQUIREMENTS", "EXPEDITE", "ORDER-1", "催发货",
                 "expedite-facts-v1:fingerprint", 0L, AgentWorkflowCheckpointStatusEnum.OPEN, null, NOW, null);
     }
 
-    private static ExternalActionCommandModel command(AgentWorkflowRunModel run) {
-        return command(run, "command-" + run.runId());
+    private static ExternalActionCommandModel command(AgentWorkflowTaskModel run) {
+        return command(run, "command-" + run.taskId());
     }
 
-    private static ExternalActionCommandModel command(AgentWorkflowRunModel run, String commandId) {
-        return new ExternalActionCommandModel(commandId, run.runId(), run.threadId(), run.turnId(), USER_ID,
-                ExternalActionTypeEnum.EXPEDITE, "order-service:" + run.runId(),
+    private static ExternalActionCommandModel command(AgentWorkflowTaskModel run, String commandId) {
+        return new ExternalActionCommandModel(commandId, run.taskId(), run.threadId(), run.turnId(), USER_ID,
+                ExternalActionTypeEnum.EXPEDITE, "order-service:" + run.taskId(),
                 "{\"orderId\":\"ORDER-1\"}", ExternalActionStatusEnum.PENDING, 0, 3,
                 NOW, null, null, null, null, NOW, NOW, null);
     }
@@ -506,7 +506,7 @@ class AgentWorkflowMySqlIT {
         MybatisConfiguration configuration = new MybatisConfiguration(environment);
         configuration.setMapUnderscoreToCamelCase(true);
         configuration.addMapper(AgentThreadMapper.class);
-        configuration.addMapper(AgentWorkflowRunMapper.class);
+        configuration.addMapper(AgentWorkflowTaskMapper.class);
         configuration.addMapper(AgentWorkflowCheckpointMapper.class);
         configuration.addMapper(OrderWriteReservationMapper.class);
         configuration.addMapper(ExternalActionCommandMapper.class);

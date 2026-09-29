@@ -9,8 +9,8 @@ import cn.ethan.core.agent.thread.AgentWorkflowDecisionInput;
 import cn.ethan.core.agent.workflow.AgentWorkflowDecisionEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowEngine;
 import cn.ethan.core.agent.workflow.AgentWorkflowOrchestrationVersionEnum;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunModel;
-import cn.ethan.core.agent.workflow.AgentWorkflowRunStore;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskModel;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowTypeEnum;
 import org.junit.jupiter.api.Test;
@@ -127,26 +127,26 @@ class VersionedAgentWorkflowEngineTest {
                 AgentTurnStatusEnum.ACTIVE, 0, null, null, NOW, NOW, null);
     }
 
-    private static AgentWorkflowRunModel run(AgentWorkflowOrchestrationVersionEnum version) {
-        return new AgentWorkflowRunModel("run-1", "thread-1", "turn-1", "user-1",
+    private static AgentWorkflowTaskModel run(AgentWorkflowOrchestrationVersionEnum version) {
+        return new AgentWorkflowTaskModel("run-1", "thread-1", "turn-1", "user-1",
                 AgentWorkflowTypeEnum.ORDER_SERVICE, AgentWorkflowStatusEnum.WAITING_USER_INPUT, 0,
                 "[]", "{}", NOW, NOW, version);
     }
 
-    private static final class RunStore implements AgentWorkflowRunStore {
-        private AgentWorkflowRunModel current;
+    private static final class RunStore implements AgentWorkflowTaskStore {
+        private AgentWorkflowTaskModel current;
 
-        @Override public void create(AgentWorkflowRunModel run) { current = run; }
-        @Override public Optional<AgentWorkflowRunModel> find(String userId, String runId) {
-            return current != null && current.userId().equals(userId) && current.runId().equals(runId)
+        @Override public void create(AgentWorkflowTaskModel run) { current = run; }
+        @Override public Optional<AgentWorkflowTaskModel> find(String userId, String runId) {
+            return current != null && current.userId().equals(userId) && current.taskId().equals(runId)
                     ? Optional.of(current) : Optional.empty();
         }
-        @Override public Optional<AgentWorkflowRunModel> findBySource(String userId, String turnId,
+        @Override public Optional<AgentWorkflowTaskModel> findBySource(String userId, String turnId,
                                                                       AgentWorkflowTypeEnum type) {
             return current != null && current.userId().equals(userId) && current.turnId().equals(turnId)
                     && current.workflowType() == type ? Optional.of(current) : Optional.empty();
         }
-        @Override public void update(AgentWorkflowRunModel run) { current = run; }
+        @Override public void update(AgentWorkflowTaskModel run) { current = run; }
     }
 
     private static final class RecordingEngine implements AgentWorkflowEngine {

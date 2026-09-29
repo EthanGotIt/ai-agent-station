@@ -8,15 +8,15 @@ import cn.ethan.core.agent.thread.AgentTurnModel;
  * @author ethan
  * @date 2026-08-22
  */
-public record AgentWorkflowOwnerRecoveryCandidate(
+public record AgentWorkflowTaskOwnerRecoveryCandidate(
         AgentTurnModel turn,
         AgentWorkflowStatusEnum workflowStatus,
         boolean hasOpenInteraction
 ) {
 
-    public AgentWorkflowOwnerRecoveryCandidate {
-        if (turn == null || turn.workflowRunId() == null || turn.workflowRunId().isBlank()) {
-            throw new IllegalArgumentException("Workflow owner recovery 必须绑定 WorkflowRun");
+    public AgentWorkflowTaskOwnerRecoveryCandidate {
+        if (turn == null || turn.workflowTaskId() == null || turn.workflowTaskId().isBlank()) {
+            throw new IllegalArgumentException("Workflow owner recovery 必须绑定 WorkflowTask");
         }
         if (workflowStatus == null) {
             throw new IllegalArgumentException("Workflow owner recovery 必须具有 Run 状态");

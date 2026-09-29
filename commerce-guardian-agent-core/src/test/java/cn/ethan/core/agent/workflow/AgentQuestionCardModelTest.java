@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * Workflow 契约测试：验证 QuestionCard、Checkpoint 和 WorkflowRun 的状态不变量。
+ * Workflow 契约测试：验证 QuestionCard、Checkpoint 和 WorkflowTask 的状态不变量。
  *
  * @author ethan
  * @date 2026-08-27
@@ -21,7 +21,7 @@ class AgentQuestionCardModelTest {
     private static final Instant NOW = Instant.parse("2026-08-27T00:00:00Z");
 
     @Test
-    void agentQuestionDoesNotRequireWorkflowRun() {
+    void agentQuestionDoesNotRequireWorkflowTask() {
         AgentQuestionCardModel question = AgentQuestionCardModel.agent(
                 "question-1", "thread-1", "turn-1", "user-1", "缺少订单号", "请补充订单号", "[]",
                 List.of(new AgentQuestionFieldModel("orderId", true, 64, List.of())), NOW);
@@ -139,11 +139,11 @@ class AgentQuestionCardModelTest {
 
     @Test
     void manualRetryRequiredCanReturnToExternalActionAndComplete() {
-        AgentWorkflowRunModel manual = run(AgentWorkflowStatusEnum.MANUAL_RETRY_REQUIRED, 1);
+        AgentWorkflowTaskModel manual = run(AgentWorkflowStatusEnum.MANUAL_RETRY_REQUIRED, 1);
 
-        AgentWorkflowRunModel waiting = manual.status(
+        AgentWorkflowTaskModel waiting = manual.status(
                 AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, NOW.plusSeconds(1));
-        AgentWorkflowRunModel completed = waiting.status(
+        AgentWorkflowTaskModel completed = waiting.status(
                 AgentWorkflowStatusEnum.COMPLETED, NOW.plusSeconds(2));
 
         assertEquals(2L, waiting.version());
@@ -154,7 +154,7 @@ class AgentQuestionCardModelTest {
 
     @Test
     void immutableTerminalCannotBeRewritten() {
-        AgentWorkflowRunModel completed = run(AgentWorkflowStatusEnum.COMPLETED, 3);
+        AgentWorkflowTaskModel completed = run(AgentWorkflowStatusEnum.COMPLETED, 3);
 
         assertThrows(IllegalStateException.class,
                 () -> completed.status(AgentWorkflowStatusEnum.WAITING_EXTERNAL_ACTION, NOW));
@@ -162,7 +162,7 @@ class AgentQuestionCardModelTest {
 
     @Test
     void sameStatusCannotAdvanceVersionWithoutAStateTransition() {
-        AgentWorkflowRunModel waiting = run(AgentWorkflowStatusEnum.WAITING_USER_INPUT, 0);
+        AgentWorkflowTaskModel waiting = run(AgentWorkflowStatusEnum.WAITING_USER_INPUT, 0);
 
         assertThrows(IllegalStateException.class,
                 () -> waiting.status(AgentWorkflowStatusEnum.WAITING_USER_INPUT, NOW));
@@ -181,8 +181,8 @@ class AgentQuestionCardModelTest {
                 AgentWorkflowCheckpointStatusEnum.OPEN, null, NOW, null);
     }
 
-    private AgentWorkflowRunModel run(AgentWorkflowStatusEnum status, long version) {
-        return new AgentWorkflowRunModel(
+    private AgentWorkflowTaskModel run(AgentWorkflowStatusEnum status, long version) {
+        return new AgentWorkflowTaskModel(
                 "run-1", "thread-1", "turn-1", "user-1", AgentWorkflowTypeEnum.REFUND,
                 status, version, NOW, NOW);
     }

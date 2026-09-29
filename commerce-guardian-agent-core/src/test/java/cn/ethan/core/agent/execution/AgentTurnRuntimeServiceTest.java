@@ -19,7 +19,7 @@ import cn.ethan.core.agent.thread.AgentTurnInputKindEnum;
 import cn.ethan.core.agent.thread.AgentTurnModel;
 import cn.ethan.core.agent.thread.AgentTurnStatusEnum;
 import cn.ethan.core.agent.thread.AgentTurnStore;
-import cn.ethan.core.agent.workflow.AgentWorkflowOwnerRecoveryCandidate;
+import cn.ethan.core.agent.workflow.AgentWorkflowTaskOwnerRecoveryCandidate;
 import cn.ethan.core.agent.workflow.AgentWorkflowStatusEnum;
 import cn.ethan.core.agent.workflow.AgentQuestionCardAnswerEnqueueStatusEnum;
 import cn.ethan.core.agent.workflow.AgentQuestionCardModel;
@@ -318,7 +318,7 @@ class AgentTurnRuntimeServiceTest {
                 AgentTurnStatusEnum.WAITING_USER_INPUT, 1, "run-1", null, NOW, NOW, null);
         persistence.createTurn(owner);
         persistence.ownerRecoveryCandidates = List.of(
-                new AgentWorkflowOwnerRecoveryCandidate(owner, AgentWorkflowStatusEnum.REJECTED, false));
+                new AgentWorkflowTaskOwnerRecoveryCandidate(owner, AgentWorkflowStatusEnum.REJECTED, false));
         ManualExecutor executor = new ManualExecutor();
         ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(1);
         AgentTurnRuntimeService runtime = new AgentTurnRuntimeService(
@@ -802,7 +802,7 @@ class AgentTurnRuntimeServiceTest {
                 new AgentContextAssembler(persistence, persistence, clock, 2_000, 1_000, 256, 128),
                 (current, turn, history, answer) -> {
                     throw new AgentThreadConflictException(
-                            "UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION", "WorkflowRun 编排版本无法识别");
+                            "UNKNOWN_WORKFLOW_ORCHESTRATION_VERSION", "WorkflowTask 编排版本无法识别");
                 }, new RecordingEvents(), executor, scheduler, clock,
                 4, 16, java.time.Duration.ofMinutes(5), java.time.Duration.ofMinutes(5), 256);
 
@@ -854,7 +854,7 @@ class AgentTurnRuntimeServiceTest {
         private final Map<String, AgentTurnModel> turns = new HashMap<>();
         private final List<AgentItemModel> items = new ArrayList<>();
         private AgentTurnModel raceOnCreation;
-        private List<AgentWorkflowOwnerRecoveryCandidate> ownerRecoveryCandidates = List.of();
+        private List<AgentWorkflowTaskOwnerRecoveryCandidate> ownerRecoveryCandidates = List.of();
         private String retryReadTurnId;
         private CountDownLatch retryReadLatch;
         private AgentQuestionCardModel questionCard;
@@ -932,7 +932,7 @@ class AgentTurnRuntimeServiceTest {
         }
 
         @Override
-        public List<AgentWorkflowOwnerRecoveryCandidate> listWorkflowOwnerRecoveryCandidates() {
+        public List<AgentWorkflowTaskOwnerRecoveryCandidate> listWorkflowOwnerRecoveryCandidates() {
             return ownerRecoveryCandidates;
         }
 
