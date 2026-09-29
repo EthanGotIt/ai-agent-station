@@ -12,7 +12,7 @@ web
 
 ## Product Purpose
 
-Commerce Guardian Agent 将订单售后请求转换为可恢复的 Thread → Turn → Item 执行记录。只读查询直接返回结构化业务事实；退款、催发货和直接删除订单记录由确定性 Workflow 编排，缺参时通过 QuestionCard 补充信息，执行前通过持久化 Checkpoint 授权，再由幂等外部命令完成。Workflow 根据持久化业务事实确定性收尾；用户后续发话时，新 Agent Turn 读取最新事项状态。成功标准是业务结果清楚、授权边界明确，且刷新或断线后仍能恢复事实和状态。
+Commerce Guardian Agent 将订单售后请求转换为可恢复的 Thread → Turn → Item 执行记录。只读查询直接返回结构化业务事实；退款、催发货和直接删除订单记录由确定性 Workflow 编排，缺参时通过 QuestionCard 补充信息，执行前通过持久化 Checkpoint 授权，再由幂等外部命令完成。目标交互允许原 Turn 在补参、授权和外部动作等待期间暂停，并在输入或结果持久化后恢复；当前版本与该目标的差异及实施门槛见[总体调整计划](docs/upgrade-plan.md)。成功标准是业务结果清楚、授权边界明确，且刷新或断线后仍能恢复事实和状态。
 
 ## Positioning
 
@@ -20,15 +20,15 @@ Commerce Guardian Agent 将订单售后请求转换为可恢复的 Thread → Tu
 
 ## Operating Context
 
-使用者在本地开发环境通过 React 工作台操作演示订单服务或独立 HTTP 订单服务。Thread 是上下文根，Turn 是一次请求或 Workflow 回答，Item 是按 Thread 单调序列保存的事实；SSE 只负责实时体验和断线续传，最终事实来自 Items。
+使用者在本地开发环境通过 React 工作台操作演示订单服务或独立 HTTP 订单服务。Thread 是上下文根，Turn 是一次用户请求的逻辑处理，Item 是按 Thread 单调序列保存的事实；目标状态下 Workflow 交互恢复原 Turn，普通新消息排队为后续 Turn，显式 Steer 追加当前未结束 Turn。SSE 只负责实时体验和断线续传，最终事实来自 Items。
 
 ## Capabilities and Constraints
 
 - 支持订单搜索、订单详情、物流时间线、退款、催发货和直接删除订单记录；删除同步清理可删除的物流轨迹，且不提供隐藏/恢复或回收站入口。
 - 外部写操作必须经过确定性 Workflow 的 `AUTHORIZE` Checkpoint，不能由模型直接产生副作用；缺少订单号或退款原因时才使用 QuestionCard 提问。
 - 每个 Thread 最多一个开放交互；QuestionCard 只收集受控字段，Workflow Checkpoint 只确认动作、对象、影响和事实版本，拒绝/取消不创建外部命令。
-- Workflow 节点、Agent 决策和续跑触发事实均以受控 Item 持久化；续跑失败不得改写已成功的订单事实。
-- 同一 Thread 串行处理，QuestionCard、WorkflowRun、Checkpoint 和 ExternalActionCommand 必须持久化。
+- Workflow 节点、Agent 决策和 Turn 恢复信号均以受控事实持久化；模型回复失败不得改写已成功的订单事实。
+- 同一 Thread 主动处理串行；QuestionCard、WorkflowTask、Checkpoint、ExternalActionCommand 和 Turn 恢复位置必须持久化。WorkflowTask 是当前 WorkflowRun 模型的纯命名目标，不新增事项身份。
 - 不展示原始 Thinking；业务结果优先使用结构化 Item，运行细节按需查看。
 - 本阶段不新增退货、换货或多订单批处理等业务种类。
 

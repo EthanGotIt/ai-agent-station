@@ -1,13 +1,13 @@
 ---
 status: active
-updated: 2026-09-28
+updated: 2026-09-29
 ---
 
 # Task Handoff
 
 ## Goal
 
-执行 [Commerce Guardian Agent 总体调整计划](../docs/upgrade-plan.md)，按 P0—P7 将售后写操作迁移到确定性 Java Workflow，退出 LangGraph4j 与自动 Agent continuation，并完成隔离环境交付验收。
+执行 [Commerce Guardian Agent 后续调整计划](../docs/plans/p8-turn-recovery-workflow-task.md)：保留 Thread → Turn → Item，将 WorkflowRun 仅更名为 WorkflowTask，并让新语义 Turn 可持久化暂停、接收分类型输入、等待 Command 后恢复原 Agent 循环。历史 P0—P7 的环境验收缺口继续单独追踪，不将旧证据算作新语义验收。
 
 ## Completed
 
@@ -32,13 +32,20 @@ updated: 2026-09-28
 - P6 离线验证：Python unittest 31 项、规范检查和 `git diff --check` 通过；确定性替身仍为 36/36 安全、36/36 路由。真实模型未运行，不把离线结果记作 Live 通过。
 - P7 隔离运行：最终 Jar 在一次性 MySQL schema `CGA_P7_DD3737D06C15407B`（Flyway v14）和独立订单夹具上启动；曾发现并修复 `@Repository` 的 final 实现阻塞 Spring 代理。应用健康检查、订单夹具健康检查和浏览器默认桌面连接均通过。
 - P7 验证：HTTP acceptance（Thread/Item 恢复、交互唯一性、Turn 幂等、物流、退款、催发货 3 次临时失败后重试、删除幂等）通过；干净快照 Maven `clean test` 为 Core 98、Infrastructure 109、App 22，profiles 为 HTTP 9、MySQL 13；前端 typecheck、Vitest 77、build 通过。证据详见 [P7 执行卡](../docs/plans/p7-release-acceptance.md)。
+- 新计划文档：同 Turn 恢复、WorkflowTask 命名和 Queue/Steer 的目标边界已记录；产品、README、架构和总体路线已标明当前行为与目标行为的差异。
+- 当前工作区基线重跑：`convention_check`、Python 31 项、前端 typecheck、Vitest 77 项、build 与 `git diff --check` 通过。`mvn clean test` 被工作区中预存的未跟踪 `infrastructure/.../workflow/langgraph` 源码阻断：这些源码仍引用已在 P5 移除的 LangGraph4j 类型；文件保持原样，不计为本计划新增代码。此前 P5/P7 干净快照 Maven 通过证据仍有效，但不替代当前工作区基线。
 
 ## Decisions
 
 - Spring AI 负责理解、只读查询和提交事项；Java Workflow 负责业务核验、授权、命令和确定性结果收尾。
-- 新流程不自动创建 Agent continuation。后续用户消息作为普通 Turn，从持久化业务事实获取事项状态。
+- `WorkflowRun → WorkflowTask` 只改内部命名，保持职责、数据身份、既有表列及外部 `runId`/`workflowRunId` 兼容映射。
+- 新语义 Turn 可在补参、批准或 Command 等待时持久化暂停；答复和动作结果恢复同一 `turnId`，不创建回答/决策子 Turn 或自动 continuation Turn。
+- 普通消息默认 Queue 为后续 Turn；显式 Steer 追加当前未结束 Turn。QuestionCard 答案、Checkpoint 决策、Steer 与 Worker 结果保持各自输入协议和校验。
+- 暂停期间释放模型请求、执行线程和数据库事务；恢复不得重置主动执行预算或重复已完成工具/外部命令。
+- 已提交 Command 的取消不撤销副作用；晚到结果照常持久化，但不能重新激活已取消 Turn。
 - 旧 Run 按原持久化版本兼容运行或经用户明确取消；未知外部副作用先核验，不能强行终结。
-- 保留上下文存储、注入、预算和摘要机制；复合请求独立只读查询列作后续增强。
+- 保留上下文存储、注入、预算和摘要机制；不将摘要作为授权或业务成功事实。
+- 单 Turn 复合请求和 Queue／Steer 是本轮后续执行卡的一部分；依赖结果的步骤等待原 Command 结果，独立只读查询不等待写操作。
 - 工作区有本任务开始前的未提交改动，逐阶段保留并核实，不整体还原；本次按用户明确要求提交并推送 P0—P3。
 
 ## TODO
@@ -46,6 +53,8 @@ updated: 2026-09-28
 - 用目标环境只读账号执行 `scripts/maintenance/workflow-inventory.sql`，保存 P5 排空报告并确认旧 Worker/服务/队列退出。
 - 在提供两套既定模型凭据后，按每套 54 条记录运行 P6 Live，保存脱敏摘要并完成模型选择。
 - 补做 P7 的兼容版本回滚、真实浏览器 SSE 断线、窄屏/移动浏览器专项，并把证据写回执行卡；601 条 Items/游标已有 MySQL acceptance 覆盖。
+- 完成本轮 P0 基线审计并单独提交计划校准；随后进行 `WorkflowTask` 纯命名调整，再实施新 Turn 持久化暂停恢复。
+- P5 目标数据库只读盘点、P6 两套模型各 54 条 Live 评测、P7 兼容版本回滚及真实浏览器 SSE/响应式检查仍是未完成验收；实施 P8 时保留这些独立缺口并按可用隔离环境补证。
 
 ## Blocked
 
@@ -53,11 +62,11 @@ P2 已验证完成。订单服务未提供独立的按幂等键查询 API；本�
 
 ## Next action
 
-提供两套既定模型的可用凭据，先执行 `python -m scripts.runtime_eval.live_driver` 的两套 54 条 Live 评测；完成后再补做 P7 回滚、分页/SSE 和响应式浏览器专项。
+完成 P0 文档校准、验证文档链接并建立独立提交；然后进行 `WorkflowRun → WorkflowTask` 的纯内部命名迁移。Maven 基线阻塞需在代码阶段前处理或隔离复验。
 
 ## Validation
 
-P0—P5 的代码与隔离验收通过项、P6 评测工具和离线验证，以及本次 P7 隔离证据见 [实施追踪](../docs/implementation-traceability.md) 与阶段执行卡。真实目标库 P5 盘点、真实模型、兼容版本回滚、真实浏览器 SSE 和响应式浏览器专项尚未执行；601 条 Items/游标与自动化 SSE 回放已有隔离测试证据。
+P0—P7 的历史代码与隔离验收见 [实施追踪](../docs/implementation-traceability.md) 与阶段执行卡。当前工作区自动化基线结果见 Completed；MySQL acceptance profile 本轮尚未重跑。真实目标库 P5 盘点、真实模型、兼容版本回滚、真实浏览器 SSE 和响应式浏览器专项尚未执行。P8 新增的持久化暂停恢复、Queue／Steer、同 Turn 动作结果恢复和复合请求尚未实现或验证；旧验收不能替代新语义证据。
 
 ## Preserve
 

@@ -2,7 +2,9 @@
 
 ## 目标架构与当前实现
 
-长期目标为 Spring AI Agent 负责理解、只读查询和提交事项，确定性 Java Workflow 负责业务核验、补参、授权、命令创建和结果收尾，Worker 独立执行外部动作。Workflow 完成后不自动创建 Agent continuation；后续用户消息作为普通 Turn 进入，并依据持久化 Items 和业务事实了解事项状态。本期 Workflow 成功受理后结束当前 Agent 工具循环；这是一项协调层策略，复合请求中的后续只读查询列为后续增强。
+长期目标为 Spring AI Agent 负责理解、只读查询和提交事项，确定性 Java Workflow 负责业务核验、补参、授权、命令创建和结果收尾，Worker 独立执行外部动作。一个 Turn 可以在 QuestionCard、Checkpoint 或外部动作等待期间持久化暂停，并在结构化答复或 Command 结果到达后恢复原 Turn 的 Agent 循环；等待期间不占用模型请求或执行线程。Worker 结果先落库，再作为原工具调用的结果交还 Agent，不创建自动续跑 Turn。
+
+`WorkflowRun` 在后续 P8 中只改称 `WorkflowTask`，继续承担当前同一条售后流程的可恢复状态；这项命名不改变实体职责或持久化身份。QuestionCard 答案、Checkpoint 决策、普通 Steer 文本和 Worker 结果是不同类型的输入，分别校验与处理，但都能唤醒原 Turn。普通新消息可 Queue 为下一 Turn，Steer 显式补充当前未结束的 Turn。
 
 截至 2026-09-28，退款、催发货和删除的新 Run 均使用 Java Workflow；Worker 结算不创建自动 Agent continuation。历史 `LEGACY_V1`/`EXPEDITE_GRAPH_V1`/`EXPEDITE_GRAPH_V2` 的标识、快照、Turn/Item 字段和迁移脚本仍保留以便读取与排空，生产运行路径不再装配 LangGraph4j。目标环境的旧 Run 归零需通过 [P5 只读盘点脚本](../scripts/maintenance/workflow-inventory.sql) 提供证据。
 
@@ -50,6 +52,8 @@ app
 
 ## 会话与上下文
 
+`Thread → Turn → Item` 是一套会话及执行记录：Thread 是会话边界，Turn 是一次输入的处理，Item 是该 Thread 内按序追加的事实。`WorkflowRun` 是由某个 Turn 发起并关联回 Thread 的业务事项状态，不是另一套会话或另一份聊天历史。Item 记录可展示的 Workflow 轨迹，WorkflowRun 与 QuestionCard、Checkpoint、Command 保存该事项的可恢复状态和授权、执行约束；状态判断以这些持久化业务事实为准。
+
 登录身份不构成 Agent 实体。一个用户拥有多个 Thread，每个 Thread 保存标题、可选业务上下文和最新 Item 序号：
 
 ```text
@@ -72,7 +76,11 @@ Item 是对话与执行轨迹的可恢复事实；业务授权、版本和命令
 
 Runtime 的输入边界由 `AgentTurnExecutionRouter` 按 `MESSAGE`、`QUESTION_ANSWER`、`WORKFLOW_DECISION` 和 `ORDER_ACTION` 分派；`AgentTurnInputValidator` 与 `AgentTurnItemPayloads` 负责无副作用的规范化和兼容 payload 构造，新的写入路径通过 `AgentItemJournal` 追加并发布事实。Spring AI 协调器保留模型调用与受控 Tool 生命周期，订单 Tool 的参数解析、字段白名单和输出截断由 `SpringAiOrderToolSupport` 承担；QuestionCard schema 与 Workflow Checkpoint schema 分属各自 Core 模型。历史 `WORKFLOW_ANSWER` Turn 只按消息兼容读取，不进入新 Runtime 路径。这样拆分不改变同 Thread FIFO、持久化 Item、事务边界或外部动作幂等契约。
 
-## 编排和审批
+## 编排、审批与 Turn 恢复
+
+当前运行时由 `ControlledToolCallingManager` 按模型返回顺序执行工具，在成功持久化 QuestionCard 或 Workflow 交互后截断同批工具调用和模型请求。QuestionCard 回答与 Checkpoint 决策仍作为关联的新 Turn 进入 Thread FIFO；Worker 只结算并投影结果，不恢复原 Agent 调用。这是 P8 实施前的实际行为。
+
+P8 目标将工具批次、受控参数、完成结果和恢复位置持久化。QuestionCard 答案、Checkpoint 决策、显式 Steer 文本和 Worker 结果分别走各自的校验协议，但可唤醒同一原 Turn；恢复会补齐原工具结果，不重跑已完成工具或命令。普通消息 Queue 为后续 Turn，Steer 仅在安全处理点修改尚未提交的意图，不能批准或更改已提交命令。
 
 `SpringAiAgentTurnCoordinator` 是唯一协调 Agent，并显式装配一个 `ControlledToolCallingAdvisor` 与 `ControlledToolCallingManager`；Manager 按模型返回顺序执行工具，在 `FINISH`、成功持久化 QuestionCard 或 Workflow 交互后截断同批后续工具和模型请求。只读 Tool 查询订单和物流；订单售后能力统一由 `start_order_service_workflow` 启动确定性 Workflow，不能直接产生外部副作用。协调器使用终态 `FINISH|ASK_USER|START_WORKFLOW`，但入口受工具契约收窄：`complete_agent_cycle` 只接受 `FINISH`，`ASK_USER` 只能由 `request_user_input` 持久化 QuestionCard 产生，`START_WORKFLOW` 只能由 Workflow Tool 产生；固定 Workflow 的人工执行确认由独立 Workflow Checkpoint 承担。模型未形成终态决策时，Runtime 在同一 Turn 内最多发起一次带纠正提示的完整调用，首次自由文本不写入 Item；第二次仍缺失时写入 `AGENT_DECISION_MISSING` 并安全失败，不使用文本假完成。终止 Tool 的受控消息优先于模型追加文本，后续自由文本不会覆盖最终消息。第三轮之后不再创建新的续跑 Turn。Tool Call/Result/Agent Decision 只记录受控参数、状态、截断标志，不记录 Prompt 或 Thinking。Workflow 类型、状态和开放交互使用枚举，并显式执行：
 
@@ -91,7 +99,7 @@ RESOLVE_ORDER → VERIFY_FACTS → SWITCH_REQUIREMENTS → AUTHORIZE
              → EXECUTE_ACTION → VERIFY_OUTCOME → HANDOFF_AGENT（返回 Workflow 结果）
 ```
 
-明确订单号的催发货试点在 `AI_AGENT_EXPEDITE_GRAPH_MODE=V2` 时使用独立的双平面流程。图只负责纯策略节点和技术中断；WorkflowRun、Checkpoint、Command、Item 是业务事实，Worker 在图的技术 END 之后负责真实外部动作、结果核验和 Agent 续跑：
+以下是已退出的 LangGraph V1/V2 历史试点结构，仅用于解释仍保留的版本、快照及数据迁移；它不是当前准入方式或后续目标。历史试点曾使用双平面流程：
 
 ```text
 业务事实平面：

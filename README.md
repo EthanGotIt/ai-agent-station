@@ -4,9 +4,9 @@ Commerce Guardian Agent 是一个 Agent-first 执行平台：业务订单、物�
 
 五个工程亮点：
 
-1. `Thread → Turn → Item`：Thread 是上下文根，Turn 表示一次执行，Item 是消息和轨迹的事实来源；历史按 sequence 游标恢复。
+1. `Thread → Turn → Item`：Thread 是上下文根，Turn 表示一次用户请求的逻辑处理，Item 是消息和轨迹的事实来源；P8 目标支持同一 Turn 跨补参、批准和动作等待暂停恢复。
 2. ReAct / Workflow 混合编排：Spring AI 协调 Agent 只调用只读工具或启动 Workflow，关键写操作由 Java 显式状态机负责。
-3. QuestionCard + Checkpoint：确认、拒绝和结构化参数持久化到 MySQL，可跨刷新、断线和重启恢复。
+3. QuestionCard + Checkpoint：确认、拒绝和结构化参数持久化到 MySQL，可跨刷新、断线和重启恢复；回答和决策仍使用各自结构化协议，不等同于 Steer。
 4. Reliable Agent Runtime：同 Thread FIFO、取消、分层超时、SSE 实时投影、幂等命令、Lease、退避重试和人工恢复。
 5. Explicit Agent Decision Contract：终止只接受受控 Tool 决策；缺失决策最多纠正一次，仍失败以 `AGENT_DECISION_MISSING` 安全收口，前端只允许创建新 Turn 重试。
 

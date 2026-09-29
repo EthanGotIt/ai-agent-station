@@ -1,7 +1,7 @@
 # Commerce Guardian Agent 实现追踪矩阵
 
 > 状态：`active`
-> 更新日期：2026-09-28
+> 更新日期：2026-09-29
 > 目标来源：当前唯一前向计划 [长期调整计划](upgrade-plan.md)、当前工作树、架构文档、SQL、测试和实际运行结果。
 
 本矩阵只把代码、测试和运行结果作为证据。原计划或 [任务交接快照](../.codex/task-handoff.md) 中的“已完成”描述不能单独作为完成证据。
@@ -10,7 +10,14 @@
 
 ## 当前长期升级计划
 
-既有 Items、上下文、LangGraph V1/V2、Worker 和 Live driver 结果继续作为历史证据。前向实施以 `docs/upgrade-plan.md` 的 P0—P7 及各阶段执行卡为准。P0 于 2026-09-24 完成文档校准与自动化基线；以下旧表格是此前状态快照，不构成继续扩展 LangGraph 的目标。
+既有 Items、上下文、LangGraph V1/V2、Worker 和 Live driver 结果继续作为历史证据。前向实施以 `docs/upgrade-plan.md` 的 P0—P8 及各阶段执行卡为准。P0—P7 的历史执行证据不代表 P8 新执行语义已经验收；以下旧表格是此前状态快照，不构成继续扩展 LangGraph 的目标。
+
+### P8 计划基线（2026-09-29）
+
+- 决策：保留 Thread → Turn → Item；`WorkflowRun → WorkflowTask` 仅改内部名称和显式边界映射，不改变业务身份、数据库列或公开兼容字段。补参、批准、Steer 和 Worker 结果继续使用不同协议；同一逻辑 Turn 可持久化暂停并恢复原 Agent 循环。
+- 当前与目标差异：当前 QuestionCard/Checkpoint 输入仍排入新的 Turn，Workflow 启动后截断工具循环，Worker 结算后不恢复 Agent。目标行为尚未实现，不能将此计划记录为交付事实。
+- 本工作区基线重跑：规范检查、Python 31 项、前端 typecheck、Vitest 77 项、build、`git diff --check` 通过；`mvn clean test` 被预存未跟踪的 `infrastructure/.../workflow/langgraph` 源码阻断，这些源码引用 P5 已移除的 LangGraph4j API。未跟踪文件保留原样。P5/P7 干净提交的 Maven 通过记录仍作为历史证据。
+- 尚未重跑：MySQL acceptance profiles、隔离订单服务、Live 模型、目标库只读盘点、回滚演练和真实浏览器 SSE/响应式验收。
 
 ### P0 基线（2026-09-24）
 
