@@ -304,3 +304,11 @@
 P7 已完成一轮可复现的隔离启动和 HTTP/数据库门禁，但保持 active，不替代 P6 Live 或发布回滚门槛。最终 Jar 在一次性 MySQL schema `CGA_P7_DD3737D06C15407B`（Flyway v14）启动，独立订单夹具在 18080 启动；`python -m scripts.acceptance` 覆盖 Thread/Item 恢复、交互唯一性、Turn 幂等、物流、退款幂等、催发货临时失败重试和删除幂等并通过。干净快照 `mvn clean test` 为 Core 98、Infrastructure 109、App 22，profiles 为 HTTP 9、MySQL 13；MySQL acceptance 内含 601 条 Items 固定水位分页、异常游标收口、跨会话恢复和并发 CAS，App/前端自动化测试覆盖 SSE 回放去重和重连；前端 typecheck、Vitest 77、build 通过，浏览器默认桌面连接和服务不可用时的重连提示已复核。
 
 未闭合：两套真实模型各 54 条 Live 评测、兼容版本→最终版本→兼容版本回滚、真实浏览器 SSE 断线、窄屏/移动端专项和目标环境旧 Run/continuation 只读盘点。上述证据不表示真实生产订单平台或生产部署已验收。
+
+## P8 Turn 恢复存储底座（2026-09-29）
+
+P8 计划校准与 WorkflowTask 命名分别提交为 `6e81420`、`1d81442`。本阶段为 Turn 增加持久化 `EXECUTION_SEMANTICS_VERSION`，旧行默认 0；增加一对一 `AGENT_TURN_EXECUTION_STATE`，按 CAS 版本保存累计主动时长、工具批次、调用身份/受控参数、批次索引及结果 Item 引用。该表不保存 Thinking 或运行时调用栈，数据库既有 Run 表和外部接口名称未改变。
+
+验证：规范检查通过；在保留既有未跟踪 LangGraph4j 实验源码的前提下，临时隔离这两处已知不兼容源码目录后，Maven Core 102、Infrastructure 134、App 25 单测通过；隔离 MySQL 从基线模拟 V9 执行到 V15，Items/Workflow acceptance 共 14 项通过，恢复快照完成往返并拒绝过期 CAS。目录已原样恢复。
+
+边界：恢复存储尚未接入 Tool Calling 批次、QuestionCard/Checkpoint 同 Turn admission 或 Worker 恢复信号；没有新 Turn 被赋予语义版本 1，因此本证据不是同 Turn 暂停恢复的行为验收。恢复信号和运行时闭环仍是下一阶段。

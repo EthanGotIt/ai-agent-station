@@ -151,6 +151,7 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
                 .set("ERROR_CODE", next.errorCode())
                 .set("STARTED_AT", next.startedAt())
                 .set("FINISHED_AT", next.finishedAt())
+                .set("EXECUTION_SEMANTICS_VERSION", next.executionSemanticsVersion())
                 .set("VERSION_NO", next.version()));
         if (updated == 0) {
             return false;
@@ -214,6 +215,7 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
         entity.setStartedAt(model.startedAt());
         entity.setFinishedAt(model.finishedAt());
         entity.setVersionNo(model.version());
+        entity.setExecutionSemanticsVersion(model.executionSemanticsVersion());
         return entity;
     }
 
@@ -229,7 +231,8 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
                 entity.getClientRequestId(), entity.getInputText(), AgentTurnStatusEnum.valueOf(entity.getStatus()),
                 value(entity.getQueuePosition()), entity.getWorkflowRunId(), entity.getErrorCode(), entity.getCreatedAt(),
                 entity.getStartedAt(), entity.getFinishedAt(), questionAnswer,
-                value(entity.getVersionNo()), inputKind, orderAction, continuation, decision);
+                value(entity.getVersionNo()), inputKind, orderAction, continuation, decision,
+                intValue(entity.getExecutionSemanticsVersion()));
     }
 
     private AgentTurnInputKindEnum inputKind(
@@ -265,6 +268,10 @@ public class MybatisAgentTurnStore implements AgentTurnStore {
 
     private static long value(Long value) {
         return value == null ? 0L : value;
+    }
+
+    private static int intValue(Integer value) {
+        return value == null ? 0 : value;
     }
 
     private static boolean isTerminal(AgentTurnStatusEnum status) {

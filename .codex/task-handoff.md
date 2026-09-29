@@ -36,6 +36,7 @@ updated: 2026-09-29
 - 当前工作区基线重跑：`convention_check`、Python 31 项、前端 typecheck、Vitest 77 项、build 与 `git diff --check` 通过。`mvn clean test` 被工作区中预存的未跟踪 `infrastructure/.../workflow/langgraph` 源码阻断：这些源码仍引用已在 P5 移除的 LangGraph4j 类型；文件保持原样，不计为本计划新增代码。此前 P5/P7 干净快照 Maven 通过证据仍有效，但不替代当前工作区基线。
 - P8 阶段 1：计划校准已以 `6e81420` 单独提交并推送；总体路线、执行卡、产品/架构入口已同步，历史 P5—P7 环境验收缺口仍未关闭。
 - P8 阶段 2：WorkflowTask 内部模型、Store、Entity、Mapper、owner-recovery 类型及 Turn 关联更名已完成；`AGENT_WORKFLOW_RUN.RUN_ID`、`AGENT_TURN.WORKFLOW_RUN_ID` 和 HTTP `runId`/`workflowRunId` 保持显式兼容映射，无数据库迁移。Core 102、Infrastructure 131、App 25 单测及隔离 MySQL Items/Workflow acceptance 13 项均通过；为验证暂时移出的未跟踪 LangGraph4j 源目录已原样恢复。
+- P8 Turn 恢复存储底座：Turn 新增执行语义版本（历史默认 0），V15 增量创建 `AGENT_TURN_EXECUTION_STATE`，记录累计主动时长、工具批次游标和受控调用快照；新 Turn 仍未启用语义版本 1。Core 102、Infrastructure 134、App 25 单测通过；隔离 MySQL 从 V9→V15 的 Items/Workflow acceptance 14 项通过，含恢复快照往返和 CAS。详细边界见 P8 执行卡和实施追踪。
 
 ## Decisions
 
@@ -64,11 +65,11 @@ P2 已验证完成。订单服务未提供独立的按幂等键查询 API；本�
 
 ## Next action
 
-进入 P8 阶段 3：基于现有 Turn/Item/Tool 协议设计增量持久化模型与恢复状态机，先覆盖 QuestionCard 与 Checkpoint 暂停/恢复，再扩展到 Command 结果；不要改变历史 Turn 的恢复语义。实现前盘点队列、Turn Store、Tool 调用批次和事务边界，并据此确定数据库迁移与并发不变量。
+继续 P8 Turn 恢复：新增持久化、可去重的恢复信号，并让 QuestionCard/Checkpoint admission 将已版本化的 owner Turn 从等待态恢复为同一 `turnId` 的排队态；在接通路由前保留语义版本 0 准入。先定义 signal 与交互 CAS、Thread Item Sequence、重复请求回放的同一事务不变量，再覆盖并发输入和重启恢复。
 
 ## Validation
 
-P0—P7 的历史代码与隔离验收见 [实施追踪](../docs/implementation-traceability.md) 与阶段执行卡。WorkflowTask 命名阶段的自动化与 MySQL acceptance 结果见 Completed。真实目标库 P5 盘点、真实模型、兼容版本回滚、真实浏览器 SSE 和响应式浏览器专项尚未执行。P8 新增的持久化暂停恢复、Queue／Steer、同 Turn 动作结果恢复和复合请求尚未实现或验证；旧验收不能替代新语义证据。
+P0—P7 的历史代码与隔离验收见 [实施追踪](../docs/implementation-traceability.md) 与阶段执行卡。P8 当前仅有计划校准、WorkflowTask 命名和恢复存储底座证据；恢复信号、原 Turn 补参/决策、Tool 批次/预算续接、Worker 结果恢复、Queue/Steer 和复合请求未实现或验证。真实目标库 P5 盘点、真实模型、兼容版本回滚、真实浏览器 SSE 和响应式浏览器专项尚未执行；旧验收不能替代新语义证据。
 
 ## Preserve
 

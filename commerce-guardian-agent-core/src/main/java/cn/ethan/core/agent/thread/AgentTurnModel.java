@@ -30,10 +30,38 @@ public record AgentTurnModel(
         AgentTurnInputKindEnum inputKind,
         AgentOrderActionInput orderActionInput,
         AgentContinuationInput continuationInput,
-        AgentWorkflowDecisionInput workflowDecisionInput
+        AgentWorkflowDecisionInput workflowDecisionInput,
+        int executionSemanticsVersion
 ) {
     public static final int MAX_CLIENT_REQUEST_ID_LENGTH = 128;
     public static final int MAX_USER_MESSAGE_LENGTH = 256;
+    public static final int CURRENT_EXECUTION_SEMANTICS_VERSION = 1;
+
+    /** 保留旧完整构造边界；历史及现有调用默认使用兼容执行语义。 */
+    public AgentTurnModel(
+            String turnId,
+            String threadId,
+            String userId,
+            String clientRequestId,
+            String input,
+            AgentTurnStatusEnum status,
+            int queuePosition,
+            String workflowTaskId,
+            String errorCode,
+            Instant createdAt,
+            Instant startedAt,
+            Instant finishedAt,
+            AgentQuestionAnswerInput questionAnswerInput,
+            long version,
+            AgentTurnInputKindEnum inputKind,
+            AgentOrderActionInput orderActionInput,
+            AgentContinuationInput continuationInput,
+            AgentWorkflowDecisionInput workflowDecisionInput
+    ) {
+        this(turnId, threadId, userId, clientRequestId, input, status, queuePosition, workflowTaskId, errorCode,
+                createdAt, startedAt, finishedAt, questionAnswerInput, version, inputKind, orderActionInput,
+                continuationInput, workflowDecisionInput, 0);
+    }
 
     public AgentTurnModel(
             String turnId,
@@ -184,6 +212,10 @@ public record AgentTurnModel(
         if (version < 0) {
             throw new IllegalArgumentException("Turn version 不能为负数");
         }
+        if (executionSemanticsVersion < 0
+                || executionSemanticsVersion > CURRENT_EXECUTION_SEMANTICS_VERSION) {
+            throw new IllegalArgumentException("不支持的 Turn 执行语义版本");
+        }
         if (workflowDecisionInput != null && !workflowDecisionInput.runId().equals(workflowTaskId)) {
             throw new IllegalArgumentException("决策 Turn 的 workflowTaskId 与结构化输入不一致");
         }
@@ -206,27 +238,34 @@ public record AgentTurnModel(
         return new AgentTurnModel(turnId, threadId, userId, clientRequestId, input,
                 AgentTurnStatusEnum.QUEUED, position, workflowTaskId, errorCode,
                 createdAt, startedAt, finishedAt, questionAnswerInput, version + 1,
-                inputKind, orderActionInput, continuationInput, workflowDecisionInput);
+                inputKind, orderActionInput, continuationInput, workflowDecisionInput, executionSemanticsVersion);
     }
 
     public AgentTurnModel active(Instant at) {
         return new AgentTurnModel(turnId, threadId, userId, clientRequestId, input,
                 AgentTurnStatusEnum.ACTIVE, queuePosition, workflowTaskId, errorCode,
                 createdAt, at, null, questionAnswerInput, version + 1,
-                inputKind, orderActionInput, continuationInput, workflowDecisionInput);
+                inputKind, orderActionInput, continuationInput, workflowDecisionInput, executionSemanticsVersion);
     }
 
     public AgentTurnModel terminal(AgentTurnStatusEnum terminal, String code, Instant at) {
         return new AgentTurnModel(turnId, threadId, userId, clientRequestId, input,
                 terminal, queuePosition, workflowTaskId, code, createdAt, startedAt, at,
                 questionAnswerInput, version + 1, inputKind, orderActionInput, continuationInput,
-                workflowDecisionInput);
+                workflowDecisionInput, executionSemanticsVersion);
     }
 
     public AgentTurnModel workflow(String taskId, AgentTurnStatusEnum nextStatus) {
         return new AgentTurnModel(turnId, threadId, userId, clientRequestId, input,
                 nextStatus, queuePosition, taskId, errorCode, createdAt, startedAt, finishedAt,
                 questionAnswerInput, version + 1, inputKind, orderActionInput, continuationInput,
-                workflowDecisionInput);
+                workflowDecisionInput, executionSemanticsVersion);
+    }
+
+    /** 固化 Turn 创建时选择的执行语义，后续部署配置不得重解释历史 Turn。 */
+    public AgentTurnModel withExecutionSemanticsVersion(int semanticsVersion) {
+        return new AgentTurnModel(turnId, threadId, userId, clientRequestId, input, status, queuePosition,
+                workflowTaskId, errorCode, createdAt, startedAt, finishedAt, questionAnswerInput, version,
+                inputKind, orderActionInput, continuationInput, workflowDecisionInput, semanticsVersion);
     }
 }

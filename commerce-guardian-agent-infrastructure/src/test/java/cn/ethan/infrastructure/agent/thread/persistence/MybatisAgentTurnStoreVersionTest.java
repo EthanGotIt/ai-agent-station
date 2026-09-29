@@ -136,7 +136,8 @@ class MybatisAgentTurnStoreVersionTest {
                 Map.of("orderId", "ORDER-1"), AgentQuestionCardAnswerActionEnum.SUBMIT);
         AgentTurnModel turn = new AgentTurnModel(
                 "turn-1", "thread-1", "user-1", "request-1", "QuestionCard 回答",
-                AgentTurnStatusEnum.QUEUED, 1, null, null, NOW, null, null, input);
+                AgentTurnStatusEnum.QUEUED, 1, null, null, NOW, null, null, input)
+                .withExecutionSemanticsVersion(AgentTurnModel.CURRENT_EXECUTION_SEMANTICS_VERSION);
         AgentItemModel item = new AgentItemModel(
                 "item-1", "thread-1", "turn-1", 0, AgentItemTypeEnum.QUESTION_ANSWER,
                 "{\"questionId\":\"question-1\"}", NOW);
@@ -144,6 +145,9 @@ class MybatisAgentTurnStoreVersionTest {
         assertEquals(1L, store.createTurnWithInitialItem(turn, item));
         AgentTurnModel restored = store.findTurnByRequest("user-1", "request-1").orElseThrow();
         assertEquals(input, restored.questionAnswerInput());
+        assertEquals(AgentTurnModel.CURRENT_EXECUTION_SEMANTICS_VERSION, restored.executionSemanticsVersion());
+        assertEquals(AgentTurnModel.CURRENT_EXECUTION_SEMANTICS_VERSION,
+                persisted.get().getExecutionSemanticsVersion());
         assertEquals("QUESTION_ANSWER", persisted.get().getInputKind());
         assertEquals("question-1", persisted.get().getQuestionCardId());
     }

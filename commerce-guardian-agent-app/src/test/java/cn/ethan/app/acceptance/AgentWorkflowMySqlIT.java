@@ -4,6 +4,8 @@ import cn.ethan.core.agent.action.ExternalActionCommandModel;
 import cn.ethan.core.agent.action.ExternalActionCommandStore;
 import cn.ethan.core.agent.action.ExternalActionStatusEnum;
 import cn.ethan.core.agent.action.ExternalActionTypeEnum;
+import cn.ethan.core.agent.execution.AgentTurnExecutionStateModel;
+import cn.ethan.core.agent.execution.AgentTurnExecutionStateStore;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointModel;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStatusEnum;
 import cn.ethan.core.agent.workflow.AgentWorkflowCheckpointStore;
@@ -17,7 +19,10 @@ import cn.ethan.core.agent.workflow.OrderWriteReservationStore;
 import cn.ethan.infrastructure.agent.action.persistence.ExternalActionCommandMapper;
 import cn.ethan.infrastructure.agent.action.persistence.MybatisExternalActionCommandStore;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentThreadMapper;
+import cn.ethan.infrastructure.agent.thread.persistence.AgentTurnExecutionStateMapper;
+import cn.ethan.infrastructure.agent.thread.persistence.JacksonAgentTurnExecutionStateCodec;
 import cn.ethan.infrastructure.agent.thread.persistence.AgentWorkflowTaskMapper;
+import cn.ethan.infrastructure.agent.thread.persistence.MybatisAgentTurnExecutionStateStore;
 import cn.ethan.infrastructure.agent.thread.persistence.MybatisAgentWorkflowTaskStore;
 import cn.ethan.infrastructure.agent.workflow.persistence.AgentWorkflowCheckpointMapper;
 import cn.ethan.infrastructure.agent.workflow.persistence.MybatisAgentWorkflowCheckpointStore;
@@ -112,6 +117,7 @@ class AgentWorkflowMySqlIT {
         insertThread("thread-java-approval");
         insertThread("thread-reserve-a");
         insertThread("thread-reserve-b");
+        insertThread("thread-recovery-state");
     }
 
     @AfterAll
@@ -143,7 +149,29 @@ class AgentWorkflowMySqlIT {
     }
 
     @Test
-    void flywayV10ToV14AndManagedStoresPreserveVersionAndOwnership() throws Exception {
+    void turnExecutionStatePersistsToolBatchCursorAndUsesOptimisticVersion() throws Exception {
+        insertTurn("turn-recovery-state", "thread-recovery-state", "recovery-state-request");
+        try (AnnotationConfigApplicationContext context = persistenceContext()) {
+            AgentTurnExecutionStateStore states = context.getBean(AgentTurnExecutionStateStore.class);
+            var call = new AgentTurnExecutionStateModel.ToolCall(
+                    "provider-call-1", "invocation-1", "lookup_order", "{\"orderId\":\"ORDER-1\"}",
+                    AgentTurnExecutionStateModel.ToolCallStatusEnum.PENDING, null);
+            AgentTurnExecutionStateModel created = new AgentTurnExecutionStateModel(
+                    "turn-recovery-state", 1200, "batch-1", 0, java.util.List.of(call), 0, NOW);
+            states.create(created);
+
+            AgentTurnExecutionStateModel restored = states.find(created.turnId()).orElseThrow();
+            assertEquals(created, restored);
+            AgentTurnExecutionStateModel next = restored.next(2400, "batch-1", 1,
+                    java.util.List.of(call), NOW.plusSeconds(1));
+            assertTrue(states.update(restored, next));
+            assertFalse(states.update(restored, next));
+            assertEquals(1, states.find(created.turnId()).orElseThrow().version());
+        }
+    }
+
+    @Test
+    void flywayV10ToV15AndManagedStoresPreserveVersionAndOwnership() throws Exception {
         try (AnnotationConfigApplicationContext context = persistenceContext()) {
             AgentWorkflowTaskStore runs = context.getBean(AgentWorkflowTaskStore.class);
             AgentWorkflowTaskModel run = run("run-version", "thread-cas", "turn-version",
@@ -164,12 +192,18 @@ class AgentWorkflowMySqlIT {
             assertEquals(1L, scalar(statement,
                     "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() "
                             + "AND TABLE_NAME = 'EXTERNAL_ACTION_COMMAND' AND COLUMN_NAME = 'OUTCOME_STATUS'"));
+            assertEquals(1L, scalar(statement,
+                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() "
+                            + "AND TABLE_NAME = 'AGENT_TURN' AND COLUMN_NAME = 'EXECUTION_SEMANTICS_VERSION'"));
+            assertEquals(1L, scalar(statement,
+                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() "
+                            + "AND TABLE_NAME = 'AGENT_TURN_EXECUTION_STATE'"));
         }
         Flyway migrated = Flyway.configure()
                 .dataSource(dataSource)
                 .locations("classpath:db/migration")
                 .load();
-        assertEquals("14", migrated.info().current().getVersion().getVersion());
+        assertEquals("15", migrated.info().current().getVersion().getVersion());
     }
 
     @Test
@@ -390,6 +424,19 @@ class AgentWorkflowMySqlIT {
         @Bean SqlSessionFactory sqlSessionFactory(DataSource source) { return springFactory(source); }
         @Bean SqlSessionTemplate sqlSessionTemplate(SqlSessionFactory factory) { return new SqlSessionTemplate(factory); }
         @Bean AgentThreadMapper agentThreadMapper(SqlSessionTemplate template) { return template.getMapper(AgentThreadMapper.class); }
+        @Bean AgentTurnExecutionStateMapper turnExecutionStateMapper(SqlSessionTemplate template) {
+            return template.getMapper(AgentTurnExecutionStateMapper.class);
+        }
+        @Bean tools.jackson.databind.ObjectMapper recoveryObjectMapper() {
+            return new tools.jackson.databind.ObjectMapper();
+        }
+        @Bean JacksonAgentTurnExecutionStateCodec turnExecutionStateCodec(tools.jackson.databind.ObjectMapper mapper) {
+            return new JacksonAgentTurnExecutionStateCodec(mapper);
+        }
+        @Bean AgentTurnExecutionStateStore turnExecutionStateStore(
+                AgentTurnExecutionStateMapper mapper, JacksonAgentTurnExecutionStateCodec codec) {
+            return new MybatisAgentTurnExecutionStateStore(mapper, codec);
+        }
         @Bean AgentWorkflowTaskMapper agentWorkflowTaskMapper(SqlSessionTemplate template) { return template.getMapper(AgentWorkflowTaskMapper.class); }
         @Bean AgentWorkflowCheckpointMapper agentWorkflowCheckpointMapper(SqlSessionTemplate template) { return template.getMapper(AgentWorkflowCheckpointMapper.class); }
         @Bean OrderWriteReservationMapper orderWriteReservationMapper(SqlSessionTemplate template) { return template.getMapper(OrderWriteReservationMapper.class); }
@@ -452,6 +499,20 @@ class AgentWorkflowMySqlIT {
         }
     }
 
+    private static void insertTurn(String turnId, String threadId, String requestId) throws SQLException {
+        try (Connection connection = dataSource.getConnection(); PreparedStatement statement = connection.prepareStatement(
+                "INSERT INTO AGENT_TURN (TURN_ID, THREAD_ID, USER_ID, CLIENT_REQUEST_ID, INPUT_TEXT, INPUT_KIND, "
+                        + "STATUS, QUEUE_POSITION, CREATED_AT, VERSION_NO, EXECUTION_SEMANTICS_VERSION) "
+                        + "VALUES (?, ?, ?, ?, '恢复状态验收', 'MESSAGE', 'WAITING_EXTERNAL_ACTION', 0, ?, 0, 1)")) {
+            statement.setString(1, turnId);
+            statement.setString(2, threadId);
+            statement.setString(3, USER_ID);
+            statement.setString(4, requestId);
+            statement.setObject(5, NOW);
+            statement.executeUpdate();
+        }
+    }
+
     private static long count(String sql) throws SQLException {
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
             return scalar(statement, sql);
@@ -468,6 +529,8 @@ class AgentWorkflowMySqlIT {
     private static void prepareV9Schema(DataSource source) throws SQLException {
         try (Connection connection = source.getConnection(); Statement statement = connection.createStatement()) {
             statement.execute("DROP TABLE AGENT_ORDER_WRITE_RESERVATION");
+            statement.execute("DROP TABLE AGENT_TURN_EXECUTION_STATE");
+            statement.execute("ALTER TABLE AGENT_TURN DROP COLUMN EXECUTION_SEMANTICS_VERSION");
             statement.execute("ALTER TABLE AGENT_CONTEXT_SNAPSHOT DROP INDEX IDX_AGENT_CONTEXT_SNAPSHOT_BASE");
             statement.execute("ALTER TABLE AGENT_CONTEXT_SNAPSHOT DROP COLUMN SUMMARY_MAX_OUTPUT_TOKENS, "
                     + "DROP COLUMN SUMMARY_PROMPT_VERSION, DROP COLUMN SOURCE_ESTIMATED_TOKENS, "
@@ -506,6 +569,7 @@ class AgentWorkflowMySqlIT {
         MybatisConfiguration configuration = new MybatisConfiguration(environment);
         configuration.setMapUnderscoreToCamelCase(true);
         configuration.addMapper(AgentThreadMapper.class);
+        configuration.addMapper(AgentTurnExecutionStateMapper.class);
         configuration.addMapper(AgentWorkflowTaskMapper.class);
         configuration.addMapper(AgentWorkflowCheckpointMapper.class);
         configuration.addMapper(OrderWriteReservationMapper.class);

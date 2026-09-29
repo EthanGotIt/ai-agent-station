@@ -56,6 +56,8 @@ public final class AgentTurnEntity {
     private Instant finishedAt;
     @TableField("VERSION_NO")
     private Long versionNo;
+    @TableField("EXECUTION_SEMANTICS_VERSION")
+    private Integer executionSemanticsVersion;
 
     public AgentTurnEntity() {
     }
@@ -100,4 +102,8 @@ public final class AgentTurnEntity {
     public void setFinishedAt(Instant finishedAt) { this.finishedAt = finishedAt; }
     public Long getVersionNo() { return versionNo; }
     public void setVersionNo(Long versionNo) { this.versionNo = versionNo; }
+    public Integer getExecutionSemanticsVersion() { return executionSemanticsVersion; }
+    public void setExecutionSemanticsVersion(Integer executionSemanticsVersion) {
+        this.executionSemanticsVersion = executionSemanticsVersion;
+    }
 }
